@@ -1,4 +1,10 @@
 <?php
+session_start();
+if (!isset($_SESSION['usuario_id'])) {
+    header("Location: login.php");
+    exit();
+}
+
 // Cargar los datos recibidos desde el archivo de caché local en cPanel
 $archivoCache = __DIR__ . '/reporte_cache.json';
 

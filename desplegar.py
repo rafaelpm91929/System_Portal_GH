@@ -25,6 +25,9 @@ REMOTE_DIR = "public_html/sistemas"
 ARCHIVOS_A_SUBIR = [
     "recibir_reporte.php",
     "reportes.php",
+    "login.php",
+    "logout.php",
+    "conexion.php",
     "prueba.php",
     "index.php",
     ".htaccess"
