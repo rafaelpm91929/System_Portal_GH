@@ -1,0 +1,36 @@
+name: Deploy Master Portal to portal.grupohuerta.mx
+
+on:
+  push:
+    branches:
+      - gh
+
+jobs:
+  web-deploy-gh:
+    name: 🚀 Desplegar Portal Maestro en portal.grupohuerta.mx
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Obtener codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: 📁 Sincronizar archivos a portal.grupohuerta.mx
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER_GH }}
+          username: ${{ secrets.FTP_USERNAME_GH }}
+          password: ${{ secrets.FTP_PASSWORD_GH }}
+          server-dir: public_html/
+          protocol: ftp
+          port: 21
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/venv/**
+            **/backend/**
+            **/database/**
+            enviar_reporte.py
+            desplegar.py
+            .env
+            README.md
