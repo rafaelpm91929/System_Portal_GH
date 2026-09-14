@@ -5,5 +5,6 @@ deployment:
     - /bin/mkdir -p $DEPLOYPATH
     - /bin/cp -R recibir_reporte.php $DEPLOYPATH/
     - /bin/cp -R reportes.php $DEPLOYPATH/
+    - /bin/cp -R prueba.php $DEPLOYPATH/
     - /bin/cp -R .htaccess $DEPLOYPATH/
     - /bin/cp -R index.php $DEPLOYPATH/
