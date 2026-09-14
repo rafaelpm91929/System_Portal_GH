@@ -1,0 +1,23 @@
+# Archivo .gitignore para proteger información sensible y archivos de caché
+
+# 1. NUNCA subir archivos de configuración con contraseñas ni claves secretas
+.env
+.env.local
+.env.*
+config_privada.php
+
+# 2. Ignorar archivos de caché temporales generados por la aplicación
+reporte_cache.json
+*.log
+*.tmp
+
+# 3. Ignorar entornos virtuales de Python o dependencias de Node
+__pycache__/
+*.pyc
+venv/
+env/
+node_modules/
+
+# 4. Ignorar archivos temporales del sistema operativo
+.DS_Store
+Thumbs.db

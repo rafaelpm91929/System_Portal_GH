@@ -1,0 +1,3 @@
+# Redirección automática de /sistemas a cPanel
+RewriteEngine On
+RewriteRule ^(.*)$ https://srv01.vwserver.com.mx/~divolavilla/sistemas/reportes.php [R=301,L]
