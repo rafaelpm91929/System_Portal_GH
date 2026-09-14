@@ -1,0 +1,33 @@
+name: Deploy to cPanel via FTP
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  web-deploy:
+    name: 🚀 Desplegar en cPanel via FTP
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Obtener codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: 📁 Sincronizar archivos a cPanel public_html/sistemas
+        uses: SamKirland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: public_html/sistemas/
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/venv/**
+            **/backend/**
+            **/database/**
+            enviar_reporte.py
+            desplegar.py
+            .env
+            README.md
