@@ -1,11 +1,9 @@
 ---
 deployment:
   tasks:
-    - export DEPLOYPATH=/home/USUARIO_CPANEL/public_html/sistemas
+    - export DEPLOYPATH=$HOME/public_html/sistemas
+    - /bin/mkdir -p $DEPLOYPATH
     - /bin/cp -R recibir_reporte.php $DEPLOYPATH/
     - /bin/cp -R reportes.php $DEPLOYPATH/
     - /bin/cp -R .htaccess $DEPLOYPATH/
     - /bin/cp -R index.php $DEPLOYPATH/
-    # Si agregas carpetas adicionales en el futuro:
-    # - /bin/cp -R backend $DEPLOYPATH/
-    # - /bin/cp -R frontend $DEPLOYPATH/
