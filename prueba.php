@@ -22,7 +22,7 @@ header('Content-Type: text/html; charset=utf-8');
                 <div class="status-icon mb-3">✅</div>
                 <h3 class="card-title text-dark fw-bold">¡Servidor Conectado y Funcionando!</h3>
                 <p class="card-text text-muted">
-                    El directorio <code>public_html/sistemas</code> en tu cPanel está respondiendo correctamente.
+                    El portal en <code>public_html/sistemas</code> ha sido desplegado exitosamente vía Git.
                 </p>
                 <div class="alert alert-success d-inline-block px-4 py-2 mt-2" role="alert">
                     <strong>Estado del Servidor:</strong> HTTP 200 OK
