@@ -1,5 +1,5 @@
 <?php
-// Redirección transparente hacia el servidor de cPanel
-header("Location: https://srv01.vwserver.com.mx/~divolavilla/sistemas/reportes.php", true, 301);
+// Redirección interna directa al dashboard de reportes
+header("Location: reportes.php");
 exit();
 ?>

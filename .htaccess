@@ -1,3 +1,4 @@
-# Redirección automática de /sistemas a cPanel
+# Archivo .htaccess para portal de sistemas cPanel
 RewriteEngine On
-RewriteRule ^(.*)$ https://srv01.vwserver.com.mx/~divolavilla/sistemas/reportes.php [R=301,L]
+# Evitar listar directorios
+Options -Indexes
