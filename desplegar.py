@@ -68,7 +68,7 @@ def desplegar_por_ftp():
 
         ftp.quit()
         print("\n[ÉXITO] ¡Despliegue completado! Puedes verificar en:")
-        print("https://juridico.divolavilla.com/sistemas/prueba.php")
+        print("https://divolavilla.com/sistemas/prueba.php")
 
     except Exception as e:
         print("\n[ERROR] No se pudo realizar el despliegue FTP:", str(e))
