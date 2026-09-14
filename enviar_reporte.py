@@ -28,7 +28,7 @@ DB_SERVER = os.getenv("DB_SERVER", "192.168.26.5")
 DB_NAME = os.getenv("DB_NAME", "gedas")
 DB_USER = os.getenv("DB_USER", "sa")
 DB_PASS = os.getenv("DB_PASS", "sa")
-CPANEL_URL = os.getenv("CPANEL_URL", "https://juridico.divolavilla.com/sistemas/recibir_reporte.php")
+CPANEL_URL = os.getenv("CPANEL_URL", "https://divolavilla.com/sistemas/recibir_reporte.php")
 TOKEN_SECRETO = os.getenv("TOKEN_SECRETO", "GedasDivolavilla2026!")
 
 def default_converter(o):
