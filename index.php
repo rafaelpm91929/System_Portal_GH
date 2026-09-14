@@ -1,5 +1,9 @@
 <?php
-// Redirección interna directa al dashboard de reportes
-header("Location: reportes.php");
+session_start();
+if (isset($_SESSION['usuario_id'])) {
+    header("Location: menu.php");
+} else {
+    header("Location: login.php");
+}
 exit();
 ?>

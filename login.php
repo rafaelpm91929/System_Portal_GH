@@ -4,7 +4,7 @@ require_once 'conexion.php';
 
 // Si el usuario ya está autenticado, redirigir al dashboard de reportes
 if (isset($_SESSION['usuario_id'])) {
-    header("Location: reportes.php");
+    header("Location: menu.php");
     exit();
 }
 
@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_rol'] = $user['rol'];
                 $_SESSION['agencia'] = $user['agencia'];
 
-                header("Location: reportes.php");
+                header("Location: menu.php");
                 exit();
             } else {
                 $error = "Usuario o contraseña incorrectos.";
@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_rol'] = 'Admin';
                 $_SESSION['agencia'] = 'VW Divol La Villa';
 
-                header("Location: reportes.php");
+                header("Location: menu.php");
                 exit();
             } else {
                 $error = "Credenciales incorrectas (Prueba con usuario: tilavilla / clave: Admin123!).";

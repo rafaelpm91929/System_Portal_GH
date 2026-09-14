@@ -5,6 +5,7 @@ deployment:
     - /bin/mkdir -p $DEPLOYPATH
     - /bin/cp -R recibir_reporte.php $DEPLOYPATH/
     - /bin/cp -R reportes.php $DEPLOYPATH/
+    - /bin/cp -R menu.php $DEPLOYPATH/
     - /bin/cp -R login.php $DEPLOYPATH/
     - /bin/cp -R logout.php $DEPLOYPATH/
     - /bin/cp -R conexion.php $DEPLOYPATH/
