@@ -4,9 +4,9 @@ $pdo = null;
 
 try {
     $db_host = getenv('MYSQL_HOST') ?: '127.0.0.1';
-    $db_name = getenv('MYSQL_DB')   ?: 'divolavi_sistemas';
-    $db_user = getenv('MYSQL_USER') ?: 'divolavi_user';
-    $db_pass = getenv('MYSQL_PASS') ?: 'SecuredPass2026!';
+    $db_name = getenv('MYSQL_DB')   ?: 'grupohue_sistemas';
+    $db_user = getenv('MYSQL_USER') ?: 'grupohue_admin';
+    $db_pass = getenv('MYSQL_PASS') ?: 'admin';
 
     if (class_exists('PDO')) {
         $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass, [
