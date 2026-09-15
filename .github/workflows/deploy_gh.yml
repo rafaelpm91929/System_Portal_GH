@@ -1,4 +1,5 @@
 name: Deploy Master Portal to portal.grupohuerta.mx
+# Trigger workflow after secret update
 
 on:
   push:
