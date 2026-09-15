@@ -36,21 +36,23 @@ ARCHIVOS_A_SUBIR = [
 
 def desplegar_por_ftp():
     host = FTP_HOST if FTP_HOST else input(f"Ingresa Host FTP [{FTP_HOST}]: ").strip()
-    if not FTP_USER or not FTP_PASS:
-        print("[AVISO] Agrega FTP_USER y FTP_PASS en tu archivo .env para desplegar en 1 clic.")
-        usuario = input("Ingresa tu usuario de cPanel/FTP: ").strip()
-        password = input("Ingresa tu contraseña de cPanel/FTP: ").strip()
-    else:
-        usuario = FTP_USER
-        password = FTP_PASS
+    usuario = FTP_USER
+    password = FTP_PASS
+
+    if not usuario or not password:
+        print("\n--- Credenciales FTP cPanel (Grupo Huerta) ---")
+        host_input = input(f"Host FTP [{host}]: ").strip()
+        if host_input: host = host_input
+        usuario = input("Usuario cPanel/FTP (ej. usuario@grupohuerta.mx o usuario_cpanel): ").strip()
+        password = input("Contraseña de FTP: ").strip()
 
     remote_dir = input(f"Ruta remota en cPanel [{REMOTE_DIR}]: ").strip() or REMOTE_DIR
 
     try:
-        print(f"[FTP] Conectando a {host}...")
+        print(f"\n[FTP] Conectando a {host} con usuario '{usuario}'...")
         ftp = ftplib.FTP(host)
         ftp.login(user=usuario, passwd=password)
-        print("[FTP] Conexión exitosa.")
+        print("[FTP] ✅ Conexión exitosa.")
 
         # Intentar cambiar al directorio remoto, si no existe lo crea
         dirs = remote_dir.split('/')
@@ -77,10 +79,18 @@ def desplegar_por_ftp():
         print("\n[ÉXITO] ¡Despliegue completado! Puedes verificar en:")
         print("https://portal.grupohuerta.mx/login.php")
 
+    except ftplib.error_perm as e:
+        print(f"\n[ERROR FTP] Error de permisos / autenticación: {e}")
+        if "530" in str(e):
+            print("\n💡 TIP DE AUTENTICACIÓN CPANEL:")
+            print("1. Si usas una cuenta de FTP creada en cPanel, el usuario debe incluir el dominio: ej. usuario@grupohuerta.mx")
+            print("2. Si usas la cuenta principal de cPanel, el usuario es solo tu nombre de cPanel (ej. grupohue).")
+            print("3. Verifica que la contraseña sea exactamente la configurada en cPanel.")
     except Exception as e:
         print("\n[ERROR] No se pudo realizar el despliegue FTP:", str(e))
 
 if __name__ == "__main__":
     desplegar_por_ftp()
+
 
 
