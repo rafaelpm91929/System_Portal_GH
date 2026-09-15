@@ -1,5 +1,22 @@
 <?php
 header('Content-Type: text/html; charset=utf-8');
+include_once 'conexion.php';
+
+$db_status = "⚠️ No conectada";
+$db_class = "alert-warning";
+$user_count = 0;
+
+if ($pdo) {
+    try {
+        $stmt = $pdo->query("SELECT COUNT(*) FROM usuarios");
+        $user_count = $stmt->fetchColumn();
+        $db_status = "✅ Conexión MySQL Exitosa (Base de Datos 'grupohue_sistemas' activa, $user_count usuario(s) registrados)";
+        $db_class = "alert-success";
+    } catch (Exception $e) {
+        $db_status = "⚠️ Conectado a MySQL pero error al leer tabla 'usuarios': " . $e->getMessage();
+        $db_class = "alert-warning";
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -10,7 +27,7 @@ header('Content-Type: text/html; charset=utf-8');
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .container { max-width: 600px; margin-top: 80px; }
+        .container { max-width: 600px; margin-top: 50px; }
         .card { border: none; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); }
         .status-icon { font-size: 3rem; color: #198754; }
     </style>
@@ -20,18 +37,18 @@ header('Content-Type: text/html; charset=utf-8');
         <div class="card text-center p-4">
             <div class="card-body">
                 <div class="status-icon mb-3">✅</div>
-                <h3 class="card-title text-dark fw-bold">¡Servidor Conectado y Funcionando!</h3>
+                <h3 class="card-title text-dark fw-bold">¡Portal Maestro Conectado!</h3>
                 <p class="card-text text-muted">
-                    El portal en <code>public_html/sistemas</code> ha sido desplegado exitosamente vía Git.
+                    Verificación de Servidor Web y Base de Datos MySQL cPanel.
                 </p>
-                <div class="alert alert-success d-inline-block px-4 py-2 mt-2" role="alert">
-                    <strong>Estado del Servidor:</strong> HTTP 200 OK
+                <div class="alert <?php echo $db_class; ?> d-block px-4 py-2 mt-2" role="alert">
+                    <strong>Estado BD:</strong> <?php echo htmlspecialchars($db_status); ?>
                 </div>
                 <hr class="my-4">
                 <div class="small text-secondary">
                     <div><strong>Servidor:</strong> <?php echo $_SERVER['SERVER_NAME'] ?? 'cPanel'; ?></div>
-                    <div><strong>Fecha y hora del servidor:</strong> <?php echo date('Y-m-d H:i:s'); ?></div>
-                    <div><strong>PHP Version:</strong> <?php echo phpversion(); ?></div>
+                    <div><strong>Fecha y hora:</strong> <?php echo date('Y-m-d H:i:s'); ?></div>
+                    <div><strong>Versión PHP:</strong> <?php echo phpversion(); ?></div>
                 </div>
             </div>
         </div>

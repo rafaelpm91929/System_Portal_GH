@@ -3,7 +3,7 @@
 $pdo = null;
 
 try {
-    $db_host = getenv('MYSQL_HOST') ?: '127.0.0.1';
+    $db_host = getenv('MYSQL_HOST') ?: 'localhost';
     $db_name = getenv('MYSQL_DB')   ?: 'grupohue_sistemas';
     $db_user = getenv('MYSQL_USER') ?: 'grupohue_admin';
     $db_pass = getenv('MYSQL_PASS') ?: 'admin';
