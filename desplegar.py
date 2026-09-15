@@ -30,6 +30,7 @@ ARCHIVOS_A_SUBIR = [
     "logout.php",
     "conexion.php",
     "prueba.php",
+    "test.html",
     "index.php",
     ".htaccess"
 ]
