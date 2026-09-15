@@ -1,5 +1,5 @@
 <?php
-// Configuración de Conexión a MySQL en cPanel con prevención total de errores 500
+// Configuración de Conexión a MySQL en cPanel para Grupo Huerta
 $pdo = null;
 
 try {
@@ -16,7 +16,7 @@ try {
         ]);
     }
 } catch (Throwable $e) {
-    // Evitar Error 500 y permitir fallback controlado de la interfaz
+    // Si la conexión falla, se mantiene $pdo = null para permitir fallback controlado
     $pdo = null;
 }
 ?>
