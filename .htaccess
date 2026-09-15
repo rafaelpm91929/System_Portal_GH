@@ -1,4 +1,5 @@
 # Archivo .htaccess para portal de sistemas cPanel
 RewriteEngine On
-# Evitar listar directorios
-Options -Indexes
+# Evitar listar directorios (usar IndexIgnore en cPanel en lugar de Options -Indexes)
+IndexIgnore *
+

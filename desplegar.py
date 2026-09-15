@@ -16,10 +16,10 @@ env_path = os.path.join(os.path.dirname(__file__), '.env')
 cargar_env(env_path)
 
 # Datos de conexión FTP (Se leen del .env o de argumentos)
-FTP_HOST = os.getenv("FTP_HOST", "38.91.58.32") # srv01.vwserver.com.mx
+FTP_HOST = os.getenv("FTP_HOST", "portal.grupohuerta.mx")
 FTP_USER = os.getenv("FTP_USER", "")
 FTP_PASS = os.getenv("FTP_PASS", "")
-REMOTE_DIR = "public_html/sistemas"
+REMOTE_DIR = os.getenv("REMOTE_DIR", "public_html/sistemas")
 
 # Archivos a sincronizar con el cPanel
 ARCHIVOS_A_SUBIR = [
@@ -35,17 +35,18 @@ ARCHIVOS_A_SUBIR = [
 ]
 
 def desplegar_por_ftp():
+    host = input(f"Ingresa Host FTP [{FTP_HOST}]: ").strip() or FTP_HOST if not FTP_HOST else FTP_HOST
     if not FTP_USER or not FTP_PASS:
         print("[AVISO] Agrega FTP_USER y FTP_PASS en tu archivo .env para desplegar en 1 clic.")
-        usuario = input("Ingresa tu usuario de cPanel/FTP: ")
-        password = input("Ingresa tu contraseña de cPanel/FTP: ")
+        usuario = input("Ingresa tu usuario de cPanel/FTP: ").strip()
+        password = input("Ingresa tu contraseña de cPanel/FTP: ").strip()
     else:
         usuario = FTP_USER
         password = FTP_PASS
 
     try:
-        print(f"[FTP] Conectando a {FTP_HOST}...")
-        ftp = ftplib.FTP(FTP_HOST)
+        print(f"[FTP] Conectando a {host}...")
+        ftp = ftplib.FTP(host)
         ftp.login(user=usuario, passwd=password)
         print("[FTP] Conexión exitosa.")
 
@@ -65,17 +66,18 @@ def desplegar_por_ftp():
             ruta_local = os.path.join(os.path.dirname(__file__), archivo)
             if os.path.exists(ruta_local):
                 with open(ruta_local, 'rb') as f:
-                    ftp.stordlines(f'STOR {archivo}', f) if archivo.endswith(('.htaccess', '.php')) else ftp.storbinary(f'STOR {archivo}', f)
+                    ftp.storbinary(f'STOR {archivo}', f)
                 print(f"  └─ ✅ {archivo} subido correctamente.")
             else:
                 print(f"  └─ ⚠️ Archivo no encontrado localmente: {archivo}")
 
         ftp.quit()
         print("\n[ÉXITO] ¡Despliegue completado! Puedes verificar en:")
-        print("https://divolavilla.com/sistemas/prueba.php")
+        print("https://portal.grupohuerta.mx/login.php")
 
     except Exception as e:
         print("\n[ERROR] No se pudo realizar el despliegue FTP:", str(e))
 
 if __name__ == "__main__":
     desplegar_por_ftp()
+
