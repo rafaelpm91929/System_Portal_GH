@@ -2,7 +2,7 @@
 session_start();
 require_once 'conexion.php';
 
-// Si el usuario ya está autenticado, redirigir al dashboard de reportes
+// Si el usuario ya está autenticado, redirigir al menú maestro
 if (isset($_SESSION['usuario_id'])) {
     header("Location: menu.php");
     exit();
@@ -29,20 +29,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: menu.php");
                 exit();
             } else {
-                $error = "Usuario o contraseña incorrectos.";
+                $error = "Usuario o contraseña incorrectos en el Portal Maestro.";
             }
         } else {
-            // Fallback para pruebas iniciales si la BD de cPanel no se ha creado aún
-            if (($user_input === 'tilavilla' || $user_input === 'admin') && $password_input === 'Admin123!') {
+            // Fallback de demostración para el Portal Maestro Grupo Huerta
+            if (($user_input === 'admin' || $user_input === 'grupohuerta') && $password_input === 'Admin123!') {
                 $_SESSION['usuario_id'] = 1;
-                $_SESSION['usuario_nombre'] = 'Administrador La Villa';
-                $_SESSION['usuario_rol'] = 'Admin';
-                $_SESSION['agencia'] = 'VW Divol La Villa';
+                $_SESSION['usuario_nombre'] = 'SuperAdmin Grupo Huerta';
+                $_SESSION['usuario_rol'] = 'SuperAdmin';
+                $_SESSION['agencia'] = 'Oficina Central Grupo Huerta';
 
                 header("Location: menu.php");
                 exit();
             } else {
-                $error = "Credenciales incorrectas (Prueba con usuario: tilavilla / clave: Admin123!).";
+                $error = "Credenciales incorrectas (Prueba con usuario: admin / clave: Admin123!).";
             }
         }
     } else {
@@ -55,13 +55,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión - Portal de Sistemas Grupo Huerta</title>
+    <title>Portal Maestro de Sistemas - Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
         body {
-            background-color: #061325;
-            background-image: radial-gradient(#102847 1px, transparent 1px);
+            background-color: #040d1a;
+            background-image: radial-gradient(#0c2340 1px, transparent 1px);
             background-size: 24px 24px;
             color: #ffffff;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -73,13 +73,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-wrapper {
             width: 100%;
-            max-width: 1050px;
+            max-width: 1100px;
             display: grid;
-            grid-template-columns: 1.2fr 1fr;
-            gap: 40px;
+            grid-template-columns: 1.25fr 1fr;
+            gap: 45px;
             align-items: center;
         }
-        @media (max-width: 850px) {
+        @media (max-width: 880px) {
             .login-wrapper {
                 grid-template-columns: 1fr;
             }
@@ -87,11 +87,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .hero-section {
             padding: 20px;
         }
-        .brand-subtitle {
-            color: #64748b;
-            font-size: 0.85rem;
+        .master-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(37, 99, 235, 0.15);
+            border: 1px solid rgba(37, 99, 235, 0.4);
+            color: #60a5fa;
+            font-size: 0.75rem;
             font-weight: 700;
-            letter-spacing: 2px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            letter-spacing: 1.5px;
             text-transform: uppercase;
             margin-bottom: 15px;
         }
@@ -109,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 1.05rem;
             line-height: 1.6;
             margin-bottom: 30px;
-            max-width: 480px;
+            max-width: 500px;
         }
         .agency-tags {
             display: flex;
@@ -130,18 +137,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             border-radius: 20px;
             padding: 40px 35px;
             color: #1e293b;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
         }
         .icon-badge {
-            width: 48px;
-            height: 48px;
+            width: 52px;
+            height: 52px;
             background: #eff6ff;
             color: #2563eb;
-            border-radius: 12px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.4rem;
+            font-size: 1.5rem;
             margin-bottom: 20px;
         }
         .card-brand {
@@ -211,26 +218,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <div class="login-wrapper">
     <!-- Left Hero Section -->
     <div class="hero-section">
-        <div class="brand-subtitle">GRUPO HUERTA</div>
-        <h1 class="hero-title">Portal de Sistemas</h1>
+        <div class="master-badge">
+            <i class="bi bi-shield-lock-fill"></i> PORTAL MAESTRO CENTRAL
+        </div>
+        <h1 class="hero-title">Portal de Sistemas Grupo Huerta</h1>
         <p class="hero-desc">
-            Inventario, evidencia y estado de cumplimiento de todas las agencias y sucursales, en un solo lugar.
+            Consolidado maestro de inventarios, evidencias, órdenes de servicio y cumplimiento global para todas las agencias del grupo.
         </p>
         <div class="agency-tags">
-            <span class="agency-pill">VW Divol La Villa</span>
-            <span class="agency-pill">Seat La Villa</span>
-            <span class="agency-pill">Cupra Garage La Villa</span>
+            <span class="agency-pill"><i class="bi bi-building me-1"></i> VW Divol La Villa</span>
+            <span class="agency-pill"><i class="bi bi-building me-1"></i> Seat La Villa</span>
+            <span class="agency-pill"><i class="bi bi-building me-1"></i> Cupra Garage La Villa</span>
+            <span class="agency-pill"><i class="bi bi-diagram-3 me-1"></i> Red Sucursales Grupo Huerta</span>
         </div>
     </div>
 
     <!-- Right Form Card -->
     <div class="login-card">
         <div class="icon-badge">
-            <i class="bi bi-lock"></i>
+            <i class="bi bi-shield-lock"></i>
         </div>
         <div class="card-brand">GRUPO HUERTA</div>
         <h2 class="card-title">Iniciar sesión</h2>
-        <div class="card-subtitle">Accede al portal de sistemas</div>
+        <div class="card-subtitle">Acceso al Portal Maestro Central</div>
 
         <?php if (!empty($error)): ?>
             <div class="alert alert-danger py-2 px-3 small rounded-3 mb-3">
@@ -240,17 +250,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <form method="POST" action="login.php">
             <div class="mb-3">
-                <label for="usuario" class="form-label">Usuario</label>
+                <label for="usuario" class="form-label">Usuario Maestro</label>
                 <div class="input-group">
-                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-person"></i></span>
-                    <input type="text" class="form-control border-start-0 rounded-end-3" id="usuario" name="usuario" placeholder="Ej. tilavilla" value="<?php echo htmlspecialchars($_POST['usuario'] ?? ''); ?>" required>
+                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-person-badge"></i></span>
+                    <input type="text" class="form-control border-start-0 rounded-end-3" id="usuario" name="usuario" placeholder="Ej. admin o grupohuerta" value="<?php echo htmlspecialchars($_POST['usuario'] ?? ''); ?>" required>
                 </div>
             </div>
 
             <div class="mb-3">
                 <label for="password" class="form-label">Contraseña</label>
                 <div class="input-group">
-                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-key"></i></span>
+                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-key-fill"></i></span>
                     <input type="password" class="form-control border-start-0 rounded-end-3" id="password" name="password" placeholder="••••••••" required>
                 </div>
             </div>
@@ -264,11 +274,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
 
             <button type="submit" class="btn-submit">
-                Iniciar sesión <i class="bi bi-arrow-right"></i>
+                Iniciar sesión en Portal Maestro <i class="bi bi-arrow-right"></i>
             </button>
 
             <div class="footer-note">
-                Acceso exclusivo para personal autorizado de Grupo Huerta
+                Acceso restringido para la Dirección y Administración Central de Grupo Huerta
             </div>
         </form>
     </div>

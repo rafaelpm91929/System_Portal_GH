@@ -7,21 +7,21 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
-$nombreUsuario = $_SESSION['usuario_nombre'] ?? 'Usuario';
-$agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
+$nombreUsuario = $_SESSION['usuario_nombre'] ?? 'SuperAdmin Grupo Huerta';
+$agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Sistemas - Grupo Huerta</title>
+    <title>Portal Maestro Central - Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
         body {
-            background-color: #061325;
-            background-image: radial-gradient(#0e2440 1px, transparent 1px);
+            background-color: #040d1a;
+            background-image: radial-gradient(#0b223e 1px, transparent 1px);
             background-size: 28px 28px;
             color: #ffffff;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -29,7 +29,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             padding-bottom: 50px;
         }
         .top-navbar {
-            background: rgba(6, 19, 37, 0.85);
+            background: rgba(4, 13, 26, 0.9);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             padding: 15px 40px;
@@ -39,15 +39,23 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             max-width: 1400px;
             margin: 0 auto;
         }
-        .brand-subtitle {
-            color: #64748b;
-            font-size: 0.8rem;
+        .master-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(37, 99, 235, 0.15);
+            border: 1px solid rgba(37, 99, 235, 0.4);
+            color: #60a5fa;
+            font-size: 0.75rem;
             font-weight: 700;
-            letter-spacing: 2px;
+            padding: 5px 12px;
+            border-radius: 20px;
+            letter-spacing: 1.5px;
             text-transform: uppercase;
+            margin-bottom: 10px;
         }
         .header-title {
-            font-size: 2.4rem;
+            font-size: 2.5rem;
             font-weight: 800;
             margin-top: 4px;
             margin-bottom: 6px;
@@ -65,7 +73,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             padding: 0 40px;
         }
         .module-card {
-            background: #0d1e36;
+            background: #0a192e;
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 16px;
             padding: 30px 24px 24px 24px;
@@ -81,7 +89,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             transform: translateY(-5px);
             border-color: rgba(37, 99, 235, 0.4);
             box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
-            background: #102442;
+            background: #0f223d;
         }
         .icon-box {
             width: 56px;
@@ -115,7 +123,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             flex-grow: 1;
         }
         .btn-ingresar {
-            background: #172a46;
+            background: #152744;
             color: #ffffff;
             border: 1px solid rgba(255, 255, 255, 0.1);
             font-weight: 600;
@@ -150,8 +158,8 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 <!-- Navbar -->
 <div class="top-navbar d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-2">
-        <i class="bi bi-shield-check text-primary fs-4"></i>
-        <span class="fw-bold tracking-wide">GRUPO HUERTA <span class="text-secondary fw-normal">| Portal de Sistemas</span></span>
+        <i class="bi bi-shield-lock-fill text-primary fs-4"></i>
+        <span class="fw-bold tracking-wide">GRUPO HUERTA <span class="text-secondary fw-normal">| Portal Maestro Central</span></span>
     </div>
     <div class="d-flex align-items-center gap-3">
         <div class="text-end d-none d-md-block">
@@ -166,25 +174,25 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 
 <!-- Header -->
 <div class="header-section">
-    <div class="brand-subtitle">GRUPO HUERTA</div>
-    <h1 class="header-title">Portal de Sistemas</h1>
-    <p class="header-desc">Selecciona un módulo para continuar</p>
+    <div class="master-badge"><i class="bi bi-diagram-3-fill"></i> CONSOLIDADO NACIONAL</div>
+    <h1 class="header-title">Portal Maestro de Sistemas</h1>
+    <p class="header-desc">Selecciona un módulo corporativo para continuar</p>
 </div>
 
 <!-- Grid de Módulos -->
 <div class="modules-grid">
 
-    <!-- Módulo 1: Órdenes de Servicio (NUEVO & FUNCIONAL) -->
+    <!-- Módulo 1: Órdenes de Servicio (CONSOLIDADO MAESTRO) -->
     <div class="module-card">
-        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> EN VIVO</span>
+        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> CONSOLIDADO</span>
         <div class="icon-box icon-blue">
             <i class="bi bi-file-earmark-bar-graph"></i>
         </div>
         <div class="module-title">Órdenes de Servicio</div>
         <div class="module-desc">
-            Consulta en tiempo real el resumen de órdenes abiertas, cerradas y montos acumulados por agencia.
+            Consolidado maestro en tiempo real de órdenes abiertas, cerradas y montos de todas las agencias del grupo.
         </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
+        <a href="reportes.php" class="btn-ingresar">Ingresar al Consolidado</a>
     </div>
 
     <!-- Módulo 2: Inventario de Equipos -->
@@ -194,7 +202,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         </div>
         <div class="module-title">Inventario de Equipos</div>
         <div class="module-desc">
-            Administra PCs, laptops, servidores e impresoras de cada sucursal, con su nomenclatura y responsiva.
+            Administración centralizada de PCs, servidores, laptops e impresoras por sucursal con responsivas.
         </div>
         <a href="reportes.php" class="btn-ingresar">Ingresar</a>
     </div>
@@ -206,7 +214,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         </div>
         <div class="module-title">Inventario de Celulares</div>
         <div class="module-desc">
-            Controla los equipos móviles asignados por sucursal: modelo, línea, usuario responsable y estado.
+            Control corporativo de líneas móviles, modelos, asignaciones y costos por agencia.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -216,9 +224,9 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="icon-box icon-yellow">
             <i class="bi bi-key"></i>
         </div>
-        <div class="module-title">Licencias</div>
+        <div class="module-title">Licencias Corporativas</div>
         <div class="module-desc">
-            Matriz de licenciamiento de software por equipo y sucursal, con vigencias y alertas de vencimiento.
+            Matriz de software, vigencias, renovaciones y cumplimiento de licencias del grupo.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -230,7 +238,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         </div>
         <div class="module-title">Infraestructura (SITE / IDF)</div>
         <div class="module-desc">
-            Fichas de SITE e IDF, racks, cableado y red por agencia, con sus diagramas y evidencia asociada.
+            Monitoreo de SITEs, racks, enlaces de red y diagramas de topología por sucursal.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -240,9 +248,9 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="icon-box icon-blue">
             <i class="bi bi-cloud-check"></i>
         </div>
-        <div class="module-title">Respaldos</div>
+        <div class="module-title">Respaldos Corporativos</div>
         <div class="module-desc">
-            Estado de los respaldos por tipo y sucursal: última ejecución, frecuencia y bitácora de restauración.
+            Bitácora consolidada de ejecuciones de respaldos y pruebas de restauración.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -252,9 +260,9 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="icon-box icon-orange">
             <i class="bi bi-wrench"></i>
         </div>
-        <div class="module-title">Mantenimiento</div>
+        <div class="module-title">Mantenimientos Preventivos</div>
         <div class="module-desc">
-            Calendario anual de mantenimiento a infraestructura, con evidencia y responsable por evento.
+            Calendario anual de mantenimientos preventivos a infraestructura de todo Grupo Huerta.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -266,7 +274,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         </div>
         <div class="module-title">Correo Institucional</div>
         <div class="module-desc">
-            Cuentas oficiales por sucursal, con seguimiento de altas, bajas y reactivaciones.
+            Gestión de cuentas institucionales por sucursal: altas, bajas y cambios de perfil.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
@@ -276,9 +284,9 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="icon-box icon-blue">
             <i class="bi bi-graph-up-arrow"></i>
         </div>
-        <div class="module-title">Estadísticas de Cumplimiento</div>
+        <div class="module-title">Cumplimiento Global</div>
         <div class="module-desc">
-            Semáforo consolidado por agencia y sucursal, alertas activas y tendencia de cumplimiento.
+            Semáforo gerencial y ejecutivo de cumplimiento consolidado de todas las sucursales.
         </div>
         <a href="reportes.php" class="btn-ingresar">Ingresar</a>
     </div>
