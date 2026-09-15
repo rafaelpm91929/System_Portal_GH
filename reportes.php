@@ -14,8 +14,11 @@ if (!isset($CATALOGO_AGENCIAS[$agencia_seleccionada])) {
 
 $info_agencia = $CATALOGO_AGENCIAS[$agencia_seleccionada];
 
-// Cargar los datos recibidos desde la caché local o consultar bajo demanda
-$archivoCache = __DIR__ . '/reporte_cache.json';
+// Cargar los datos recibidos desde la caché local específica de la agencia o general
+$archivoCache = __DIR__ . "/reporte_cache_{$agencia_seleccionada}.json";
+if (!file_exists($archivoCache)) {
+    $archivoCache = __DIR__ . '/reporte_cache.json';
+}
 
 if (file_exists($archivoCache)) {
     $json = file_get_contents($archivoCache);

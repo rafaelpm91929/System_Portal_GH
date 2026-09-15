@@ -25,6 +25,7 @@ if (!$data) {
 }
 
 $agencia = $data['agencia'] ?? 'Divolavilla';
+$agencia_slug = strtolower(str_replace(' ', '', $agencia));
 $token_recibido = $data['token'] ?? '';
 
 // Validar Token de Seguridad
@@ -37,7 +38,7 @@ if ($token_recibido !== $token_esperado) {
 
 unset($data['token']); // Eliminar token por seguridad antes de almacenar
 
-$db_guardado = false;
+$archivoCache = __DIR__ . "/reporte_cache_{$agencia_slug}.json";
 
 // Guardar en Base de Datos MySQL (grupohue_sistemas) si la conexión está activa
 if ($pdo) {
