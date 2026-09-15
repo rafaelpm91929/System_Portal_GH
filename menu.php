@@ -248,8 +248,8 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
                     <?php echo htmlspecialchars($ag['descripcion']); ?>
                 </div>
 
-                <a href="reportes.php?agencia=<?php echo $key; ?>" class="btn-agency">
-                    Consultar BD cPanel en Vivo <i class="bi bi-arrow-right me-1"></i>
+                <a href="modulos.php?agencia=<?php echo $key; ?>" class="btn-agency">
+                    Ingresar <i class="bi bi-arrow-right ms-1"></i>
                 </a>
             </div>
         <?php endforeach; ?>
