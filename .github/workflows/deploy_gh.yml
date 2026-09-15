@@ -16,9 +16,9 @@ jobs:
       - name: 📁 Sincronizar archivos a public_html/sistemas en cPanel Grupo Huerta
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER_GH }}
-          username: ${{ secrets.FTP_USERNAME_GH }}
-          password: ${{ secrets.FTP_PASSWORD_GH }}
+          server: ${{ secrets.FTP_SERVER_GH || secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME_GH || secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD_GH || secrets.FTP_PASSWORD }}
           server-dir: public_html/sistemas/
           protocol: ftp
           port: 21
