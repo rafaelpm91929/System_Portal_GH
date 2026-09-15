@@ -20,7 +20,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER_GH }}
           username: ${{ secrets.FTP_USERNAME_GH }}
           password: ${{ secrets.FTP_PASSWORD_GH }}
-          server-dir: public_html/
+          server-dir: public_html/sistemas/
           protocol: ftp
           port: 21
           dangerous-clean-slate: false

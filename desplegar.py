@@ -19,7 +19,7 @@ cargar_env(env_path)
 FTP_HOST = os.getenv("FTP_HOST", "grupohuerta.mx")
 FTP_USER = os.getenv("FTP_USER", "")
 FTP_PASS = os.getenv("FTP_PASS", "")
-REMOTE_DIR = os.getenv("REMOTE_DIR", "public_html")
+REMOTE_DIR = os.getenv("REMOTE_DIR", "public_html/sistemas")
 
 # Archivos a sincronizar con el cPanel
 ARCHIVOS_A_SUBIR = [
