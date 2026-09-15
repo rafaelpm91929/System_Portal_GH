@@ -7,6 +7,8 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+include_once 'config_agencias.php';
+
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? 'SuperAdmin Grupo Huerta';
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 ?>
@@ -15,7 +17,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal Maestro Central - Grupo Huerta</title>
+    <title>Catálogo de Agencias - Portal Maestro Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -26,16 +28,16 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
             color: #ffffff;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
-            padding-bottom: 50px;
+            padding-bottom: 60px;
         }
         .top-navbar {
-            background: rgba(4, 13, 26, 0.9);
+            background: rgba(4, 13, 26, 0.95);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             padding: 15px 40px;
         }
         .header-section {
-            padding: 40px 40px 20px 40px;
+            padding: 35px 40px 10px 40px;
             max-width: 1400px;
             margin: 0 auto;
         }
@@ -52,104 +54,136 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
             border-radius: 20px;
             letter-spacing: 1.5px;
             text-transform: uppercase;
-            margin-bottom: 10px;
+            margin-bottom: 12px;
         }
         .header-title {
-            font-size: 2.5rem;
+            font-size: 2.6rem;
             font-weight: 800;
-            margin-top: 4px;
             margin-bottom: 6px;
         }
         .header-desc {
             color: #94a3b8;
-            font-size: 1rem;
+            font-size: 1.05rem;
         }
-        .modules-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
-            gap: 24px;
+        .section-container {
             max-width: 1400px;
             margin: 30px auto;
             padding: 0 40px;
         }
-        .module-card {
+        .agency-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+            gap: 24px;
+        }
+        .agency-card {
             background: #0a192e;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 30px 24px 24px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 30px;
             display: flex;
             flex-direction: column;
-            align-items: center;
-            text-align: center;
-            transition: all 0.25s ease;
+            transition: all 0.3s ease;
             position: relative;
             overflow: hidden;
         }
-        .module-card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(37, 99, 235, 0.4);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
-            background: #0f223d;
+        .agency-card:hover {
+            transform: translateY(-6px);
+            border-color: #2563eb;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            background: #0f233f;
         }
-        .icon-box {
-            width: 56px;
-            height: 56px;
-            border-radius: 14px;
+        .agency-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.6rem;
+            font-size: 1.8rem;
             margin-bottom: 20px;
         }
-        .icon-blue { background: rgba(37, 99, 235, 0.15); color: #3b82f6; }
-        .icon-purple { background: rgba(147, 51, 234, 0.15); color: #a855f7; }
-        .icon-yellow { background: rgba(234, 179, 8, 0.15); color: #eab308; }
-        .icon-green { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-        .icon-orange { background: rgba(249, 115, 22, 0.15); color: #f97316; }
-        .icon-pink { background: rgba(236, 72, 153, 0.15); color: #ec4899; }
-        .icon-cyan { background: rgba(6, 182, 212, 0.15); color: #06b6d4; }
-        
-        .module-title {
-            font-size: 1.15rem;
+        .online-badge {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #4ade80;
+            font-size: 0.72rem;
             font-weight: 700;
-            color: #ffffff;
-            margin-bottom: 10px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
-        .module-desc {
+        .agency-title {
+            font-size: 1.4rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 4px;
+        }
+        .agency-subdomain {
+            color: #60a5fa;
+            font-size: 0.88rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            font-family: monospace;
+        }
+        .agency-desc {
             color: #94a3b8;
-            font-size: 0.85rem;
-            line-height: 1.5;
+            font-size: 0.88rem;
+            line-height: 1.55;
             margin-bottom: 25px;
             flex-grow: 1;
         }
-        .btn-ingresar {
-            background: #152744;
+        .btn-agency {
+            background: #2563eb;
             color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            font-weight: 600;
-            font-size: 0.88rem;
-            padding: 8px;
-            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            padding: 12px 18px;
+            border-radius: 12px;
+            border: none;
             width: 100%;
             transition: all 0.2s;
             text-decoration: none;
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
-        .module-card:hover .btn-ingresar {
-            background: #2563eb;
-            border-color: #2563eb;
+        .btn-agency:hover {
+            background: #1d4ed8;
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.4);
         }
-        .active-badge {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            background: rgba(34, 197, 94, 0.15);
-            color: #22c55e;
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 12px;
-            border: 1px solid rgba(34, 197, 94, 0.3);
+        .add-agency-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 2px dashed rgba(255, 255, 255, 0.15);
+            border-radius: 20px;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: #64748b;
+            min-height: 280px;
+        }
+        .add-agency-card:hover {
+            border-color: #60a5fa;
+            color: #94a3b8;
+        }
+        .zero-storage-note {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.25);
+            border-radius: 14px;
+            padding: 16px 24px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
         }
     </style>
 </head>
@@ -174,124 +208,65 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 
 <!-- Header -->
 <div class="header-section">
-    <div class="master-badge"><i class="bi bi-diagram-3-fill"></i> CONSOLIDADO NACIONAL</div>
-    <h1 class="header-title">Portal Maestro de Sistemas</h1>
-    <p class="header-desc">Selecciona un módulo corporativo para continuar</p>
+    <div class="master-badge"><i class="bi bi-building-fill-gear"></i> DIRECCIÓN CENTRAL MAESTRA</div>
+    <h1 class="header-title">Catálogo de Agencias Grupo Huerta</h1>
+    <p class="header-desc">Selecciona una agencia para acceder a la consulta en vivo de su base de datos cPanel local</p>
 </div>
 
-<!-- Grid de Módulos -->
-<div class="modules-grid">
-
-    <!-- Módulo 1: Órdenes de Servicio (CONSOLIDADO MAESTRO) -->
-    <div class="module-card">
-        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> CONSOLIDADO</span>
-        <div class="icon-box icon-blue">
-            <i class="bi bi-file-earmark-bar-graph"></i>
+<div class="section-container">
+    
+    <!-- Nota de Arquitectura Zero-Storage -->
+    <div class="zero-storage-note">
+        <i class="bi bi-shield-check text-success fs-3"></i>
+        <div>
+            <div class="fw-bold text-success">Arquitectura Descentralizada (Zero-Storage cPanel Maestro)</div>
+            <div class="small text-secondary">
+                Los datos de inventarios, reportes y órdenes residen 100% en el cPanel local de cada sucursal. El Portal Maestro realiza consultas cifradas en tiempo real bajo demanda.
+            </div>
         </div>
-        <div class="module-title">Órdenes de Servicio</div>
-        <div class="module-desc">
-            Consolidado maestro en tiempo real de órdenes abiertas, cerradas y montos de todas las agencias del grupo.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar al Consolidado</a>
     </div>
 
-    <!-- Módulo 2: Inventario de Equipos -->
-    <div class="module-card">
-        <div class="icon-box icon-cyan">
-            <i class="bi bi-display"></i>
-        </div>
-        <div class="module-title">Inventario de Equipos</div>
-        <div class="module-desc">
-            Administración centralizada de PCs, servidores, laptops e impresoras por sucursal con responsivas.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
-    </div>
+    <!-- CATÁLOGO MAESTRO DE AGENCIAS Y SUCURSALES -->
+    <div class="agency-card-grid">
+        
+        <?php foreach ($CATALOGO_AGENCIAS as $key => $ag): ?>
+            <div class="agency-card">
+                <span class="online-badge">
+                    <i class="bi bi-circle-fill" style="font-size: 0.45rem;"></i> cPanel Local Activo
+                </span>
+                
+                <div class="agency-icon" style="background: rgba(37, 99, 235, 0.15); color: <?php echo $ag['color']; ?>;">
+                    <i class="bi <?php echo $ag['icono']; ?>"></i>
+                </div>
 
-    <!-- Módulo 3: Inventario de Celulares -->
-    <div class="module-card">
-        <div class="icon-box icon-purple">
-            <i class="bi bi-phone"></i>
-        </div>
-        <div class="module-title">Inventario de Celulares</div>
-        <div class="module-desc">
-            Control corporativo de líneas móviles, modelos, asignaciones y costos por agencia.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
+                <div class="agency-title"><?php echo htmlspecialchars($ag['nombre']); ?></div>
+                <div class="agency-subdomain">
+                    <i class="bi bi-globe me-1"></i> <?php echo htmlspecialchars($ag['subdominio']); ?>
+                </div>
 
-    <!-- Módulo 4: Licencias -->
-    <div class="module-card">
-        <div class="icon-box icon-yellow">
-            <i class="bi bi-key"></i>
-        </div>
-        <div class="module-title">Licencias Corporativas</div>
-        <div class="module-desc">
-            Matriz de software, vigencias, renovaciones y cumplimiento de licencias del grupo.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
+                <div class="agency-desc">
+                    <?php echo htmlspecialchars($ag['descripcion']); ?>
+                </div>
 
-    <!-- Módulo 5: Infraestructura (SITE / IDF) -->
-    <div class="module-card">
-        <div class="icon-box icon-green">
-            <i class="bi bi-hdd-rack"></i>
-        </div>
-        <div class="module-title">Infraestructura (SITE / IDF)</div>
-        <div class="module-desc">
-            Monitoreo de SITEs, racks, enlaces de red y diagramas de topología por sucursal.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
+                <a href="reportes.php?agencia=<?php echo $key; ?>" class="btn-agency">
+                    Consultar BD cPanel en Vivo <i class="bi bi-arrow-right me-1"></i>
+                </a>
+            </div>
+        <?php endforeach; ?>
 
-    <!-- Módulo 6: Respaldos -->
-    <div class="module-card">
-        <div class="icon-box icon-blue">
-            <i class="bi bi-cloud-check"></i>
+        <!-- Tarjeta para agregar nueva sucursal -->
+        <div class="add-agency-card">
+            <i class="bi bi-plus-circle-dotted display-5 mb-3 text-secondary"></i>
+            <h5 class="fw-bold text-white mb-1">Registrar Nueva Sucursal</h5>
+            <p class="small text-secondary mb-0">
+                Para vincular un nuevo cPanel, agrega sus datos en <code>config_agencias.php</code>
+            </p>
         </div>
-        <div class="module-title">Respaldos Corporativos</div>
-        <div class="module-desc">
-            Bitácora consolidada de ejecuciones de respaldos y pruebas de restauración.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
 
-    <!-- Módulo 7: Mantenimiento -->
-    <div class="module-card">
-        <div class="icon-box icon-orange">
-            <i class="bi bi-wrench"></i>
-        </div>
-        <div class="module-title">Mantenimientos Preventivos</div>
-        <div class="module-desc">
-            Calendario anual de mantenimientos preventivos a infraestructura de todo Grupo Huerta.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 8: Correo Institucional -->
-    <div class="module-card">
-        <div class="icon-box icon-pink">
-            <i class="bi bi-envelope"></i>
-        </div>
-        <div class="module-title">Correo Institucional</div>
-        <div class="module-desc">
-            Gestión de cuentas institucionales por sucursal: altas, bajas y cambios de perfil.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 9: Estadísticas de Cumplimiento -->
-    <div class="module-card">
-        <div class="icon-box icon-blue">
-            <i class="bi bi-graph-up-arrow"></i>
-        </div>
-        <div class="module-title">Cumplimiento Global</div>
-        <div class="module-desc">
-            Semáforo gerencial y ejecutivo de cumplimiento consolidado de todas las sucursales.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
     </div>
 
 </div>
 
 </body>
 </html>
+
