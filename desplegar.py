@@ -16,7 +16,7 @@ env_path = os.path.join(os.path.dirname(__file__), '.env')
 cargar_env(env_path)
 
 # Datos de conexión FTP (Se leen del .env o de argumentos)
-FTP_HOST = os.getenv("FTP_HOST", "portal.grupohuerta.mx")
+FTP_HOST = os.getenv("FTP_HOST", "grupohuerta.mx")
 FTP_USER = os.getenv("FTP_USER", "")
 FTP_PASS = os.getenv("FTP_PASS", "")
 REMOTE_DIR = os.getenv("REMOTE_DIR", "public_html/sistemas")
@@ -35,7 +35,7 @@ ARCHIVOS_A_SUBIR = [
 ]
 
 def desplegar_por_ftp():
-    host = input(f"Ingresa Host FTP [{FTP_HOST}]: ").strip() or FTP_HOST if not FTP_HOST else FTP_HOST
+    host = FTP_HOST if FTP_HOST else input(f"Ingresa Host FTP [{FTP_HOST}]: ").strip()
     if not FTP_USER or not FTP_PASS:
         print("[AVISO] Agrega FTP_USER y FTP_PASS en tu archivo .env para desplegar en 1 clic.")
         usuario = input("Ingresa tu usuario de cPanel/FTP: ").strip()
@@ -44,6 +44,8 @@ def desplegar_por_ftp():
         usuario = FTP_USER
         password = FTP_PASS
 
+    remote_dir = input(f"Ruta remota en cPanel [{REMOTE_DIR}]: ").strip() or REMOTE_DIR
+
     try:
         print(f"[FTP] Conectando a {host}...")
         ftp = ftplib.FTP(host)
@@ -51,7 +53,7 @@ def desplegar_por_ftp():
         print("[FTP] Conexión exitosa.")
 
         # Intentar cambiar al directorio remoto, si no existe lo crea
-        dirs = REMOTE_DIR.split('/')
+        dirs = remote_dir.split('/')
         for d in dirs:
             if d:
                 try:
@@ -61,7 +63,7 @@ def desplegar_por_ftp():
                     ftp.mkd(d)
                     ftp.cwd(d)
 
-        print(f"[FTP] Subiendo archivos a /{REMOTE_DIR}...")
+        print(f"[FTP] Subiendo archivos a /{remote_dir}...")
         for archivo in ARCHIVOS_A_SUBIR:
             ruta_local = os.path.join(os.path.dirname(__file__), archivo)
             if os.path.exists(ruta_local):
@@ -80,4 +82,5 @@ def desplegar_por_ftp():
 
 if __name__ == "__main__":
     desplegar_por_ftp()
+
 
