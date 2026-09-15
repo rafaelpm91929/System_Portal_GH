@@ -14,9 +14,21 @@ if (!isset($CATALOGO_AGENCIAS[$agencia_seleccionada])) {
 
 $info_agencia = $CATALOGO_AGENCIAS[$agencia_seleccionada];
 
-// Cargar los datos recibidos desde la caché local específica de la agencia o general
-$archivoCache = __DIR__ . "/reporte_cache_{$agencia_seleccionada}.json";
-if (!file_exists($archivoCache)) {
+// Cargar los datos recibidos buscando en los posibles archivos de caché
+$posiblesArchivos = [
+    __DIR__ . "/reporte_cache_{$agencia_seleccionada}.json",
+    __DIR__ . "/reporte_cache.json",
+    __DIR__ . "/reporte_cache_divolavilla.json"
+];
+
+$archivoCache = null;
+foreach ($posiblesArchivos as $posible) {
+    if (file_exists($posible) && filesize($posible) > 10) {
+        $archivoCache = $posible;
+        break;
+    }
+}
+if (!$archivoCache) {
     $archivoCache = __DIR__ . '/reporte_cache.json';
 }
 
