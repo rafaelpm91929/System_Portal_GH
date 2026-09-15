@@ -1,6 +1,12 @@
 <?php
-session_start();
-require_once 'conexion.php';
+if (session_status() === PHP_SESSION_NONE) {
+    @session_start();
+}
+if (file_exists('conexion.php')) {
+    include_once 'conexion.php';
+} else {
+    $pdo = null;
+}
 
 // Si el usuario ya está autenticado, redirigir al menú maestro
 if (isset($_SESSION['usuario_id'])) {
