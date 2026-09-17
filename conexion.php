@@ -3,6 +3,11 @@
 $pdo = null;
 $conexion_error = null;
 
+// Cargar archivo de configuración PHP si existe
+if (file_exists(__DIR__ . '/config_env.php')) {
+    include_once __DIR__ . '/config_env.php';
+}
+
 // Cargar variables de entorno de .env si existe
 if (file_exists(__DIR__ . '/.env')) {
     $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
