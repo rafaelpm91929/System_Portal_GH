@@ -174,6 +174,19 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 <!-- Grid de Módulos -->
 <div class="modules-grid">
 
+    <!-- Módulo 0: Gestión de Usuarios y Permisos (RBAC) -->
+    <div class="module-card" style="border-color: rgba(37, 99, 235, 0.4);">
+        <span class="active-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);"><i class="bi bi-shield-check me-1"></i> CONTROL RBAC</span>
+        <div class="icon-box icon-blue">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <div class="module-title">Gestión de Usuarios</div>
+        <div class="module-desc">
+            Administra los usuarios de la agencia y configura permisos granulares por módulo (Ver, Crear, Editar, Exportar).
+        </div>
+        <a href="usuarios.php" class="btn-ingresar" style="background: #2563eb; border-color: #2563eb;">Ingresar</a>
+    </div>
+
     <!-- Módulo 1: Órdenes de Servicio (NUEVO & FUNCIONAL) -->
     <div class="module-card">
         <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> EN VIVO</span>

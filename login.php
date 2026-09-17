@@ -32,6 +32,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_rol'] = $user['rol'];
                 $_SESSION['agencia'] = $user['agencia'];
 
+                if (file_exists('permisos_helper.php')) {
+                    require_once 'permisos_helper.php';
+                    cargarPermisosSesion($pdo, $user['id']);
+                }
+
                 header("Location: menu.php");
                 exit();
             } else {

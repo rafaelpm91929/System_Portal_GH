@@ -5,6 +5,11 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+if (file_exists('permisos_helper.php')) {
+    require_once 'permisos_helper.php';
+    requerirPermiso('ordenes_servicio', 'puede_ver');
+}
+
 // Cargar los datos recibidos desde el archivo de caché local en cPanel
 $archivoCache = __DIR__ . '/reporte_cache.json';
 
