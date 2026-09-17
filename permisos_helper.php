@@ -72,6 +72,22 @@ function asegurarTablasPermisos($pdo) {
 }
 
 /**
+ * Auto-Instala o asegura la existencia de las 10 tablas de inventario en MySQL
+ */
+function asegurarTablasEquipos($pdo) {
+    if (!$pdo) return;
+    try {
+        $sqlPath = __DIR__ . '/database/schema_equipos.sql';
+        if (file_exists($sqlPath)) {
+            $sql = file_get_contents($sqlPath);
+            $pdo->exec($sql);
+        }
+    } catch (Throwable $e) {
+        // Fallback silencioso
+    }
+}
+
+/**
  * Carga los permisos del usuario en la sesión desde la base de datos
  */
 function cargarPermisosSesion($pdo, $usuario_id) {
