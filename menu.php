@@ -202,6 +202,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 
     <!-- Módulo 2: Inventario de Equipos -->
     <div class="module-card">
+        <span class="active-badge" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4; border-color: rgba(6, 182, 212, 0.3);"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> ACTIVO</span>
         <div class="icon-box icon-cyan">
             <i class="bi bi-display"></i>
         </div>
@@ -209,7 +210,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="module-desc">
             Administra PCs, laptops, servidores e impresoras de cada sucursal, con su nomenclatura y responsiva.
         </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
+        <a href="equipos.php" class="btn-ingresar">Ingresar</a>
     </div>
 
     <!-- Módulo 3: Inventario de Celulares -->
