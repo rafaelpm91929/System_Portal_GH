@@ -1,7 +1,7 @@
 # Archivo .gitignore para proteger información sensible y archivos de caché
 
-# 1. NUNCA subir archivos de configuración con contraseñas ni claves secretas
-.env
+# 1. Archivos de configuración
+# .env (Habilitado para sincronización en cPanel)
 .env.local
 .env.*
 config_privada.php
