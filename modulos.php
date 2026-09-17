@@ -8,6 +8,7 @@ if (!isset($_SESSION['usuario_id'])) {
 }
 
 include_once 'config_agencias.php';
+include_once 'permisos_helper.php';
 
 $agencia_key = $_GET['agencia'] ?? 'divolavilla';
 if (!isset($CATALOGO_AGENCIAS[$agencia_key])) {
@@ -188,8 +189,21 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
     <p class="header-desc">Selecciona un módulo corporativo para consultar la información de esta agencia</p>
 </div>
 
-<!-- Grid de Módulos (Exacto a Imagen 2) -->
+<!-- Grid de Módulos (Exacto a Imagen 2 + RBAC Dinámico) -->
 <div class="modules-grid">
+
+    <!-- Módulo 0: Gestión de Usuarios y Permisos (RBAC) -->
+    <div class="module-card" style="border-color: rgba(37, 99, 235, 0.4);">
+        <span class="active-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);"><i class="bi bi-shield-check me-1"></i> CONTROL RBAC</span>
+        <div class="icon-box icon-blue">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <div class="module-title">Gestión de Usuarios</div>
+        <div class="module-desc">
+            Administra los usuarios de la agencia y configura permisos granulares por módulo (Ver, Crear, Editar, Exportar).
+        </div>
+        <a href="usuarios.php" class="btn-ingresar" style="background: #2563eb; border-color: #2563eb;">Ingresar</a>
+    </div>
 
     <!-- Módulo 1: Órdenes de Servicio -->
     <div class="module-card">
