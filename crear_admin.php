@@ -1,5 +1,5 @@
 <?php
-// Script Creador / Reseteador de Usuarios Administradores para Divol La Villa
+// Script Creador / Reseteador Universal de Usuarios Administradores - Grupo Huerta
 require_once 'conexion.php';
 
 header('Content-Type: text/html; charset=utf-8');
@@ -17,14 +17,14 @@ echo "<!DOCTYPE html>
 <html lang='es'>
 <head>
     <meta charset='UTF-8'>
-    <title>Creador de Usuarios Admin - Divol La Villa</title>
+    <title>Creador de Usuarios Admin - Portal de Sistemas Grupo Huerta</title>
     <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' rel='stylesheet'>
     <link rel='stylesheet' href='https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css'>
 </head>
 <body class='bg-dark text-white p-5'>
 <div class='container' style='max-width: 700px;'>
     <div class='card bg-secondary bg-opacity-10 border-primary p-4 rounded-4 shadow-lg text-white'>
-        <h3 class='fw-bold text-primary mb-3'><i class='bi bi-shield-check me-2'></i> Creador de Usuarios Admin - VW Divol La Villa</h3>
+        <h3 class='fw-bold text-primary mb-3'><i class='bi bi-shield-check me-2'></i> Creador de Usuarios Admin - Grupo Huerta</h3>
         <p class='text-secondary'>Generando usuarios administradores principales e inyectando permisos completos en la base de datos MySQL...</p>
         <hr class='border-secondary mb-4'>";
 
@@ -40,21 +40,21 @@ try {
         [
             'usuario' => 'admin',
             'nombre'  => 'Administrador Central Grupo Huerta',
-            'email'   => 'admin@divolavilla.com',
+            'email'   => 'admin@grupohuerta.mx',
             'password'=> 'Admin123!',
             'rol'     => 'SuperAdmin'
         ],
         [
             'usuario' => 'sistemas',
-            'nombre'  => 'Sistemas VW Divol La Villa',
-            'email'   => 'sistemas@divolavilla.com',
+            'nombre'  => 'Sistemas Grupo Huerta',
+            'email'   => 'sistemas@grupohuerta.mx',
             'password'=> 'Admin123!',
             'rol'     => 'Admin'
         ],
         [
-            'usuario' => 'tilavilla',
-            'nombre'  => 'TI La Villa',
-            'email'   => 'tilavilla@divolavilla.com',
+            'usuario' => 'soporte',
+            'nombre'  => 'Soporte Técnico Agencia',
+            'email'   => 'soporte@grupohuerta.mx',
             'password'=> 'Admin123!',
             'rol'     => 'Admin'
         ]
@@ -65,7 +65,7 @@ try {
 
     $stmtUser = $pdo->prepare("
         INSERT INTO usuarios (usuario, nombre, email, password, agencia, rol, activo)
-        VALUES (?, ?, ?, ?, 'VW Divol La Villa', ?, 1)
+        VALUES (?, ?, ?, ?, 'Agencia Grupo Huerta', ?, 1)
         ON DUPLICATE KEY UPDATE
             nombre = VALUES(nombre),
             email = VALUES(email),

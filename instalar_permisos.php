@@ -1,5 +1,5 @@
 <?php
-// Script Auto-Instalador del Esquema de Permisos y Módulos
+// Script Auto-Instalador Universal del Esquema de Permisos y Módulos
 require_once 'conexion.php';
 
 header('Content-Type: text/html; charset=utf-8');
@@ -8,7 +8,7 @@ if (!$pdo) {
     die("<h3>[ERROR] No hay conexión a la base de datos MySQL en conexion.php</h3>");
 }
 
-echo "<h2>Instalador de Tablas y Permisos Granulares - Systems Portal</h2>";
+echo "<h2>Instalador de Tablas y Permisos Granulares - Portal de Sistemas Grupo Huerta</h2>";
 
 try {
     // 1. Tabla usuarios
@@ -19,7 +19,7 @@ try {
       `nombre` VARCHAR(100) NOT NULL,
       `email` VARCHAR(100) NOT NULL UNIQUE,
       `password` VARCHAR(255) NOT NULL,
-      `agencia` VARCHAR(100) DEFAULT 'VW Divol La Villa',
+      `agencia` VARCHAR(100) DEFAULT 'Agencia Grupo Huerta',
       `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
       `activo` TINYINT(1) DEFAULT 1,
       `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -77,21 +77,21 @@ try {
     // 5. Asegurar usuarios Admin por defecto
     $passAdmin = password_hash('Admin123!', PASSWORD_DEFAULT);
     $adminsList = [
-        ['admin', 'Administrador Grupo Huerta', 'admin@divolavilla.com', 'SuperAdmin'],
-        ['sistemas', 'Sistemas VW Divol La Villa', 'sistemas@divolavilla.com', 'Admin'],
-        ['tilavilla', 'TI La Villa', 'tilavilla@divolavilla.com', 'Admin']
+        ['admin', 'Administrador Grupo Huerta', 'admin@grupohuerta.mx', 'SuperAdmin'],
+        ['sistemas', 'Sistemas Grupo Huerta', 'sistemas@grupohuerta.mx', 'Admin'],
+        ['soporte', 'Soporte Técnico', 'soporte@grupohuerta.mx', 'Admin']
     ];
 
     $stmtInsertAdmin = $pdo->prepare("
         INSERT INTO `usuarios` (`usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`)
-        VALUES (?, ?, ?, ?, 'VW Divol La Villa', ?, 1)
+        VALUES (?, ?, ?, ?, 'Agencia Grupo Huerta', ?, 1)
         ON DUPLICATE KEY UPDATE `password`=VALUES(`password`), `activo`=1;
     ");
 
     foreach ($adminsList as $admItem) {
         $stmtInsertAdmin->execute([$admItem[0], $admItem[1], $admItem[2], $passAdmin, $admItem[3]]);
     }
-    echo "<p>✅ Usuarios administradores (<code>admin</code>, <code>sistemas</code>, <code>tilavilla</code>) verificados/creados con éxito.</p>";
+    echo "<p>✅ Usuarios administradores (<code>admin</code>, <code>sistemas</code>, <code>soporte</code>) verificados/creados con éxito.</p>";
 
     echo "<h3>🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE</h3>";
     echo "<p><a href='login.php'>Ir al Login</a> | <a href='usuarios.php'>Ir a Gestión de Usuarios</a></p>";

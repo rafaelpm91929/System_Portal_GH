@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $_SESSION['usuario_id'] = $user['id'];
                             $_SESSION['usuario_nombre'] = $user['nombre'];
                             $_SESSION['usuario_rol'] = $user['rol'] ?? 'Usuario';
-                            $_SESSION['agencia'] = $user['agencia'] ?? 'VW Divol La Villa';
+                            $_SESSION['agencia'] = $user['agencia'] ?? 'Agencia Grupo Huerta';
 
                             // Cargar permisos en la sesión
                             if (file_exists('permisos_helper.php')) {
@@ -78,11 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             // Fallback de emergencia solo si no hay conexión a la BD MySQL
-            if (($user_input === 'tilavilla' || $user_input === 'admin') && $password_input === 'Admin123!') {
+            if (($user_input === 'sistemas' || $user_input === 'admin') && $password_input === 'Admin123!') {
                 $_SESSION['usuario_id'] = 1;
-                $_SESSION['usuario_nombre'] = 'Administrador Divol La Villa';
+                $_SESSION['usuario_nombre'] = 'Administrador de Sistemas';
                 $_SESSION['usuario_rol'] = 'SuperAdmin';
-                $_SESSION['agencia'] = 'VW Divol La Villa';
+                $_SESSION['agencia'] = 'Agencia Grupo Huerta';
 
                 header("Location: menu.php");
                 exit();
@@ -101,7 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión - Portal de Sistemas VW Divol La Villa</title>
+    <title>Iniciar Sesión - Portal de Sistemas Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -220,9 +220,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Hero Informativo -->
     <div class="hero-section d-none d-md-block">
         <div class="brand-subtitle">GRUPO HUERTA</div>
-        <h1 class="hero-title">Portal de Sistemas<br>VW Divol La Villa</h1>
+        <h1 class="hero-title">Portal de Sistemas<br>Corporativo</h1>
         <p class="hero-desc">
-            Acceso seguro al sistema de gestión de la sucursal Divol La Villa. Gestiona usuarios, monitorea órdenes de servicio y supervisa el inventario de la agencia.
+            Acceso seguro al sistema de gestión corporativo. Gestiona usuarios, monitorea órdenes de servicio y supervisa el inventario de la agencia.
         </p>
         <div class="feature-badge">
             <i class="bi bi-shield-check"></i> Acceso Cifrado & Control de Roles
@@ -250,7 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label for="usuario" class="form-label">Usuario o Correo Electrónico</label>
                 <div class="input-group">
                     <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-person"></i></span>
-                    <input type="text" name="usuario" id="usuario" class="form-control form-control-custom" placeholder="ej. tilavilla" required autofocus>
+                    <input type="text" name="usuario" id="usuario" class="form-control form-control-custom" placeholder="ej. admin, sistemas" required autofocus>
                 </div>
             </div>
 

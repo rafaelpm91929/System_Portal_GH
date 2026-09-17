@@ -19,7 +19,7 @@ function asegurarTablasPermisos($pdo) {
           `nombre` VARCHAR(100) NOT NULL,
           `email` VARCHAR(100) NOT NULL UNIQUE,
           `password` VARCHAR(255) NOT NULL,
-          `agencia` VARCHAR(100) DEFAULT 'VW Divol La Villa',
+          `agencia` VARCHAR(100) DEFAULT 'Agencia Grupo Huerta',
           `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
           `activo` TINYINT(1) DEFAULT 1,
           `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP

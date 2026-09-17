@@ -17,13 +17,13 @@ if (!in_array($rolActual, ['superadmin', 'admin'])) {
 $mensaje = '';
 $error = '';
 
-// Auto-asegurar existencia de las tablas en MySQL para la agencia Divol La Villa
+// Auto-asegurar existencia de las tablas en MySQL para la agencia
 if ($pdo) {
     asegurarTablasPermisos($pdo);
 }
 
 // ----------------------------------------------------
-// PROCESAMIENTO DE FORMULARIOS (POST) - DIVOL LA VILLA
+// PROCESAMIENTO DE FORMULARIOS (POST) - UNIVERSAL
 // ----------------------------------------------------
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $email = trim($_POST['email'] ?? '');
         $password = trim($_POST['password'] ?? '');
         $rol = $_POST['rol'] ?? 'Usuario';
-        $agencia = 'VW Divol La Villa';
+        $agencia = trim($_POST['agencia'] ?? 'Agencia Grupo Huerta');
         $activo = isset($_POST['activo']) ? 1 : 0;
 
         if (empty($usuario) || empty($nombre) || empty($email)) {
@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         } else {
             try {
                 if ($id > 0) {
-                    // Actualizar usuario existente en Divol La Villa
+                    // Actualizar usuario existente
                     if (!empty($password)) {
                         $hash = password_hash($password, PASSWORD_DEFAULT);
                         $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=? WHERE id=?");
@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $mensaje = "Usuario <strong>".htmlspecialchars($nombre)."</strong> ($usuario) actualizado correctamente con rol <strong>$rol</strong>.";
                     $nuevo_user_id = $id;
                 } else {
-                    // Crear nuevo usuario en Divol La Villa
+                    // Crear nuevo usuario
                     if (empty($password)) {
                         $error = "La contraseña es obligatoria para registrar un nuevo usuario.";
                     } else {
@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
             } catch (PDOException $e) {
                 if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                    $error = "El usuario o correo electrónico ya se encuentra registrado en Divol La Villa.";
+                    $error = "El usuario o correo electrónico ya se encuentra registrado.";
                 } else {
                     $error = "Error al guardar el usuario: " . $e->getMessage();
                 }
@@ -165,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 }
 
 // ----------------------------------------------------
-// CONSULTA DE USUARIOS Y MÓDULOS DE DIVOL LA VILLA
+// CONSULTA DE USUARIOS Y MÓDULOS DEL PORTAL
 // ----------------------------------------------------
 
 $usuarios = [];
@@ -186,7 +186,7 @@ if ($pdo) {
             $permisosMap[$pm['usuario_id']][$pm['modulo_clave']] = $pm;
         }
     } catch (PDOException $e) {
-        $error = "Error al consultar los usuarios de Divol La Villa: " . $e->getMessage();
+        $error = "Error al consultar los usuarios: " . $e->getMessage();
     }
 }
 ?>
@@ -195,7 +195,7 @@ if ($pdo) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuarios y Roles - VW Divol La Villa</title>
+    <title>Usuarios y Roles - Portal de Sistemas Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -267,10 +267,10 @@ if ($pdo) {
         <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
             <i class="bi bi-arrow-left me-1"></i> Volver al Menú Principal
         </a>
-        <span class="fw-bold fs-5">DIVOL LA VILLA <span class="text-primary">| Control de Usuarios y Roles</span></span>
+        <span class="fw-bold fs-5">PORTAL DE SISTEMAS <span class="text-primary">| Control de Usuarios y Roles</span></span>
     </div>
     <div>
-        <span class="badge bg-primary p-2 fs-6"><i class="bi bi-shield-check me-1"></i> VW Divol La Villa</span>
+        <span class="badge bg-primary p-2 fs-6"><i class="bi bi-shield-check me-1"></i> Grupo Huerta</span>
     </div>
 </div>
 
@@ -295,7 +295,7 @@ if ($pdo) {
     <div class="card-custom mb-4">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h4 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i> Usuarios de Divol La Villa</h4>
+                <h4 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i> Usuarios del Sistema</h4>
                 <p class="text-secondary small mb-0">Crea usuarios para la agencia y asigna su rol de acceso (SuperAdmin, Admin o Usuario).</p>
             </div>
             <button type="button" class="btn btn-primary rounded-3 px-4 fw-semibold" onclick="abrirModalNuevoUsuario()">
@@ -314,6 +314,7 @@ if ($pdo) {
                         <th>Usuario (Login)</th>
                         <th>Nombre Completo</th>
                         <th>Correo Electrónico</th>
+                        <th>Agencia</th>
                         <th>Rol Asignado</th>
                         <th>Estatus</th>
                         <th class="text-end">Acciones</th>
@@ -322,7 +323,7 @@ if ($pdo) {
                 <tbody>
                     <?php if (empty($usuarios)): ?>
                         <tr>
-                            <td colspan="7" class="text-center py-4 text-secondary">
+                            <td colspan="8" class="text-center py-4 text-secondary">
                                 <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No hay usuarios registrados aún. Haz clic en 'Crear Nuevo Usuario' para registrar el primero.
                             </td>
                         </tr>
@@ -333,6 +334,7 @@ if ($pdo) {
                                 <td><span class="badge bg-dark border text-info font-monospace fs-6 px-3 py-2"><?php echo htmlspecialchars($u['usuario']); ?></span></td>
                                 <td class="fw-semibold text-white"><?php echo htmlspecialchars($u['nombre']); ?></td>
                                 <td class="text-secondary"><?php echo htmlspecialchars($u['email']); ?></td>
+                                <td class="text-light small"><?php echo htmlspecialchars($u['agencia'] ?? 'Agencia Grupo Huerta'); ?></td>
                                 <td>
                                     <!-- Formulario inline para cambio de Rol -->
                                     <form method="POST" class="d-inline-flex align-items-center gap-1">
@@ -385,7 +387,7 @@ if ($pdo) {
 </div>
 
 <!-- =================================================== -->
-<!-- MODAL: CREAR / EDITAR USUARIO DE DIVOL LA VILLA     -->
+<!-- MODAL: CREAR / EDITAR USUARIO                       -->
 <!-- =================================================== -->
 <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -395,13 +397,13 @@ if ($pdo) {
                 <input type="hidden" name="user_id" id="form_user_id" value="0">
 
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="modalUsuarioLabel"><i class="bi bi-person-plus text-primary me-2"></i> Crear Usuario en Divol La Villa</h5>
+                    <h5 class="modal-title fw-bold" id="modalUsuarioLabel"><i class="bi bi-person-plus text-primary me-2"></i> Crear Nuevo Usuario</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-secondary">Nombre de Usuario (Para Iniciar Sesión)</label>
-                        <input type="text" name="usuario" id="form_usuario" class="form-control" placeholder="ej. tilavilla, jperez" required>
+                        <input type="text" name="usuario" id="form_usuario" class="form-control" placeholder="ej. admin, sistemas, jperez" required>
                     </div>
 
                     <div class="mb-3">
@@ -411,7 +413,12 @@ if ($pdo) {
 
                     <div class="mb-3">
                         <label class="form-label small fw-bold text-secondary">Correo Electrónico Corporativo</label>
-                        <input type="email" name="email" id="form_email" class="form-control" placeholder="ej. sistemas@divolavilla.com" required>
+                        <input type="email" name="email" id="form_email" class="form-control" placeholder="ej. sistemas@grupohuerta.mx" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Nombre de la Agencia / Sucursal</label>
+                        <input type="text" name="agencia" id="form_agencia" class="form-control" placeholder="ej. Agencia Grupo Huerta" value="Agencia Grupo Huerta">
                     </div>
 
                     <div class="mb-3">
@@ -424,7 +431,7 @@ if ($pdo) {
                         <label class="form-label small fw-bold text-secondary">Selecciona el Rol de Usuario</label>
                         <select name="rol" id="form_rol" class="form-select border-primary fw-semibold">
                             <option value="Usuario">👤 Usuario (Acceso limitado por módulo)</option>
-                            <option value="Admin">🛡️ Admin (Acceso total a Divol La Villa)</option>
+                            <option value="Admin">🛡️ Admin (Acceso total a la agencia)</option>
                             <option value="SuperAdmin">👑 SuperAdmin (Administrador Central)</option>
                         </select>
                     </div>
@@ -507,12 +514,13 @@ if ($pdo) {
     const permisosMapGlobal = <?php echo json_encode($permisosMap); ?>;
 
     function abrirModalNuevoUsuario() {
-        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-person-plus text-primary me-2"></i> Crear Usuario en Divol La Villa';
+        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-person-plus text-primary me-2"></i> Crear Nuevo Usuario';
         document.getElementById('form_user_id').value = '0';
         document.getElementById('form_usuario').value = '';
         document.getElementById('form_nombre').value = '';
         document.getElementById('form_email').value = '';
         document.getElementById('form_password').value = '';
+        document.getElementById('form_agencia').value = 'Agencia Grupo Huerta';
         document.getElementById('form_rol').value = 'Usuario';
         document.getElementById('form_activo').checked = true;
         document.getElementById('pass_help').textContent = 'Requerida al registrar un nuevo usuario.';
@@ -522,11 +530,12 @@ if ($pdo) {
     }
 
     function abrirModalEditarUsuario(u) {
-        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Usuario - Divol La Villa';
+        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Usuario';
         document.getElementById('form_user_id').value = u.id;
         document.getElementById('form_usuario').value = u.usuario;
         document.getElementById('form_nombre').value = u.nombre;
         document.getElementById('form_email').value = u.email;
+        document.getElementById('form_agencia').value = u.agencia || 'Agencia Grupo Huerta';
         document.getElementById('form_password').value = '';
         document.getElementById('form_rol').value = u.rol;
         document.getElementById('form_activo').checked = (parseInt(u.activo) === 1);
