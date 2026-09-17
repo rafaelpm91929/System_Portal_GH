@@ -95,14 +95,23 @@ def generar_y_enviar_reporte():
             "ultimasOrdenes": ultimas_ordenes
         }
 
-        print(f"[HTTPS] Enviando reporte seguro a cPanel...")
-        headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
-        response = requests.post(CPANEL_URL, data=json.dumps(payload, default=default_converter), headers=headers, timeout=15, verify=False)
+        endpoints = [
+            "http://portal.divolavilla.com/recibir_reporte.php",
+            "https://portal.grupohuerta.mx/recibir_reporte.php"
+        ]
 
-        if response.status_code == 200:
-            print("[EXITO] Reporte enviado con exito a cPanel:", response.text)
-        else:
-            print(f"[ERROR] Respuesta de cPanel (HTTP {response.status_code}):", response.text)
+        print(f"[HTTPS] Enviando reporte real a cPanel Divolavilla y Portal Maestro...")
+        headers = {'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0'}
+        
+        for url in endpoints:
+            try:
+                response = requests.post(url, data=json.dumps(payload, default=default_converter), headers=headers, timeout=15, verify=False)
+                if response.status_code == 200:
+                    print(f"[ÉXITO] Reporte sincronizado con {url}: {response.text}")
+                else:
+                    print(f"[AVISO] Respuesta de {url} (HTTP {response.status_code}): {response.text}")
+            except Exception as ex_url:
+                print(f"[AVISO] No se pudo enviar a {url}: {ex_url}")
 
     except Exception as e:
         print("[ERROR] Error ejecutando la extraccion y envio:", str(e))
