@@ -17,14 +17,19 @@ if (!in_array($rolActual, ['superadmin', 'admin'])) {
 $mensaje = '';
 $error = '';
 
+// Auto-asegurar existencia de las tablas en MySQL para la agencia Divol La Villa
+if ($pdo) {
+    asegurarTablasPermisos($pdo);
+}
+
 // ----------------------------------------------------
-// PROCESAMIENTO DE ACCIONES (POST)
+// PROCESAMIENTO DE FORMULARIOS (POST) - DIVOL LA VILLA
 // ----------------------------------------------------
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     $accion = $_POST['accion'] ?? '';
 
-    // 1. GUARDAR / CREAR / EDITAR USUARIO
+    // 1. GUARDAR / CREAR / EDITAR USUARIOS Y ASIGNAR ROLES
     if ($accion === 'guardar_usuario') {
         $id = intval($_POST['user_id'] ?? 0);
         $usuario = trim($_POST['usuario'] ?? '');
@@ -32,15 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $email = trim($_POST['email'] ?? '');
         $password = trim($_POST['password'] ?? '');
         $rol = $_POST['rol'] ?? 'Usuario';
-        $agencia = $_POST['agencia'] ?? 'VW Divol La Villa';
+        $agencia = 'VW Divol La Villa';
         $activo = isset($_POST['activo']) ? 1 : 0;
 
         if (empty($usuario) || empty($nombre) || empty($email)) {
-            $error = "Por favor completa los campos obligatorios (Usuario, Nombre, Email).";
+            $error = "Por favor completa los campos obligatorios: Usuario, Nombre y Correo.";
         } else {
             try {
                 if ($id > 0) {
-                    // Actualizar Usuario existente
+                    // Actualizar usuario existente en Divol La Villa
                     if (!empty($password)) {
                         $hash = password_hash($password, PASSWORD_DEFAULT);
                         $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=? WHERE id=?");
@@ -49,36 +54,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, rol=?, agencia=?, activo=? WHERE id=?");
                         $stmt->execute([$usuario, $nombre, $email, $rol, $agencia, $activo, $id]);
                     }
-                    $mensaje = "Usuario <strong>".htmlspecialchars($usuario)."</strong> actualizado con éxito.";
+                    $mensaje = "Usuario <strong>".htmlspecialchars($nombre)."</strong> ($usuario) actualizado correctamente con rol <strong>$rol</strong>.";
+                    $nuevo_user_id = $id;
                 } else {
-                    // Crear nuevo Usuario
+                    // Crear nuevo usuario en Divol La Villa
                     if (empty($password)) {
-                        $error = "La contraseña es obligatoria para un usuario nuevo.";
+                        $error = "La contraseña es obligatoria para registrar un nuevo usuario.";
                     } else {
                         $hash = password_hash($password, PASSWORD_DEFAULT);
                         $stmt = $pdo->prepare("INSERT INTO usuarios (usuario, nombre, email, password, rol, agencia, activo) VALUES (?, ?, ?, ?, ?, ?, ?)");
                         $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo]);
-                        $mensaje = "Nuevo usuario <strong>".htmlspecialchars($usuario)."</strong> creado correctamente.";
+                        $nuevo_user_id = $pdo->lastInsertId();
+                        $mensaje = "¡Usuario <strong>".htmlspecialchars($nombre)."</strong> ($usuario) registrado exitosamente con rol <strong>$rol</strong>!";
                     }
                 }
+
+                // Asignación automática de permisos por defecto según el rol seleccionado
+                if (isset($nuevo_user_id) && $nuevo_user_id > 0) {
+                    $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
+                    $modulos = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
+
+                    $stmtPerm = $pdo->prepare("
+                        INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ON DUPLICATE KEY UPDATE puede_ver=VALUES(puede_ver), puede_crear=VALUES(puede_crear), puede_editar=VALUES(puede_editar), puede_exportar=VALUES(puede_exportar)
+                    ");
+
+                    foreach ($modulos as $modClave) {
+                        if (in_array(strtolower($rol), ['superadmin', 'admin'])) {
+                            // Admins tienen permisos totales habilitados por defecto
+                            $stmtPerm->execute([$nuevo_user_id, $modClave, 1, 1, 1, 1, 1]);
+                        } else {
+                            // Rol Usuario: Acceso a consulta de Órdenes e Inventario de Equipos
+                            $puedeVer = in_array($modClave, ['ordenes_servicio', 'equipos']) ? 1 : 0;
+                            $stmtPerm->execute([$nuevo_user_id, $modClave, $puedeVer, 0, 0, 0, 0]);
+                        }
+                    }
+                }
+
             } catch (PDOException $e) {
                 if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
-                    $error = "El nombre de usuario o correo ya existe en el sistema.";
+                    $error = "El usuario o correo electrónico ya se encuentra registrado en Divol La Villa.";
                 } else {
-                    $error = "Error al guardar usuario: " . $e->getMessage();
+                    $error = "Error al guardar el usuario: " . $e->getMessage();
                 }
             }
         }
     }
 
-    // 2. GUARDAR MATRIZ DE PERMISOS GRANULARES
+    // 2. ACTUALIZAR ROLES RÁPIDAMENTE
+    elseif ($accion === 'cambiar_rol') {
+        $user_id = intval($_POST['user_id'] ?? 0);
+        $nuevo_rol = $_POST['nuevo_rol'] ?? 'Usuario';
+
+        if ($user_id > 0) {
+            $stmt = $pdo->prepare("UPDATE usuarios SET rol = ? WHERE id = ?");
+            $stmt->execute([$nuevo_rol, $user_id]);
+            $mensaje = "Rol del usuario actualizado a <strong>$nuevo_rol</strong>.";
+        }
+    }
+
+    // 3. CAMBIAR ESTATUS (ACTIVAR / DESACTIVAR)
+    elseif ($accion === 'toggle_status') {
+        $user_id = intval($_POST['user_id'] ?? 0);
+        $nuevo_estatus = intval($_POST['nuevo_estatus'] ?? 1);
+        if ($user_id > 0) {
+            $stmt = $pdo->prepare("UPDATE usuarios SET activo = ? WHERE id = ?");
+            $stmt->execute([$nuevo_estatus, $user_id]);
+            $mensaje = "Estatus de usuario modificado correctamente.";
+        }
+    }
+
+    // 4. GUARDAR PERMISOS POR MÓDULO (SI REQUIERE AJUSTES DETALLADOS)
     elseif ($accion === 'guardar_permisos') {
         $target_user_id = intval($_POST['target_user_id'] ?? 0);
-        $permisos_posted = $_POST['permisos'] ?? []; // Array [modulo_clave => [puede_ver, puede_crear...]]
+        $permisos_posted = $_POST['permisos'] ?? [];
 
         if ($target_user_id > 0) {
             try {
-                // Obtener todos los módulos activos del catálogo
                 $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
                 $modulosCatalog = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
 
@@ -103,52 +156,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $stmtSave->execute([$target_user_id, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
                 }
 
-                $mensaje = "Matriz de permisos granulares actualizada correctamente.";
+                $mensaje = "Permisos por módulo guardados correctamente.";
             } catch (PDOException $e) {
-                $error = "Error al actualizar la matriz de permisos: " . $e->getMessage();
+                $error = "Error al actualizar los permisos: " . $e->getMessage();
             }
-        }
-    }
-
-    // 3. CAMBIAR ESTATUS (ACTIVAR/DESACTIVAR)
-    elseif ($accion === 'toggle_status') {
-        $user_id = intval($_POST['user_id'] ?? 0);
-        $nuevo_estatus = intval($_POST['nuevo_estatus'] ?? 1);
-        if ($user_id > 0) {
-            $stmt = $pdo->prepare("UPDATE usuarios SET activo = ? WHERE id = ?");
-            $stmt->execute([$nuevo_estatus, $user_id]);
-            $mensaje = "Estatus del usuario modificado correctamente.";
         }
     }
 }
 
 // ----------------------------------------------------
-// CONSULTA DE DATOS PARA LA VISTA
+// CONSULTA DE USUARIOS Y MÓDULOS DE DIVOL LA VILLA
 // ----------------------------------------------------
 
 $usuarios = [];
 $modulosCat = [];
-$permisosMap = []; // [user_id][modulo_clave] => array(...)
+$permisosMap = [];
 
 if ($pdo) {
-    asegurarTablasPermisos($pdo);
     try {
-        // Obtener usuarios
         $stmtU = $pdo->query("SELECT * FROM usuarios ORDER BY id DESC");
         $usuarios = $stmtU->fetchAll(PDO::FETCH_ASSOC);
 
-        // Obtener catálogo de módulos
         $stmtM = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
         $modulosCat = $stmtM->fetchAll(PDO::FETCH_ASSOC);
 
-        // Obtener permisos existentes
         $stmtP = $pdo->query("SELECT * FROM usuario_permisos");
         $allPerms = $stmtP->fetchAll(PDO::FETCH_ASSOC);
         foreach ($allPerms as $pm) {
             $permisosMap[$pm['usuario_id']][$pm['modulo_clave']] = $pm;
         }
     } catch (PDOException $e) {
-        $error = "Error consultando datos: " . $e->getMessage();
+        $error = "Error al consultar los usuarios de Divol La Villa: " . $e->getMessage();
     }
 }
 ?>
@@ -157,7 +195,7 @@ if ($pdo) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Usuarios y Permisos - Systems Portal</title>
+    <title>Usuarios y Roles - VW Divol La Villa</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -227,18 +265,18 @@ if ($pdo) {
 <div class="top-navbar d-flex justify-content-between align-items-center mb-4">
     <div class="d-flex align-items-center gap-3">
         <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
-            <i class="bi bi-arrow-left me-1"></i> Volver al Menú
+            <i class="bi bi-arrow-left me-1"></i> Volver al Menú Principal
         </a>
-        <span class="fw-bold fs-5">PORTAL SISTEMAS <span class="text-primary">| Gestión de Usuarios y Permisos</span></span>
+        <span class="fw-bold fs-5">DIVOL LA VILLA <span class="text-primary">| Control de Usuarios y Roles</span></span>
     </div>
     <div>
-        <span class="badge bg-primary p-2 fs-6"><i class="bi bi-shield-lock me-1"></i> Control RBAC Dinámico</span>
+        <span class="badge bg-primary p-2 fs-6"><i class="bi bi-shield-check me-1"></i> VW Divol La Villa</span>
     </div>
 </div>
 
 <div class="container-fluid px-4">
 
-    <!-- Mensajes de Alerta -->
+    <!-- Mensajes de Notificación -->
     <?php if ($mensaje): ?>
         <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4" role="alert">
             <i class="bi bi-check-circle-fill me-2"></i> <?php echo $mensaje; ?>
@@ -257,78 +295,81 @@ if ($pdo) {
     <div class="card-custom mb-4">
         <div class="d-flex justify-content-between align-items-center">
             <div>
-                <h4 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i> Usuarios del Sistema</h4>
-                <p class="text-secondary small mb-0">Crea nuevos usuarios y asigna permisos dinámicos por módulo y tipo de acción (Ver, Crear, Editar, Eliminar, Exportar).</p>
+                <h4 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i> Usuarios de Divol La Villa</h4>
+                <p class="text-secondary small mb-0">Crea usuarios para la agencia y asigna su rol de acceso (SuperAdmin, Admin o Usuario).</p>
             </div>
             <button type="button" class="btn btn-primary rounded-3 px-4 fw-semibold" onclick="abrirModalNuevoUsuario()">
-                <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
+                <i class="bi bi-person-plus-fill me-2"></i> Crear Nuevo Usuario
             </button>
         </div>
     </div>
 
-    <!-- Tabla de Usuarios -->
+    <!-- Tabla de Usuarios Registrados -->
     <div class="card-custom">
         <div class="table-responsive">
             <table class="table table-custom table-hover mb-0">
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>Usuario</th>
+                        <th>Usuario (Login)</th>
                         <th>Nombre Completo</th>
                         <th>Correo Electrónico</th>
-                        <th>Rol</th>
+                        <th>Rol Asignado</th>
                         <th>Estatus</th>
-                        <th class="text-end">Acciones / Permisos Granulares</th>
+                        <th class="text-end">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($usuarios)): ?>
                         <tr>
                             <td colspan="7" class="text-center py-4 text-secondary">
-                                <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No se encontraron usuarios en la base de datos. Usa el botón 'Nuevo Usuario' para registrar el primero.
+                                <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No hay usuarios registrados aún. Haz clic en 'Crear Nuevo Usuario' para registrar el primero.
                             </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usuarios as $u): ?>
                             <tr>
                                 <td class="fw-bold text-secondary">#<?php echo $u['id']; ?></td>
-                                <td><span class="badge bg-dark border text-light font-monospace fs-6"><?php echo htmlspecialchars($u['usuario']); ?></span></td>
-                                <td class="fw-semibold"><?php echo htmlspecialchars($u['nombre']); ?></td>
+                                <td><span class="badge bg-dark border text-info font-monospace fs-6 px-3 py-2"><?php echo htmlspecialchars($u['usuario']); ?></span></td>
+                                <td class="fw-semibold text-white"><?php echo htmlspecialchars($u['nombre']); ?></td>
                                 <td class="text-secondary"><?php echo htmlspecialchars($u['email']); ?></td>
                                 <td>
-                                    <?php if ($u['rol'] === 'SuperAdmin'): ?>
-                                        <span class="badge bg-danger rounded-pill px-3">SuperAdmin</span>
-                                    <?php elseif ($u['rol'] === 'Admin'): ?>
-                                        <span class="badge bg-primary rounded-pill px-3">Admin</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-secondary rounded-pill px-3">Usuario</span>
-                                    <?php endif; ?>
+                                    <!-- Formulario inline para cambio de Rol -->
+                                    <form method="POST" class="d-inline-flex align-items-center gap-1">
+                                        <input type="hidden" name="accion" value="cambiar_rol">
+                                        <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+                                        <select name="nuevo_rol" class="form-select form-select-sm bg-dark text-white border-secondary rounded-2" onchange="this.form.submit()" style="width: 140px;">
+                                            <option value="Usuario" <?php echo ($u['rol'] === 'Usuario') ? 'selected' : ''; ?>>👤 Usuario</option>
+                                            <option value="Admin" <?php echo ($u['rol'] === 'Admin') ? 'selected' : ''; ?>>🛡️ Admin</option>
+                                            <option value="SuperAdmin" <?php echo ($u['rol'] === 'SuperAdmin') ? 'selected' : ''; ?>>👑 SuperAdmin</option>
+                                        </select>
+                                    </form>
                                 </td>
                                 <td>
                                     <?php if ($u['activo']): ?>
-                                        <span class="badge bg-success bg-opacity-25 text-success border border-success rounded-pill px-3"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> Activo</span>
+                                        <span class="badge bg-success bg-opacity-25 text-success border border-success rounded-pill px-3 py-2"><i class="bi bi-circle-fill me-1" style="font-size: 0.45rem;"></i> Activo</span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary rounded-pill px-3"><i class="bi bi-x-circle me-1"></i> Inactivo</span>
+                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary rounded-pill px-3 py-2"><i class="bi bi-x-circle me-1"></i> Inactivo</span>
                                     <?php endif; ?>
                                 </td>
                                 <td class="text-end">
                                     <div class="btn-group">
-                                        <!-- Configurar Permisos Granulares -->
-                                        <button type="button" class="btn btn-sm btn-outline-info rounded-2 me-1" onclick='abrirModalPermisos(<?php echo json_encode($u); ?>)' title="Configurar Permisos por Módulo">
+                                        <!-- Configurar Permisos Detallados -->
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-2 me-1" onclick='abrirModalPermisos(<?php echo json_encode($u); ?>)' title="Ver/Ajustar Permisos de Módulos">
                                             <i class="bi bi-shield-lock-fill me-1"></i> Permisos
                                         </button>
 
-                                        <!-- Editar Datos -->
-                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2 me-1" onclick='abrirModalEditarUsuario(<?php echo json_encode($u); ?>)' title="Editar datos del usuario">
-                                            <i class="bi bi-pencil-square"></i>
+                                        <!-- Editar Datos / Clave -->
+                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2 me-1" onclick='abrirModalEditarUsuario(<?php echo json_encode($u); ?>)' title="Editar nombre, correo o contraseña">
+                                            <i class="bi bi-pencil-square me-1"></i> Editar
                                         </button>
 
-                                        <!-- Alternar Estatus -->
+                                        <!-- Alternar Activo / Inactivo -->
                                         <form method="POST" class="d-inline" onsubmit="return confirm('¿Deseas cambiar el estatus de este usuario?');">
                                             <input type="hidden" name="accion" value="toggle_status">
                                             <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                             <input type="hidden" name="nuevo_estatus" value="<?php echo $u['activo'] ? 0 : 1; ?>">
-                                            <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2" title="<?php echo $u['activo'] ? 'Desactivar' : 'Activar'; ?>">
+                                            <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2" title="<?php echo $u['activo'] ? 'Desactivar Usuario' : 'Activar Usuario'; ?>">
                                                 <i class="bi <?php echo $u['activo'] ? 'bi-person-x-fill' : 'bi-person-check-fill'; ?>"></i>
                                             </button>
                                         </form>
@@ -344,7 +385,7 @@ if ($pdo) {
 </div>
 
 <!-- =================================================== -->
-<!-- MODAL: CREAR / EDITAR USUARIO                       -->
+<!-- MODAL: CREAR / EDITAR USUARIO DE DIVOL LA VILLA     -->
 <!-- =================================================== -->
 <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -354,49 +395,43 @@ if ($pdo) {
                 <input type="hidden" name="user_id" id="form_user_id" value="0">
 
                 <div class="modal-header">
-                    <h5 class="modal-title fw-bold" id="modalUsuarioLabel"><i class="bi bi-person-plus text-primary me-2"></i> Nuevo Usuario</h5>
+                    <h5 class="modal-title fw-bold" id="modalUsuarioLabel"><i class="bi bi-person-plus text-primary me-2"></i> Crear Usuario en Divol La Villa</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-secondary">Nombre de Usuario (Login)</label>
-                        <input type="text" name="usuario" id="form_usuario" class="form-control" placeholder="ej. tilavilla" required>
+                        <label class="form-label small fw-bold text-secondary">Nombre de Usuario (Para Iniciar Sesión)</label>
+                        <input type="text" name="usuario" id="form_usuario" class="form-control" placeholder="ej. tilavilla, jperez" required>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-secondary">Nombre Completo</label>
+                        <label class="form-label small fw-bold text-secondary">Nombre Completo del Usuario</label>
                         <input type="text" name="nombre" id="form_nombre" class="form-control" placeholder="ej. Juan Pérez" required>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-secondary">Correo Electrónico</label>
+                        <label class="form-label small fw-bold text-secondary">Correo Electrónico Corporativo</label>
                         <input type="email" name="email" id="form_email" class="form-control" placeholder="ej. sistemas@divolavilla.com" required>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label small fw-bold text-secondary">Contraseña</label>
-                        <input type="password" name="password" id="form_password" class="form-control" placeholder="Dejar en blanco si no deseas cambiarla">
-                        <small class="text-muted fs-7" id="pass_help">Requerida al crear un usuario nuevo.</small>
+                        <label class="form-label small fw-bold text-secondary">Contraseña de Acceso</label>
+                        <input type="password" name="password" id="form_password" class="form-control" placeholder="Asigna una contraseña segura">
+                        <small class="text-muted fs-7" id="pass_help">Requerida al registrar un nuevo usuario.</small>
                     </div>
 
-                    <div class="row g-2 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Rol del Sistema</label>
-                            <select name="rol" id="form_rol" class="form-select">
-                                <option value="Usuario">Usuario (Limitado por Permisos)</option>
-                                <option value="Admin">Admin (Acceso Total)</option>
-                                <option value="SuperAdmin">SuperAdmin (Grupo Huerta)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Agencia</label>
-                            <input type="text" name="agencia" id="form_agencia" class="form-control" value="VW Divol La Villa">
-                        </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Selecciona el Rol de Usuario</label>
+                        <select name="rol" id="form_rol" class="form-select border-primary fw-semibold">
+                            <option value="Usuario">👤 Usuario (Acceso limitado por módulo)</option>
+                            <option value="Admin">🛡️ Admin (Acceso total a Divol La Villa)</option>
+                            <option value="SuperAdmin">👑 SuperAdmin (Administrador Central)</option>
+                        </select>
                     </div>
 
-                    <div class="form-check form-switch mt-2">
+                    <div class="form-check form-switch mt-3">
                         <input class="form-check-input" type="checkbox" name="activo" id="form_activo" value="1" checked>
-                        <label class="form-check-label text-light" for="form_activo">Usuario Activo</label>
+                        <label class="form-check-label text-light" for="form_activo">Usuario Activo (Permite iniciar sesión)</label>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -409,7 +444,7 @@ if ($pdo) {
 </div>
 
 <!-- =================================================== -->
-<!-- MODAL: MATRIZ DE PERMISOS GRANULARES POR MÓDULO     -->
+<!-- MODAL: PERMISOS DETALLADOS POR MÓDULO               -->
 <!-- =================================================== -->
 <div class="modal fade" id="modalPermisos" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -420,26 +455,22 @@ if ($pdo) {
 
                 <div class="modal-header">
                     <div>
-                        <h5 class="modal-title fw-bold text-info mb-0"><i class="bi bi-shield-lock-fill me-2"></i> Permisos Granulares por Módulo</h5>
+                        <h5 class="modal-title fw-bold text-info mb-0"><i class="bi bi-shield-lock-fill me-2"></i> Permisos de Módulos</h5>
                         <small class="text-secondary">Usuario: <strong class="text-white" id="perm_target_username">---</strong></small>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="alert alert-info border-0 rounded-3 mb-3 py-2 text-dark">
-                        <i class="bi bi-info-circle-fill me-2"></i> Marca las acciones permitidas para este usuario en cada módulo. Si se registra un módulo nuevo a futuro, aparecerá automáticamente en esta tabla.
-                    </div>
-
                     <div class="table-responsive">
                         <table class="table table-custom table-bordered align-middle">
                             <thead>
                                 <tr class="text-center">
-                                    <th class="text-start">Módulo Corporativo</th>
-                                    <th><i class="bi bi-eye text-info d-block"></i> Ver / Ingresar</th>
-                                    <th><i class="bi bi-plus-square text-success d-block"></i> Crear</th>
-                                    <th><i class="bi bi-pencil-square text-warning d-block"></i> Editar</th>
-                                    <th><i class="bi bi-trash text-danger d-block"></i> Eliminar</th>
-                                    <th><i class="bi bi-file-earmark-excel text-primary d-block"></i> Exportar</th>
+                                    <th class="text-start">Módulo</th>
+                                    <th>Ver / Ingresar</th>
+                                    <th>Crear</th>
+                                    <th>Editar</th>
+                                    <th>Eliminar</th>
+                                    <th>Exportar</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -448,10 +479,7 @@ if ($pdo) {
                                         <td>
                                             <div class="d-flex align-items-center gap-2">
                                                 <i class="bi <?php echo $mod['icono']; ?> text-primary fs-5"></i>
-                                                <div>
-                                                    <div class="fw-bold text-white"><?php echo htmlspecialchars($mod['nombre']); ?></div>
-                                                    <div class="small text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($mod['descripcion']); ?></div>
-                                                </div>
+                                                <div class="fw-bold text-white"><?php echo htmlspecialchars($mod['nombre']); ?></div>
                                             </div>
                                         </td>
                                         <td class="text-center"><input type="checkbox" class="form-check-input perm-checkbox perm-ver" name="permisos[<?php echo $mod['clave']; ?>][puede_ver]" value="1" data-mod="<?php echo $mod['clave']; ?>"></td>
@@ -479,32 +507,30 @@ if ($pdo) {
     const permisosMapGlobal = <?php echo json_encode($permisosMap); ?>;
 
     function abrirModalNuevoUsuario() {
-        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-person-plus text-primary me-2"></i> Nuevo Usuario';
+        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-person-plus text-primary me-2"></i> Crear Usuario en Divol La Villa';
         document.getElementById('form_user_id').value = '0';
         document.getElementById('form_usuario').value = '';
         document.getElementById('form_nombre').value = '';
         document.getElementById('form_email').value = '';
         document.getElementById('form_password').value = '';
         document.getElementById('form_rol').value = 'Usuario';
-        document.getElementById('form_agencia').value = 'VW Divol La Villa';
         document.getElementById('form_activo').checked = true;
-        document.getElementById('pass_help').textContent = 'Requerida al crear un usuario nuevo.';
+        document.getElementById('pass_help').textContent = 'Requerida al registrar un nuevo usuario.';
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();
     }
 
     function abrirModalEditarUsuario(u) {
-        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Usuario';
+        document.getElementById('modalUsuarioLabel').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Usuario - Divol La Villa';
         document.getElementById('form_user_id').value = u.id;
         document.getElementById('form_usuario').value = u.usuario;
         document.getElementById('form_nombre').value = u.nombre;
         document.getElementById('form_email').value = u.email;
         document.getElementById('form_password').value = '';
         document.getElementById('form_rol').value = u.rol;
-        document.getElementById('form_agencia').value = u.agencia || 'VW Divol La Villa';
         document.getElementById('form_activo').checked = (parseInt(u.activo) === 1);
-        document.getElementById('pass_help').textContent = 'Dejar en blanco si deseas mantener la clave actual.';
+        document.getElementById('pass_help').textContent = 'Dejar en blanco para mantener la contraseña actual.';
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();
@@ -512,17 +538,14 @@ if ($pdo) {
 
     function abrirModalPermisos(u) {
         document.getElementById('perm_target_user_id').value = u.id;
-        document.getElementById('perm_target_username').textContent = u.nombre + ' (' + u.usuario + ')';
+        document.getElementById('perm_target_username').textContent = u.nombre + ' (' + u.usuario + ') - Rol: ' + u.rol;
 
-        // Resetear todos los checkboxes
         const checkboxes = document.querySelectorAll('.perm-checkbox');
         checkboxes.forEach(cb => cb.checked = false);
 
-        // Si es Admin o SuperAdmin, marcar todos por cortesía visual
         if (u.rol === 'SuperAdmin' || u.rol === 'Admin') {
             checkboxes.forEach(cb => cb.checked = true);
         } else {
-            // Cargar permisos específicos del objeto JS
             const uPerms = permisosMapGlobal[u.id] || {};
             for (const moduloClave in uPerms) {
                 const pm = uPerms[moduloClave];
