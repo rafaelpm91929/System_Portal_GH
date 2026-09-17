@@ -87,7 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header("Location: menu.php");
                 exit();
             } else {
-                $error = "No hay conexión a la base de datos MySQL en cPanel y las credenciales de emergencia no coinciden.";
+                $msgDetalle = isset($GLOBALS['conexion_error']) ? $GLOBALS['conexion_error'] : (isset($conexion_error) ? $conexion_error : 'Detalle no disponible');
+                $error = "No hay conexión a la base de datos MySQL en cPanel. <br><small class='text-warning'>Detalle técnico: " . htmlspecialchars($msgDetalle) . "</small>";
             }
         }
     } else {
