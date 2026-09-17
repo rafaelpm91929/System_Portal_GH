@@ -131,6 +131,7 @@ $modulosCat = [];
 $permisosMap = []; // [user_id][modulo_clave] => array(...)
 
 if ($pdo) {
+    asegurarTablasPermisos($pdo);
     try {
         // Obtener usuarios
         $stmtU = $pdo->query("SELECT * FROM usuarios ORDER BY id DESC");
