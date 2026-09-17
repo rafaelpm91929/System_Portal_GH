@@ -80,7 +80,12 @@ function asegurarTablasEquipos($pdo) {
         $sqlPath = __DIR__ . '/database/schema_equipos.sql';
         if (file_exists($sqlPath)) {
             $sql = file_get_contents($sqlPath);
-            $pdo->exec($sql);
+            $queries = array_filter(array_map('trim', explode(';', $sql)));
+            foreach ($queries as $q) {
+                if (!empty($q)) {
+                    $pdo->exec($q);
+                }
+            }
         }
     } catch (Throwable $e) {
         // Fallback silencioso
