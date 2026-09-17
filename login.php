@@ -2,13 +2,14 @@
 if (session_status() === PHP_SESSION_NONE) {
     @session_start();
 }
+
 if (file_exists('conexion.php')) {
     include_once 'conexion.php';
 } else {
     $pdo = null;
 }
 
-// Si el usuario ya está autenticado, redirigir al menú maestro
+// Si el usuario ya está autenticado, redirigir al menú
 if (isset($_SESSION['usuario_id'])) {
     header("Location: menu.php");
     exit();
@@ -22,42 +23,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!empty($user_input) && !empty($password_input)) {
         if ($pdo) {
-            $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (usuario = :user OR email = :user) AND activo = 1 LIMIT 1");
-            $stmt->execute(['user' => $user_input]);
-            $user = $stmt->fetch();
+            try {
+                // 1. Buscar usuario por login o email (sin filtrar activo aún para dar mensaje exacto)
+                $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (LOWER(usuario) = LOWER(:user) OR LOWER(email) = LOWER(:user)) LIMIT 1");
+                $stmt->execute(['user' => $user_input]);
+                $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            if ($user && password_verify($password_input, $user['password'])) {
-                $_SESSION['usuario_id'] = $user['id'];
-                $_SESSION['usuario_nombre'] = $user['nombre'];
-                $_SESSION['usuario_rol'] = $user['rol'];
-                $_SESSION['agencia'] = $user['agencia'];
+                if ($user) {
+                    // Verificar si el usuario está activo
+                    $estaActivo = isset($user['activo']) ? intval($user['activo']) : 1;
+                    if ($estaActivo !== 1) {
+                        $error = "Tu cuenta se encuentra inactiva. Por favor contacta al administrador.";
+                    } else {
+                        // 2. Verificar contraseña (soporta hash password_verify Y texto plano legacy)
+                        $passwordValida = false;
 
-                if (file_exists('permisos_helper.php')) {
-                    require_once 'permisos_helper.php';
-                    cargarPermisosSesion($pdo, $user['id']);
+                        if (password_verify($password_input, $user['password'])) {
+                            $passwordValida = true;
+                        } elseif ($user['password'] === $password_input) {
+                            // Si la contraseña estaba en texto plano en la BD, aceptarla y actualizarla a Hash seguro
+                            $passwordValida = true;
+                            try {
+                                $newHash = password_hash($password_input, PASSWORD_DEFAULT);
+                                $updateStmt = $pdo->prepare("UPDATE usuarios SET password = ? WHERE id = ?");
+                                $updateStmt->execute([$newHash, $user['id']]);
+                            } catch (Throwable $e) {
+                                // Ignorar si no se pudo actualizar el hash
+                            }
+                        }
+
+                        if ($passwordValida) {
+                            $_SESSION['usuario_id'] = $user['id'];
+                            $_SESSION['usuario_nombre'] = $user['nombre'];
+                            $_SESSION['usuario_rol'] = $user['rol'] ?? 'Usuario';
+                            $_SESSION['agencia'] = $user['agencia'] ?? 'VW Divol La Villa';
+
+                            // Cargar permisos en la sesión
+                            if (file_exists('permisos_helper.php')) {
+                                require_once 'permisos_helper.php';
+                                cargarPermisosSesion($pdo, $user['id']);
+                            }
+
+                            header("Location: menu.php");
+                            exit();
+                        } else {
+                            $error = "La contraseña ingresada es incorrecta.";
+                        }
+                    }
+                } else {
+                    $error = "El usuario <strong>".htmlspecialchars($user_input)."</strong> no existe en el sistema.";
                 }
-
-                header("Location: menu.php");
-                exit();
-            } else {
-                $error = "Usuario o contraseña incorrectos.";
+            } catch (PDOException $e) {
+                $error = "Error al verificar credenciales en la base de datos: " . $e->getMessage();
             }
         } else {
-            // Fallback para pruebas iniciales si la BD de cPanel no se ha creado aún
+            // Fallback de emergencia solo si no hay conexión a la BD MySQL
             if (($user_input === 'tilavilla' || $user_input === 'admin') && $password_input === 'Admin123!') {
                 $_SESSION['usuario_id'] = 1;
-                $_SESSION['usuario_nombre'] = 'Administrador La Villa';
-                $_SESSION['usuario_rol'] = 'Admin';
+                $_SESSION['usuario_nombre'] = 'Administrador Divol La Villa';
+                $_SESSION['usuario_rol'] = 'SuperAdmin';
                 $_SESSION['agencia'] = 'VW Divol La Villa';
 
                 header("Location: menu.php");
                 exit();
             } else {
-                $error = "Credenciales incorrectas (Prueba con usuario: tilavilla / clave: Admin123!).";
+                $error = "No hay conexión a la base de datos MySQL en cPanel y las credenciales de emergencia no coinciden.";
             }
         }
     } else {
-        $error = "Por favor completa todos los campos.";
+        $error = "Por favor ingresa tu usuario y contraseña.";
     }
 }
 ?>
@@ -66,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión - Portal de Sistemas Grupo Huerta</title>
+    <title>Iniciar Sesión - Portal de Sistemas VW Divol La Villa</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -84,205 +118,155 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         .login-wrapper {
             width: 100%;
-            max-width: 1050px;
+            max-width: 1000px;
             display: grid;
             grid-template-columns: 1.2fr 1fr;
             gap: 40px;
             align-items: center;
         }
         @media (max-width: 850px) {
-            .login-wrapper {
-                grid-template-columns: 1fr;
-            }
+            .login-wrapper { grid-template-columns: 1fr; }
         }
-        .hero-section {
-            padding: 20px;
-        }
+        .hero-section { padding: 20px; }
         .brand-subtitle {
             color: #64748b;
             font-size: 0.85rem;
             font-weight: 700;
             letter-spacing: 2px;
             text-transform: uppercase;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
         }
         .hero-title {
-            font-size: 2.8rem;
+            font-size: 2.5rem;
             font-weight: 800;
             line-height: 1.15;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
             background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
         .hero-desc {
             color: #94a3b8;
-            font-size: 1.05rem;
+            font-size: 1rem;
             line-height: 1.6;
-            margin-bottom: 30px;
-            max-width: 480px;
+            margin-bottom: 24px;
         }
-        .agency-tags {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        .agency-pill {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #cbd5e1;
+        .feature-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(37, 99, 235, 0.12);
+            border: 1px solid rgba(37, 99, 235, 0.3);
+            color: #60a5fa;
+            font-size: 0.8rem;
+            font-weight: 600;
             padding: 6px 14px;
             border-radius: 20px;
-            font-size: 0.82rem;
-            font-weight: 500;
         }
         .login-card {
-            background: #ffffff;
+            background: rgba(10, 25, 46, 0.85);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
-            padding: 40px 35px;
-            color: #1e293b;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-        }
-        .icon-badge {
-            width: 48px;
-            height: 48px;
-            background: #eff6ff;
-            color: #2563eb;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.4rem;
-            margin-bottom: 20px;
-        }
-        .card-brand {
-            font-size: 0.75rem;
-            font-weight: 700;
-            color: #64748b;
-            letter-spacing: 1.5px;
-            text-transform: uppercase;
-        }
-        .card-title {
-            font-size: 1.6rem;
-            font-weight: 800;
-            color: #0f172a;
-            margin-bottom: 4px;
-        }
-        .card-subtitle {
-            color: #64748b;
-            font-size: 0.9rem;
-            margin-bottom: 25px;
+            padding: 40px 32px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
         }
         .form-label {
+            color: #cbd5e1;
             font-size: 0.85rem;
             font-weight: 600;
-            color: #334155;
             margin-bottom: 6px;
         }
-        .form-control {
+        .form-control-custom {
+            background-color: #0f223d;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 10px;
+            color: #ffffff;
             padding: 12px 16px;
-            border: 1px solid #cbd5e1;
             font-size: 0.95rem;
             transition: all 0.2s;
         }
-        .form-control:focus {
-            border-color: #2563eb;
-            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
-        }
-        .btn-submit {
-            background: #2563eb;
+        .form-control-custom:focus {
+            background-color: #132a4b;
+            border-color: #3b82f6;
             color: #ffffff;
-            font-weight: 600;
-            padding: 12px;
-            border-radius: 10px;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15);
+        }
+        .form-control-custom::placeholder { color: #475569; }
+        .btn-submit {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
             border: none;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.95rem;
+            padding: 14px;
+            border-radius: 10px;
             width: 100%;
-            margin-top: 20px;
-            font-size: 1rem;
+            margin-top: 10px;
             transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
         }
         .btn-submit:hover {
-            background: #1d4ed8;
-        }
-        .footer-note {
-            text-align: center;
-            color: #94a3b8;
-            font-size: 0.78rem;
-            margin-top: 25px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
         }
     </style>
 </head>
 <body>
 
 <div class="login-wrapper">
-    <!-- Left Hero Section -->
-    <div class="hero-section">
+
+    <!-- Hero Informativo -->
+    <div class="hero-section d-none d-md-block">
         <div class="brand-subtitle">GRUPO HUERTA</div>
-        <h1 class="hero-title">Portal de Sistemas</h1>
+        <h1 class="hero-title">Portal de Sistemas<br>VW Divol La Villa</h1>
         <p class="hero-desc">
-            Inventario, evidencia y estado de cumplimiento de todas las agencias y sucursales, en un solo lugar.
+            Acceso seguro al sistema de gestión de la sucursal Divol La Villa. Gestiona usuarios, monitorea órdenes de servicio y supervisa el inventario de la agencia.
         </p>
-        <div class="agency-tags">
-            <span class="agency-pill">VW Divol La Villa</span>
-            <span class="agency-pill">Seat La Villa</span>
-            <span class="agency-pill">Cupra Garage La Villa</span>
+        <div class="feature-badge">
+            <i class="bi bi-shield-check"></i> Acceso Cifrado & Control de Roles
         </div>
     </div>
 
-    <!-- Right Form Card -->
+    <!-- Tarjeta de Login -->
     <div class="login-card">
-        <div class="icon-badge">
-            <i class="bi bi-lock"></i>
+        <div class="text-center mb-4">
+            <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-circle p-3 mb-2" style="width: 60px; height: 60px;">
+                <i class="bi bi-building fs-3"></i>
+            </div>
+            <h3 class="fw-bold mb-1">Iniciar Sesión</h3>
+            <p class="text-secondary small">Ingresa tus credenciales para acceder</p>
         </div>
-        <div class="card-brand">GRUPO HUERTA</div>
-        <h2 class="card-title">Iniciar sesión</h2>
-        <div class="card-subtitle">Accede al portal de sistemas</div>
 
         <?php if (!empty($error)): ?>
-            <div class="alert alert-danger py-2 px-3 small rounded-3 mb-3">
-                <i class="bi bi-exclamation-triangle-fill me-1"></i> <?php echo htmlspecialchars($error); ?>
+            <div class="alert alert-danger border-0 rounded-3 small mb-4 text-start" role="alert">
+                <i class="bi bi-exclamation-circle-fill me-2"></i> <?php echo $error; ?>
             </div>
         <?php endif; ?>
 
         <form method="POST" action="login.php">
             <div class="mb-3">
-                <label for="usuario" class="form-label">Usuario</label>
+                <label for="usuario" class="form-label">Usuario o Correo Electrónico</label>
                 <div class="input-group">
-                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-person"></i></span>
-                    <input type="text" class="form-control border-start-0 rounded-end-3" id="usuario" name="usuario" placeholder="Ej. tilavilla" value="<?php echo htmlspecialchars($_POST['usuario'] ?? ''); ?>" required>
+                    <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-person"></i></span>
+                    <input type="text" name="usuario" id="usuario" class="form-control form-control-custom" placeholder="ej. tilavilla" required autofocus>
                 </div>
             </div>
 
-            <div class="mb-3">
+            <div class="mb-4">
                 <label for="password" class="form-label">Contraseña</label>
                 <div class="input-group">
-                    <span class="input-group-text bg-white text-muted border-end-0 rounded-start-3"><i class="bi bi-key"></i></span>
-                    <input type="password" class="form-control border-start-0 rounded-end-3" id="password" name="password" placeholder="••••••••" required>
+                    <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-key"></i></span>
+                    <input type="password" name="password" id="password" class="form-control form-control-custom" placeholder="••••••••" required>
                 </div>
-            </div>
-
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div class="form-check">
-                    <input class="form-check-input" type="checkbox" id="remember" name="remember">
-                    <label class="form-check-label small text-muted" for="remember">Recordarme</label>
-                </div>
-                <a href="#" class="small text-decoration-none fw-semibold" style="color: #2563eb;">¿Olvidaste tu contraseña?</a>
             </div>
 
             <button type="submit" class="btn-submit">
-                Iniciar sesión <i class="bi bi-arrow-right"></i>
+                <i class="bi bi-box-arrow-in-right me-2"></i> Ingresar al Sistema
             </button>
-
-            <div class="footer-note">
-                Acceso exclusivo para personal autorizado de Grupo Huerta
-            </div>
         </form>
     </div>
+
 </div>
 
 </body>
