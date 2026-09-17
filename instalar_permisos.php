@@ -74,14 +74,24 @@ try {
     $pdo->exec($sqlSembrado);
     echo "<p>✅ Módulos iniciales sembrados en la base de datos.</p>";
 
-    // 5. Asegurar usuario Admin por defecto
+    // 5. Asegurar usuarios Admin por defecto
     $passAdmin = password_hash('Admin123!', PASSWORD_DEFAULT);
-    $sqlUserAdmin = "
-    INSERT INTO `usuarios` (`usuario`, `nombre`, `email`, `password`, `agencia`, `rol`)
-    VALUES ('admin', 'Administrador Grupo Huerta', 'admin@divolavilla.com', '$passAdmin', 'VW Divol La Villa', 'SuperAdmin')
-    ON DUPLICATE KEY UPDATE `id`=`id`;";
-    $pdo->exec($sqlUserAdmin);
-    echo "<p>✅ Usuario principal <code>admin</code> verificado.</p>";
+    $adminsList = [
+        ['admin', 'Administrador Grupo Huerta', 'admin@divolavilla.com', 'SuperAdmin'],
+        ['sistemas', 'Sistemas VW Divol La Villa', 'sistemas@divolavilla.com', 'Admin'],
+        ['tilavilla', 'TI La Villa', 'tilavilla@divolavilla.com', 'Admin']
+    ];
+
+    $stmtInsertAdmin = $pdo->prepare("
+        INSERT INTO `usuarios` (`usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`)
+        VALUES (?, ?, ?, ?, 'VW Divol La Villa', ?, 1)
+        ON DUPLICATE KEY UPDATE `password`=VALUES(`password`), `activo`=1;
+    ");
+
+    foreach ($adminsList as $admItem) {
+        $stmtInsertAdmin->execute([$admItem[0], $admItem[1], $admItem[2], $passAdmin, $admItem[3]]);
+    }
+    echo "<p>✅ Usuarios administradores (<code>admin</code>, <code>sistemas</code>, <code>tilavilla</code>) verificados/creados con éxito.</p>";
 
     echo "<h3>🎉 INSTALACIÓN COMPLETADA EXITOSAMENTE</h3>";
     echo "<p><a href='login.php'>Ir al Login</a> | <a href='usuarios.php'>Ir a Gestión de Usuarios</a></p>";
