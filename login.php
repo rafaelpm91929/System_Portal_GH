@@ -24,9 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($user_input) && !empty($password_input)) {
         if ($pdo) {
             try {
-                // 1. Buscar usuario por login o email (sin filtrar activo aún para dar mensaje exacto)
-                $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (LOWER(usuario) = LOWER(:user) OR LOWER(email) = LOWER(:user)) LIMIT 1");
-                $stmt->execute(['user' => $user_input]);
+                // 1. Buscar usuario por login o email (usando marcadores posicionales para evitar error HY093 en PDO native prepares)
+                $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (LOWER(usuario) = LOWER(?) OR LOWER(email) = LOWER(?)) LIMIT 1");
+                $stmt->execute([$user_input, $user_input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($user) {
