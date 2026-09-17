@@ -25,8 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($pdo) {
             try {
                 // Buscar usuario por login o email
-                $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (LOWER(usuario) = LOWER(:user) OR LOWER(email) = LOWER(:user)) LIMIT 1");
-                $stmt->execute(['user' => $user_input]);
+                $stmt = $pdo->prepare("SELECT * FROM usuarios WHERE (LOWER(usuario) = LOWER(?) OR LOWER(email) = LOWER(?)) LIMIT 1");
+                $stmt->execute([$user_input, $user_input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($user) {
