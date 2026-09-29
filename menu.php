@@ -174,6 +174,19 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 <!-- Grid de Módulos -->
 <div class="modules-grid">
 
+    <!-- Módulo Agencia: Datos de la Agencia -->
+    <div class="module-card" style="border-color: rgba(34, 197, 94, 0.4);">
+        <span class="active-badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: rgba(34, 197, 94, 0.3);"><i class="bi bi-building-fill me-1"></i> FICHA OFICIAL</span>
+        <div class="icon-box icon-green">
+            <i class="bi bi-building"></i>
+        </div>
+        <div class="module-title">Datos de la Agencia</div>
+        <div class="module-desc">
+            Ficha oficial de la sucursal: Nombre, Razón Social, RFC, Dirección, Foto y Encargado de Sistemas.
+        </div>
+        <a href="agencia.php" class="btn-ingresar" style="background: #16a34a; border-color: #16a34a;">Ingresar</a>
+    </div>
+
     <!-- Módulo 0: Gestión de Usuarios y Permisos (RBAC) -->
     <div class="module-card" style="border-color: rgba(37, 99, 235, 0.4);">
         <span class="active-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);"><i class="bi bi-shield-check me-1"></i> CONTROL RBAC</span>
@@ -187,20 +200,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="usuarios.php" class="btn-ingresar" style="background: #2563eb; border-color: #2563eb;">Ingresar</a>
     </div>
 
-    <!-- Módulo 1: Órdenes de Servicio (NUEVO & FUNCIONAL) -->
-    <div class="module-card">
-        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> EN VIVO</span>
-        <div class="icon-box icon-blue">
-            <i class="bi bi-file-earmark-bar-graph"></i>
-        </div>
-        <div class="module-title">Órdenes de Servicio</div>
-        <div class="module-desc">
-            Consulta en tiempo real el resumen de órdenes abiertas, cerradas y montos acumulados por agencia.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
-    </div>
-
-    <!-- Módulo 2: Inventario de Equipos -->
+    <!-- Módulo 2: Inventario de Equipos (Posición 3) -->
     <div class="module-card">
         <span class="active-badge" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4; border-color: rgba(6, 182, 212, 0.3);"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> ACTIVO</span>
         <div class="icon-box icon-cyan">
@@ -213,32 +213,9 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="equipos.php" class="btn-ingresar">Ingresar</a>
     </div>
 
-    <!-- Módulo 3: Inventario de Celulares -->
-    <div class="module-card">
-        <div class="icon-box icon-purple">
-            <i class="bi bi-phone"></i>
-        </div>
-        <div class="module-title">Inventario de Celulares</div>
-        <div class="module-desc">
-            Controla los equipos móviles asignados por sucursal: modelo, línea, usuario responsable y estado.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 4: Licencias -->
-    <div class="module-card">
-        <div class="icon-box icon-yellow">
-            <i class="bi bi-key"></i>
-        </div>
-        <div class="module-title">Licencias</div>
-        <div class="module-desc">
-            Matriz de licenciamiento de software por equipo y sucursal, con vigencias y alertas de vencimiento.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 5: Infraestructura (SITE / IDF) -->
-    <div class="module-card">
+    <!-- Módulo 5: Infraestructura (SITE / IDF) (Posición 4) -->
+    <div class="module-card" style="border-color: rgba(34, 197, 94, 0.4);">
+        <span class="active-badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: rgba(34, 197, 94, 0.3);"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> ACTIVO</span>
         <div class="icon-box icon-green">
             <i class="bi bi-hdd-rack"></i>
         </div>
@@ -246,10 +223,41 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <div class="module-desc">
             Fichas de SITE e IDF, racks, cableado y red por agencia, con sus diagramas y evidencia asociada.
         </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
+        <a href="infraestructura.php" class="btn-ingresar" style="background: #16a34a; border-color: #16a34a;">Ingresar</a>
     </div>
 
-    <!-- Módulo 6: Respaldos -->
+    <!-- Módulo DB: Visor de Base de Datos (Posición 5) -->
+    <?php 
+    $rolSesion = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+    if (in_array($rolSesion, ['superadmin', 'admin'])): 
+    ?>
+    <div class="module-card" style="border-color: rgba(16, 185, 129, 0.4);">
+        <span class="active-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);"><i class="bi bi-database-fill me-1"></i> BASE DE DATOS</span>
+        <div class="icon-box icon-green">
+            <i class="bi bi-database-gear"></i>
+        </div>
+        <div class="module-title">Visor de Base de Datos</div>
+        <div class="module-desc">
+            Consulta tablas, columnas, registros y estructura de la base de datos en tiempo real (SQLite / MySQL).
+        </div>
+        <a href="db_explorer.php" class="btn-ingresar" style="background: #059669; border-color: #059669;">Explorar BD</a>
+    </div>
+    <?php endif; ?>
+
+    <!-- Módulo 1: Órdenes de Servicio -->
+    <div class="module-card">
+        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> EN VIVO</span>
+        <div class="icon-box icon-blue">
+            <i class="bi bi-file-earmark-bar-graph"></i>
+        </div>
+        <div class="module-title">Órdenes de Servicio</div>
+        <div class="module-desc">
+            Consulta en tiempo real el resumen de órdenes abiertas, cerradas y montos acumulados por agencia.
+        </div>
+        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
+    </div>
+
+    <!-- Módulo 6: Respaldos (Próximamente) -->
     <div class="module-card">
         <div class="icon-box icon-blue">
             <i class="bi bi-cloud-check"></i>
@@ -261,19 +269,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
 
-    <!-- Módulo 7: Mantenimiento -->
-    <div class="module-card">
-        <div class="icon-box icon-orange">
-            <i class="bi bi-wrench"></i>
-        </div>
-        <div class="module-title">Mantenimiento</div>
-        <div class="module-desc">
-            Calendario anual de mantenimiento a infraestructura, con evidencia y responsable por evento.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 8: Correo Institucional -->
+    <!-- Módulo 8: Correo Institucional (Próximamente) -->
     <div class="module-card">
         <div class="icon-box icon-pink">
             <i class="bi bi-envelope"></i>
@@ -283,18 +279,6 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
             Cuentas oficiales por sucursal, con seguimiento de altas, bajas y reactivaciones.
         </div>
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
-
-    <!-- Módulo 9: Estadísticas de Cumplimiento -->
-    <div class="module-card">
-        <div class="icon-box icon-blue">
-            <i class="bi bi-graph-up-arrow"></i>
-        </div>
-        <div class="module-title">Estadísticas de Cumplimiento</div>
-        <div class="module-desc">
-            Semáforo consolidado por agencia y sucursal, alertas activas y tendencia de cumplimiento.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
     </div>
 
 </div>

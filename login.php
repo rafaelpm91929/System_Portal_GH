@@ -32,8 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($user) {
                     // Verificar si el usuario está activo
                     $estaActivo = isset($user['activo']) ? intval($user['activo']) : 1;
+                    $tieneAccesoPortal = isset($user['acceso_portal']) ? intval($user['acceso_portal']) : 1;
+
                     if ($estaActivo !== 1) {
                         $error = "Tu cuenta se encuentra inactiva. Por favor contacta al administrador.";
+                    } elseif ($tieneAccesoPortal !== 1) {
+                        $error = "Este usuario está registrado únicamente como información de personal y no cuenta con acceso al portal.";
                     } else {
                         // 2. Verificar contraseña (soporta hash password_verify Y texto plano legacy)
                         $passwordValida = false;
@@ -56,7 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $_SESSION['usuario_id'] = $user['id'];
                             $_SESSION['usuario_nombre'] = $user['nombre'];
                             $_SESSION['usuario_rol'] = $user['rol'] ?? 'Usuario';
-                            $_SESSION['agencia'] = $user['agencia'] ?? 'Agencia Grupo Huerta';
+                            $stmtAgReg = $pdo ? $pdo->query("SELECT nombre FROM agencias ORDER BY id ASC LIMIT 1") : null;
+                            $nomAgReg = $stmtAgReg ? $stmtAgReg->fetchColumn() : null;
+                            $_SESSION['agencia'] = !empty($nomAgReg) ? $nomAgReg : ($user['agencia'] ?? 'Cupra la villa');
 
                             // Cargar permisos en la sesión
                             if (file_exists('permisos_helper.php')) {
@@ -82,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['usuario_id'] = 1;
                 $_SESSION['usuario_nombre'] = 'Administrador de Sistemas';
                 $_SESSION['usuario_rol'] = 'SuperAdmin';
-                $_SESSION['agencia'] = 'Agencia Grupo Huerta';
+                $_SESSION['agencia'] = 'Cupra la villa';
 
                 header("Location: menu.php");
                 exit();

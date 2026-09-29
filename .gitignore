@@ -21,3 +21,8 @@ node_modules/
 # 4. Ignorar archivos temporales del sistema operativo
 .DS_Store
 Thumbs.db
+
+# 5. Bases de datos locales de prueba y temporales
+*.sqlite
+*.db
+scratch/
