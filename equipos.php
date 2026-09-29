@@ -194,7 +194,7 @@ if ($pdo) {
     asegurarTablasEquipos($pdo);
 }
 
-$seccion_activa = $_GET['sec'] ?? 'equipos_vw';
+$seccion_activa = $_GET['sec'] ?? ($_GET['seccion'] ?? 'equipos_vw');
 $mensaje = '';
 $error = '';
 
@@ -310,14 +310,14 @@ $infoSeccion = $SECCIONES[$seccion_activa];
 $tablaActual = $infoSeccion['tabla'];
 
 // ====================================================
-// EXPORTACIÓN A EXCEL (.XLS) CON DISEÑO CORPORATIVO OFICIAL
+// EXPORTACIÓN A EXCEL (.XLS) CON EXPEDIENTE COMPLETO Y DISEÑO CORPORATIVO OFICIAL
 // ====================================================
 if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($_GET['action']) && $_GET['action'] === 'exportar_excel')) {
     requerirPermiso('equipos', 'puede_exportar');
     $agenciaInfo = obtenerDatosAgenciaExcel($pdo);
     $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
     $secLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $infoSeccion['nombre']);
-    $fileName = "Inventario_{$secLimpia}_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
+    $fileName = "Expediente_Inventario_{$secLimpia}_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
 
     $filasDb = [];
     if ($pdo) {
@@ -326,6 +326,24 @@ if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($
             $filasDb = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
         } catch (Throwable $e) {}
     }
+
+    $fmtVal = function($val, $tipo = '') {
+        if ($val === null || $val === '' || $val === 'N/A' || $val === 'No especificado') return '---';
+        $vStr = trim((string)$val);
+        if ($vStr === '' || $vStr === '---') return '---';
+        if ($tipo === 'costo' && !str_contains($vStr, '$')) {
+            $n = (float)str_replace(',', '', $vStr);
+            if ($n > 0) return '$' . number_format($n, 2);
+        }
+        if ($tipo === 'ram' && is_numeric($vStr)) return $vStr . ' GB';
+        if ($tipo === 'ghz' && is_numeric($vStr)) return $vStr . ' GHz';
+        if ($tipo === 'pulgadas' && is_numeric($vStr)) return $vStr . '"';
+        if ($tipo === 'dd' && is_numeric($vStr)) {
+            $n = (float)$vStr;
+            return $vStr . ($n <= 32 ? ' TB' : ' GB');
+        }
+        return $vStr;
+    };
 
     $columnasExcel = [];
     $filasExcel = [];
@@ -337,41 +355,163 @@ if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($
             ['label' => 'Usuario Asignado', 'width' => '180px', 'align' => 'left'],
             ['label' => 'Departamento', 'width' => '140px', 'align' => 'left'],
             ['label' => 'Puesto', 'width' => '150px', 'align' => 'left'],
-            ['label' => 'Correo', 'width' => '200px', 'align' => 'left', 'is_text' => true],
-            ['label' => 'Extensión', 'width' => '90px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Nodo', 'width' => '90px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Switch / Pto', 'width' => '120px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Tipo / Marca', 'width' => '130px', 'align' => 'left'],
-            ['label' => 'Serie (S/N)', 'width' => '130px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Procesador', 'width' => '130px', 'align' => 'left'],
-            ['label' => 'RAM', 'width' => '80px', 'align' => 'center'],
-            ['label' => 'Disco', 'width' => '90px', 'align' => 'center'],
-            ['label' => 'Sistema Operativo', 'width' => '130px', 'align' => 'left'],
-            ['label' => 'AnyDesk', 'width' => '110px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Estado', 'width' => '100px', 'align' => 'center']
+            ['label' => 'Tipo de Equipo', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Estado', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Expediente Completo', 'width' => '130px', 'align' => 'center'],
         ];
+
+        if ($seccion_activa === 'equipos_baja') {
+            $columnasExcel[] = ['label' => 'Motivo de Baja', 'width' => '200px', 'align' => 'left'];
+        }
+
+        $colsRest = [
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Número de Nodo', 'width' => '90px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Switch de Red', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Puerto Switch', 'width' => '100px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Puerto Patch Panel', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'MAC Ethernet', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'MAC Wi-Fi', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'VLAN', 'width' => '80px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Servidor SIP / PBX', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Extensión Telefónica', 'width' => '100px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Correo Personal / Usuario', 'width' => '200px', 'align' => 'left', 'is_text' => true],
+            ['label' => 'Correo Oficial Planta', 'width' => '200px', 'align' => 'left', 'is_text' => true],
+            ['label' => 'Marca', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Modelo', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Número de Serie (S/N)', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Procesador', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Velocidad (GHz)', 'width' => '95px', 'align' => 'center'],
+            ['label' => 'Memoria RAM', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Disco Duro / Almacenamiento', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Sistema Operativo', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Versión Office', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Serie Office', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Antivirus', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'ID Remoto (AnyDesk)', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Contraseña Remota', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dominio', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Usuario Equipo / Dominio', 'width' => '150px', 'align' => 'left'],
+            ['label' => 'Contraseña de Equipo', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'LogMeIn', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Clave Candado', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'GDS', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Usuario GDS', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Contraseña GDS', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Power PB', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Contraseña Power PB', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'POC', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Contraseña POC', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'MSQP', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Contraseña MSQP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'GRP', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Contraseña GRP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'ETKA', 'width' => '100px', 'align' => 'left'],
+            ['label' => 'Contraseña ETKA', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Día Respaldo', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Hora Respaldo', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'No-Break', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Modelo No-Break', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Serie No-Break', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Costo Adquisición', 'width' => '120px', 'align' => 'right'],
+            ['label' => 'Proveedor', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Fecha Compra', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Folio Factura', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Inicio Garantía', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Fin Garantía', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Garantía', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Renovación Equipo', 'width' => '120px', 'align' => 'center'],
+            ['label' => 'Tipo Compra', 'width' => '110px', 'align' => 'center']
+        ];
+        foreach ($colsRest as $cr) {
+            $columnasExcel[] = $cr;
+        }
+
         foreach ($filasDb as $r) {
-            $filasExcel[] = [
+            $rowArr = [
                 ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
                 ['val' => '<strong>' . htmlspecialchars($r['nombre_equipo'] ?? 'N/A') . '</strong>', 'align' => 'left'],
                 ['val' => htmlspecialchars($r['usuario'] ?? 'Sin Asignar'), 'align' => 'left'],
                 ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['departamento'] ?? '') . '</span>', 'align' => 'left'],
                 ['val' => htmlspecialchars($r['puesto'] ?? ''), 'align' => 'left'],
-                ['val' => !empty($r['correo']) ? '<span style="color:#0284c7;">' . htmlspecialchars($r['correo']) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
-                ['val' => !empty($r['extension']) ? '<span class="badge-pill badge-ext"><b>' . htmlspecialchars($r['extension']) . '</b></span>' : '---', 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['tipo_equipo'] ?? 'Desktop'), 'align' => 'center'],
+                ['val' => '<span class="badge-pill ' . (strtolower($r['estado'] ?? '') === 'activo' || strtolower($r['estado'] ?? '') === 'excelente' ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($r['estado'] ?? 'Activo') . '</span>', 'align' => 'center'],
+                ['val' => htmlspecialchars($r['expediente_completo'] ?? 'No'), 'align' => 'center']
+            ];
+
+            if ($seccion_activa === 'equipos_baja') {
+                $rowArr[] = ['val' => htmlspecialchars($r['motivo_baja'] ?? '---'), 'align' => 'left'];
+            }
+
+            $correoPlanta = ($r['correo_oficial_planta'] ?? '') ?: (($r['correo_oficial_vw'] ?? '') ?: ($r['correo_oficial_seat'] ?? ''));
+            $userDominio = ($r['usuario_equipo_dominio'] ?? '') ?: ($r['usuario_equipo'] ?? '');
+            $macEth = ($r['mac_ethernet'] ?? '') ?: ($r['direccion_mac'] ?? '');
+            $gar = ($r['garantia'] ?? '') ?: ($r['garantia2'] ?? '');
+
+            $restoValores = [
                 ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
                 ['val' => htmlspecialchars($r['numero_nodo'] ?? '---'), 'align' => 'center', 'is_text' => true],
-                ['val' => htmlspecialchars(($r['puerto_sw'] ?? '') ?: ($r['switch_nombre'] ?? '---')), 'align' => 'center', 'is_text' => true],
-                ['val' => htmlspecialchars(($r['tipo_equipo'] ?? '') . ' ' . ($r['marca'] ?? '')), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['switch_nombre'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['puerto_sw'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['puerto_patch_panel'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($macEth ?: '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['mac_wifi'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['vlan'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['servidor_sip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => !empty($r['extension']) ? '<span class="badge-pill badge-ext"><b>' . htmlspecialchars($r['extension']) . '</b></span>' : '---', 'align' => 'center', 'is_text' => true],
+                ['val' => !empty($r['correo']) ? '<span style="color:#0284c7;">' . htmlspecialchars($r['correo']) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
+                ['val' => !empty($correoPlanta) ? '<span style="color:#0284c7;">' . htmlspecialchars($correoPlanta) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
+                ['val' => htmlspecialchars($r['marca'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
                 ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
                 ['val' => htmlspecialchars($r['procesador'] ?? '---'), 'align' => 'left'],
-                ['val' => htmlspecialchars($r['ram'] ?? '---'), 'align' => 'center'],
-                ['val' => htmlspecialchars($r['dd'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['ghz'] ?? '', 'ghz')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['ram'] ?? '', 'ram')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['dd'] ?? '', 'dd')), 'align' => 'center'],
                 ['val' => htmlspecialchars($r['sistema_op'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['office'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie_office'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['antivirus'] ?? '---'), 'align' => 'left'],
                 ['val' => htmlspecialchars($r['remoto'] ?? '---'), 'align' => 'center', 'is_text' => true],
-                ['val' => '<span class="badge-pill ' . (strtolower($r['estado'] ?? '') === 'activo' || strtolower($r['estado'] ?? '') === 'excelente' ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($r['estado'] ?? 'Activo') . '</span>', 'align' => 'center']
+                ['val' => htmlspecialchars($r['contrasena_remoto'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['dominio'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($userDominio ?: '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['logmein'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['clave_candado'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['gds'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['usuario_gds'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_gds'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['power_pb'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_pb'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['poc'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_poc'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['msqp'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_msqp'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['grp'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_grp'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['etka'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_etka'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['dia_respaldo'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['hora_respaldo'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['no_break'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo_nobreak'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie_nobreak'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($fmtVal($r['costo'] ?? '', 'costo')), 'align' => 'right'],
+                ['val' => htmlspecialchars($r['proveedor'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['fecha_compra'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['folio_factura'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['inicio_garantia'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['fin_garantia'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($gar ?: '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['renovacion_equipo'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['compra'] ?? '---'), 'align' => 'center']
             ];
+
+            foreach ($restoValores as $rv) {
+                $rowArr[] = $rv;
+            }
+            $filasExcel[] = $rowArr;
         }
     } elseif ($seccion_activa === 'telefonos_poe') {
         $columnasExcel = [
@@ -380,13 +520,18 @@ if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($
             ['label' => 'Número Telefónico', 'width' => '130px', 'align' => 'center', 'is_text' => true],
             ['label' => 'Usuario Asignado', 'width' => '190px', 'align' => 'left'],
             ['label' => 'Área / Depto', 'width' => '140px', 'align' => 'left'],
-            ['label' => 'Correo', 'width' => '200px', 'align' => 'left', 'is_text' => true],
+            ['label' => 'Correo Electrónico', 'width' => '200px', 'align' => 'left', 'is_text' => true],
             ['label' => 'Modelo', 'width' => '130px', 'align' => 'left'],
             ['label' => 'Serie (S/N)', 'width' => '130px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
             ['label' => 'Dirección MAC', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Tipo Licencia', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Portabilidad', 'width' => '110px', 'align' => 'center'],
             ['label' => 'Nodo de Red', 'width' => '95px', 'align' => 'center', 'is_text' => true],
-            ['label' => 'Switch / Puerto', 'width' => '130px', 'align' => 'center', 'is_text' => true]
+            ['label' => 'Switch de Red', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Puerto Switch', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Folio Factura', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Estado', 'width' => '95px', 'align' => 'center']
         ];
         foreach ($filasDb as $r) {
             $filasExcel[] = [
@@ -398,33 +543,362 @@ if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($
                 ['val' => !empty($r['correo']) ? '<span style="color:#0284c7;">' . htmlspecialchars($r['correo']) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
                 ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
                 ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
-                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
                 ['val' => htmlspecialchars($r['mac'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['tipo_licencia'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['portabilidad'] ?? '---'), 'align' => 'center'],
                 ['val' => htmlspecialchars($r['numero_nodo'] ?? '---'), 'align' => 'center', 'is_text' => true],
-                ['val' => htmlspecialchars(($r['puerto_sw'] ?? '') ?: ($r['switch_nombre'] ?? '---')), 'align' => 'center', 'is_text' => true]
+                ['val' => htmlspecialchars($r['switch_nombre'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['puerto_sw'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['folio_factura'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['estado'] ?? 'Activo'), 'align' => 'center']
+            ];
+        }
+    } elseif ($seccion_activa === 'monitores') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Marca', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Modelo Exacto', 'width' => '160px', 'align' => 'left'],
+            ['label' => 'Número de Serie', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Departamento', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Ubicación Física', 'width' => '150px', 'align' => 'left'],
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Nodo de Red', 'width' => '95px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Switch / Puerto', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Usuario Impresora', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Password Impresora', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Usuario Web Admin', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Password Web Admin', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Fecha Adquisición', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Proveedor', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Contrato', 'width' => '130px', 'align' => 'left']
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => '<strong>' . htmlspecialchars($r['marca'] ?? '---') . '</strong>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo_exacto'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['departamento'] ?? '') . '</span>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ubicacion'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['numero_nodo'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['puerto_sw'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['usuario_impresora'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_impresora'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['usuario_impresora_web'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_impresora_web'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['fecha_adquisicion'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['proveedor'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrato'] ?? '---'), 'align' => 'left']
+            ];
+        }
+    } elseif ($seccion_activa === 'moviles') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Tipo Registro', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Subtipo', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Nombre / Asignado', 'width' => '170px', 'align' => 'left'],
+            ['label' => 'Departamento', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Ubicación', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Marca', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Modelo', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Número de Serie', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'IMEI 1', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'IMEI 2', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Número Telefónico', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Almacenamiento', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Memoria RAM', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Color', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Sistema Operativo', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Dirección MAC', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Estado Físico', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Estatus', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Pantalla', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Resolución', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Accesorios', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Especificaciones', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Tiene Plan', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Vencimiento Plan', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Proveedor Plan', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Contrato Plan', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Costo', 'width' => '110px', 'align' => 'right'],
+            ['label' => 'Fecha Compra', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Folio Factura', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Proveedor', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Garantía', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Fecha Asignación', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Observaciones', 'width' => '180px', 'align' => 'left']
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_registro'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['subtipo_dispositivo'] ?? '---'), 'align' => 'center'],
+                ['val' => '<strong>' . htmlspecialchars($r['nombre'] ?? '---') . '</strong>', 'align' => 'left'],
+                ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['departamento'] ?? '') . '</span>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ubicacion'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['marca'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['imei_1'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['imei_2'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['numero_telefonico'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($fmtVal($r['almacenamiento'] ?? '', 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['ram'] ?? '', 'ram')), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['color'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['sistema_op'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['mac'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['estado_fisico'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['estatus'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['tamano_pantalla'] ?? '', 'pulgadas')), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['resolucion'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['accesorios'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['especificaciones'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['tiene_plan_celular'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['vencimiento_plan'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['proveedor_plan'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['numero_contrato_plan'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($fmtVal($r['costo'] ?? '', 'costo')), 'align' => 'right'],
+                ['val' => htmlspecialchars($r['fecha_compra'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['folio_factura'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['proveedor'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['garantia'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['fecha_asignacion'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['observaciones'] ?? '---'), 'align' => 'left']
+            ];
+        }
+    } elseif ($seccion_activa === 'site_vw') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Tipo Dispositivo', 'width' => '130px', 'align' => 'center'],
+            ['label' => 'Nombre / Hostname', 'width' => '160px', 'align' => 'left'],
+            ['label' => 'Fabricante', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Modelo', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Número de Serie', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'IP Local', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'IP Pública', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'MAC Ethernet', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'MAC Wi-Fi', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Rack (U)', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Ubicación', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Estado', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Total Puertos', 'width' => '95px', 'align' => 'center'],
+            ['label' => 'Velocidad Puertos', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Capa Switch', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Firmware', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Sistema Operativo', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Procesador', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'RAM', 'width' => '85px', 'align' => 'center'],
+            ['label' => 'Almacenamiento', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Cant. Discos', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Tipo Servidor', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Función / Servicios', 'width' => '150px', 'align' => 'left'],
+            ['label' => 'Ambiente', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Criticidad', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Bahías NAS', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Capacidad x Disco', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Capacidad Disponible', 'width' => '120px', 'align' => 'center'],
+            ['label' => 'Config RAID', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Tipo Discos', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Protocolos NAS', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Capacidad UPS (VA)', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Potencia UPS (W)', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Topología UPS', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Voltaje Entrada', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Voltaje Salida', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Cant. Baterías', 'width' => '95px', 'align' => 'center'],
+            ['label' => 'Specs Baterías', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Fecha Batería', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Autonomía (min)', 'width' => '105px', 'align' => 'center'],
+            ['label' => 'Tecnología Enlace', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Ancho de Banda', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Simetría Enlace', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Tipo Conexión', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'No. Contrato Enlace', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'No. Cuenta / Cliente', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Circuit ID', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Soporte ISP', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'UniFi OS', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Controller', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'SSIDs', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'VLANs', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'PoE', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Usuario Admin', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Contraseña Admin', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Costo', 'width' => '110px', 'align' => 'right'],
+            ['label' => 'Proveedor', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Folio Factura', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Garantía', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Fecha Compra', 'width' => '110px', 'align' => 'center', 'is_text' => true]
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_registro'] ?? '---'), 'align' => 'center'],
+                ['val' => '<strong>' . htmlspecialchars($r['nombre_equipo'] ?? '---') . '</strong>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['fabricante'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip_local'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip_publica'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['mac_ethernet'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['mac_wifi'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['posicion_rack'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['ubicacion'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['estado'] ?? 'Activo'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['cantidad_puertos'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['velocidad_puertos'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_switch'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['firmware_version'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['sistema_op'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['procesador'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($fmtVal($r['ram'] ?? '', 'ram')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['almacenamiento'] ?? '', 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['cantidad_discos'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_servidor'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['funcion_servicio'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ambiente'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['criticidad'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['bahias_nas'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['capacidad_disco_ind'] ?? '', 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['capacidad_disponible'] ?? '', 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['config_raid'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_discos'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['protocolos_nas'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['capacidad_va'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['capacidad_w'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_ups'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['voltaje_entrada'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['voltaje_salida'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['cant_baterias'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['specs_baterias'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['fecha_bateria'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['autonomia'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_enlace'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ancho_banda'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['simetria_enlace'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_conexion'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['numero_contrato'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['numero_cuenta'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['circuit_id'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['soporte_contacto'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['unifi_os_ver'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['controller_ver'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['ssids'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['vlans'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['poe'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['usuario'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($fmtVal($r['costo'] ?? '', 'costo')), 'align' => 'right'],
+                ['val' => htmlspecialchars($r['proveedor'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['folio_factura'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['garantia'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['fecha_compra'] ?? '---'), 'align' => 'center', 'is_text' => true]
+            ];
+        }
+    } elseif ($seccion_activa === 'dvr') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Tipo Registro', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Subtipo Cámara', 'width' => '120px', 'align' => 'center'],
+            ['label' => 'Nombre / Dispositivo', 'width' => '160px', 'align' => 'left'],
+            ['label' => 'DVR/NVR Vinculado', 'width' => '150px', 'align' => 'left'],
+            ['label' => 'Modelo', 'width' => '120px', 'align' => 'left'],
+            ['label' => 'Número de Serie', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Ubicación', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Almacenamiento', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Capacidad Discos', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Número Discos', 'width' => '95px', 'align' => 'center'],
+            ['label' => 'Días Grabación', 'width' => '105px', 'align' => 'center'],
+            ['label' => 'Canales Análogos', 'width' => '110px', 'align' => 'center'],
+            ['label' => 'Canales IP', 'width' => '100px', 'align' => 'center'],
+            ['label' => 'Usuario DVR', 'width' => '110px', 'align' => 'left'],
+            ['label' => 'Contraseña DVR', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Contraseña Cámara', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Costo', 'width' => '110px', 'align' => 'right']
+        ];
+        foreach ($filasDb as $r) {
+            $canalesAna = ($r['canal_analogico'] ?? '') ?: ($r['cam_totales_analogicas'] ?? '');
+            $canalesIp = ($r['canal_ip'] ?? '') ?: ($r['cam_totales_ip'] ?? '');
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => htmlspecialchars($r['tipo_registro'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['subtipo_camara'] ?? '---'), 'align' => 'center'],
+                ['val' => '<strong>' . htmlspecialchars($r['nombre'] ?? '---') . '</strong>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['dvr_vinculado'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['numero_serie'] ?? ($r['serie'] ?? '---')), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ubicacion'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($fmtVal($r['almacenamiento'] ?? '', 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($fmtVal($r['capacidad_discos'] ?? ($r['capacidad_actual'] ?? ''), 'dd')), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['numero_discos'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['dias_grabacion'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($canalesAna ?: '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($canalesIp ?: '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['usuario_dvr'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['contrasena_dvr'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['contrasena_camara'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($fmtVal($r['costo'] ?? '', 'costo')), 'align' => 'right']
+            ];
+        }
+    } elseif ($seccion_activa === 'nobreak_baja') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Departamento', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Puesto', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Usuario Asignado', 'width' => '170px', 'align' => 'left'],
+            ['label' => 'Nombre Equipo Asociado', 'width' => '170px', 'align' => 'left'],
+            ['label' => 'Modelo No-Break', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Serie No-Break', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Modelo Equipo', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Serie Equipo', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Costo', 'width' => '110px', 'align' => 'right'],
+            ['label' => 'Motivo de Baja', 'width' => '180px', 'align' => 'left'],
+            ['label' => 'Estado', 'width' => '100px', 'align' => 'center']
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['departamento'] ?? '') . '</span>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['puesto'] ?? '---'), 'align' => 'left'],
+                ['val' => '<strong>' . htmlspecialchars($r['usuario'] ?? '---') . '</strong>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['nombre_equipo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['modelo_nobreak'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie_nobreak'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie_equipo'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($fmtVal($r['costo'] ?? '', 'costo')), 'align' => 'right'],
+                ['val' => htmlspecialchars($r['motivo_baja'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['estado'] ?? 'Baja'), 'align' => 'center']
             ];
         }
     } else {
-        $camposMostrar = $infoSeccion['columnas_tabla'];
+        $camposMostrar = !empty($infoSeccion['campos_full']) ? $infoSeccion['campos_full'] : $infoSeccion['columnas_tabla'];
+        $columnasExcel[] = ['label' => '# ID', 'width' => '50px', 'align' => 'center'];
         foreach ($camposMostrar as $cmp) {
             $colTitle = ucwords(str_replace('_', ' ', $cmp));
-            $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1']);
-            $columnasExcel[] = ['label' => $colTitle, 'align' => ($cmp === 'id' || $isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
+            $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1', 'imei_2']);
+            $columnasExcel[] = ['label' => $colTitle, 'align' => ($isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
         }
         foreach ($filasDb as $r) {
-            $fRow = [];
+            $fRow = [['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center']];
             foreach ($camposMostrar as $cmp) {
                 $val = $r[$cmp] ?? '---';
-                $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1']);
-                $fRow[] = ['val' => htmlspecialchars($val), 'align' => ($cmp === 'id' || $isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
+                $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1', 'imei_2']);
+                $fRow[] = ['val' => htmlspecialchars($val), 'align' => ($isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
             }
             $filasExcel[] = $fRow;
         }
     }
 
     descargarExcelConDiseno(
-        'INVENTARIO DE EQUIPOS &bull; ' . strtoupper($infoSeccion['nombre']),
-        'Control y Gestión de Activos Tecnológicos Oficial',
+        'EXPEDIENTE DE INVENTARIO &bull; ' . strtoupper($infoSeccion['nombre']),
+        'Control y Gestión Integral de Activos Tecnológicos - Expediente Oficial',
         $columnasExcel,
         $filasExcel,
         $agenciaInfo,
@@ -2657,16 +3131,22 @@ function renderBadgeTipoSite($tipo) {
     window.cambiarVistaEquipos = cambiarVistaEquipos;
 
     function exportarExcelConDiseno() {
+        const sec = '<?php echo addslashes($seccion_activa); ?>';
+        window.location.href = 'equipos.php?sec=' + encodeURIComponent(sec) + '&accion=exportar_excel';
+    }
+    window.exportarExcelConDiseno = exportarExcelConDiseno;
+
+    function exportarTablaVisibleAExcel() {
         const titulo = "INVENTARIO DE EQUIPOS \u2022 <?php echo strtoupper(addslashes($infoSeccion['nombre'])); ?>";
-        const subtitulo = "Sección Oficial de Activos Tecnológicos";
-        const archivo = "Inventario_<?php echo $seccion_activa; ?>";
+        const subtitulo = "Resumen de Columnas Visibles";
+        const archivo = "Inventario_<?php echo $seccion_activa; ?>_Resumen";
         if (typeof exportarTablaAExcelConDiseno === 'function') {
             exportarTablaAExcelConDiseno('tablaEquipos', titulo, subtitulo, archivo);
         } else {
-            window.location.href = 'equipos.php?seccion=<?php echo urlencode($seccion_activa); ?>&accion=exportar_excel';
+            exportarExcelConDiseno();
         }
     }
-    window.exportarExcelConDiseno = exportarExcelConDiseno;
+    window.exportarTablaVisibleAExcel = exportarTablaVisibleAExcel;
 
     function exportarTablaCSV() {
         exportarExcelConDiseno();
@@ -4137,21 +4617,21 @@ function renderBadgeTipoSite($tipo) {
                             <?php endif; ?>
                             <?php if (tienePermiso('equipos', 'puede_exportar')): ?>
                                 <div class="btn-group btn-group-sm shadow-sm">
-                                    <button type="button" class="btn btn-success btn-sm rounded-start-3 px-3 fw-semibold d-flex align-items-center gap-1.5" style="background: #16a34a; border-color: #16a34a;" onclick="exportarExcelConDiseno()" title="Descargar datos en Microsoft Excel con logotipo y formato oficial">
-                                        <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel (.xls)
+                                    <button type="button" class="btn btn-success btn-sm rounded-start-3 px-3 fw-semibold d-flex align-items-center gap-1.5" style="background: #16a34a; border-color: #16a34a;" onclick="exportarExcelConDiseno()" title="Descargar expediente completo en Microsoft Excel con logotipo y formato oficial">
+                                        <i class="bi bi-file-earmark-excel-fill"></i> Exportar Expediente a Excel (.xls)
                                     </button>
                                     <button type="button" class="btn btn-success btn-sm rounded-end-3 dropdown-toggle dropdown-toggle-split" style="background: #15803d; border-color: #15803d;" data-bs-toggle="dropdown" aria-expanded="false" title="Más opciones de exportación">
                                         <span class="visually-hidden">Opciones</span>
                                     </button>
                                     <ul class="dropdown-menu dropdown-menu-end shadow">
                                         <li>
-                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="javascript:void(0)" onclick="exportarExcelConDiseno()">
-                                                <i class="bi bi-table text-success"></i> Exportar Tabla Visible (.xls)
+                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="equipos.php?sec=<?php echo urlencode($seccion_activa); ?>&accion=exportar_excel">
+                                                <i class="bi bi-database-fill-down text-success"></i> Exportar Expediente Completo BD (.xls)
                                             </a>
                                         </li>
                                         <li>
-                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="equipos.php?seccion=<?php echo urlencode($seccion_activa); ?>&accion=exportar_excel">
-                                                <i class="bi bi-database-fill-down text-primary"></i> Exportar Ficha Técnica Completa BD (.xls)
+                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="javascript:void(0)" onclick="exportarTablaVisibleAExcel()">
+                                                <i class="bi bi-table text-primary"></i> Exportar Solo Columnas Visibles (.xls)
                                             </a>
                                         </li>
                                     </ul>
