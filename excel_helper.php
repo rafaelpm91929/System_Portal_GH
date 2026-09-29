@@ -1,8 +1,9 @@
 <?php
 /**
  * Helper Universal para Exportación a Microsoft Excel (.xls) con Diseño Corporativo Oficial
- * Incluye membrete con logotipo de la agencia, datos fiscales (Razón Social, RFC, Dirección),
- * encabezados estilizados, formato de celdas (evita pérdidas de ceros en números) y diseño limpio.
+ * Utiliza formato MHTML (MIME-HTML multipart/related) para incrustar logotipos como imágenes
+ * nativas reales (msoPicture). Esto EVITA el error de "No se puede mostrar la imagen vinculada"
+ * y la X roja en todas las versiones de Microsoft Excel para Windows/Mac.
  * Compatible con cPanel MySQL y Local SQLite, PHP 7.x y 8.x.
  */
 
@@ -44,8 +45,9 @@ if (!function_exists('obtenerDatosAgenciaExcel')) {
         $agenciaEncargado = !empty($agenciaData['encargado_sistemas']) ? $agenciaData['encargado_sistemas'] : 'Departamento de Sistemas';
         $logoRel          = $agenciaData['logo_url'] ?? '';
 
-        // Procesar Logo (Base64 y URL absoluta)
-        $logoBase64 = '';
+        // Procesar Logo (Base64 puro y tipo MIME)
+        $logoBase64Puro = '';
+        $logoMimeType   = 'image/png';
         if (!empty($logoRel)) {
             $logoPaths = [
                 $logoRel,
@@ -57,15 +59,18 @@ if (!function_exists('obtenerDatosAgenciaExcel')) {
                 if (!empty($lp) && file_exists($lp) && is_file($lp)) {
                     $sz = @getimagesize($lp);
                     if ($sz && !empty($sz['mime'])) {
+                        $logoMimeType = $sz['mime'];
                         $content = @file_get_contents($lp);
                         if ($content !== false) {
-                            $logoBase64 = 'data:' . $sz['mime'] . ';base64,' . base64_encode($content);
+                            $logoBase64Puro = base64_encode($content);
                             break;
                         }
                     }
                 }
             }
         }
+
+        $logoBase64Completo = !empty($logoBase64Puro) ? 'data:' . $logoMimeType . ';base64,' . $logoBase64Puro : '';
 
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
         $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -90,20 +95,24 @@ if (!function_exists('obtenerDatosAgenciaExcel')) {
             'correo'             => $agenciaEmail,
             'encargado_sistemas' => $agenciaEncargado,
             'logo_url'           => $logoRel,
-            'logo_base64'        => $logoBase64,
+            'logo_base64_puro'   => $logoBase64Puro,
+            'logo_mime_type'     => $logoMimeType,
+            'logo_base64'        => $logoBase64Completo,
             'logo_http'          => $logoHttp
         ];
     }
 }
 
 if (!function_exists('generarHtmlExcelDocumento')) {
-    function generarHtmlExcelDocumento($tituloDoc, $subtituloDoc, $columnas, $filas, $agenciaData, $nombreHoja = 'Datos') {
+    function generarHtmlExcelDocumento($tituloDoc, $subtituloDoc, $columnas, $filas, $agenciaData, $nombreHoja = 'Datos', $esParaMhtml = false) {
         $fechaHoy = date('d/m/Y');
         $horaHoy  = date('H:i');
         $totalCols = max(4, count($columnas));
         $colspanHeader = $totalCols - 1;
 
-        $logoSrc = !empty($agenciaData['logo_base64']) ? $agenciaData['logo_base64'] : $agenciaData['logo_http'];
+        $tieneLogo = !empty($agenciaData['logo_base64_puro']) || !empty($agenciaData['logo_base64']);
+        // En MHTML la referencia local interna garantiza que Excel muestre la imagen sin bloquearla
+        $imgSrc = $esParaMhtml ? 'file:///C:/agencia_logo.png' : ($agenciaData['logo_http'] ?: $agenciaData['logo_base64']);
 
         $html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
         $html .= '<head>';
@@ -127,10 +136,10 @@ if (!function_exists('generarHtmlExcelDocumento')) {
         $html .= '<style>';
         $html .= 'body, table, td, th { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 10pt; }';
         $html .= '.header-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }';
-        $html .= '.logo-cell { width: 140px; text-align: center; vertical-align: middle; background-color: #ffffff; border: 1px solid #cbd5e1; padding: 6px; }';
-        $html .= '.title-agencia { font-size: 16pt; font-weight: bold; color: #0f172a; padding-left: 12px; height: 26px; }';
-        $html .= '.subtitle-doc { font-size: 12pt; font-weight: bold; color: #0284c7; padding-left: 12px; height: 22px; }';
-        $html .= '.meta-text { font-size: 9pt; color: #475569; padding-left: 12px; height: 18px; }';
+        $html .= '.logo-cell { width: 150px; min-width: 150px; text-align: center; vertical-align: middle; background-color: #ffffff; border: 1px solid #cbd5e1; padding: 6px; }';
+        $html .= '.title-agencia { font-size: 16pt; font-weight: bold; color: #0f172a; padding-left: 15px; height: 28px; }';
+        $html .= '.subtitle-doc { font-size: 12pt; font-weight: bold; color: #0284c7; padding-left: 15px; height: 22px; }';
+        $html .= '.meta-text { font-size: 9pt; color: #475569; padding-left: 15px; height: 18px; }';
         $html .= '.badge-header { font-size: 8.5pt; font-weight: bold; color: #1e293b; background-color: #f1f5f9; padding: 4px 8px; border: 1px solid #cbd5e1; }';
         $html .= '.data-table { width: 100%; border-collapse: collapse; }';
         $html .= '.th-col { background-color: #0f172a; color: #ffffff; font-weight: bold; font-size: 9.5pt; text-align: center; border: 1px solid #334155; padding: 8px 6px; height: 32px; }';
@@ -151,33 +160,36 @@ if (!function_exists('generarHtmlExcelDocumento')) {
         $html .= '</head>';
         $html .= '<body>';
 
+        $colspanLogo = ($totalCols >= 4) ? 2 : 1;
+        $colspanText = max(1, $totalCols - $colspanLogo);
+
         // 1. MEMBRETE OFICIAL DE LA AGENCIA
         $html .= '<table class="header-table">';
-        $html .= '<tr>';
-        $html .= '<td rowspan="4" class="logo-cell">';
-        if (!empty($logoSrc)) {
-            $html .= '<img src="' . $logoSrc . '" width="130" height="50" style="max-height: 52px; max-width: 130px;" alt="Logo ' . htmlspecialchars($agenciaData['nombre']) . '">';
+        $html .= '<tr style="height: 28px;">';
+        $html .= '<td colspan="' . $colspanLogo . '" rowspan="4" class="logo-cell">';
+        if ($tieneLogo) {
+            $html .= '<img src="' . $imgSrc . '" width="130" height="50" style="max-height: 52px; max-width: 130px;" alt="Logo ' . htmlspecialchars($agenciaData['nombre']) . '">';
         } else {
             $html .= '<div style="font-size: 15pt; font-weight: bold; color: #0284c7;">' . htmlspecialchars($agenciaData['nombre']) . '</div>';
         }
         $html .= '</td>';
-        $html .= '<td colspan="' . $colspanHeader . '" class="title-agencia">' . htmlspecialchars($agenciaData['nombre']) . '</td>';
+        $html .= '<td colspan="' . $colspanText . '" class="title-agencia">' . htmlspecialchars($agenciaData['nombre']) . '</td>';
         $html .= '</tr>';
 
-        $html .= '<tr>';
-        $html .= '<td colspan="' . $colspanHeader . '" class="subtitle-doc">' . htmlspecialchars($tituloDoc) . (!empty($subtituloDoc) ? ' &mdash; <span style="font-size: 10pt; color: #64748b; font-weight: normal;">' . htmlspecialchars($subtituloDoc) . '</span>' : '') . '</td>';
+        $html .= '<tr style="height: 24px;">';
+        $html .= '<td colspan="' . $colspanText . '" class="subtitle-doc">' . htmlspecialchars($tituloDoc) . (!empty($subtituloDoc) ? ' &mdash; <span style="font-size: 10pt; color: #64748b; font-weight: normal;">' . htmlspecialchars($subtituloDoc) . '</span>' : '') . '</td>';
         $html .= '</tr>';
 
-        $html .= '<tr>';
-        $html .= '<td colspan="' . $colspanHeader . '" class="meta-text">';
+        $html .= '<tr style="height: 20px;">';
+        $html .= '<td colspan="' . $colspanText . '" class="meta-text">';
         $html .= '<strong>Razón Social:</strong> ' . htmlspecialchars($agenciaData['razon_social']) . ' &nbsp;|&nbsp; ';
         $html .= '<strong>RFC:</strong> ' . htmlspecialchars($agenciaData['rfc']) . ' &nbsp;|&nbsp; ';
         $html .= '<strong>Dirección:</strong> ' . htmlspecialchars($agenciaData['direccion']);
         $html .= '</td>';
         $html .= '</tr>';
 
-        $html .= '<tr>';
-        $html .= '<td colspan="' . $colspanHeader . '" class="meta-text">';
+        $html .= '<tr style="height: 20px;">';
+        $html .= '<td colspan="' . $colspanText . '" class="meta-text">';
         $html .= '<strong>Fecha de Emisión:</strong> ' . $fechaHoy . ' ' . $horaHoy . ' hrs &nbsp;|&nbsp; ';
         $html .= '<strong>Control de Sistemas:</strong> ' . htmlspecialchars($agenciaData['encargado_sistemas']) . ' &nbsp;|&nbsp; ';
         $html .= '<strong>Total de Registros:</strong> ' . count($filas);
@@ -220,7 +232,6 @@ if (!function_exists('generarHtmlExcelDocumento')) {
                         $isText = !empty($celda['is_text']);
                         $customClass = $celda['class'] ?? '';
                     } else {
-                        // Heurística de tipo de columna si columnas tiene metadata
                         if (isset($columnas[$colIndex]) && is_array($columnas[$colIndex])) {
                             $align = $columnas[$colIndex]['align'] ?? 'left';
                             $isText = !empty($columnas[$colIndex]['is_text']);
@@ -258,6 +269,39 @@ if (!function_exists('generarHtmlExcelDocumento')) {
     }
 }
 
+/**
+ * Empaqueta un documento HTML y su imagen en formato MHTML (MIME multipart/related).
+ * Esto permite a Excel cargar la imagen como parte integral del archivo (.xls),
+ * eliminando por completo el mensaje de error de imagen vinculada o la cruz roja.
+ */
+if (!function_exists('empaquetarMhtmlExcel')) {
+    function empaquetarMhtmlExcel($htmlContenido, $logoBase64Raw = '', $mimeType = 'image/png') {
+        $boundary = "----=_NextPart_01D9" . strtoupper(bin2hex(random_bytes(4)));
+
+        $mhtml = "MIME-Version: 1.0\r\n";
+        $mhtml .= "Content-Type: multipart/related; boundary=\"{$boundary}\"\r\n\r\n";
+
+        // PARTE 1: Documento HTML
+        $mhtml .= "--{$boundary}\r\n";
+        $mhtml .= "Content-Location: file:///C:/excel_sheet.htm\r\n";
+        $mhtml .= "Content-Transfer-Encoding: 7bit\r\n";
+        $mhtml .= "Content-Type: text/html; charset=\"utf-8\"\r\n\r\n";
+        $mhtml .= $htmlContenido . "\r\n\r\n";
+
+        // PARTE 2: Imagen incrustada como recurso interno
+        if (!empty($logoBase64Raw)) {
+            $mhtml .= "--{$boundary}\r\n";
+            $mhtml .= "Content-Location: file:///C:/agencia_logo.png\r\n";
+            $mhtml .= "Content-Transfer-Encoding: base64\r\n";
+            $mhtml .= "Content-Type: {$mimeType}\r\n\r\n";
+            $mhtml .= chunk_split($logoBase64Raw, 76, "\r\n") . "\r\n\r\n";
+        }
+
+        $mhtml .= "--{$boundary}--\r\n";
+        return $mhtml;
+    }
+}
+
 if (!function_exists('descargarExcelConDiseno')) {
     function descargarExcelConDiseno($tituloDoc, $subtituloDoc, $columnas, $filas, $agenciaData = null, $nombreArchivo = null, $nombreHoja = 'Datos') {
         global $pdo;
@@ -285,17 +329,24 @@ if (!function_exists('descargarExcelConDiseno')) {
         header('Pragma: public');
         header('Expires: 0');
 
-        // BOM UTF-8 para garantizar que Microsoft Excel en Windows abra acentos, eñes y caracteres especiales perfectamente
-        echo chr(0xEF) . chr(0xBB) . chr(0xBF);
+        $html = generarHtmlExcelDocumento($tituloDoc, $subtituloDoc, $columnas, $filas, $agenciaData, $nombreHoja, true);
+        $rawLogo = $agenciaData['logo_base64_puro'] ?? '';
+        $mimeLogo = $agenciaData['logo_mime_type'] ?? 'image/png';
 
-        echo generarHtmlExcelDocumento($tituloDoc, $subtituloDoc, $columnas, $filas, $agenciaData, $nombreHoja);
+        if (!empty($rawLogo)) {
+            echo empaquetarMhtmlExcel($html, $rawLogo, $mimeLogo);
+        } else {
+            // Si no hay logo, emitir HTML con BOM
+            echo chr(0xEF) . chr(0xBB) . chr(0xBF);
+            echo $html;
+        }
         exit();
     }
 }
 
 /**
  * Función para imprimir el script JS que permite a cualquier vista con tabla
- * exportar inmediatamente a Excel con el encabezado oficial y logotipo.
+ * exportar inmediatamente a Excel con el encabezado oficial y logotipo incrustado vía MHTML.
  */
 if (!function_exists('imprimirScriptExportadorExcelJS')) {
     function imprimirScriptExportadorExcelJS($agenciaData = null) {
@@ -303,7 +354,8 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
         if ($agenciaData === null) {
             $agenciaData = obtenerDatosAgenciaExcel($pdo);
         }
-        $logoJs = !empty($agenciaData['logo_base64']) ? $agenciaData['logo_base64'] : $agenciaData['logo_http'];
+        $rawLogo = $agenciaData['logo_base64_puro'] ?? '';
+        $mimeLogo = $agenciaData['logo_mime_type'] ?? 'image/png';
         ?>
         <script>
         window.DATOS_AGENCIA_EXCEL = {
@@ -312,7 +364,8 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
             rfc: <?php echo json_encode($agenciaData['rfc']); ?>,
             direccion: <?php echo json_encode($agenciaData['direccion']); ?>,
             encargado: <?php echo json_encode($agenciaData['encargado_sistemas']); ?>,
-            logo: <?php echo json_encode($logoJs); ?>
+            logo_raw: <?php echo json_encode($rawLogo); ?>,
+            logo_mime: <?php echo json_encode($mimeLogo); ?>
         };
 
         function exportarTablaAExcelConDiseno(tableId, tituloDoc, subtituloDoc, nombreArchivo) {
@@ -328,7 +381,8 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
                 rfc: 'XAXX010101000',
                 direccion: 'Av. Ferrocarril Hidalgo 883, CDMX',
                 encargado: 'Departamento de Sistemas',
-                logo: ''
+                logo_raw: '',
+                logo_mime: 'image/png'
             };
 
             const now = new Date();
@@ -372,30 +426,31 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
 
             // Contar columnas restantes
             const remainingCols = rows[0] ? rows[0].querySelectorAll('th, td').length : 5;
-            const colspanHeader = Math.max(1, remainingCols - 1);
+            const colspanLogo = (remainingCols >= 4) ? 2 : 1;
+            const colspanText = Math.max(1, remainingCols - colspanLogo);
 
             let headerHtml = `
             <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-family: 'Segoe UI', Arial, sans-serif;">
-                <tr>
-                    <td rowspan="4" style="width: 140px; text-align: center; vertical-align: middle; background-color: #ffffff; border: 1px solid #cbd5e1; padding: 6px;">
-                        ${agencia.logo ? `<img src="${agencia.logo}" width="130" height="50" style="max-height: 52px; max-width: 130px;" alt="Logo">` : `<b style="color: #0284c7; font-size: 14pt;">${agencia.nombre}</b>`}
+                <tr style="height: 28px;">
+                    <td colspan="${colspanLogo}" rowspan="4" style="width: 150px; min-width: 150px; text-align: center; vertical-align: middle; background-color: #ffffff; border: 1px solid #cbd5e1; padding: 6px;">
+                        ${agencia.logo_raw ? `<img src="file:///C:/agencia_logo.png" width="130" height="50" style="max-height: 52px; max-width: 130px;" alt="Logo">` : `<b style="color: #0284c7; font-size: 14pt;">${agencia.nombre}</b>`}
                     </td>
-                    <td colspan="${colspanHeader}" style="font-size: 16pt; font-weight: bold; color: #0f172a; padding-left: 12px; height: 26px;">
+                    <td colspan="${colspanText}" style="font-size: 16pt; font-weight: bold; color: #0f172a; padding-left: 15px; height: 28px;">
                         ${agencia.nombre}
                     </td>
                 </tr>
-                <tr>
-                    <td colspan="${colspanHeader}" style="font-size: 12pt; font-weight: bold; color: #0284c7; padding-left: 12px; height: 22px;">
+                <tr style="height: 24px;">
+                    <td colspan="${colspanText}" style="font-size: 12pt; font-weight: bold; color: #0284c7; padding-left: 15px; height: 22px;">
                         ${tituloDoc} ${subtituloDoc ? `&mdash; <span style="font-size: 10pt; color: #64748b; font-weight: normal;">${subtituloDoc}</span>` : ''}
                     </td>
                 </tr>
-                <tr>
-                    <td colspan="${colspanHeader}" style="font-size: 9pt; color: #475569; padding-left: 12px; height: 18px;">
+                <tr style="height: 20px;">
+                    <td colspan="${colspanText}" style="font-size: 9pt; color: #475569; padding-left: 15px; height: 18px;">
                         <strong>Razón Social:</strong> ${agencia.razon_social} &nbsp;|&nbsp; <strong>RFC:</strong> ${agencia.rfc} &nbsp;|&nbsp; <strong>Dirección:</strong> ${agencia.direccion}
                     </td>
                 </tr>
-                <tr>
-                    <td colspan="${colspanHeader}" style="font-size: 9pt; color: #475569; padding-left: 12px; height: 18px;">
+                <tr style="height: 20px;">
+                    <td colspan="${colspanText}" style="font-size: 9pt; color: #475569; padding-left: 15px; height: 18px;">
                         <strong>Fecha de Emisión:</strong> ${fechaHoy} ${horaHoy} hrs &nbsp;|&nbsp; <strong>Control de Sistemas:</strong> ${agencia.encargado} &nbsp;|&nbsp; <strong>Total Registros:</strong> ${countFilas}
                     </td>
                 </tr>
@@ -428,7 +483,6 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
                     td.style.verticalAlign = 'middle';
                     td.style.fontSize = '9pt';
                     td.style.color = '#1e293b';
-                    // Evitar pérdida de ceros a la izquierda
                     td.setAttribute('style', td.getAttribute('style') + '; mso-number-format: "\\@";');
                 });
             });
@@ -444,7 +498,7 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
             `;
             clone.appendChild(tfoot);
 
-            const excelTemplate = `
+            const htmlBody = `
                 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
                 <head>
                     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
@@ -473,7 +527,36 @@ if (!function_exists('imprimirScriptExportadorExcelJS')) {
                 </html>
             `;
 
-            const blob = new Blob(['\uFEFF' + excelTemplate], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+            let finalContent = "";
+            let finalType = "application/vnd.ms-excel;charset=utf-8;";
+
+            if (agencia.logo_raw) {
+                const boundary = "----=_NextPart_01D9" + Math.random().toString(36).substring(2).toUpperCase();
+                finalContent = [
+                    'MIME-Version: 1.0',
+                    'Content-Type: multipart/related; boundary="' + boundary + '"',
+                    '',
+                    '--' + boundary,
+                    'Content-Location: file:///C:/sheet.htm',
+                    'Content-Type: text/html; charset=utf-8',
+                    'Content-Transfer-Encoding: 7bit',
+                    '',
+                    htmlBody,
+                    '',
+                    '--' + boundary,
+                    'Content-Location: file:///C:/agencia_logo.png',
+                    'Content-Transfer-Encoding: base64',
+                    'Content-Type: ' + (agencia.logo_mime || 'image/png'),
+                    '',
+                    agencia.logo_raw,
+                    '',
+                    '--' + boundary + '--'
+                ].join('\r\n');
+            } else {
+                finalContent = '\uFEFF' + htmlBody;
+            }
+
+            const blob = new Blob([finalContent], { type: finalType });
             const link = document.createElement('a');
             const cleanFilename = (nombreArchivo || 'Reporte_Oficial').replace(/[^a-zA-Z0-9_-]/g, '_') + '_' + now.toISOString().slice(0, 10) + '.xls';
             link.href = URL.createObjectURL(blob);
