@@ -226,36 +226,6 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="infraestructura.php" class="btn-ingresar" style="background: #16a34a; border-color: #16a34a;">Ingresar</a>
     </div>
 
-    <!-- Módulo DB: Visor de Base de Datos (Posición 5) -->
-    <?php 
-    $rolSesion = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
-    if (in_array($rolSesion, ['superadmin', 'admin'])): 
-    ?>
-    <div class="module-card" style="border-color: rgba(16, 185, 129, 0.4);">
-        <span class="active-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);"><i class="bi bi-database-fill me-1"></i> BASE DE DATOS</span>
-        <div class="icon-box icon-green">
-            <i class="bi bi-database-gear"></i>
-        </div>
-        <div class="module-title">Visor de Base de Datos</div>
-        <div class="module-desc">
-            Consulta tablas, columnas, registros y estructura de la base de datos en tiempo real (SQLite / MySQL).
-        </div>
-        <a href="db_explorer.php" class="btn-ingresar" style="background: #059669; border-color: #059669;">Explorar BD</a>
-    </div>
-    <?php endif; ?>
-
-    <!-- Módulo 1: Órdenes de Servicio -->
-    <div class="module-card">
-        <span class="active-badge"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> EN VIVO</span>
-        <div class="icon-box icon-blue">
-            <i class="bi bi-file-earmark-bar-graph"></i>
-        </div>
-        <div class="module-title">Órdenes de Servicio</div>
-        <div class="module-desc">
-            Consulta en tiempo real el resumen de órdenes abiertas, cerradas y montos acumulados por agencia.
-        </div>
-        <a href="reportes.php" class="btn-ingresar">Ingresar</a>
-    </div>
 
     <!-- Módulo 6: Respaldos (Próximamente) -->
     <div class="module-card">
