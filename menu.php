@@ -239,6 +239,19 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
 
+    <!-- Módulo: Tickets Soporte Dirección Sistemas -->
+    <div class="module-card" style="border-color: rgba(14, 165, 233, 0.45);">
+        <span class="active-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border-color: rgba(14, 165, 233, 0.3);"><i class="bi bi-headset me-1"></i> SOPORTE TI</span>
+        <div class="icon-box icon-cyan" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">
+            <i class="bi bi-ticket-detailed-fill"></i>
+        </div>
+        <div class="module-title">Tickets Soporte Dirección Sistemas</div>
+        <div class="module-desc">
+            Registro, canalización y seguimiento de requerimientos para Desarrollo, Ciberseguridad, Infraestructura, Redes Sociales, Auditoría y Corporativo.
+        </div>
+        <a href="tickets.php" class="btn-ingresar" style="background: #0284c7; border-color: #0284c7;">Ingresar</a>
+    </div>
+
     <!-- Módulo: Directorio Telefónico y Correos -->
     <div class="module-card" style="border-color: rgba(236, 72, 153, 0.4);">
         <span class="active-badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border-color: rgba(236, 72, 153, 0.3);"><i class="bi bi-telephone-inbound-fill me-1"></i> DIRECTORIO</span>
