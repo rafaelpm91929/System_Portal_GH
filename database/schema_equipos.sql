@@ -299,3 +299,28 @@ CREATE TABLE IF NOT EXISTS `inv_licencias_office` (
   `factura` VARCHAR(100),
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 11. Teléfonos PoE
+CREATE TABLE IF NOT EXISTS `inv_telefonos_poe` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `usuario` VARCHAR(150),
+  `area` VARCHAR(100),
+  `modelo` VARCHAR(100),
+  `serie` VARCHAR(100),
+  `mac` VARCHAR(50),
+  `ip` VARCHAR(50),
+  `numero_telefonico` VARCHAR(50),
+  `extension` VARCHAR(20),
+  `tipo_licencia` VARCHAR(100),
+  `correo` VARCHAR(150),
+  `portabilidad` VARCHAR(50),
+  `folio_factura` VARCHAR(100),
+  `numero_nodo` VARCHAR(50),
+  `puerto_sw` VARCHAR(50),
+  `switch_nombre` VARCHAR(100),
+  `foto` VARCHAR(255),
+  `factura_pdf` VARCHAR(255),
+  `estado` VARCHAR(50) DEFAULT 'Activo',
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+

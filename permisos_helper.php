@@ -228,9 +228,43 @@ function asegurarTablasEquipos($pdo = null) {
                     serie_equipo TEXT, nombre_equipo TEXT, serie_licencia TEXT, factura TEXT,
                     actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS inv_telefonos_poe (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario TEXT, area TEXT, modelo TEXT, serie TEXT, mac TEXT, ip TEXT,
+                    numero_telefonico TEXT, extension TEXT, tipo_licencia TEXT, correo TEXT, portabilidad TEXT,
+                    folio_factura TEXT, numero_nodo TEXT, puerto_sw TEXT, switch_nombre TEXT,
+                    foto TEXT, factura_pdf TEXT, estado TEXT DEFAULT 'Activo',
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             // MySQL cPanel execution
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `inv_telefonos_poe` (
+                  `id` INT AUTO_INCREMENT PRIMARY KEY,
+                  `usuario` VARCHAR(150),
+                  `area` VARCHAR(100),
+                  `modelo` VARCHAR(100),
+                  `serie` VARCHAR(100),
+                  `mac` VARCHAR(50),
+                  `ip` VARCHAR(50),
+                  `numero_telefonico` VARCHAR(50),
+                  `extension` VARCHAR(20),
+                  `tipo_licencia` VARCHAR(100),
+                  `correo` VARCHAR(150),
+                  `portabilidad` VARCHAR(50),
+                  `folio_factura` VARCHAR(100),
+                  `numero_nodo` VARCHAR(50),
+                  `puerto_sw` VARCHAR(50),
+                  `switch_nombre` VARCHAR(100),
+                  `foto` VARCHAR(255),
+                  `factura_pdf` VARCHAR(255),
+                  `estado` VARCHAR(50) DEFAULT 'Activo',
+                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+
             $sqlPath = __DIR__ . '/database/schema_equipos.sql';
             if (file_exists($sqlPath)) {
                 $sql = file_get_contents($sqlPath);
@@ -525,6 +559,14 @@ function asegurarTablasInfraestructura($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Migraciones automáticas para infra_nodos y telefonía PoE
+        try {
+            $pdo->exec("ALTER TABLE `infra_nodos` ADD COLUMN `tiene_telefono_poe` TINYINT(1) DEFAULT 0;");
+        } catch (Throwable $e) {}
+        try {
+            $pdo->exec("ALTER TABLE `infra_nodos` ADD COLUMN `telefono_poe_id` INT DEFAULT 0;");
+        } catch (Throwable $e) {}
     } catch (Throwable $e) {}
 }
 ?>
