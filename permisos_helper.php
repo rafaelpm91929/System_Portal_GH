@@ -63,7 +63,8 @@ function asegurarTablasPermisos($pdo) {
         ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1),
         ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 4, 1),
         ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 5, 1),
-        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1)
+        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
+        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 7, 1)
         ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
 
     } catch (Throwable $e) {
@@ -148,14 +149,71 @@ function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
         </head>
         <body class="bg-dark text-white d-flex align-items-center justify-content-center vh-100 text-center">
             <div class="card bg-secondary bg-opacity-25 border-danger p-5 rounded-4 shadow-lg text-white" style="max-width: 500px;">
-                <i class="bi bi-shield-lock-fill text-danger display-1 mb-3"></i>
-                <h3 class="fw-bold text-danger">Acceso restringido</h3>
-                <p class="text-light">No posees los permisos necesarios para acceder o realizar acciones en el módulo <code>'.htmlspecialchars($modulo_clave).'</code>.</p>
-                <a href="modulos.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
+                <a href="menu.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
             </div>
         </body>
         </html>';
         exit();
     }
+}
+
+/**
+ * Asegura la existencia de la tabla tickets_soporte
+ */
+function asegurarTablaTickets($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS tickets_soporte (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    folio TEXT,
+                    area_sistemas TEXT NOT NULL,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT NOT NULL,
+                    prioridad TEXT DEFAULT 'Media',
+                    estado TEXT DEFAULT 'Abierto',
+                    solicitante_id INTEGER,
+                    solicitante_nombre TEXT,
+                    solicitante_email TEXT,
+                    solicitante_agencia TEXT,
+                    asignado_a TEXT,
+                    archivo_adjunto TEXT,
+                    notas_resolucion TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tickets_soporte` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `folio` VARCHAR(50),
+                    `area_sistemas` VARCHAR(100) NOT NULL,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT NOT NULL,
+                    `prioridad` VARCHAR(50) DEFAULT 'Media',
+                    `estado` VARCHAR(50) DEFAULT 'Abierto',
+                    `solicitante_id` INT NULL,
+                    `solicitante_nombre` VARCHAR(150),
+                    `solicitante_email` VARCHAR(150),
+                    `solicitante_agencia` VARCHAR(100),
+                    `asignado_a` VARCHAR(150),
+                    `archivo_adjunto` VARCHAR(255),
+                    `notas_resolucion` TEXT,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+    } catch (Throwable $e) {}
 }
 ?>
