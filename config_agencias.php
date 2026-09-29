@@ -35,4 +35,13 @@ $CATALOGO_AGENCIAS = [
         'descripcion' => 'Showroom y Taller Cupra Garage - Infraestructura IT'
     ]
 ];
+
+// Cargar agencias personalizadas registradas dinámicamente
+$archivoAgenciasCustom = __DIR__ . '/agencias_custom.json';
+if (file_exists($archivoAgenciasCustom)) {
+    $custom = json_decode(file_get_contents($archivoAgenciasCustom), true);
+    if (is_array($custom)) {
+        $CATALOGO_AGENCIAS = array_merge($CATALOGO_AGENCIAS, $custom);
+    }
+}
 ?>
