@@ -166,8 +166,8 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 <!-- Navbar -->
 <div class="top-navbar d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm rounded-3 text-white border-secondary">
-            <i class="bi bi-arrow-left me-1"></i> Volver al Catálogo de Agencias
+        <a href="agencias.php" class="btn btn-outline-secondary btn-sm rounded-3 text-white border-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Volver a Agencias
         </a>
         <span class="fw-bold tracking-wide">GRUPO HUERTA <span class="text-secondary fw-normal">| <?php echo htmlspecialchars($info_agencia['nombre']); ?></span></span>
     </div>
