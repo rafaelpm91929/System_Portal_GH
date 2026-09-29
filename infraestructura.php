@@ -1,4 +1,19 @@
 <?php
+if (!function_exists('str_contains')) {
+    function str_contains($haystack, $needle) {
+        return $needle === '' || strpos($haystack, $needle) !== false;
+    }
+}
+if (!function_exists('str_starts_with')) {
+    function str_starts_with($haystack, $needle) {
+        return (string)$needle === '' || strncmp($haystack, $needle, strlen($needle)) === 0;
+    }
+}
+if (!function_exists('str_ends_with')) {
+    function str_ends_with($haystack, $needle) {
+        return $needle === '' || $needle === substr($haystack, -strlen($needle));
+    }
+}
 require_once 'php_helpers/infraestructura_controller.php';
 ?>
 <!DOCTYPE html>
@@ -545,11 +560,17 @@ require_once 'php_helpers/infraestructura_controller.php';
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    window.equiposInventarioMap = <?php echo json_encode(array_column($equiposInventario, null, 'key')); ?>;
-    window.planoActualData = <?php echo json_encode($planoActual ?? ['id' => 1, 'nombre_plano' => 'Plano Principal', 'elementos_json' => '[]']); ?>;
+    window.equiposInventarioMap = <?php 
+        $eqMapJson = json_encode(array_column($equiposInventario ?? [], null, 'key'), JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE);
+        echo $eqMapJson ?: '{}';
+    ?>;
+    window.planoActualData = <?php 
+        $planoJson = json_encode($planoActual ?? ['id' => 1, 'nombre_plano' => 'Plano Principal', 'elementos_json' => '[]'], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE);
+        echo $planoJson ?: '{"id":1,"nombre_plano":"Plano Principal","elementos_json":"[]"}';
+    ?>;
     window.savedSiteRacksData = <?php 
         $obsJson = $siteData['observaciones'] ?? ($registros[0]['observaciones'] ?? '');
-        echo !empty($obsJson) ? json_encode($obsJson) : 'null'; 
+        echo !empty($obsJson) ? (json_encode($obsJson, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: 'null') : 'null'; 
     ?>;
     window.esModoLectura = <?php echo (isset($_GET['modo']) && $_GET['modo'] === 'configurar') ? 'false' : 'true'; ?>;
     window.currentRedSubseccion = '<?php echo $subseccion_red ?? 'menu'; ?>';

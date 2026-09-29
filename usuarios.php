@@ -2,6 +2,7 @@
 session_start();
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
+require_once 'excel_helper.php';
 
 // Protección de Sesión y Rol de Administración
 if (!isset($_SESSION['usuario_id'])) {
@@ -29,6 +30,65 @@ if ($pdo) {
             $_SESSION['agencia'] = $nomAg;
         }
     } catch (Throwable $tAg) {}
+}
+
+// ====================================================
+// EXPORTACIÓN A EXCEL (.XLS) CON DISEÑO CORPORATIVO OFICIAL
+// ====================================================
+if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
+    requerirPermiso('usuarios', 'puede_exportar');
+    $agenciaInfo = obtenerDatosAgenciaExcel($pdo, $agenciaSesion);
+    $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
+    $fileName = "Usuarios_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
+
+    $stmtUsersExp = $pdo->query("SELECT * FROM usuarios ORDER BY nombre ASC");
+    $usersDb = $stmtUsersExp ? $stmtUsersExp->fetchAll(PDO::FETCH_ASSOC) : [];
+
+    $columnasExcel = [
+        ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+        ['label' => 'Nombre Completo', 'width' => '220px', 'align' => 'left'],
+        ['label' => 'Usuario / Login', 'width' => '140px', 'align' => 'left', 'is_text' => true],
+        ['label' => 'Correo Institucional', 'width' => '230px', 'align' => 'left', 'is_text' => true],
+        ['label' => 'Puesto / Cargo', 'width' => '170px', 'align' => 'left'],
+        ['label' => 'Área / Depto', 'width' => '140px', 'align' => 'left'],
+        ['label' => 'Teléfono / Móvil', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'Extensión', 'width' => '95px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'Rol en Sistema', 'width' => '120px', 'align' => 'center'],
+        ['label' => 'Acceso Portal', 'width' => '110px', 'align' => 'center'],
+        ['label' => 'Estatus', 'width' => '90px', 'align' => 'center']
+    ];
+
+    $filasExcel = [];
+    foreach ($usersDb as $u) {
+        $tieneAcceso = (!isset($u['acceso_portal']) || intval($u['acceso_portal']) === 1);
+        $esActivo = (!isset($u['activo']) || intval($u['activo']) === 1);
+        $ext = !empty($u['extension']) ? $u['extension'] : (!empty($u['extension_poe']) ? $u['extension_poe'] : '');
+        $emailVal = !empty($u['correo']) ? $u['correo'] : (!empty($u['email']) ? $u['email'] : '');
+
+        $filasExcel[] = [
+            ['val' => '<b>#' . $u['id'] . '</b>', 'align' => 'center'],
+            ['val' => '<strong>' . htmlspecialchars($u['nombre']) . '</strong>', 'align' => 'left'],
+            ['val' => htmlspecialchars($u['usuario'] ?? '---'), 'align' => 'left', 'is_text' => true],
+            ['val' => !empty($emailVal) ? '<span style="color:#0284c7;">' . htmlspecialchars($emailVal) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
+            ['val' => htmlspecialchars($u['puesto'] ?? 'Sin especificar'), 'align' => 'left'],
+            ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($u['area'] ?? 'General') . '</span>', 'align' => 'left'],
+            ['val' => htmlspecialchars($u['telefono'] ?? '---'), 'align' => 'center', 'is_text' => true],
+            ['val' => !empty($ext) ? '<span class="badge-pill badge-ext"><b>' . htmlspecialchars($ext) . '</b></span>' : '---', 'align' => 'center', 'is_text' => true],
+            ['val' => htmlspecialchars($u['rol'] ?? 'Usuario'), 'align' => 'center'],
+            ['val' => '<span class="badge-pill ' . ($tieneAcceso ? 'badge-status-ok' : 'badge-status-err') . '">' . ($tieneAcceso ? 'Habilitado' : 'Bloqueado') . '</span>', 'align' => 'center'],
+            ['val' => '<span class="badge-pill ' . ($esActivo ? 'badge-status-ok' : 'badge-status-err') . '">' . ($esActivo ? 'Activo' : 'Inactivo') . '</span>', 'align' => 'center']
+        ];
+    }
+
+    descargarExcelConDiseno(
+        'PADRÓN OFICIAL DE USUARIOS DEL SISTEMA',
+        'Control de Cuentas, Colaboradores y Permisos de Acceso',
+        $columnasExcel,
+        $filasExcel,
+        $agenciaInfo,
+        $fileName,
+        'Usuarios'
+    );
 }
 
 // ----------------------------------------------------
@@ -727,6 +787,13 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
                     <span class="input-group-text bg-dark border-secondary text-info"><i class="bi bi-search"></i></span>
                     <input type="text" id="busquedaUsuario" class="form-control px-3" placeholder="🔍 Buscar nombre, correo..." onkeyup="filtrarUsuarios()">
                 </div>
+
+                <!-- Botón Exportar a Excel -->
+                <?php if (tienePermiso('usuarios', 'puede_exportar')): ?>
+                    <a href="usuarios.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-bold d-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar Padrón de Usuarios a Microsoft Excel con logotipo oficial">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel (.xls)
+                    </a>
+                <?php endif; ?>
 
                 <!-- Botón Nuevo Usuario -->
                 <button type="button" class="btn btn-primary btn-sm rounded-3 px-3 fw-bold" onclick="abrirModalNuevoUsuario()">
@@ -2056,5 +2123,6 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
         if (el) el.checked = true;
     }
 </script>
+<?php imprimirScriptExportadorExcelJS(); ?>
 </body>
 </html>

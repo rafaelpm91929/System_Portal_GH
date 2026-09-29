@@ -543,7 +543,7 @@ if ($pdo && !empty($tablaSeleccionada)) {
                 <div class="modal-body">
                     <div class="row g-3">
                         <?php foreach ($columnasInfo as $cInf): ?>
-                            <?php if ($cInf['is_pk'] && str_contains(strtolower($cInf['tipo']), 'int')): ?>
+                            <?php if ($cInf['is_pk'] && strpos(strtolower($cInf['tipo']), 'int') !== false): ?>
                                 <!-- Saltar Autoincrement PK int -->
                             <?php else: ?>
                                 <div class="col-md-6">

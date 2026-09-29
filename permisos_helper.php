@@ -46,6 +46,12 @@ function asegurarTablasPermisos($pdo) {
         try {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN foto_url VARCHAR(255);");
         } catch (Throwable $e) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN contrasena_correo VARCHAR(255);");
+        } catch (Throwable $e) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN extension VARCHAR(50);");
+        } catch (Throwable $e) {}
 
         // 2. Tabla modulos
         $pdo->exec("
@@ -118,7 +124,8 @@ function asegurarTablasPermisos($pdo) {
         ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1),
         ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 4, 1),
         ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 5, 1),
-        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1)
+        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
+        ('directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1)
         ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
 
     } catch (Throwable $e) {
@@ -566,6 +573,12 @@ function asegurarTablasInfraestructura($pdo = null) {
         } catch (Throwable $e) {}
         try {
             $pdo->exec("ALTER TABLE `infra_nodos` ADD COLUMN `telefono_poe_id` INT DEFAULT 0;");
+        } catch (Throwable $e) {}
+        try {
+            $pdo->exec("ALTER TABLE `infra_planos_2d` MODIFY COLUMN `elementos_json` LONGTEXT;");
+        } catch (Throwable $e) {}
+        try {
+            $pdo->exec("ALTER TABLE `infra_site` MODIFY COLUMN `observaciones` LONGTEXT;");
         } catch (Throwable $e) {}
     } catch (Throwable $e) {}
 }

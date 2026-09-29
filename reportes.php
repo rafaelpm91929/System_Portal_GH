@@ -5,6 +5,9 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+require_once 'conexion.php';
+require_once 'excel_helper.php';
+
 if (file_exists('permisos_helper.php')) {
     require_once 'permisos_helper.php';
     requerirPermiso('ordenes_servicio', 'puede_ver');
@@ -117,8 +120,13 @@ if (file_exists($archivoCache)) {
 
         <!-- Tabla de Últimas Órdenes -->
         <div class="table-responsive">
-            <h5 class="fw-bold mb-3"><i class="bi bi-list-task text-primary"></i> Últimas Órdenes Registradas</h5>
-            <table class="table table-hover align-middle">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0"><i class="bi bi-list-task text-primary"></i> Últimas Órdenes Registradas</h5>
+                <button type="button" class="btn btn-success btn-sm rounded-3 px-3 fw-bold d-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" onclick="exportarTablaAExcelConDiseno('tablaOrdenes', 'REPORTE DE ÓRDENES DE SERVICIO', 'Últimas Órdenes Registradas (GEDAS)', 'Ordenes_Servicio')" title="Descargar órdenes en Microsoft Excel con membrete oficial">
+                    <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel (.xls)
+                </button>
+            </div>
+            <table class="table table-hover align-middle" id="tablaOrdenes">
                 <thead class="table-light">
                     <tr>
                         <th>N° Orden</th>
@@ -160,5 +168,6 @@ if (file_exists($archivoCache)) {
             </table>
         </div>
     </div>
+    <?php imprimirScriptExportadorExcelJS(); ?>
 </body>
 </html>

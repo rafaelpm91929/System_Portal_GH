@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'conexion.php';
+require_once 'excel_helper.php';
 
 // Protección de Sesión opcional o verificación
 $usuarioSesion = $_SESSION['usuario_id'] ?? null;
@@ -144,6 +145,70 @@ foreach ($registrosNodos as $nd) {
     }
 }
 $fechaEmision = date('d/m/Y H:i');
+
+// ====================================================
+// EXPORTACIÓN A EXCEL (.XLS) CON DISEÑO CORPORATIVO OFICIAL
+// ====================================================
+if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
+    $agenciaInfo = obtenerDatosAgenciaExcel($pdo, $agenciaNombre);
+    $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
+    $fileName = "Cedula_Nodos_RJ45_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
+
+    $columnasExcel = [
+        ['label' => 'Código Nodo', 'width' => '90px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'Tipo de Nodo', 'width' => '110px', 'align' => 'center'],
+        ['label' => 'Área / Ubicación', 'width' => '160px', 'align' => 'left'],
+        ['label' => 'Switch Asignado', 'width' => '150px', 'align' => 'left'],
+        ['label' => 'Pto Switch', 'width' => '90px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'Patch Panel', 'width' => '130px', 'align' => 'left'],
+        ['label' => 'Pto Panel', 'width' => '80px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'VLAN', 'width' => '80px', 'align' => 'center', 'is_text' => true],
+        ['label' => 'Estatus', 'width' => '95px', 'align' => 'center'],
+        ['label' => 'Dispositivo Conectado', 'width' => '180px', 'align' => 'left'],
+        ['label' => 'Usuario Asignado', 'width' => '160px', 'align' => 'left'],
+        ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true]
+    ];
+
+    $filasExcel = [];
+    foreach ($registrosNodos as $nd) {
+        $c = trim($nd['codigo_nodo'] ?? '');
+        $eq = $equiposMap[$c] ?? null;
+        $swInfo = $puertosMap[$c] ?? null;
+
+        $swNombre = !empty($nd['switch_nombre']) ? $nd['switch_nombre'] : ($swInfo['switch_nombre'] ?? '---');
+        $swPto = !empty($nd['switch_puerto']) ? $nd['switch_puerto'] : ($swInfo['puerto_numero'] ?? '---');
+        $dispositivo = $eq ? ($eq['nombre'] ?: $eq['tipo']) : ($swInfo['equipo_nombre'] ?? '---');
+        $usuario = $eq['usuario'] ?? '---';
+        $ip = $eq['ip'] ?? '---';
+
+        $esActivo = (strtolower($nd['estatus'] ?? '') === 'activo');
+
+        $filasExcel[] = [
+            ['val' => '<b>' . htmlspecialchars($c) . '</b>', 'align' => 'center', 'is_text' => true],
+            ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($nd['tipo_nodo'] ?? 'Datos') . '</span>', 'align' => 'center'],
+            ['val' => htmlspecialchars($nd['area_ubicacion'] ?? 'General'), 'align' => 'left'],
+            ['val' => htmlspecialchars($swNombre), 'align' => 'left'],
+            ['val' => htmlspecialchars($swPto), 'align' => 'center', 'is_text' => true],
+            ['val' => htmlspecialchars($nd['patch_panel'] ?? '---'), 'align' => 'left'],
+            ['val' => htmlspecialchars($nd['puerto_patch'] ?? '---'), 'align' => 'center', 'is_text' => true],
+            ['val' => htmlspecialchars($nd['vlan'] ?? '---'), 'align' => 'center', 'is_text' => true],
+            ['val' => '<span class="badge-pill ' . ($esActivo ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($nd['estatus'] ?? 'Activo') . '</span>', 'align' => 'center'],
+            ['val' => '<strong>' . htmlspecialchars($dispositivo) . '</strong>', 'align' => 'left'],
+            ['val' => htmlspecialchars($usuario), 'align' => 'left'],
+            ['val' => htmlspecialchars($ip), 'align' => 'center', 'is_text' => true]
+        ];
+    }
+
+    descargarExcelConDiseno(
+        'CÉDULA MATRIZ DE NODOS DE RED RJ45',
+        'Inventario y Mapeo Físico de Cableado Estructurado',
+        $columnasExcel,
+        $filasExcel,
+        $agenciaInfo,
+        $fileName,
+        'Nodos_RJ45'
+    );
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -454,6 +519,11 @@ $fechaEmision = date('d/m/Y H:i');
                     <i class="bi bi-grid me-1"></i> Vista Cédulas / Tarjetas
                 </button>
             </div>
+
+            <!-- Botón Exportar a Excel -->
+            <a href="reporte_nodos.php?accion=exportar_excel<?php echo !empty($filtroNodo) ? '&nodo=' . urlencode($filtroNodo) : ''; ?>" class="btn btn-success btn-sm rounded-pill px-3 py-1.5 fw-bold shadow-sm d-flex align-items-center gap-1.5" style="background: #16a34a; border-color: #16a34a;" title="Exportar Cédula de Nodos a Microsoft Excel con logotipo oficial">
+                <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel (.xls)
+            </a>
 
             <!-- Botón Imprimir / PDF -->
             <button type="button" class="btn btn-warning btn-sm rounded-pill px-4 py-1.5 fw-bold shadow-sm" onclick="window.print()">
@@ -945,5 +1015,6 @@ $fechaEmision = date('d/m/Y H:i');
             }
         }
     </script>
+    <?php imprimirScriptExportadorExcelJS($agenciaData); ?>
 </body>
 </html>

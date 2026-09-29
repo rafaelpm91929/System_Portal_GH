@@ -1,10 +1,28 @@
 <?php
+// Polyfills de compatibilidad para servidores con PHP 7.x
+if (!function_exists('str_contains')) {
+    function str_contains($haystack, $needle) {
+        return $needle !== '' && strpos($haystack, $needle) !== false;
+    }
+}
+if (!function_exists('str_starts_with')) {
+    function str_starts_with($haystack, $needle) {
+        return (string)$needle !== '' && strncmp($haystack, $needle, strlen($needle)) === 0;
+    }
+}
+if (!function_exists('str_ends_with')) {
+    function str_ends_with($haystack, $needle) {
+        return $needle === '' || $needle === substr($haystack, -strlen($needle));
+    }
+}
+
 session_start();
 header("Cache-Control: no-cache, no-store, must-revalidate");
 header("Pragma: no-cache");
 header("Expires: 0");
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
+require_once 'excel_helper.php';
 
 // Protección de Sesión y Permisos
 if (!isset($_SESSION['usuario_id'])) {
@@ -290,6 +308,156 @@ if (!isset($SECCIONES[$seccion_activa])) {
 
 $infoSeccion = $SECCIONES[$seccion_activa];
 $tablaActual = $infoSeccion['tabla'];
+
+// ====================================================
+// EXPORTACIÓN A EXCEL (.XLS) CON DISEÑO CORPORATIVO OFICIAL
+// ====================================================
+if ((isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') || (isset($_GET['action']) && $_GET['action'] === 'exportar_excel')) {
+    requerirPermiso('equipos', 'puede_exportar');
+    $agenciaInfo = obtenerDatosAgenciaExcel($pdo);
+    $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
+    $secLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $infoSeccion['nombre']);
+    $fileName = "Inventario_{$secLimpia}_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
+
+    $filasDb = [];
+    if ($pdo) {
+        try {
+            $stmtExp = $pdo->query("SELECT * FROM `$tablaActual` ORDER BY id DESC");
+            $filasDb = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
+        } catch (Throwable $e) {}
+    }
+
+    $columnasExcel = [];
+    $filasExcel = [];
+
+    if (in_array($seccion_activa, ['equipos_vw', 'equipos_corp', 'equipos_baja'])) {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Equipo / Máquina', 'width' => '170px', 'align' => 'left'],
+            ['label' => 'Usuario Asignado', 'width' => '180px', 'align' => 'left'],
+            ['label' => 'Departamento', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Puesto', 'width' => '150px', 'align' => 'left'],
+            ['label' => 'Correo', 'width' => '200px', 'align' => 'left', 'is_text' => true],
+            ['label' => 'Extensión', 'width' => '90px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Nodo', 'width' => '90px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Switch / Pto', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Tipo / Marca', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Serie (S/N)', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Procesador', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'RAM', 'width' => '80px', 'align' => 'center'],
+            ['label' => 'Disco', 'width' => '90px', 'align' => 'center'],
+            ['label' => 'Sistema Operativo', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'AnyDesk', 'width' => '110px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Estado', 'width' => '100px', 'align' => 'center']
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => '<strong>' . htmlspecialchars($r['nombre_equipo'] ?? 'N/A') . '</strong>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['usuario'] ?? 'Sin Asignar'), 'align' => 'left'],
+                ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['departamento'] ?? '') . '</span>', 'align' => 'left'],
+                ['val' => htmlspecialchars($r['puesto'] ?? ''), 'align' => 'left'],
+                ['val' => !empty($r['correo']) ? '<span style="color:#0284c7;">' . htmlspecialchars($r['correo']) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
+                ['val' => !empty($r['extension']) ? '<span class="badge-pill badge-ext"><b>' . htmlspecialchars($r['extension']) . '</b></span>' : '---', 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['numero_nodo'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars(($r['puerto_sw'] ?? '') ?: ($r['switch_nombre'] ?? '---')), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars(($r['tipo_equipo'] ?? '') . ' ' . ($r['marca'] ?? '')), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['procesador'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['ram'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['dd'] ?? '---'), 'align' => 'center'],
+                ['val' => htmlspecialchars($r['sistema_op'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['remoto'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => '<span class="badge-pill ' . (strtolower($r['estado'] ?? '') === 'activo' || strtolower($r['estado'] ?? '') === 'excelente' ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($r['estado'] ?? 'Activo') . '</span>', 'align' => 'center']
+            ];
+        }
+    } elseif ($seccion_activa === 'telefonos_poe') {
+        $columnasExcel = [
+            ['label' => '# ID', 'width' => '50px', 'align' => 'center'],
+            ['label' => 'Extensión', 'width' => '100px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Número Telefónico', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Usuario Asignado', 'width' => '190px', 'align' => 'left'],
+            ['label' => 'Área / Depto', 'width' => '140px', 'align' => 'left'],
+            ['label' => 'Correo', 'width' => '200px', 'align' => 'left', 'is_text' => true],
+            ['label' => 'Modelo', 'width' => '130px', 'align' => 'left'],
+            ['label' => 'Serie (S/N)', 'width' => '130px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dirección IP', 'width' => '120px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Dirección MAC', 'width' => '140px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Nodo de Red', 'width' => '95px', 'align' => 'center', 'is_text' => true],
+            ['label' => 'Switch / Puerto', 'width' => '130px', 'align' => 'center', 'is_text' => true]
+        ];
+        foreach ($filasDb as $r) {
+            $filasExcel[] = [
+                ['val' => '<b>#' . $r['id'] . '</b>', 'align' => 'center'],
+                ['val' => '<span class="badge-pill badge-ext"><b>' . htmlspecialchars($r['extension'] ?? '') . '</b></span>', 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['numero_telefonico'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => '<strong>' . htmlspecialchars($r['usuario'] ?? 'Sin Asignar') . '</strong>', 'align' => 'left'],
+                ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['area'] ?? '') . '</span>', 'align' => 'left'],
+                ['val' => !empty($r['correo']) ? '<span style="color:#0284c7;">' . htmlspecialchars($r['correo']) . '</span>' : '---', 'align' => 'left', 'is_text' => true],
+                ['val' => htmlspecialchars($r['modelo'] ?? '---'), 'align' => 'left'],
+                ['val' => htmlspecialchars($r['serie'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['ip'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['mac'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars($r['numero_nodo'] ?? '---'), 'align' => 'center', 'is_text' => true],
+                ['val' => htmlspecialchars(($r['puerto_sw'] ?? '') ?: ($r['switch_nombre'] ?? '---')), 'align' => 'center', 'is_text' => true]
+            ];
+        }
+    } else {
+        $camposMostrar = $infoSeccion['columnas_tabla'];
+        foreach ($camposMostrar as $cmp) {
+            $colTitle = ucwords(str_replace('_', ' ', $cmp));
+            $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1']);
+            $columnasExcel[] = ['label' => $colTitle, 'align' => ($cmp === 'id' || $isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
+        }
+        foreach ($filasDb as $r) {
+            $fRow = [];
+            foreach ($camposMostrar as $cmp) {
+                $val = $r[$cmp] ?? '---';
+                $isTxt = in_array($cmp, ['ip', 'serie', 'numero_nodo', 'puerto_sw', 'contrasena', 'extension', 'mac', 'imei_1']);
+                $fRow[] = ['val' => htmlspecialchars($val), 'align' => ($cmp === 'id' || $isTxt ? 'center' : 'left'), 'is_text' => $isTxt];
+            }
+            $filasExcel[] = $fRow;
+        }
+    }
+
+    descargarExcelConDiseno(
+        'INVENTARIO DE EQUIPOS &bull; ' . strtoupper($infoSeccion['nombre']),
+        'Control y Gestión de Activos Tecnológicos Oficial',
+        $columnasExcel,
+        $filasExcel,
+        $agenciaInfo,
+        $fileName,
+        substr($infoSeccion['nombre'], 0, 30)
+    );
+}
+
+// Endpoint AJAX para obtener datos individuales de un registro (fallback garantizado)
+if (isset($_GET['action']) && $_GET['action'] === 'obtener_registro') {
+    header('Content-Type: application/json; charset=utf-8');
+    $regId = intval($_GET['id'] ?? 0);
+    $secReq = $_GET['sec'] ?? $seccion_activa;
+    if ($pdo && $regId > 0 && isset($SECCIONES[$secReq])) {
+        $tbl = $SECCIONES[$secReq]['tabla'];
+        try {
+            $st = $pdo->prepare("SELECT * FROM `$tbl` WHERE id = ? LIMIT 1");
+            $st->execute([$regId]);
+            $row = $st->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                echo json_encode($row, JSON_INVALID_UTF8_SUBSTITUTE);
+            } else {
+                echo json_encode(['error' => 'Registro no encontrado']);
+            }
+        } catch (Throwable $e) {
+            echo json_encode(['error' => $e->getMessage()]);
+        }
+    } else {
+        echo json_encode(['error' => 'Parámetros inválidos']);
+    }
+    exit();
+}
+
 
 // =========================================================================
 // VALIDACIÓN DE REGLAS DE NEGOCIO Y UNICIDAD EN EL INVENTARIO
@@ -928,7 +1096,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $regActual = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($regActual) {
-                    $tablaTargetBaja = (str_contains($tablaActual, 'nobreak')) ? 'inv_nobreak_baja' : 'inv_equipos_baja';
+                    $tablaTargetBaja = (strpos($tablaActual, 'nobreak') !== false) ? 'inv_nobreak_baja' : 'inv_equipos_baja';
 
                     // Consultar columnas existentes en la tabla destino
                     $colsExistentes = [];
@@ -1536,7 +1704,7 @@ function obtenerUnidadCampo($col) {
 
 function esCampoPassword($col) {
     $c = strtolower($col);
-    return str_contains($c, 'contrasena') || str_contains($c, 'password') || str_contains($c, 'clave');
+    return strpos($c, 'contrasena') !== false || strpos($c, 'password') !== false || strpos($c, 'clave') !== false;
 }
 
 function renderBadgeTipoSite($tipo) {
@@ -1619,12 +1787,20 @@ function renderBadgeTipoSite($tipo) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
+// =========================================================================
+    // MOTOR GLOBAL Y COMPLETO DE EXPEDIENTE Y GESTIÓN DE EQUIPOS (HEAD SCRIPT)
     // =========================================================================
-    // MOTOR INMEDIATO DE EXPEDIENTE COMPLETO (DISPONIBLE DESDE EL HEAD)
-    // =========================================================================
-    window.inventarioRegistros = <?php echo json_encode($registros ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    window.inventarioRegistros = <?php echo (json_encode($registros ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'); ?>;
     window.currentSeccion = "<?php echo htmlspecialchars($seccion_activa); ?>";
     var currentSeccion = window.currentSeccion;
+
+    window.listadoDvrs = <?php echo (json_encode($dvrsRegistrados ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'); ?>;
+    var listadoDvrs = window.listadoDvrs;
+
+    window.switchesDisponiblesSite = <?php echo (json_encode($switchesDisponiblesSite ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'); ?>;
+    window.nodosDisponiblesRed = <?php echo (json_encode($nodosDisponiblesRed ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'); ?>;
+    window.puertosSwitchMapa = <?php echo (json_encode($puertosSwitchMapa ?? [], JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_INVALID_UTF8_SUBSTITUTE) ?: '[]'); ?>;
+    window._isSyncingNodoSwitch = false;
 
     var CATEGORIAS_EXPEDIENTE = [
         { id: 'cat_general', titulo: '👤 Datos de Asignación y Dispositivo', icono: 'bi-person-badge-fill', campos: ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'dvr_vinculado', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'estatus', 'tipo_equipo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'extension', 'observaciones'] },
@@ -1648,178 +1824,145 @@ function renderBadgeTipoSite($tipo) {
         'fecha_adquisicion': 'FECHA DE ADQUISICIÓN',
         'contrato': 'CONTRATO',
         'usuario_impresora': 'USUARIO IMPRESORA',
-        'contrasena_impresora': 'CONTRASEÑA IMPRESORA',
-        'usuario_impresora_web': 'USUARIO IMPRESORA WEB',
-        'contrasena_impresora_web': 'CONTRASEÑA IMPRESORA WEB'
+        'contrasena_impresora': 'PASSWORD IMPRESORA',
+        'usuario_impresora_web': 'USUARIO WEB IMAGE MONITOR',
+        'contrasena_impresora_web': 'PASS WEB IMAGE MONITOR',
+        'circuit_id': 'CIRCUIT ID / IDENTIFICADOR ENLACE',
+        'soporte_contacto': 'TELÉFONO / CONTACTO SOPORTE ISP',
+        'ip_publica': 'IP PÚBLICA ESTÁTICA',
+        'simetria_enlace': 'SIMETRÍA DEL SERVICIO',
+        'ancho_banda': 'ANCHO DE BANDA CONTRATADO',
+        'numero_cuenta': 'NÚMERO DE CUENTA / CLIENTE',
+        'tipo_enlace': 'TECNOLOGÍA DE ENLACE',
+        'tipo_conexion': 'TIPO DE ENTREGA / CONEXIÓN',
+        'firmware_version': 'VERSIÓN FIRMWARE',
+        'unifi_os_ver': 'VERSIÓN UNIFI OS',
+        'controller_ver': 'VERSIÓN NETWORK CONTROLLER',
+        'velocidad_enlace': 'VELOCIDAD PUERTO WAN/SFP',
+        'ssids': 'SSIDS TRANSMITIDOS',
+        'vlans': 'VLANS VINCULADAS',
+        'poe': 'CONSUMO / ALIMENTACIÓN POE',
+        'controlador_ap': 'SERVIDOR CONTROLADOR ADOPTADO',
+        'bahias_nas': 'CANTIDAD BAHÍAS NAS',
+        'capacidad_disco_ind': 'CAPACIDAD POR DISCO',
+        'capacidad_disponible': 'ALMACENAMIENTO ÚTIL DISPONIBLE',
+        'config_raid': 'CONFIGURACIÓN DE ARREGLO RAID',
+        'tipo_discos': 'TIPO DE UNIDADES (HDD / SSD / NVME)',
+        'protocolos_nas': 'PROTOCOLOS ACTIVOS (SMB/NFS/ISCSI)',
+        'funcion_servicio': 'FUNCIÓN / SERVICIOS PRINCIPALES',
+        'ambiente': 'AMBIENTE (PRODUCCIÓN / LAB)',
+        'criticidad': 'NIVEL DE CRITICIDAD OPERATIVA',
+        'tipo_servidor': 'FACTOR DE FORMA SERVIDOR',
+        'posicion_rack': 'POSICIÓN EN RACK (UNIDAD U)',
+        'capacidad_va': 'CAPACIDAD DE POTENCIA (VA)',
+        'capacidad_w': 'POTENCIA REAL (WATTS)',
+        'tipo_ups': 'TOPOLOGÍA UPS (ONLINE/LINE-INTERACTIVE)',
+        'voltaje_entrada': 'VOLTAJE NOMINAL DE ENTRADA',
+        'voltaje_salida': 'VOLTAJE REGULADO DE SALIDA',
+        'cant_baterias': 'CANTIDAD TOTAL BATERÍAS',
+        'specs_baterias': 'ESPECIFICACIONES BATERÍAS (V / AH)',
+        'fecha_bateria': 'ÚLTIMO REEMPLAZO BATERÍAS',
+        'autonomia': 'AUTONOMÍA ESTIMADA (MINUTOS)',
+        'tipo_switch': 'CAPA SWITCH (L2 / L3 ADMINISTRABLE)',
+        'velocidad_puertos': 'VELOCIDAD PUERTOS (1G / 10G / 2.5G)',
+        'cantidad_puertos': 'TOTAL DE PUERTOS',
+        'puerto_patch_panel': 'PUERTO PATCH PANEL',
+        'puerto_sw': 'SWITCH Y PUERTO ASOCIADO',
+        'switch_nombre': 'SWITCH ASIGNADO',
+        'numero_nodo': 'NODO DE RED ASOCIADO'
     };
 
     function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        if (!str && str !== 0) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
     }
     window.escapeHtml = escapeHtml;
 
     function getFieldLabel(key) {
         const k = key.toLowerCase();
         if (ETIQUETAS_CUSTOM[k]) return ETIQUETAS_CUSTOM[k];
-        const map = {
-            'nombre_equipo': 'NOMBRE DEL EQUIPO',
-            'tipo_equipo': 'TIPO DE EQUIPO',
-            'expediente_completo': 'EXPEDIENTE COMPLETO',
-            'sistema_op': 'SISTEMA OPERATIVO',
-            'fecha_compra': 'FECHA DE COMPRA',
-            'folio_factura': 'FOLIO FACTURA',
-            'inicio_garantia': 'INICIO GARANTÍA',
-            'fin_garantia': 'FIN GARANTÍA',
-            'garantia2': 'TIPO GARANTÍA',
-            'renovacion_equipo': 'RENOVACIÓN EQUIPO',
-            'usuario_equipo_dominio': 'USUARIO DOMINIO',
-            'serie_office': 'SERIE OFFICE',
-            'clave_candado': 'CLAVE CANDADO',
-            'usuario_gds': 'USUARIO GDS',
-            'correo_oficial_vw': 'CORREO OFICIAL VW',
-            'correo_oficial_seat': 'CORREO OFICIAL SEAT',
-            'correo_oficial_planta': 'CORREO OFICIAL PLANTA',
-            'power_pb': 'POWER PB',
-            'contrasena_pb': 'CONTRASEÑA PB',
-            'contrasena_poc': 'CONTRASEÑA POC',
-            'contrasena_msqp': 'CONTRASEÑA MSQP',
-            'contrasena_grp': 'CONTRASEÑA GRP',
-            'contrasena_etka': 'CONTRASEÑA ETKA',
-            'contrasena_facebook': 'CONTRASEÑA FACEBOOK',
-            'contrasena_instagram': 'CONTRASEÑA INSTAGRAM',
-            'contrasena_wish': 'CONTRASEÑA WISH',
-            'contrasena_marketing_cloud': 'CONTRASEÑA MARKETING CLOUD',
-            'sales_cloud_force': 'SALES CLOUD FORCE',
-            'contrasena_sales_cloud_force': 'CONTRASEÑA SALES CLOUD',
-            'pagina_la_villa': 'PÁGINA LA VILLA',
-            'contrasena_pagina_la_villa': 'CONTRASEÑA PÁGINA LA VILLA',
-            'urban_science': 'URBAN SCIENCE',
-            'contrasena_urban_science': 'CONTRASEÑA URBAN SCIENCE',
-            'contrasena_canva': 'CONTRASEÑA CANVA',
-            'cuenta_integral': 'CUENTA INTEGRAL',
-            'contrasena_cuenta_integral': 'CONTRASEÑA CUENTA INTEGRAL',
-            'dia_respaldo': 'DÍA DE RESPALDO',
-            'hora_respaldo': 'HORA DE RESPALDO',
-            'no_break': 'NO BREAK (UPS)',
-            'modelo_nobreak': 'MODELO NO BREAK',
-            'serie_nobreak': 'SERIE NO BREAK',
-            'puerto_patch_panel': 'PATCH PANEL',
-            'puerto_sw': 'PUERTO SWITCH',
-            'numero_nodo': 'NÚMERO DE NODO',
-            'switch_nombre': 'SWITCH ASIGNADO',
-            'motivo_baja': 'MOTIVO DE BAJA',
-            'dvr_vinculado': 'DVR / NVR VINCULADO',
-            'tipo_registro': 'TIPO DE DISPOSITIVO',
-            'dias_grabacion': 'DÍAS DE GRABACIÓN',
-            'usuario_dvr': 'USUARIO DVR',
-            'numero_discos': 'NÚMERO DE DISCOS',
-            'canal_analogico': 'CANAL ANALÓGICO',
-            'canal_ip': 'CANAL IP',
-            'foto_vista_camara': 'VISTA DE CÁMARA',
-            'subtipo_camara': 'SUBTIPO CÁMARA',
-            'subtipo_dispositivo': 'SUBTIPO DISPOSITIVO',
-            'cantidad_puertos': 'CANTIDAD DE PUERTOS',
-            'velocidad_puertos': 'VELOCIDAD DE PUERTOS',
-            'tipo_switch': 'TIPO DE SWITCH',
-            'firmware_version': 'VERSIÓN FIRMWARE',
-            'posicion_rack': 'POSICIÓN EN RACK',
-            'cantidad_discos': 'CANTIDAD DE DISCOS',
-            'tipo_servidor': 'TIPO DE SERVIDOR',
-            'funcion_servicio': 'FUNCIÓN / SERVICIO',
-            'bahias_nas': 'BAHÍAS NAS',
-            'capacidad_disco_ind': 'CAPACIDAD DISCO INDIVIDUAL',
-            'capacidad_disponible': 'CAPACIDAD DISPONIBLE',
-            'config_raid': 'CONFIGURACIÓN RAID',
-            'tipo_discos': 'TIPO DE DISCOS',
-            'protocolos_nas': 'PROTOCOLOS NAS',
-            'tipo_enlace': 'TIPO DE ENLACE',
-            'ancho_banda': 'ANCHO DE BANDA',
-            'simetria_enlace': 'SIMETRÍA DE ENLACE',
-            'tipo_conexion': 'TIPO DE CONEXIÓN',
-            'numero_contrato': 'NÚMERO DE CONTRATO',
-            'numero_cuenta': 'NÚMERO DE CUENTA',
-            'circuit_id': 'CIRCUIT ID',
-            'soporte_contacto': 'CONTACTO DE SOPORTE',
-            'ip_publica': 'IP PÚBLICA',
-            'ip_local': 'IP LOCAL',
-            'unifi_os_ver': 'UNIFI OS VERSIÓN',
-            'controller_ver': 'NETWORK CONTROLLER VER.',
-            'velocidad_enlace': 'VELOCIDAD DE ENLACE',
-            'controlador_ap': 'CONTROLADOR AP',
-            'capacidad_va': 'CAPACIDAD (VA)',
-            'capacidad_w': 'CAPACIDAD (WATTS)',
-            'tipo_ups': 'TIPO DE UPS',
-            'voltaje_entrada': 'VOLTAJE ENTRADA',
-            'voltaje_salida': 'VOLTAJE SALIDA',
-            'cant_baterias': 'CANTIDAD DE BATERÍAS',
-            'specs_baterias': 'ESPECIFICACIONES BATERÍAS',
-            'fecha_bateria': 'ÚLTIMO CAMBIO BATERÍAS',
-            'tiene_plan_celular': 'TIENE PLAN CELULAR',
-            'vencimiento_plan': 'VENCIMIENTO PLAN',
-            'proveedor_plan': 'PROVEEDOR PLAN',
-            'numero_contrato_plan': 'NÚMERO CONTRATO PLAN',
-            'estado_fisico': 'ESTADO FÍSICO',
-            'tamano_pantalla': 'TAMAÑO PANTALLA',
-            'resolucion': 'RESOLUCIÓN',
-            'modelo_exacto': 'MODELO EXACTO',
-            'fecha_adquisicion': 'FECHA DE ADQUISICIÓN',
-            'usuario_impresora': 'USUARIO IMPRESORA',
-            'contrasena_impresora': 'CONTRASEÑA IMPRESORA',
-            'usuario_impresora_web': 'USUARIO WEB IMPRESORA',
-            'contrasena_impresora_web': 'CONTRASEÑA WEB IMPRESORA'
-        };
-        return map[k] || key.replace(/_/g, ' ').toUpperCase();
+        return key.replace(/_/g, ' ').toUpperCase();
     }
     window.getFieldLabel = getFieldLabel;
 
     function formatUnitValue(key, val) {
-        if (val === null || val === undefined || String(val).trim() === '') {
-            return '<span class="text-muted small">Sin información</span>';
-        }
+        if (val === null || val === undefined || val === '') return '<span class="text-muted opacity-50">No especificado</span>';
+        let cleanVal = String(val).trim();
+        if (!cleanVal || cleanVal === 'No especificado' || cleanVal === 'N/A') return '<span class="text-muted opacity-50">No especificado</span>';
+
         const k = key.toLowerCase();
-        const str = String(val).trim();
-        if (k === 'ram' && !str.toUpperCase().includes('GB') && !str.toUpperCase().includes('MB')) {
-            return escapeHtml(str) + ' GB';
-        }
-        if (k === 'dd' || k === 'almacenamiento' || k === 'capacidad_disponible' || k === 'capacidad_disco_ind') {
-            if (!str.toUpperCase().includes('GB') && !str.toUpperCase().includes('TB') && !str.toUpperCase().includes('MB')) {
-                const num = parseFloat(str);
-                if (!isNaN(num) && num > 0) {
-                    return num >= 1000 ? (num / 1000) + ' TB' : num + ' GB';
-                }
-            }
-        }
-        if (k === 'costo' && !str.includes('$')) {
-            const num = parseFloat(str);
+        if ((k === 'costo' || k === 'costo_equipo') && !cleanVal.includes('$')) {
+            let num = parseFloat(cleanVal.replace(/,/g, ''));
             if (!isNaN(num)) {
                 return '$' + num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
         }
-        return escapeHtml(str);
+        if (k === 'ram' && !/gb|mb/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + ' GB';
+        if (k === 'ghz' && !/ghz/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + ' GHz';
+        if (k === 'pulgadas' && !/"|pulg/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + '"';
+        if ((k === 'dd' || k === 'almacenamiento') && !/gb|tb|mb/i.test(cleanVal) && !isNaN(cleanVal)) {
+            let num = parseFloat(cleanVal);
+            return escapeHtml(cleanVal) + (num <= 32 ? ' TB' : ' GB');
+        }
+        return escapeHtml(cleanVal);
     }
     window.formatUnitValue = formatUnitValue;
 
     function togglePassSpan(id, btn) {
         const el = document.getElementById(id);
         if (!el) return;
-        const realPass = el.getAttribute('data-pass') || '';
-        const icon = btn ? btn.querySelector('i') : null;
-        if (el.textContent === '••••••••') {
+        const realPass = el.getAttribute('data-pass');
+        const isHidden = (el.textContent === '••••••••');
+        if (isHidden) {
             el.textContent = realPass;
-            if (icon) icon.className = 'bi bi-eye-slash-fill';
+            if (btn) btn.innerHTML = '<i class="bi bi-eye-slash-fill text-warning"></i>';
         } else {
             el.textContent = '••••••••';
-            if (icon) icon.className = 'bi bi-eye-fill';
+            if (btn) btn.innerHTML = '<i class="bi bi-eye-fill text-info"></i>';
         }
     }
     window.togglePassSpan = togglePassSpan;
-    var togglePassSpan = window.togglePassSpan;
+
+    function toggleInputPass(inputId, btn) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            if (btn) btn.innerHTML = '<i class="bi bi-eye-slash-fill text-warning"></i>';
+        } else {
+            input.type = 'password';
+            if (btn) btn.innerHTML = '<i class="bi bi-eye-fill text-info"></i>';
+        }
+    }
+    window.toggleInputPass = toggleInputPass;
+
+    function toggleSidebarNavegacion() {
+        const sidebar = document.getElementById('mainSidebarWrapper');
+        const content = document.getElementById('mainContentWrapper');
+        const btnTab = document.getElementById('btnShowSidebarTab');
+        const iconBtn = document.getElementById('iconToggleSidebar');
+
+        if (!sidebar || !content) return;
+
+        const isHidden = (sidebar.style.display === 'none');
+
+        if (isHidden) {
+            sidebar.style.display = 'block';
+            content.classList.remove('col-12');
+            content.classList.add('col-md-9', 'col-lg-10');
+            if (btnTab) btnTab.style.display = 'none';
+            if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white';
+            localStorage.setItem('sidebar_collapsed', '0');
+        } else {
+            sidebar.style.display = 'none';
+            content.classList.remove('col-md-9', 'col-lg-10');
+            content.classList.add('col-12');
+            if (btnTab) btnTab.style.display = 'block';
+            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white';
+            localStorage.setItem('sidebar_collapsed', '1');
+        }
+    }
+    window.toggleSidebarNavegacion = toggleSidebarNavegacion;
 
     function getAllowedFieldsForRecord(reg, seccion) {
         let tipo = (reg.tipo_registro || '').trim();
@@ -1907,357 +2050,358 @@ function renderBadgeTipoSite($tipo) {
     window.getAllowedFieldsForRecord = getAllowedFieldsForRecord;
 
     window.verExpedienteCompleto = function(regOrId) {
-        let reg = regOrId;
-        if (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(regOrId))) {
-            reg = (window.inventarioRegistros || []).find(r => r.id == regOrId) || null;
-        }
-        if (!reg) return;
-        const isCam = (reg.tipo_registro === 'Cámara');
-        const isTel = (currentSeccion === 'telefonos_poe');
-        
-        const subtituloEl = document.getElementById('expediente_subtitulo');
-        if (subtituloEl) {
-            if (isTel) {
-                subtituloEl.textContent = 'Teléfono IP PoE | Ext: ' + (reg.extension || 'S/E') + ' | Asignado: ' + (reg.usuario || 'Sin Asignar');
-            } else {
-                subtituloEl.textContent = (isCam ? 'Cámara: ' : 'Equipo: ') + (reg.nombre_equipo || reg.equipo || reg.nombre || 'N/A') + (isCam ? ' | DVR/NVR: ' + (reg.dvr_vinculado || 'N/A') : ' | Usuario: ' + (reg.usuario || reg.nombre || 'N/A'));
+        try {
+            let reg = regOrId;
+            if (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(String(regOrId).trim()))) {
+                const targetId = String(regOrId).trim();
+                reg = (window.inventarioRegistros || []).find(r => String(r.id) === targetId) || null;
             }
-        }
-        
-        const busquedaInput = document.getElementById('busquedaExpediente');
-        if (busquedaInput) busquedaInput.value = '';
-        
-        const container = document.getElementById('contenedorExpedienteDetalles');
-        if (!container) return;
-        container.innerHTML = '';
 
-        // 1. Tarjeta Hero / Fotografía
-        const photoHeroBlock = document.createElement('div');
-        photoHeroBlock.className = 'col-12 mb-3 cat-header-block';
-        photoHeroBlock.setAttribute('data-cat-id', 'cat_foto');
-        photoHeroBlock.setAttribute('data-search', 'fotografia foto imagen equipo camara vista');
+            // Fallback AJAX garantizado si no está precargado en inventarioRegistros
+            if (!reg && (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(String(regOrId).trim())))) {
+                const targetId = String(regOrId).trim();
+                fetch('equipos.php?action=obtener_registro&sec=' + encodeURIComponent(window.currentSeccion || 'equipos_vw') + '&id=' + encodeURIComponent(targetId))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && !data.error && data.id) {
+                            if (!window.inventarioRegistros) window.inventarioRegistros = [];
+                            window.inventarioRegistros.push(data);
+                            window.verExpedienteCompleto(data);
+                        } else {
+                            alert('No se pudo encontrar la ficha del registro #' + targetId);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error al consultar expediente vía AJAX:", err);
+                        alert('Error al consultar el expediente del equipo #' + targetId);
+                    });
+                return;
+            }
 
-        if (isCam) {
-            let fotoCamHtml = reg.foto_equipo ? `
-                <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
-                    <div class="d-flex flex-column align-items-center text-center">
-                        <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
-                            <img src="${escapeHtml(reg.foto_equipo)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Ver a tamaño completo">
-                        </div>
-                        <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
-                            <i class="bi bi-camera-fill me-1"></i> Fotografía Física de la Cámara
-                        </span>
-                        <div class="d-flex gap-2">
-                            <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
-                            <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
-                        </div>
-                    </div>
-                </div>
-            ` : `
-                <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
-                    <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera opacity-50"></i></div>
-                    <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-image text-info me-1"></i> Foto Cámara Física</h6>
-                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-camera-fill me-1"></i> Subir Foto Cámara</button>
-                </div>
-            `;
+            if (!reg) {
+                console.error("No se encontró el registro para el expediente:", regOrId);
+                return;
+            }
 
-            let fotoVistaHtml = reg.foto_vista_camara ? `
-                <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
-                    <div class="d-flex flex-column align-items-center text-center">
-                        <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
-                            <img src="${escapeHtml(reg.foto_vista_camara)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_vista_camara)}', '_blank')" title="Ver a tamaño completo">
-                        </div>
-                        <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
-                            <i class="bi bi-camera-reels-fill me-1"></i> Fotografía de la Vista / Transmisión
-                        </span>
-                        <div class="d-flex gap-2">
-                            <a href="${escapeHtml(reg.foto_vista_camara)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
-                            <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
-                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto_vista', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
-                        </div>
-                    </div>
-                </div>
-            ` : `
-                <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
-                    <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera-reels opacity-50"></i></div>
-                    <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-display text-primary me-1"></i> Foto Vista / Transmisión</h6>
-                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-camera-reels-fill me-1"></i> Subir Foto Vista</button>
-                </div>
-            `;
+            const isCam = (reg.tipo_registro === 'Cámara');
+            const isTel = (currentSeccion === 'telefonos_poe');
+            
+            const subtituloEl = document.getElementById('expediente_subtitulo');
+            if (subtituloEl) {
+                if (isTel) {
+                    subtituloEl.textContent = 'Teléfono IP PoE | Ext: ' + (reg.extension || 'S/E') + ' | Asignado: ' + (reg.usuario || 'Sin Asignar');
+                } else {
+                    subtituloEl.textContent = (isCam ? 'Cámara: ' : 'Equipo: ') + (reg.nombre_equipo || reg.equipo || reg.nombre || 'N/A') + (isCam ? ' | DVR/NVR: ' + (reg.dvr_vinculado || 'N/A') : ' | Usuario: ' + (reg.usuario || reg.nombre || 'N/A'));
+                }
+            }
+            
+            const busquedaInput = document.getElementById('busquedaExpediente');
+            if (busquedaInput) busquedaInput.value = '';
+            
+            const container = document.getElementById('contenedorExpedienteDetalles');
+            if (!container) return;
+            container.innerHTML = '';
 
-            photoHeroBlock.innerHTML = `<div class="row g-3"><div class="col-md-6">${fotoCamHtml}</div><div class="col-md-6">${fotoVistaHtml}</div></div>`;
-        } else {
-            let fotoHtml = '';
-            if (reg.foto_equipo && reg.foto_equipo.trim() !== '') {
-                fotoHtml = `
-                    <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
-                        <div class="d-flex flex-column flex-md-row align-items-center gap-4">
-                            <div style="width: 190px; height: 145px; border-radius: 12px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-                                <img src="${escapeHtml(reg.foto_equipo)}" alt="Foto del Equipo" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Clic para ver foto a tamaño completo">
+            // 1. Tarjeta Hero / Fotografía
+            const photoHeroBlock = document.createElement('div');
+            photoHeroBlock.className = 'col-12 mb-3 cat-header-block';
+            photoHeroBlock.setAttribute('data-cat-id', 'cat_foto');
+            photoHeroBlock.setAttribute('data-search', 'fotografia foto imagen equipo camara vista');
+
+            if (isCam) {
+                let fotoCamHtml = reg.foto_equipo ? `
+                    <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                        <div class="d-flex flex-column align-items-center text-center">
+                            <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
+                                <img src="${escapeHtml(reg.foto_equipo)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Ver a tamaño completo">
                             </div>
-                            <div class="flex-grow-1 text-center text-md-start">
-                                <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.78rem;">
-                                    <i class="bi bi-camera-fill me-1"></i> Fotografía Oficial del Equipo
-                                </span>
-                                <h5 class="fw-bold text-white mb-1">${escapeHtml(reg.nombre_equipo || reg.equipo || reg.nombre || (currentSeccion === 'telefonos_poe' ? ('Teléfono ' + (reg.modelo || '') + (reg.extension ? ' (Ext. ' + reg.extension + ')' : '')) : 'Equipo'))}</h5>
-                                <p class="text-secondary small mb-3">Fotografía registrada para identificación física de este activo en la sucursal.</p>
-                                <div class="d-flex flex-wrap gap-2 justify-content-center justify-content-md-start">
-                                    <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
-                                        <i class="bi bi-arrows-fullscreen me-1"></i> Ver Imagen Completa
-                                    </a>
-                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})">
-                                        <i class="bi bi-arrow-repeat me-1"></i> Cambiar Fotografía
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})">
-                                        <i class="bi bi-trash-fill me-1"></i> Eliminar Foto
+                            <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
+                                <i class="bi bi-camera-fill me-1"></i> Fotografía Física de la Cámara
+                            </span>
+                            <div class="d-flex gap-2">
+                                <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
+                                <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                        <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera opacity-50"></i></div>
+                        <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-image text-info me-1"></i> Foto Cámara Física</h6>
+                        <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-camera-fill me-1"></i> Subir Foto Cámara</button>
+                    </div>
+                `;
+
+                let fotoVistaHtml = reg.foto_vista_camara ? `
+                    <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                        <div class="d-flex flex-column align-items-center text-center">
+                            <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
+                                <img src="${escapeHtml(reg.foto_vista_camara)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_vista_camara)}', '_blank')" title="Ver a tamaño completo">
+                            </div>
+                            <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
+                                <i class="bi bi-camera-reels-fill me-1"></i> Fotografía de la Vista / Transmisión
+                            </span>
+                            <div class="d-flex gap-2">
+                                <a href="${escapeHtml(reg.foto_vista_camara)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
+                                <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                                <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto_vista', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                        <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera-reels opacity-50"></i></div>
+                        <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-display text-primary me-1"></i> Foto Vista / Transmisión</h6>
+                        <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-camera-reels-fill me-1"></i> Subir Foto Vista</button>
+                    </div>
+                `;
+
+                photoHeroBlock.innerHTML = `<div class="row g-3"><div class="col-md-6">${fotoCamHtml}</div><div class="col-md-6">${fotoVistaHtml}</div></div>`;
+            } else {
+                let fotoHtml = '';
+                if (reg.foto_equipo && reg.foto_equipo.trim() !== '') {
+                    fotoHtml = `
+                        <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                            <div class="d-flex flex-column flex-md-row align-items-center gap-4">
+                                <div style="width: 190px; height: 145px; border-radius: 12px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                                    <img src="${escapeHtml(reg.foto_equipo)}" alt="Foto del Equipo" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Clic para ver foto a tamaño completo">
+                                </div>
+                                <div class="flex-grow-1 text-center text-md-start">
+                                    <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.78rem;">
+                                        <i class="bi bi-camera-fill me-1"></i> Fotografía Oficial del Equipo
+                                    </span>
+                                    <h5 class="fw-bold text-white mb-1">${escapeHtml(reg.nombre_equipo || reg.equipo || reg.nombre || (currentSeccion === 'telefonos_poe' ? ('Teléfono ' + (reg.modelo || '') + (reg.extension ? ' (Ext. ' + reg.extension + ')' : '')) : 'Equipo'))}</h5>
+                                    <p class="text-secondary small mb-3">Fotografía registrada para identificación física de este activo en la sucursal.</p>
+                                    <div class="d-flex flex-wrap gap-2 justify-content-center justify-content-md-start">
+                                        <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
+                                            <i class="bi bi-arrows-fullscreen me-1"></i> Ver Imagen Completa
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                                            <i class="bi bi-arrow-repeat me-1"></i> Cambiar Fotografía
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})">
+                                            <i class="bi bi-trash-fill me-1"></i> Eliminar Foto
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    fotoHtml = `
+                        <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                            <div class="d-flex flex-column flex-md-row align-items-center gap-4">
+                                <div style="width: 140px; height: 105px; border-radius: 12px; background: rgba(15, 34, 61, 0.6); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0;" class="text-secondary fs-1">
+                                    <i class="bi bi-camera-fill opacity-50"></i>
+                                </div>
+                                <div class="flex-grow-1 text-center text-md-start">
+                                    <h6 class="fw-bold text-white mb-1"><i class="bi bi-image me-1 text-info"></i> Fotografía del Equipo</h6>
+                                    <p class="text-secondary small mb-3">Aún no se ha subido una fotografía física de este equipo al expediente.</p>
+                                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold shadow-sm" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                                        <i class="bi bi-camera-fill me-1"></i> Subir Fotografía del Equipo
                                     </button>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
-            } else {
-                fotoHtml = `
-                    <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
-                        <div class="d-flex flex-column flex-md-row align-items-center gap-4">
-                            <div style="width: 140px; height: 105px; border-radius: 12px; background: rgba(15, 34, 61, 0.6); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0;" class="text-secondary fs-1">
-                                <i class="bi bi-camera-fill opacity-50"></i>
+                    `;
+                }
+                photoHeroBlock.innerHTML = fotoHtml;
+            }
+            container.appendChild(photoHeroBlock);
+
+            // Tarjeta SNMP
+            if (currentSeccion === 'monitores' && reg.ip && reg.ip.trim() !== '') {
+                const snmpCard = document.createElement('div');
+                snmpCard.className = 'col-12 mb-3 cat-header-block';
+                snmpCard.setAttribute('data-cat-id', 'cat_snmp_live');
+                snmpCard.setAttribute('data-search', 'snmp toner impresiones estado error impresora ip consola web');
+                snmpCard.innerHTML = `
+                    <div class="card p-3 rounded-4 shadow-lg" style="background: linear-gradient(135deg, #091a30 0%, #0d2747 100%); border: 1.5px solid rgba(56, 189, 248, 0.35);">
+                        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="w-10 h-10 rounded-3 bg-primary bg-opacity-25 text-info d-flex align-items-center justify-content-center fs-5" style="width: 40px; height: 40px;">
+                                    <i class="bi bi-printer-fill"></i>
+                                </div>
+                                <div>
+                                    <h6 class="fw-bold text-white mb-0">Diagnóstico SNMP en Tiempo Real (Tóner & Estado)</h6>
+                                    <span class="text-secondary small">IP: <strong class="text-info font-monospace">${escapeHtml(reg.ip)}</strong></span>
+                                </div>
                             </div>
-                            <div class="flex-grow-1 text-center text-md-start">
-                                <h6 class="fw-bold text-white mb-1"><i class="bi bi-image me-1 text-info"></i> Fotografía del Equipo</h6>
-                                <p class="text-secondary small mb-3">Aún no se ha subido una fotografía física de este equipo al expediente.</p>
-                                <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold shadow-sm" onclick="abrirModalSubirDoc('foto', ${reg.id})">
-                                    <i class="bi bi-camera-fill me-1"></i> Subir Fotografía del Equipo
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="http://${escapeHtml(reg.ip)}/" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
+                                    <i class="bi bi-globe me-1"></i> Abrir Web Image Monitor
+                                </a>
+                                <button type="button" class="btn btn-sm btn-primary rounded-3 font-semibold" id="btn_refresh_snmp_exp" onclick="cargarSNMPExpediente('${escapeHtml(reg.ip)}')">
+                                    <i class="bi bi-arrow-clockwise me-1"></i> Actualizar SNMP
                                 </button>
                             </div>
                         </div>
+                        <div id="snmp_expediente_content" class="row g-3">
+                            <div class="col-12 text-center py-3 text-info">
+                                <span class="spinner-border spinner-border-sm me-2"></span> Consultando nivel de tóner y pantalla de la impresora vía SNMP...
+                            </div>
+                        </div>
                     </div>
                 `;
+                container.appendChild(snmpCard);
+                const ipTarget = reg.ip.trim();
+                setTimeout(function() { if (typeof cargarSNMPExpediente === 'function') cargarSNMPExpediente(ipTarget); }, 150);
             }
-            photoHeroBlock.innerHTML = fotoHtml;
-        }
-        container.appendChild(photoHeroBlock);
 
-        // Tarjeta SNMP
-        if (currentSeccion === 'monitores' && reg.ip && reg.ip.trim() !== '') {
-            const snmpCard = document.createElement('div');
-            snmpCard.className = 'col-12 mb-3 cat-header-block';
-            snmpCard.setAttribute('data-cat-id', 'cat_snmp_live');
-            snmpCard.setAttribute('data-search', 'snmp toner impresiones estado error impresora ip consola web');
-            snmpCard.innerHTML = `
-                <div class="card p-3 rounded-4 shadow-lg" style="background: linear-gradient(135deg, #091a30 0%, #0d2747 100%); border: 1.5px solid rgba(56, 189, 248, 0.35);">
-                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
-                        <div class="d-flex align-items-center gap-2">
-                            <div class="w-10 h-10 rounded-3 bg-primary bg-opacity-25 text-info d-flex align-items-center justify-content-center fs-5" style="width: 40px; height: 40px;">
-                                <i class="bi bi-printer-fill"></i>
-                            </div>
-                            <div>
-                                <h6 class="fw-bold text-white mb-0">Diagnóstico SNMP en Tiempo Real (Tóner & Estado)</h6>
-                                <span class="text-secondary small">IP: <strong class="text-info font-monospace">${escapeHtml(reg.ip)}</strong></span>
-                            </div>
-                        </div>
-                        <div class="d-flex align-items-center gap-2">
-                            <a href="http://${escapeHtml(reg.ip)}/" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
-                                <i class="bi bi-globe me-1"></i> Abrir Web Image Monitor
-                            </a>
-                            <button type="button" class="btn btn-sm btn-primary rounded-3 font-semibold" id="btn_refresh_snmp_exp" onclick="cargarSNMPExpediente('${escapeHtml(reg.ip)}')">
-                                <i class="bi bi-arrow-clockwise me-1"></i> Actualizar SNMP
-                            </button>
-                        </div>
-                    </div>
-                    <div id="snmp_expediente_content" class="row g-3">
-                        <div class="col-12 text-center py-3 text-info">
-                            <span class="spinner-border spinner-border-sm me-2"></span> Consultando nivel de tóner y pantalla de la impresora vía SNMP...
-                        </div>
-                    </div>
-                </div>
-            `;
-            container.appendChild(snmpCard);
-            const ipTarget = reg.ip.trim();
-            setTimeout(function() { if (typeof cargarSNMPExpediente === 'function') cargarSNMPExpediente(ipTarget); }, 150);
-        }
+            const allowedDeviceFields = getAllowedFieldsForRecord(reg, currentSeccion);
+            const dvrExcludedFields = ['correo_oficial_planta', 'puerto_patch_panel', 'numero_nodo', 'contrasena_remoto', 'contrasena_gds', 'garantia2', 'subtipo_camara', 'canal_analogico', 'canal_ip'];
+            const systemInternalFields = ['id', 'foto_equipo', 'foto_vista_camara', 'factura_url', 'responsiva_url', 'actualizado_en'];
 
-        const allowedDeviceFields = getAllowedFieldsForRecord(reg, currentSeccion);
-        const dvrExcludedFields = ['correo_oficial_planta', 'puerto_patch_panel', 'numero_nodo', 'contrasena_remoto', 'contrasena_gds', 'garantia2', 'subtipo_camara', 'canal_analogico', 'canal_ip'];
-        const systemInternalFields = ['id', 'foto_equipo', 'foto_vista_camara', 'factura_url', 'responsiva_url', 'actualizado_en'];
-
-        CATEGORIAS_EXPEDIENTE.forEach(cat => {
-            let camposDeCat = [];
-            cat.campos.forEach(kLower => {
-                for (const key in reg) {
-                    if (key.toLowerCase() === kLower) {
-                        const kL = key.toLowerCase();
-                        if (systemInternalFields.includes(kL)) continue;
-                        if (currentSeccion === 'dvr' && dvrExcludedFields.includes(kL)) continue;
-                        if (allowedDeviceFields && Array.isArray(allowedDeviceFields)) {
-                            if (!allowedDeviceFields.includes(kL)) continue;
+            CATEGORIAS_EXPEDIENTE.forEach(cat => {
+                let camposDeCat = [];
+                cat.campos.forEach(kLower => {
+                    for (const key in reg) {
+                        if (key.toLowerCase() === kLower) {
+                            const kL = key.toLowerCase();
+                            if (systemInternalFields.includes(kL)) continue;
+                            if (currentSeccion === 'dvr' && dvrExcludedFields.includes(kL)) continue;
+                            if (allowedDeviceFields && Array.isArray(allowedDeviceFields)) {
+                                if (!allowedDeviceFields.includes(kL)) continue;
+                            }
+                            camposDeCat.push(key);
+                            break;
                         }
-                        camposDeCat.push(key);
-                        break;
                     }
+                });
+
+                if (camposDeCat.length > 0) {
+                    let catTitle = cat.titulo;
+                    if (cat.id === 'cat_garantia' && currentSeccion === 'dvr') {
+                        catTitle = '💾 Respaldo';
+                    }
+                    const secHeader = document.createElement('div');
+                    secHeader.className = 'col-12 mt-3 mb-1 cat-header-block';
+                    secHeader.setAttribute('data-cat-id', cat.id);
+                    secHeader.innerHTML = `<h6 class="fw-bold text-info border-bottom border-secondary pb-2 mb-0"><i class="bi ${cat.icono} me-2"></i> ${catTitle}</h6>`;
+                    container.appendChild(secHeader);
+
+                    camposDeCat.forEach(key => {
+                        const valRaw = reg[key];
+                        const isPass = key.toLowerCase().includes('contrasena') || key.toLowerCase().includes('password') || key.toLowerCase().includes('clave');
+                        const valFormatted = formatUnitValue(key, valRaw);
+                        const keyTitle = getFieldLabel(key);
+
+                        const card = document.createElement('div');
+                        card.className = 'col-md-4 col-lg-3 card-item-block';
+                        card.setAttribute('data-cat-id', cat.id);
+                        card.setAttribute('data-search', (keyTitle + ' ' + (valRaw || '')).toLowerCase());
+
+                        let valHtml = '';
+                        if (isPass && valRaw) {
+                            const passId = 'pass_exp_' + Math.random().toString(36).substr(2, 9);
+                            valHtml = `
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <span class="pass-cell font-monospace" id="${passId}" data-pass="${escapeHtml(valRaw)}">••••••••</span>
+                                    <button type="button" class="btn btn-sm text-info p-0 ms-1" onclick="togglePassSpan('${passId}', this)" title="Mostrar / Ocultar Contraseña">
+                                        <i class="bi bi-eye-fill"></i>
+                                    </button>
+                                </div>
+                            `;
+                        } else {
+                            valHtml = `<div class="fw-semibold text-white">${valFormatted}</div>`;
+                        }
+
+                        card.innerHTML = `
+                            <div class="card h-100 p-3 rounded-3" style="background: #0f223d; border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; color: #94a3b8;">${keyTitle}</div>
+                                ${valHtml}
+                            </div>
+                        `;
+                        container.appendChild(card);
+                    });
                 }
             });
 
-            if (camposDeCat.length > 0) {
-                let catTitle = cat.titulo;
-                if (cat.id === 'cat_garantia' && currentSeccion === 'dvr') {
-                    catTitle = '💾 Respaldo';
-                }
-                const secHeader = document.createElement('div');
-                secHeader.className = 'col-12 mt-3 mb-1 cat-header-block';
-                secHeader.setAttribute('data-cat-id', cat.id);
-                secHeader.innerHTML = `<h6 class="fw-bold text-info border-bottom border-secondary pb-2 mb-0"><i class="bi ${cat.icono} me-2"></i> ${catTitle}</h6>`;
-                container.appendChild(secHeader);
-
-                camposDeCat.forEach(key => {
-                    const valRaw = reg[key];
-                    const isPass = key.toLowerCase().includes('contrasena') || key.toLowerCase().includes('password') || key.toLowerCase().includes('clave');
-                    const valFormatted = formatUnitValue(key, valRaw);
-                    const keyTitle = getFieldLabel(key);
-
-                    const card = document.createElement('div');
-                    card.className = 'col-md-4 col-lg-3 card-item-block';
-                    card.setAttribute('data-cat-id', cat.id);
-                    card.setAttribute('data-search', (keyTitle + ' ' + (valRaw || '')).toLowerCase());
-
-                    let valHtml = '';
-                    if (isPass && valRaw) {
-                        const passId = 'pass_exp_' + Math.random().toString(36).substr(2, 9);
-                        valHtml = `
-                            <div class="d-flex align-items-center justify-content-between">
-                                <span class="pass-cell font-monospace" id="${passId}" data-pass="${escapeHtml(valRaw)}">••••••••</span>
-                                <button type="button" class="btn btn-sm text-info p-0 ms-1" onclick="togglePassSpan('${passId}', this)" title="Mostrar / Ocultar Contraseña">
-                                    <i class="bi bi-eye-fill"></i>
-                                </button>
-                            </div>
-                        `;
-                    } else {
-                        valHtml = `<div class="fw-semibold text-white">${valFormatted}</div>`;
-                    }
-
-                    card.innerHTML = `
-                        <div class="card h-100 p-3 rounded-3" style="background: #0f223d; border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; color: #94a3b8;">${keyTitle}</div>
-                            ${valHtml}
-                        </div>
-                    `;
-                    container.appendChild(card);
-                });
-            }
-        });
-
-        // Botones Footer
-        const footerDocs = document.getElementById('expediente_footer_docs');
-        if (footerDocs) {
-            let htmlDocs = '';
-            const labelFotoBtn = isCam ? 'Foto Cámara' : (currentSeccion === 'site_vw' ? 'Foto Dispositivo SITE' : 'Foto Equipo');
-            if (reg.foto_equipo && reg.foto_equipo.trim() !== '') {
-                htmlDocs += `
-                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3" onclick="abrirModalSubirDoc('foto', ${reg.id})">
-                        <i class="bi bi-camera-fill me-1"></i> Cambiar ${labelFotoBtn}
-                    </button>
-                `;
-            } else {
-                htmlDocs += `
-                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3" onclick="abrirModalSubirDoc('foto', ${reg.id})">
-                        <i class="bi bi-camera-fill me-1"></i> Cargar ${labelFotoBtn}
-                    </button>
-                `;
-            }
-
-            if (isCam) {
-                if (reg.foto_vista_camara && reg.foto_vista_camara.trim() !== '') {
-                    htmlDocs += `
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})">
-                            <i class="bi bi-camera-reels-fill me-1"></i> Cambiar Foto Vista
-                        </button>
-                    `;
-                } else {
-                    htmlDocs += `
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})">
-                            <i class="bi bi-camera-reels me-1"></i> Cargar Foto Vista
-                        </button>
-                    `;
-                }
-            }
-
-            if (reg.factura_url && reg.factura_url.trim() !== '') {
-                htmlDocs += `
-                    <div class="btn-group ms-1">
-                        <a href="${reg.factura_url}" target="_blank" class="btn btn-success btn-sm fw-bold rounded-start px-3">
-                            <i class="bi bi-file-earmark-pdf-fill me-1"></i> Visualizar Factura
-                        </a>
-                        <button type="button" class="btn btn-outline-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                            <span class="visually-hidden">Opciones Factura</span>
-                        </button>
-                        <ul class="dropdown-menu dropdown-menu-dark shadow">
-                            <li><a class="dropdown-item" href="${reg.factura_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Visualizar Factura</a></li>
-                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('factura', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Factura</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('factura', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Factura</a></li>
-                        </ul>
-                    </div>
-                `;
-            } else {
-                htmlDocs += `
-                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('factura', ${reg.id})">
-                        <i class="bi bi-file-earmark-plus me-1"></i> Cargar Factura
-                    </button>
-                `;
-            }
-
-            if (['equipos_vw', 'equipos_corp', 'moviles'].includes(currentSeccion)) {
-                if (reg.responsiva_url && reg.responsiva_url.trim() !== '') {
+            // Botones Footer
+            const footerDocs = document.getElementById('expediente_footer_docs');
+            if (footerDocs) {
+                let htmlDocs = '';
+                if (reg.factura_url && reg.factura_url.trim() !== '') {
                     htmlDocs += `
                         <div class="btn-group ms-1">
-                            <a href="${reg.responsiva_url}" target="_blank" class="btn btn-primary btn-sm fw-bold rounded-start px-3">
-                                <i class="bi bi-file-earmark-check-fill me-1"></i> Visualizar Responsiva
+                            <a href="${reg.factura_url}" target="_blank" class="btn btn-info btn-sm fw-bold rounded-start px-3">
+                                <i class="bi bi-file-earmark-text-fill me-1"></i> Visualizar Factura
                             </a>
-                            <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
-                                <span class="visually-hidden">Opciones Responsiva</span>
+                            <button type="button" class="btn btn-outline-info btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="visually-hidden">Opciones Factura</span>
                             </button>
                             <ul class="dropdown-menu dropdown-menu-dark shadow">
-                                <li><a class="dropdown-item" href="${reg.responsiva_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Visualizar Responsiva</a></li>
-                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('responsiva', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Responsiva</a></li>
+                                <li><a class="dropdown-item" href="${reg.factura_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Descargar Factura</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('factura', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Factura</a></li>
                                 <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('responsiva', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Responsiva</a></li>
+                                <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('factura', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Factura</a></li>
                             </ul>
                         </div>
                     `;
                 } else {
                     htmlDocs += `
-                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('responsiva', ${reg.id})">
-                            <i class="bi bi-file-earmark-plus me-1"></i> Cargar Responsiva
+                        <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('factura', ${reg.id})">
+                            <i class="bi bi-file-earmark-plus me-1"></i> Cargar Factura
                         </button>
                     `;
                 }
 
-                htmlDocs += `
-                    <a href="generar_responsiva.php?id=${reg.id}&sec=${currentSeccion}" target="_blank" class="btn btn-warning btn-sm fw-bold px-3 rounded-3 ms-1" title="Generar e imprimir Carta Responsiva en PDF">
-                        <i class="bi bi-printer-fill me-1"></i> Generar Responsiva PDF
-                    </a>
-                `;
-            }
-            footerDocs.innerHTML = htmlDocs;
-        }
+                if (['equipos_vw', 'equipos_corp', 'moviles'].includes(currentSeccion)) {
+                    if (reg.responsiva_url && reg.responsiva_url.trim() !== '') {
+                        htmlDocs += `
+                            <div class="btn-group ms-1">
+                                <a href="${reg.responsiva_url}" target="_blank" class="btn btn-primary btn-sm fw-bold rounded-start px-3">
+                                    <i class="bi bi-file-earmark-check-fill me-1"></i> Visualizar Responsiva
+                                </a>
+                                <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span class="visually-hidden">Opciones Responsiva</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-dark shadow">
+                                    <li><a class="dropdown-item" href="${reg.responsiva_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Visualizar Responsiva</a></li>
+                                    <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('responsiva', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Responsiva</a></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('responsiva', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Responsiva</a></li>
+                                </ul>
+                            </div>
+                        `;
+                    } else {
+                        htmlDocs += `
+                            <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('responsiva', ${reg.id})">
+                                <i class="bi bi-file-earmark-plus me-1"></i> Cargar Responsiva
+                            </button>
+                        `;
+                    }
 
-        // Abrir Modal de forma segura
-        const modalEl = document.getElementById('modalExpediente');
-        if (modalEl) {
-            if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
-                bootstrap.Modal.getOrCreateInstance(modalEl).show();
-            } else {
-                modalEl.classList.add('show');
-                modalEl.style.display = 'block';
-                document.body.classList.add('modal-open');
-                let backdrop = document.querySelector('.modal-backdrop');
-                if (!backdrop) {
-                    backdrop = document.createElement('div');
-                    backdrop.className = 'modal-backdrop fade show';
-                    document.body.appendChild(backdrop);
+                    htmlDocs += `
+                        <a href="generar_responsiva.php?id=${reg.id}&sec=${currentSeccion}" target="_blank" class="btn btn-warning btn-sm fw-bold px-3 rounded-3 ms-1" title="Generar e imprimir Carta Responsiva en PDF">
+                            <i class="bi bi-printer-fill me-1"></i> Generar Responsiva PDF
+                        </a>
+                    `;
+                }
+                footerDocs.innerHTML = htmlDocs;
+            }
+
+            // Abrir Modal de forma segura
+            const modalEl = document.getElementById('modalExpediente');
+            if (modalEl) {
+                if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    modalEl.classList.add('show');
+                    modalEl.style.display = 'block';
+                    document.body.classList.add('modal-open');
+                    let backdrop = document.querySelector('.modal-backdrop');
+                    if (!backdrop) {
+                        backdrop = document.createElement('div');
+                        backdrop.className = 'modal-backdrop fade show';
+                        document.body.appendChild(backdrop);
+                    }
                 }
             }
+        } catch (err) {
+            console.error("Error al desplegar expediente:", err);
+            alert("Error al cargar expediente: " + err.message);
         }
     };
     var verExpedienteCompleto = window.verExpedienteCompleto;
@@ -2274,28 +2418,45 @@ function renderBadgeTipoSite($tipo) {
         const busqInput = document.getElementById('busquedaExpediente');
         if (!busqInput) return;
         const q = busqInput.value.toLowerCase().trim();
-        const cards = document.querySelectorAll('#contenedorExpedienteDetalles .card-item-block');
-        const headers = document.querySelectorAll('#contenedorExpedienteDetalles .cat-header-block');
-        const visibleCats = new Set();
-        cards.forEach(card => {
-            const text = card.getAttribute('data-search') || '';
-            const matches = text.includes(q);
-            card.style.display = matches ? '' : 'none';
-            if (matches) visibleCats.add(card.getAttribute('data-cat-id'));
+
+        const catBlocks = document.querySelectorAll('#contenedorExpedienteDetalles .cat-header-block');
+        const cardBlocks = document.querySelectorAll('#contenedorExpedienteDetalles .card-item-block');
+
+        if (!q) {
+            catBlocks.forEach(b => b.style.display = '');
+            cardBlocks.forEach(b => b.style.display = '');
+            return;
+        }
+
+        const activeCatIds = new Set();
+        cardBlocks.forEach(card => {
+            const searchTerms = (card.getAttribute('data-search') || '') + ' ' + card.innerText.toLowerCase();
+            if (searchTerms.includes(q)) {
+                card.style.display = '';
+                const catId = card.getAttribute('data-cat-id');
+                if (catId) activeCatIds.add(catId);
+            } else {
+                card.style.display = 'none';
+            }
         });
-        headers.forEach(h => {
-            const catId = h.getAttribute('data-cat-id');
-            h.style.display = visibleCats.has(catId) ? '' : 'none';
+
+        catBlocks.forEach(header => {
+            const catId = header.getAttribute('data-cat-id');
+            const searchTerms = (header.getAttribute('data-search') || '') + ' ' + header.innerText.toLowerCase();
+            if (searchTerms.includes(q) || (catId && activeCatIds.has(catId))) {
+                header.style.display = '';
+            } else {
+                header.style.display = 'none';
+            }
         });
     }
     window.filtrarDatoExpediente = filtrarDatoExpediente;
-    var filtrarDatoExpediente = window.filtrarDatoExpediente;
 
     function abrirModalSubirDoc(tipo, regId) {
-        const idInput = document.getElementById('doc_registro_id');
-        const tipoInput = document.getElementById('doc_tipo_documento');
-        if (idInput) idInput.value = regId;
-        if (tipoInput) tipoInput.value = tipo;
+        const inpId = document.getElementById('doc_registro_id');
+        const inpTipo = document.getElementById('doc_tipo_documento');
+        if (inpId) inpId.value = regId;
+        if (inpTipo) inpTipo.value = tipo;
         
         const labelEl = document.getElementById('modalSubirDocLabel');
         const instEl = document.getElementById('doc_instrucciones');
@@ -2303,11 +2464,11 @@ function renderBadgeTipoSite($tipo) {
 
         if (tipo === 'foto' || tipo === 'foto_equipo') {
             if (labelEl) labelEl.innerHTML = '<i class="bi bi-camera-fill text-warning me-2"></i> Cargar Fotografía del Equipo / Cámara';
-            if (instEl) instEl.textContent = 'Selecciona la fotografía o imagen física de la cámara/equipo (JPG, PNG, WEBP) para adjuntarla al expediente.';
+            if (instEl) instEl.textContent = 'Selecciona la fotografía física del equipo o cámara (JPG, PNG, WEBP) para adjuntarla al expediente.';
             if (fileInput) fileInput.setAttribute('accept', 'image/*,.jpg,.jpeg,.png,.webp');
         } else if (tipo === 'foto_vista' || tipo === 'foto_vista_camara') {
             if (labelEl) labelEl.innerHTML = '<i class="bi bi-camera-reels-fill text-info me-2"></i> Cargar Foto de la Vista de la Cámara';
-            if (instEl) instEl.textContent = 'Selecciona la captura de pantalla o foto de la transmisión/vista que genera esta cámara (JPG, PNG, WEBP).';
+            if (instEl) instEl.textContent = 'Selecciona la captura de pantalla o foto de la transmisión de esta cámara (JPG, PNG, WEBP).';
             if (fileInput) fileInput.setAttribute('accept', 'image/*,.jpg,.jpeg,.png,.webp');
         } else if (tipo === 'responsiva') {
             if (labelEl) labelEl.innerHTML = '<i class="bi bi-file-earmark-check-fill text-primary me-2"></i> Cargar Responsiva de Equipo';
@@ -2334,7 +2495,11 @@ function renderBadgeTipoSite($tipo) {
         if (confirm('¿Estás seguro de que deseas eliminar el documento de ' + tipo.toUpperCase() + ' adjunto a este equipo?')) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.innerHTML = '<input type="hidden" name="accion" value="eliminar_documento_equipo"><input type="hidden" name="registro_id" value="' + regId + '"><input type="hidden" name="tipo_documento" value="' + tipo + '">';
+            form.innerHTML = `
+                <input type="hidden" name="accion" value="eliminar_documento_equipo">
+                <input type="hidden" name="registro_id" value="${regId}">
+                <input type="hidden" name="tipo_documento" value="${tipo}">
+            `;
             document.body.appendChild(form);
             form.submit();
         }
@@ -2434,6 +2599,1018 @@ function renderBadgeTipoSite($tipo) {
             }
         }
     });
+
+    function filtrarTabla() {
+        const busq = document.getElementById('busquedaTabla');
+        if (!busq) return;
+        const q = busq.value.toLowerCase().trim();
+        const rows = document.querySelectorAll('#tablaEquipos tbody tr.user-row');
+        rows.forEach(r => {
+            const text = r.textContent.toLowerCase();
+            r.style.display = text.includes(q) ? '' : 'none';
+        });
+    }
+    window.filtrarTabla = filtrarTabla;
+
+    function cambiarVistaEquipos(tipo) {
+        const tablaView = document.getElementById('vistaTablaEquipos');
+        const areasView = document.getElementById('vistaAreasEquipos');
+        const graficasView = document.getElementById('vistaGraficasEquipos');
+
+        const btnTabla = document.getElementById('btnVistaTablaEquipos');
+        const btnAreas = document.getElementById('btnVistaAreasEquipos');
+        const btnGraficas = document.getElementById('btnVistaGraficasEquipos');
+
+        if (tipo === 'graficas') {
+            if (tablaView) tablaView.classList.add('d-none');
+            if (areasView) areasView.classList.add('d-none');
+            if (graficasView) graficasView.classList.remove('d-none');
+
+            if (btnTabla) btnTabla.className = 'btn-seg';
+            if (btnAreas) btnAreas.className = 'btn-seg';
+            if (btnGraficas) btnGraficas.className = 'btn-seg active';
+
+            localStorage.setItem('vista_equipos_pref', 'graficas');
+            if (typeof inicializarGraficasEquipos === 'function') inicializarGraficasEquipos();
+        } else if (tipo === 'areas') {
+            if (tablaView) tablaView.classList.add('d-none');
+            if (graficasView) graficasView.classList.add('d-none');
+            if (areasView) areasView.classList.remove('d-none');
+
+            if (btnTabla) btnTabla.className = 'btn-seg';
+            if (btnGraficas) btnGraficas.className = 'btn-seg';
+            if (btnAreas) btnAreas.className = 'btn-seg active';
+
+            localStorage.setItem('vista_equipos_pref', 'areas');
+        } else {
+            if (areasView) areasView.classList.add('d-none');
+            if (graficasView) graficasView.classList.add('d-none');
+            if (tablaView) tablaView.classList.remove('d-none');
+
+            if (btnAreas) btnAreas.className = 'btn-seg';
+            if (btnGraficas) btnGraficas.className = 'btn-seg';
+            if (btnTabla) btnTabla.className = 'btn-seg active';
+
+            localStorage.setItem('vista_equipos_pref', 'tabla');
+        }
+    }
+    window.cambiarVistaEquipos = cambiarVistaEquipos;
+
+    function exportarExcelConDiseno() {
+        const titulo = "INVENTARIO DE EQUIPOS \u2022 <?php echo strtoupper(addslashes($infoSeccion['nombre'])); ?>";
+        const subtitulo = "Sección Oficial de Activos Tecnológicos";
+        const archivo = "Inventario_<?php echo $seccion_activa; ?>";
+        if (typeof exportarTablaAExcelConDiseno === 'function') {
+            exportarTablaAExcelConDiseno('tablaEquipos', titulo, subtitulo, archivo);
+        } else {
+            window.location.href = 'equipos.php?seccion=<?php echo urlencode($seccion_activa); ?>&accion=exportar_excel';
+        }
+    }
+    window.exportarExcelConDiseno = exportarExcelConDiseno;
+
+    function exportarTablaCSV() {
+        exportarExcelConDiseno();
+    }
+    window.exportarTablaCSV = exportarTablaCSV;
+
+    function abrirModalBaja(id, nombre) {
+        const idInput = document.getElementById('baja_registro_id');
+        const nombreEl = document.getElementById('baja_nombre_equipo');
+        const motivoInput = document.getElementById('baja_motivo_texto');
+        if (idInput) idInput.value = id;
+        if (nombreEl) nombreEl.textContent = nombre;
+        if (motivoInput) motivoInput.value = '';
+        const modalEl = document.getElementById('modalPasarBaja');
+        if (modalEl) {
+            if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            } else {
+                modalEl.classList.add('show');
+                modalEl.style.display = 'block';
+            }
+        }
+    }
+    window.abrirModalBaja = abrirModalBaja;
+
+    // =========================================================================
+    // SINCRONIZACIÓN Y COMBOS FORMULARIO (SWITCH, PUERTOS, NODOS Y USUARIO)
+    // =========================================================================
+    function alCambiarSwitchEnFormularioEquipos(swNombre, defaultPuerto, skipReverseSync) {
+        const selPuerto = document.getElementById('combo_form_puerto_select');
+        const selSwitch = document.getElementById('combo_form_switch_select');
+        const hiddenPuerto = document.getElementById('field_puerto_sw');
+        const hiddenSwitch = document.getElementById('field_switch_nombre');
+        const previewTxt = document.getElementById('preview_puerto_sw_text');
+
+        if (!selPuerto) return;
+        selPuerto.innerHTML = '<option value="">-- Puerto --</option>';
+
+        if (!swNombre) {
+            if (hiddenPuerto) hiddenPuerto.value = '';
+            if (hiddenSwitch) hiddenSwitch.value = '';
+            if (previewTxt) previewTxt.textContent = 'Sin puerto asignado';
+            return;
+        }
+
+        if (hiddenSwitch) hiddenSwitch.value = swNombre;
+
+        let cantPuertos = 48;
+        if (selSwitch && selSwitch.selectedOptions.length > 0) {
+            const pAttr = selSwitch.selectedOptions[0].getAttribute('data-puertos');
+            if (pAttr) cantPuertos = parseInt(pAttr, 10) || 48;
+        } else if (window.switchesDisponiblesSite) {
+            const found = window.switchesDisponiblesSite.find(s => (s.nombre_equipo || '').trim() === swNombre.trim());
+            if (found && found.cantidad_puertos) {
+                cantPuertos = parseInt(found.cantidad_puertos, 10) || 48;
+            }
+        }
+
+        const cleanDefaultNum = defaultPuerto ? String(defaultPuerto).replace(/[^0-9]/g, '') : '';
+        let portFound = false;
+
+        for (let i = 1; i <= cantPuertos; i++) {
+            const pVal = 'Puerto ' + i;
+            const opt = document.createElement('option');
+            opt.value = pVal;
+            opt.textContent = pVal;
+            if (cleanDefaultNum && parseInt(cleanDefaultNum, 10) === i) {
+                opt.selected = true;
+                portFound = true;
+            }
+            selPuerto.appendChild(opt);
+        }
+
+        const selectedP = selPuerto.value || (portFound ? ('Puerto ' + cleanDefaultNum) : '');
+        if (selectedP) {
+            selPuerto.value = selectedP;
+            if (hiddenPuerto) hiddenPuerto.value = swNombre + ' / ' + selectedP;
+            if (previewTxt) previewTxt.textContent = swNombre + ' / ' + selectedP;
+            if (!skipReverseSync) {
+                verificarNodoAsociadoAPuerto(swNombre, selectedP);
+            }
+        } else {
+            if (hiddenPuerto) hiddenPuerto.value = swNombre;
+            if (previewTxt) previewTxt.textContent = swNombre + ' (Sin puerto)';
+        }
+    }
+    window.alCambiarSwitchEnFormularioEquipos = alCambiarSwitchEnFormularioEquipos;
+
+    function alCambiarPuertoEnFormularioEquipos(puertoVal) {
+        const selSwitch = document.getElementById('combo_form_switch_select');
+        const hiddenPuerto = document.getElementById('field_puerto_sw');
+        const hiddenSwitch = document.getElementById('field_switch_nombre');
+        const previewTxt = document.getElementById('preview_puerto_sw_text');
+        const swNom = selSwitch ? selSwitch.value : '';
+
+        if (hiddenSwitch) hiddenSwitch.value = swNom;
+
+        if (hiddenPuerto) {
+            if (swNom && puertoVal) {
+                hiddenPuerto.value = swNom + ' / ' + puertoVal;
+            } else if (swNom) {
+                hiddenPuerto.value = swNom;
+            } else {
+                hiddenPuerto.value = puertoVal;
+            }
+        }
+        if (previewTxt) {
+            previewTxt.textContent = hiddenPuerto && hiddenPuerto.value ? hiddenPuerto.value : 'Sin puerto asignado';
+        }
+
+        if (swNom && puertoVal) {
+            verificarNodoAsociadoAPuerto(swNom, puertoVal);
+        }
+    }
+    window.alCambiarPuertoEnFormularioEquipos = alCambiarPuertoEnFormularioEquipos;
+
+    function verificarNodoAsociadoAPuerto(swNom, puertoVal) {
+        if (window._isSyncingNodoSwitch) return;
+        if (!swNom || !puertoVal) return;
+
+        const pNum = parseInt(String(puertoVal).replace(/[^0-9]/g, ''), 10);
+        if (!pNum || isNaN(pNum)) return;
+
+        let matchedNodo = '';
+        let matchedPatch = '';
+        const swClean = swNom.trim().toLowerCase();
+
+        if (window.puertosSwitchMapa && Array.isArray(window.puertosSwitchMapa)) {
+            const foundP = window.puertosSwitchMapa.find(p => {
+                const pSw = (p.switch_nombre || '').trim().toLowerCase();
+                const pPort = parseInt(p.puerto_numero, 10);
+                return (pSw === swClean || pSw.includes(swClean) || swClean.includes(pSw)) && pPort === pNum;
+            });
+            if (foundP && foundP.nodo_codigo && String(foundP.nodo_codigo).trim() !== '') {
+                matchedNodo = String(foundP.nodo_codigo).trim();
+            }
+        }
+
+        if (!matchedNodo && window.nodosDisponiblesRed && Array.isArray(window.nodosDisponiblesRed)) {
+            const foundNd = window.nodosDisponiblesRed.find(nd => {
+                if (nd.switch_nombre_asoc && nd.puerto_num_asoc) {
+                    const ndSw = nd.switch_nombre_asoc.trim().toLowerCase();
+                    return (ndSw === swClean || ndSw.includes(swClean) || swClean.includes(ndSw)) && parseInt(nd.puerto_num_asoc, 10) === pNum;
+                }
+                const ndSwFull = (nd.switch_puerto || '').trim().toLowerCase();
+                if (ndSwFull.includes(swClean) || swClean.includes(ndSwFull.split('/')[0].trim())) {
+                    const m = ndSwFull.match(/(\d+)/);
+                    if (m && parseInt(m[1], 10) === pNum) return true;
+                }
+                return false;
+            });
+            if (foundNd) {
+                matchedNodo = String(foundNd.codigo_nodo).trim();
+                if (foundNd.patch_panel) matchedPatch = foundNd.patch_panel;
+            }
+        }
+
+        if (matchedNodo) {
+            seleccionarNodoAutomatico(matchedNodo, matchedPatch);
+        }
+    }
+    window.verificarNodoAsociadoAPuerto = verificarNodoAsociadoAPuerto;
+
+    function seleccionarNodoAutomatico(nodoCod, patchVal) {
+        window._isSyncingNodoSwitch = true;
+        try {
+            const selNodo = document.getElementById('combo_form_nodo_select');
+            const hiddenNodo = document.getElementById('field_numero_nodo');
+            const previewNodo = document.getElementById('preview_nodo_text');
+            const boxCustom = document.getElementById('box_custom_nodo_input');
+            const inpCustom = document.getElementById('custom_nodo_input_manual');
+            const inpPatch = document.getElementById('field_puerto_patch_panel');
+
+            if (!selNodo) return;
+
+            const cleanCod = String(nodoCod).trim();
+            let found = false;
+
+            for (let i = 0; i < selNodo.options.length; i++) {
+                if (selNodo.options[i].value === cleanCod || String(selNodo.options[i].value).trim().toLowerCase() === cleanCod.toLowerCase()) {
+                    selNodo.selectedIndex = i;
+                    found = true;
+                    if (!patchVal) {
+                        patchVal = selNodo.options[i].getAttribute('data-patch') || '';
+                    }
+                    break;
+                }
+            }
+
+            if (hiddenNodo) hiddenNodo.value = cleanCod;
+            if (previewNodo) previewNodo.textContent = 'Nodo: ' + cleanCod;
+
+            if (found) {
+                if (boxCustom) boxCustom.style.display = 'none';
+            } else {
+                selNodo.value = '__custom__';
+                if (boxCustom) boxCustom.style.display = 'block';
+                if (inpCustom) inpCustom.value = cleanCod;
+            }
+
+            if (inpPatch && patchVal && (!inpPatch.value || inpPatch.value.trim() === '')) {
+                inpPatch.value = patchVal;
+            }
+        } finally {
+            window._isSyncingNodoSwitch = false;
+        }
+    }
+    window.seleccionarNodoAutomatico = seleccionarNodoAutomatico;
+
+    function limpiarPuertoSwitchEnFormularioEquipos() {
+        const selSwitch = document.getElementById('combo_form_switch_select');
+        const selPuerto = document.getElementById('combo_form_puerto_select');
+        const hiddenPuerto = document.getElementById('field_puerto_sw');
+        const hiddenSwitch = document.getElementById('field_switch_nombre');
+        const previewTxt = document.getElementById('preview_puerto_sw_text');
+
+        if (selSwitch) selSwitch.selectedIndex = 0;
+        if (selPuerto) selPuerto.innerHTML = '<option value="">-- Puerto --</option>';
+        if (hiddenPuerto) hiddenPuerto.value = '';
+        if (hiddenSwitch) hiddenSwitch.value = '';
+        if (previewTxt) previewTxt.textContent = 'Sin puerto asignado';
+    }
+    window.limpiarPuertoSwitchEnFormularioEquipos = limpiarPuertoSwitchEnFormularioEquipos;
+
+    function sincronizarCombosSwitchFormulario(puertoSwVal, switchNomVal) {
+        const selSwitch = document.getElementById('combo_form_switch_select');
+        const selPuerto = document.getElementById('combo_form_puerto_select');
+        const hiddenPuerto = document.getElementById('field_puerto_sw');
+        const hiddenSwitch = document.getElementById('field_switch_nombre');
+        const previewTxt = document.getElementById('preview_puerto_sw_text');
+
+        if (!selSwitch || !selPuerto) return;
+
+        if (!puertoSwVal && !switchNomVal) {
+            limpiarPuertoSwitchEnFormularioEquipos();
+            return;
+        }
+
+        let rawVal = String(puertoSwVal || '').trim();
+        let swName = String(switchNomVal || '').trim();
+        let portNum = '';
+
+        if (rawVal.includes('/')) {
+            const parts = rawVal.split('/');
+            swName = parts[0].trim();
+            portNum = parts[1].trim();
+        } else if (rawVal.includes('-')) {
+            const parts = rawVal.split('-');
+            swName = parts[0].trim();
+            portNum = parts[1].trim();
+        } else {
+            const m = rawVal.match(/(\d+)/);
+            if (m) portNum = 'Puerto ' + m[1];
+        }
+
+        if (!swName && switchNomVal) {
+            swName = switchNomVal.trim();
+        }
+
+        let swFound = false;
+        if (swName) {
+            for (let i = 0; i < selSwitch.options.length; i++) {
+                const optVal = selSwitch.options[i].value.trim().toLowerCase();
+                if (optVal === swName.toLowerCase() || optVal.includes(swName.toLowerCase()) || swName.toLowerCase().includes(optVal)) {
+                    selSwitch.selectedIndex = i;
+                    swFound = true;
+                    swName = selSwitch.options[i].value;
+                    break;
+                }
+            }
+        }
+
+        if (swFound) {
+            alCambiarSwitchEnFormularioEquipos(swName, portNum, true);
+        } else {
+            if (hiddenPuerto) hiddenPuerto.value = rawVal;
+            if (hiddenSwitch) hiddenSwitch.value = swName;
+            if (previewTxt) previewTxt.textContent = rawVal || 'Sin asignar';
+        }
+    }
+    window.sincronizarCombosSwitchFormulario = sincronizarCombosSwitchFormulario;
+
+    function alCambiarNodoEnFormularioEquipos(nodoCod) {
+        if (window._isSyncingNodoSwitch) return;
+
+        const selNodo = document.getElementById('combo_form_nodo_select');
+        const hiddenNodo = document.getElementById('field_numero_nodo');
+        const boxCustom = document.getElementById('box_custom_nodo_input');
+        const inpCustom = document.getElementById('custom_nodo_input_manual');
+        const previewTxt = document.getElementById('preview_nodo_text');
+
+        if (nodoCod === '__custom__') {
+            if (boxCustom) boxCustom.style.display = 'block';
+            if (inpCustom) {
+                inpCustom.focus();
+                if (hiddenNodo) hiddenNodo.value = inpCustom.value.trim();
+                if (previewTxt) previewTxt.textContent = inpCustom.value.trim() ? ('Nodo: ' + inpCustom.value.trim()) : 'Nodo Manual';
+            }
+            return;
+        }
+
+        if (boxCustom) boxCustom.style.display = 'none';
+
+        if (!nodoCod) {
+            if (hiddenNodo) hiddenNodo.value = '';
+            if (previewTxt) previewTxt.textContent = 'Sin nodo asignado';
+            return;
+        }
+
+        if (hiddenNodo) hiddenNodo.value = nodoCod;
+        if (previewTxt) previewTxt.textContent = 'Nodo: ' + nodoCod;
+
+        let swAsocNom = '';
+        let swAsocPort = '';
+        let patchAsoc = '';
+
+        if (selNodo && selNodo.selectedOptions.length > 0) {
+            const opt = selNodo.selectedOptions[0];
+            swAsocNom = opt.getAttribute('data-swnom') || '';
+            swAsocPort = opt.getAttribute('data-swpnum') || '';
+            patchAsoc = opt.getAttribute('data-patch') || '';
+            if (!swAsocNom) {
+                const rawSw = opt.getAttribute('data-sw') || '';
+                if (rawSw) {
+                    if (rawSw.includes('/')) {
+                        const p = rawSw.split('/');
+                        swAsocNom = p[0].trim();
+                        const m = p[1].match(/(\d+)/);
+                        if (m) swAsocPort = m[1];
+                    } else {
+                        swAsocNom = rawSw.trim();
+                    }
+                }
+            }
+        }
+
+        if ((!swAsocNom || !swAsocPort) && window.nodosDisponiblesRed) {
+            const foundNd = window.nodosDisponiblesRed.find(nd => String(nd.codigo_nodo).trim().toLowerCase() === String(nodoCod).trim().toLowerCase());
+            if (foundNd) {
+                if (foundNd.switch_nombre_asoc) swAsocNom = foundNd.switch_nombre_asoc;
+                if (foundNd.puerto_num_asoc) swAsocPort = String(foundNd.puerto_num_asoc);
+                if (!patchAsoc && foundNd.patch_panel) patchAsoc = foundNd.patch_panel;
+                if (!swAsocNom && foundNd.switch_puerto) {
+                    if (foundNd.switch_puerto.includes('/')) {
+                        const p = foundNd.switch_puerto.split('/');
+                        swAsocNom = p[0].trim();
+                        const m = p[1].match(/(\d+)/);
+                        if (m) swAsocPort = m[1];
+                    } else {
+                        swAsocNom = foundNd.switch_puerto.trim();
+                    }
+                }
+            }
+        }
+
+        if ((!swAsocNom || !swAsocPort) && window.puertosSwitchMapa) {
+            const foundP = window.puertosSwitchMapa.find(p => String(p.nodo_codigo).trim().toLowerCase() === String(nodoCod).trim().toLowerCase());
+            if (foundP) {
+                if (foundP.switch_nombre) swAsocNom = foundP.switch_nombre;
+                if (foundP.puerto_numero) swAsocPort = String(foundP.puerto_numero);
+            }
+        }
+
+        if (patchAsoc) {
+            const inpPatch = document.getElementById('field_puerto_patch_panel');
+            if (inpPatch && (!inpPatch.value || inpPatch.value.trim() === '')) {
+                inpPatch.value = patchAsoc;
+            }
+        }
+
+        const extAsoc = (selNodo && selNodo.selectedOptions.length > 0) ? (selNodo.selectedOptions[0].getAttribute('data-ext') || '') : '';
+        const inpExt = document.getElementById('field_extension');
+        if (inpExt && currentSeccion !== 'telefonos_poe') {
+            if (extAsoc) {
+                inpExt.value = extAsoc;
+            }
+        }
+
+        if (swAsocNom && swAsocPort) {
+            seleccionarSwitchYPuertoAutomatico(swAsocNom, swAsocPort);
+        }
+    }
+    window.alCambiarNodoEnFormularioEquipos = alCambiarNodoEnFormularioEquipos;
+
+    function seleccionarSwitchYPuertoAutomatico(swNom, portNum) {
+        window._isSyncingNodoSwitch = true;
+        try {
+            const selSwitch = document.getElementById('combo_form_switch_select');
+            const selPuerto = document.getElementById('combo_form_puerto_select');
+            const hiddenPuerto = document.getElementById('field_puerto_sw');
+            const hiddenSwitch = document.getElementById('field_switch_nombre');
+            const previewTxt = document.getElementById('preview_puerto_sw_text');
+
+            if (!selSwitch || !selPuerto) return;
+
+            const cleanSwTarget = String(swNom).trim().toLowerCase();
+            let swMatchedValue = '';
+            let swMatchedIndex = -1;
+
+            for (let i = 0; i < selSwitch.options.length; i++) {
+                const optVal = selSwitch.options[i].value.trim().toLowerCase();
+                if (!optVal) continue;
+                if (optVal === cleanSwTarget || optVal.includes(cleanSwTarget) || cleanSwTarget.includes(optVal)) {
+                    swMatchedValue = selSwitch.options[i].value;
+                    swMatchedIndex = i;
+                    break;
+                }
+            }
+
+            if (swMatchedIndex >= 0) {
+                selSwitch.selectedIndex = swMatchedIndex;
+                const pTargetNum = String(portNum).replace(/[^0-9]/g, '');
+                alCambiarSwitchEnFormularioEquipos(swMatchedValue, 'Puerto ' + pTargetNum, true);
+                if (previewTxt) {
+                    previewTxt.textContent = swMatchedValue + ' / Puerto ' + pTargetNum;
+                }
+            } else {
+                if (hiddenSwitch) hiddenSwitch.value = swNom;
+                const pTargetNum = String(portNum).replace(/[^0-9]/g, '');
+                const valFull = swNom + ' / Puerto ' + pTargetNum;
+                if (hiddenPuerto) hiddenPuerto.value = valFull;
+                if (previewTxt) previewTxt.textContent = valFull;
+            }
+        } finally {
+            window._isSyncingNodoSwitch = false;
+        }
+    }
+    window.seleccionarSwitchYPuertoAutomatico = seleccionarSwitchYPuertoAutomatico;
+
+    function alEscribirNodoManual(val) {
+        const hiddenNodo = document.getElementById('field_numero_nodo');
+        const previewTxt = document.getElementById('preview_nodo_text');
+        const clean = (val || '').trim();
+        if (hiddenNodo) hiddenNodo.value = clean;
+        if (previewTxt) previewTxt.textContent = clean ? ('Nodo: ' + clean) : 'Sin nodo asignado';
+    }
+    window.alEscribirNodoManual = alEscribirNodoManual;
+
+    function limpiarNodoEnFormularioEquipos() {
+        const selNodo = document.getElementById('combo_form_nodo_select');
+        const hiddenNodo = document.getElementById('field_numero_nodo');
+        const boxCustom = document.getElementById('box_custom_nodo_input');
+        const inpCustom = document.getElementById('custom_nodo_input_manual');
+        const previewTxt = document.getElementById('preview_nodo_text');
+
+        if (selNodo) selNodo.selectedIndex = 0;
+        if (boxCustom) boxCustom.style.display = 'none';
+        if (inpCustom) inpCustom.value = '';
+        if (hiddenNodo) hiddenNodo.value = '';
+        if (previewTxt) previewTxt.textContent = 'Sin nodo asignado';
+    }
+    window.limpiarNodoEnFormularioEquipos = limpiarNodoEnFormularioEquipos;
+
+    function sincronizarComboNodoFormulario(nodoVal, switchPuertoVal, patchVal) {
+        const selNodo = document.getElementById('combo_form_nodo_select');
+        const hiddenNodo = document.getElementById('field_numero_nodo');
+        const boxCustom = document.getElementById('box_custom_nodo_input');
+        const inpCustom = document.getElementById('custom_nodo_input_manual');
+        const previewTxt = document.getElementById('preview_nodo_text');
+
+        if (!selNodo) return;
+
+        const val = (nodoVal !== null && nodoVal !== undefined) ? String(nodoVal).trim() : '';
+        if (hiddenNodo) hiddenNodo.value = val;
+
+        if (!val) {
+            if (switchPuertoVal && window.nodosDisponiblesRed) {
+                const sClean = String(switchPuertoVal).trim().toLowerCase();
+                const matchNd = window.nodosDisponiblesRed.find(nd => (nd.switch_puerto || '').trim().toLowerCase() === sClean);
+                if (matchNd) {
+                    selNodo.value = matchNd.codigo_nodo;
+                    if (hiddenNodo) hiddenNodo.value = matchNd.codigo_nodo;
+                    if (previewTxt) previewTxt.textContent = 'Nodo: ' + matchNd.codigo_nodo;
+                    if (boxCustom) boxCustom.style.display = 'none';
+                    return;
+                }
+            }
+            limpiarNodoEnFormularioEquipos();
+            return;
+        }
+
+        let found = false;
+        for (let i = 0; i < selNodo.options.length; i++) {
+            if (selNodo.options[i].value === val) {
+                selNodo.selectedIndex = i;
+                found = true;
+                break;
+            }
+        }
+
+        if (found) {
+            if (boxCustom) boxCustom.style.display = 'none';
+            if (previewTxt) previewTxt.textContent = 'Nodo: ' + val;
+        } else {
+            selNodo.value = '__custom__';
+            if (boxCustom) boxCustom.style.display = 'block';
+            if (inpCustom) inpCustom.value = val;
+            if (previewTxt) previewTxt.textContent = 'Nodo: ' + val;
+        }
+    }
+    window.sincronizarComboNodoFormulario = sincronizarComboNodoFormulario;
+
+    function autoLlenarDatosUsuario(selectEl) {
+        if (!selectEl) return;
+        let selectedVal = selectEl.value;
+
+        if (selectedVal === '__custom__') {
+            const customName = prompt("Ingresa el nombre del usuario:");
+            if (customName && customName.trim() !== '') {
+                const cleanName = customName.trim();
+                const newOpt = new Option(cleanName + ' (Manual)', cleanName, true, true);
+                selectEl.add(newOpt);
+                selectedVal = cleanName;
+            } else {
+                selectEl.selectedIndex = 0;
+                return;
+            }
+        }
+
+        const selectedOpt = selectEl.options[selectEl.selectedIndex];
+        if (!selectedOpt) return;
+
+        const area = selectedOpt.getAttribute('data-area');
+        const puesto = selectedOpt.getAttribute('data-puesto');
+
+        const inputDept = document.getElementById('field_departamento') || document.getElementById('field_area');
+        if (inputDept && area && area.trim() !== '') {
+            inputDept.value = area;
+        }
+
+        const inputPuesto = document.getElementById('field_puesto');
+        if (inputPuesto && puesto && puesto.trim() !== '') {
+            inputPuesto.value = puesto;
+        }
+
+        const inputNombre = document.getElementById('field_nombre');
+        if (inputNombre && inputNombre !== selectEl && selectedVal && selectedVal.trim() !== '') {
+            inputNombre.value = selectedVal;
+        }
+        const inputUsuario = document.getElementById('field_usuario');
+        if (inputUsuario && inputUsuario !== selectEl && selectedVal && selectedVal.trim() !== '') {
+            inputUsuario.value = selectedVal;
+        }
+    }
+    window.autoLlenarDatosUsuario = autoLlenarDatosUsuario;
+
+    // =========================================================================
+    // VISIBILIDAD DE CAMPOS SEGÚN TIPO DE DISPOSITIVO
+    // =========================================================================
+    function onTipoRegistroSiteChange(val) {
+        const siteAllowedByDevice = {
+            'Switch': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'ubicacion', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'garantia', 'contrasena'],
+            'Servidor': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'sistema_op', 'procesador', 'ram', 'almacenamiento', 'cantidad_discos', 'tipo_servidor', 'posicion_rack', 'ubicacion', 'funcion_servicio', 'ambiente', 'criticidad', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
+            'NAS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'firmware_version', 'bahias_nas', 'cantidad_discos', 'capacidad_disco_ind', 'almacenamiento', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'funcion_servicio', 'posicion_rack', 'ubicacion', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
+            'Router / ISP': ['tipo_registro', 'proveedor', 'nombre_equipo', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'ip_publica', 'ip', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'estado', 'costo', 'folio_factura', 'contrasena'],
+            'Fortinet': ['tipo_registro', 'modelo', 'serie', 'nombre_equipo', 'firmware_version', 'ip', 'mac_ethernet', 'ip_publica', 'ip_local', 'costo', 'folio_factura', 'contrasena'],
+            'Gateway UniFi': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'unifi_os_ver', 'controller_ver', 'ip_publica', 'tipo_conexion', 'velocidad_enlace', 'costo', 'folio_factura', 'contrasena'],
+            'Access Point': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'mac_wifi', 'ip', 'firmware_version', 'ssids', 'vlans', 'poe', 'puerto_sw', 'numero_nodo', 'ubicacion', 'estado', 'controlador_ap', 'costo', 'folio_factura', 'contrasena'],
+            'UPS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_compra', 'fecha_bateria', 'autonomia', 'posicion_rack', 'ubicacion', 'ip', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'contrasena']
+        };
+
+        const allowed = siteAllowedByDevice[val] || siteAllowedByDevice['Switch'];
+        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
+        allFieldInputs.forEach(inp => {
+            const colName = inp.id.replace('field_', '');
+            if (colName === 'foto_camara_file' || colName === 'factura_file') return;
+            const colWrapper = inp.closest('.col-md-4');
+            if (!colWrapper) return;
+
+            if (allowed.includes(colName)) {
+                colWrapper.style.display = 'block';
+            } else {
+                colWrapper.style.display = 'none';
+            }
+        });
+
+        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
+        tabPanes.forEach(pane => {
+            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
+            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
+            if (tabBtn && tabBtn.parentElement) {
+                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
+            }
+        });
+
+        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
+        if (firstVisibleTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
+            bsTab.show();
+        }
+    }
+    window.onTipoRegistroSiteChange = onTipoRegistroSiteChange;
+
+    function onTipoRegistroMovilChange(val) {
+        const movilAllowedByDevice = {
+            'Celular': [
+                'tipo_registro', 'marca', 'modelo', 'serie', 'imei_1', 'imei_2', 'numero_telefonico',
+                'almacenamiento', 'ram', 'color', 'sistema_op', 'accesorios', 'nombre', 'departamento',
+                'fecha_asignacion', 'fecha_compra', 'proveedor', 'folio_factura', 'garantia', 'mac',
+                'costo', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan'
+            ],
+            'Tableta': [
+                'tipo_registro', 'marca', 'modelo', 'serie', 'almacenamiento', 'ram', 'sistema_op',
+                'color', 'estado_fisico', 'estatus', 'accesorios', 'nombre', 'departamento', 'ubicacion',
+                'fecha_asignacion', 'fecha_compra', 'proveedor', 'garantia', 'costo', 'folio_factura'
+            ],
+            'Pantalla': [
+                'tipo_registro', 'marca', 'modelo', 'serie', 'tamano_pantalla', 'resolucion', 'estado_fisico',
+                'estatus', 'accesorios', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
+                'garantia', 'costo', 'folio_factura', 'observaciones'
+            ],
+            'Otro dispositivo': [
+                'tipo_registro', 'subtipo_dispositivo', 'marca', 'modelo', 'serie', 'especificaciones',
+                'accesorios', 'nombre', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
+                'garantia', 'fecha_asignacion', 'costo', 'folio_factura', 'observaciones'
+            ]
+        };
+
+        const allowed = movilAllowedByDevice[val] || movilAllowedByDevice['Celular'];
+        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
+        allFieldInputs.forEach(inp => {
+            const colName = inp.id.replace('field_', '');
+            if (colName === 'foto_camara_file' || colName === 'factura_file') return;
+            const colWrapper = inp.closest('.col-md-4');
+            if (!colWrapper) return;
+
+            if (allowed.includes(colName)) {
+                colWrapper.style.display = 'block';
+            } else {
+                colWrapper.style.display = 'none';
+            }
+        });
+
+        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
+        tabPanes.forEach(pane => {
+            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
+            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
+            if (tabBtn && tabBtn.parentElement) {
+                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
+            }
+        });
+
+        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
+        if (firstVisibleTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
+            bsTab.show();
+        }
+    }
+    window.onTipoRegistroMovilChange = onTipoRegistroMovilChange;
+
+    function onSubtipoCamaraChange(subtipoVal) {
+        const selTipo = document.getElementById('field_tipo_registro');
+        if (selTipo && selTipo.value !== 'Cámara') return;
+
+        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
+        allFieldInputs.forEach(inp => {
+            const colName = inp.id.replace('field_', '');
+            const colWrapper = inp.closest('.col-md-4');
+            if (!colWrapper) return;
+
+            if (subtipoVal === 'Análoga') {
+                if (colName === 'ip' || colName === 'canal_ip') {
+                    colWrapper.style.display = 'none';
+                } else if (colName === 'canal_analogico') {
+                    colWrapper.style.display = 'block';
+                }
+            } else {
+                if (colName === 'ip' || colName === 'canal_ip') {
+                    colWrapper.style.display = 'block';
+                } else if (colName === 'canal_analogico') {
+                    colWrapper.style.display = 'none';
+                }
+            }
+        });
+    }
+    window.onSubtipoCamaraChange = onSubtipoCamaraChange;
+
+    function onTipoRegistroChange(val) {
+        if (val === 'Cámara' && (!window.listadoDvrs || window.listadoDvrs.length === 0)) {
+            const modalWarnEl = document.getElementById('modalSinDvrWarning');
+            if (modalWarnEl && typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(modalWarnEl).show();
+            }
+            const selTipo = document.getElementById('field_tipo_registro');
+            if (selTipo) selTipo.value = 'DVR/NVR';
+            val = 'DVR/NVR';
+        }
+
+        const boxFotosCam = document.getElementById('box_fotos_camara_form');
+        const selSubtipo = document.getElementById('field_subtipo_camara');
+
+        if (val === 'Cámara') {
+            if (boxFotosCam) boxFotosCam.style.display = 'flex';
+
+            const subtipoVal = selSubtipo ? (selSubtipo.value || 'IP') : 'IP';
+            const cameraBaseAllowed = ['tipo_registro', 'subtipo_camara', 'dvr_vinculado', 'nombre', 'modelo', 'costo', 'contrasena_camara', 'ubicacion'];
+
+            const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
+            allFieldInputs.forEach(inp => {
+                const colName = inp.id.replace('field_', '');
+                if (colName === 'foto_camara_file' || colName === 'foto_vista_file') return;
+                const colWrapper = inp.closest('.col-md-4');
+                if (!colWrapper) return;
+
+                if (cameraBaseAllowed.includes(colName)) {
+                    colWrapper.style.display = 'block';
+                } else if (subtipoVal === 'Análoga' && colName === 'canal_analogico') {
+                    colWrapper.style.display = 'block';
+                } else if (subtipoVal !== 'Análoga' && (colName === 'ip' || colName === 'canal_ip')) {
+                    colWrapper.style.display = 'block';
+                } else {
+                    colWrapper.style.display = 'none';
+                }
+            });
+        } else {
+            if (boxFotosCam) boxFotosCam.style.display = 'none';
+
+            const cameraOnlyFields = ['subtipo_camara', 'dvr_vinculado', 'canal_analogico', 'canal_ip', 'ubicacion'];
+            const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
+            allFieldInputs.forEach(inp => {
+                const colName = inp.id.replace('field_', '');
+                const colWrapper = inp.closest('.col-md-4');
+                if (!colWrapper) return;
+
+                if (cameraOnlyFields.includes(colName)) {
+                    colWrapper.style.display = 'none';
+                } else {
+                    colWrapper.style.display = 'block';
+                }
+            });
+        }
+
+        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
+        tabPanes.forEach(pane => {
+            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
+            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
+            if (tabBtn && tabBtn.parentElement) {
+                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
+            }
+        });
+
+        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
+        if (firstVisibleTabBtn && typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
+            bsTab.show();
+        }
+    }
+    window.onTipoRegistroChange = onTipoRegistroChange;
+
+    // =========================================================================
+    // MODALES NUEVO Y EDICIÓN (DISPONIBLES INMEDIATAMENTE)
+    // =========================================================================
+    function abrirModalNuevo() {
+        const labelEl = document.getElementById('modalRegistroLabel');
+        if (labelEl) labelEl.innerHTML = '<i class="bi bi-plus-circle text-primary me-2"></i> Captura de Registro - <?php echo htmlspecialchars($infoSeccion['nombre']); ?>';
+        const formId = document.getElementById('form_registro_id');
+        if (formId) formId.value = '0';
+        
+        const fields = document.querySelectorAll('#contenedorCamposForm input, #contenedorCamposForm select');
+        fields.forEach(inp => {
+            if (inp.tagName === 'SELECT') {
+                inp.selectedIndex = 0;
+            } else {
+                inp.value = '';
+            }
+        });
+
+        limpiarPuertoSwitchEnFormularioEquipos();
+        limpiarNodoEnFormularioEquipos();
+
+        const selTipo = document.getElementById('field_tipo_registro');
+        if (selTipo) {
+            if (currentSeccion === 'site_vw') {
+                onTipoRegistroSiteChange(selTipo.value || 'Switch');
+            } else if (currentSeccion === 'moviles') {
+                onTipoRegistroMovilChange(selTipo.value || 'Celular');
+            } else {
+                onTipoRegistroChange(selTipo.value || 'DVR/NVR');
+            }
+        }
+
+        const modalEl = document.getElementById('modalRegistro');
+        if (modalEl) {
+            if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            } else {
+                modalEl.classList.add('show');
+                modalEl.style.display = 'block';
+                document.body.classList.add('modal-open');
+                let backdrop = document.querySelector('.modal-backdrop');
+                if (!backdrop) {
+                    backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    document.body.appendChild(backdrop);
+                }
+            }
+        }
+    }
+    window.abrirModalNuevo = abrirModalNuevo;
+
+    function abrirModalNuevoDVR() {
+        abrirModalNuevo();
+        const labelEl = document.getElementById('modalRegistroLabel');
+        if (labelEl) labelEl.innerHTML = '<i class="bi bi-camera-video-fill text-primary me-2"></i> Registrar Grabador DVR/NVR';
+        const selTipo = document.getElementById('field_tipo_registro');
+        if (selTipo) {
+            selTipo.value = 'DVR/NVR';
+            onTipoRegistroChange('DVR/NVR');
+        }
+    }
+    window.abrirModalNuevoDVR = abrirModalNuevoDVR;
+
+    function abrirModalNuevaCamara() {
+        if (!window.listadoDvrs || window.listadoDvrs.length === 0) {
+            const warnEl = document.getElementById('modalSinDvrWarning');
+            if (warnEl && typeof bootstrap !== 'undefined') {
+                bootstrap.Modal.getOrCreateInstance(warnEl).show();
+            }
+            return;
+        }
+
+        abrirModalNuevo();
+        const labelEl = document.getElementById('modalRegistroLabel');
+        if (labelEl) labelEl.innerHTML = '<i class="bi bi-camera-fill text-info me-2"></i> Registrar Cámara IP / Análoga';
+        const selTipo = document.getElementById('field_tipo_registro');
+        if (selTipo) {
+            selTipo.value = 'Cámara';
+            onTipoRegistroChange('Cámara');
+        }
+    }
+    window.abrirModalNuevaCamara = abrirModalNuevaCamara;
+
+    function abrirModalNuevoConArea(nomArea) {
+        abrirModalNuevo();
+        const inputDept = document.getElementById('field_departamento') || document.getElementById('field_area');
+        if (inputDept && nomArea) {
+            inputDept.value = nomArea;
+        }
+    }
+    window.abrirModalNuevoConArea = abrirModalNuevoConArea;
+
+    function abrirModalEditar(regOrId) {
+        try {
+            let reg = regOrId;
+            if (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(String(regOrId).trim()))) {
+                const targetId = String(regOrId).trim();
+                reg = (window.inventarioRegistros || []).find(r => String(r.id) === targetId) || null;
+            }
+
+            // Fallback AJAX si aún no está en inventarioRegistros
+            if (!reg && (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(String(regOrId).trim())))) {
+                const targetId = String(regOrId).trim();
+                fetch('equipos.php?action=obtener_registro&sec=' + encodeURIComponent(window.currentSeccion || 'equipos_vw') + '&id=' + encodeURIComponent(targetId))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data && !data.error && data.id) {
+                            if (!window.inventarioRegistros) window.inventarioRegistros = [];
+                            window.inventarioRegistros.push(data);
+                            window.abrirModalEditar(data);
+                        } else {
+                            alert('No se pudo encontrar el registro #' + targetId + ' para editar.');
+                        }
+                    })
+                    .catch(err => {
+                        console.error("Error al consultar registro para editar vía AJAX:", err);
+                        alert('Error al cargar datos del equipo #' + targetId);
+                    });
+                return;
+            }
+
+            if (!reg) return;
+
+            const labelEl = document.getElementById('modalRegistroLabel');
+            if (labelEl) labelEl.innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Registro #' + reg.id;
+            const formId = document.getElementById('form_registro_id');
+            if (formId) formId.value = reg.id;
+
+            for (const col in reg) {
+                const el = document.getElementById('field_' + col);
+                if (el) {
+                    if (el.tagName === 'SELECT') {
+                        const val = (reg[col] !== null && reg[col] !== undefined) ? String(reg[col]).trim() : '';
+                        let found = false;
+                        for (let i = 0; i < el.options.length; i++) {
+                            if (el.options[i].value === val) {
+                                el.selectedIndex = i;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found && val !== '') {
+                            const opt = new Option(val + ' (Personalizado)', val, true, true);
+                            el.add(opt);
+                        } else if (val === '') {
+                            el.selectedIndex = 0;
+                        }
+                    } else {
+                        el.value = (reg[col] !== null && reg[col] !== undefined) ? reg[col] : '';
+                    }
+                }
+            }
+
+            sincronizarCombosSwitchFormulario(reg.puerto_sw, reg.switch_nombre);
+            sincronizarComboNodoFormulario(reg.numero_nodo, reg.puerto_sw, reg.puerto_patch_panel);
+
+            if (reg.tipo_registro) {
+                if (currentSeccion === 'site_vw') {
+                    onTipoRegistroSiteChange(reg.tipo_registro);
+                } else if (currentSeccion === 'moviles') {
+                    onTipoRegistroMovilChange(reg.tipo_registro);
+                } else {
+                    onTipoRegistroChange(reg.tipo_registro);
+                    if (reg.subtipo_camara) {
+                        onSubtipoCamaraChange(reg.subtipo_camara);
+                    }
+                }
+            } else if (currentSeccion === 'site_vw') {
+                onTipoRegistroSiteChange('Switch');
+            } else if (currentSeccion === 'moviles') {
+                onTipoRegistroMovilChange('Celular');
+            }
+
+            const modalEl = document.getElementById('modalRegistro');
+            if (modalEl) {
+                if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                } else {
+                    modalEl.classList.add('show');
+                    modalEl.style.display = 'block';
+                    document.body.classList.add('modal-open');
+                    let backdrop = document.querySelector('.modal-backdrop');
+                    if (!backdrop) {
+                        backdrop = document.createElement('div');
+                        backdrop.className = 'modal-backdrop fade show';
+                        document.body.appendChild(backdrop);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error al abrir modal editar:", err);
+            alert("Ocurrió un error al preparar la edición del equipo: " + err.message);
+        }
+    }
+    window.abrirModalEditar = abrirModalEditar;
     </script>
     <style>
         body {
@@ -2959,9 +4136,26 @@ function renderBadgeTipoSite($tipo) {
                                 <?php endif; ?>
                             <?php endif; ?>
                             <?php if (tienePermiso('equipos', 'puede_exportar')): ?>
-                                <button type="button" class="btn btn-outline-success btn-sm rounded-3 px-3" onclick="exportarTablaCSV()">
-                                    <i class="bi bi-file-earmark-excel me-1"></i> Exportar CSV
-                                </button>
+                                <div class="btn-group btn-group-sm shadow-sm">
+                                    <button type="button" class="btn btn-success btn-sm rounded-start-3 px-3 fw-semibold d-flex align-items-center gap-1.5" style="background: #16a34a; border-color: #16a34a;" onclick="exportarExcelConDiseno()" title="Descargar datos en Microsoft Excel con logotipo y formato oficial">
+                                        <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel (.xls)
+                                    </button>
+                                    <button type="button" class="btn btn-success btn-sm rounded-end-3 dropdown-toggle dropdown-toggle-split" style="background: #15803d; border-color: #15803d;" data-bs-toggle="dropdown" aria-expanded="false" title="Más opciones de exportación">
+                                        <span class="visually-hidden">Opciones</span>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow">
+                                        <li>
+                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="javascript:void(0)" onclick="exportarExcelConDiseno()">
+                                                <i class="bi bi-table text-success"></i> Exportar Tabla Visible (.xls)
+                                            </a>
+                                        </li>
+                                        <li>
+                                            <a class="dropdown-item py-2 d-flex align-items-center gap-2 small fw-semibold" href="equipos.php?seccion=<?php echo urlencode($seccion_activa); ?>&accion=exportar_excel">
+                                                <i class="bi bi-database-fill-down text-primary"></i> Exportar Ficha Técnica Completa BD (.xls)
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </div>
                             <?php endif; ?>
                         <?php endif; ?>
                     </div>
@@ -4080,665 +5274,26 @@ function renderBadgeTipoSite($tipo) {
 </div>
 
 <script>
-    function toggleSidebarNavegacion() {
-        const sidebar = document.getElementById('mainSidebarWrapper');
-        const content = document.getElementById('mainContentWrapper');
-        const btnTab = document.getElementById('btnShowSidebarTab');
-        const iconBtn = document.getElementById('iconToggleSidebar');
-
-        if (!sidebar || !content) return;
-
-        const isHidden = (sidebar.style.display === 'none');
-
-        if (isHidden) {
-            sidebar.style.display = 'block';
-            content.classList.remove('col-12');
-            content.classList.add('col-md-9', 'col-lg-10');
-            if (btnTab) btnTab.style.display = 'none';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white';
-            localStorage.setItem('sidebar_collapsed', '0');
-        } else {
-            sidebar.style.display = 'none';
-            content.classList.remove('col-md-9', 'col-lg-10');
-            content.classList.add('col-12');
-            if (btnTab) btnTab.style.display = 'block';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white';
-            localStorage.setItem('sidebar_collapsed', '1');
-        }
-    }
-
+// =========================================================================
+    // INICIALIZACIÓN FINAL, VALIDACIÓN ASYNC Y GRÁFICAS (BOTTOM SCRIPT)
+    // =========================================================================
     document.addEventListener('DOMContentLoaded', function() {
         if (localStorage.getItem('sidebar_collapsed') === '1') {
-            toggleSidebarNavegacion();
+            if (typeof toggleSidebarNavegacion === 'function') toggleSidebarNavegacion();
+        }
+
+        const currentSec = "<?php echo htmlspecialchars($seccion_activa); ?>";
+        if (currentSec === 'graficas') {
+            if (typeof cambiarVistaEquipos === 'function') cambiarVistaEquipos('graficas');
+        } else {
+            const prefVista = localStorage.getItem('vista_equipos_pref');
+            if (prefVista === 'areas') {
+                if (typeof cambiarVistaEquipos === 'function') cambiarVistaEquipos('areas');
+            } else {
+                if (typeof cambiarVistaEquipos === 'function') cambiarVistaEquipos('tabla');
+            }
         }
     });
-
-    const listadoDvrs = <?php echo json_encode($dvrsRegistrados ?? []); ?>;
-    // currentSeccion, CATEGORIAS_EXPEDIENTE y ETIQUETAS_CUSTOM ya están cargados globalmente desde <head>
-
-    function abrirModalBaja(id, nombre) {
-        document.getElementById('baja_registro_id').value = id;
-        document.getElementById('baja_nombre_equipo').textContent = nombre;
-        document.getElementById('baja_motivo_texto').value = '';
-        const modal = new bootstrap.Modal(document.getElementById('modalPasarBaja'));
-        modal.show();
-    }
-
-    function getFieldLabel(key) {
-        const k = key.toLowerCase();
-        if (ETIQUETAS_CUSTOM[k]) return ETIQUETAS_CUSTOM[k];
-        return key.replace(/_/g, ' ').toUpperCase();
-    }
-
-    function togglePassSpan(id, btn) {
-        const el = document.getElementById(id);
-        if (!el) return;
-        const realPass = el.getAttribute('data-pass');
-        const isHidden = (el.textContent === '••••••••');
-        if (isHidden) {
-            el.textContent = realPass;
-            btn.innerHTML = '<i class="bi bi-eye-slash-fill text-warning"></i>';
-        } else {
-            el.textContent = '••••••••';
-            btn.innerHTML = '<i class="bi bi-eye-fill text-info"></i>';
-        }
-    }
-
-    function toggleInputPass(inputId, btn) {
-        const input = document.getElementById(inputId);
-        if (!input) return;
-        if (input.type === 'password') {
-            input.type = 'text';
-            btn.innerHTML = '<i class="bi bi-eye-slash-fill text-warning"></i>';
-        } else {
-            input.type = 'password';
-            btn.innerHTML = '<i class="bi bi-eye-fill text-info"></i>';
-        }
-    }
-
-    function escapeHtml(str) {
-        if (!str && str !== 0) return '';
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-    }
-
-    function formatUnitValue(key, val) {
-        if (val === null || val === undefined || val === '') return '<span class="text-muted opacity-50">No especificado</span>';
-        let cleanVal = String(val).trim();
-        if (!cleanVal || cleanVal === 'No especificado' || cleanVal === 'N/A') return '<span class="text-muted opacity-50">No especificado</span>';
-
-        const k = key.toLowerCase();
-        if ((k === 'costo' || k === 'costo_equipo') && !cleanVal.includes('$')) {
-            let num = parseFloat(cleanVal.replace(/,/g, ''));
-            if (!isNaN(num)) {
-                return '$' + num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            }
-        }
-        if (k === 'ram' && !/gb|mb/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + ' GB';
-        if (k === 'ghz' && !/ghz/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + ' GHz';
-        if (k === 'pulgadas' && !/"|pulg/i.test(cleanVal) && !isNaN(cleanVal)) return escapeHtml(cleanVal) + '"';
-        if ((k === 'dd' || k === 'almacenamiento') && !/gb|tb|mb/i.test(cleanVal) && !isNaN(cleanVal)) {
-            let num = parseFloat(cleanVal);
-            return escapeHtml(cleanVal) + (num <= 32 ? ' TB' : ' GB');
-        }
-        return escapeHtml(cleanVal);
-    }
-
-    function autoLlenarDatosUsuario(selectEl) {
-        if (!selectEl) return;
-        let selectedVal = selectEl.value;
-
-        if (selectedVal === '__custom__') {
-            const customName = prompt("Ingresa el nombre del usuario:");
-            if (customName && customName.trim() !== '') {
-                const cleanName = customName.trim();
-                const newOpt = new Option(cleanName + ' (Manual)', cleanName, true, true);
-                selectEl.add(newOpt);
-                selectedVal = cleanName;
-            } else {
-                selectEl.selectedIndex = 0;
-                return;
-            }
-        }
-
-        const selectedOpt = selectEl.options[selectEl.selectedIndex];
-        if (!selectedOpt) return;
-
-        const area = selectedOpt.getAttribute('data-area');
-        const puesto = selectedOpt.getAttribute('data-puesto');
-
-        // Auto-llenar Departamento / Área si existe el dato
-        const inputDept = document.getElementById('field_departamento') || document.getElementById('field_area');
-        if (inputDept && area && area.trim() !== '') {
-            inputDept.value = area;
-        }
-
-        // Auto-llenar Puesto si existe el dato
-        // Auto-llenar Puesto si existe el dato
-        const inputPuesto = document.getElementById('field_puesto');
-        if (inputPuesto && puesto && puesto.trim() !== '') {
-            inputPuesto.value = puesto;
-        }
-
-        // Auto-llenar Nombre de usuario si existe otro campo
-        const inputNombre = document.getElementById('field_nombre');
-        if (inputNombre && inputNombre !== selectEl && selectedVal && selectedVal.trim() !== '') {
-            inputNombre.value = selectedVal;
-        }
-        const inputUsuario = document.getElementById('field_usuario');
-        if (inputUsuario && inputUsuario !== selectEl && selectedVal && selectedVal.trim() !== '') {
-            inputUsuario.value = selectedVal;
-        }
-    }
-
-    // =========================================================================
-    // GESTIÓN Y SINCRONIZACIÓN BIDIRECCIONAL: NODOS <--> SWITCH & PUERTOS
-    // =========================================================================
-    window.switchesDisponiblesSite = <?php echo json_encode($switchesDisponiblesSite ?? []); ?>;
-    window.nodosDisponiblesRed = <?php echo json_encode($nodosDisponiblesRed ?? []); ?>;
-    window.puertosSwitchMapa = <?php echo json_encode($puertosSwitchMapa ?? []); ?>;
-    window._isSyncingNodoSwitch = false;
-
-    /**
-     * Al cambiar el Switch en el formulario de equipos
-     */
-    function alCambiarSwitchEnFormularioEquipos(swNombre, defaultPuerto, skipReverseSync) {
-        const selPuerto = document.getElementById('combo_form_puerto_select');
-        const selSwitch = document.getElementById('combo_form_switch_select');
-        const hiddenPuerto = document.getElementById('field_puerto_sw');
-        const hiddenSwitch = document.getElementById('field_switch_nombre');
-        const previewTxt = document.getElementById('preview_puerto_sw_text');
-
-        if (!selPuerto) return;
-        selPuerto.innerHTML = '<option value="">-- Puerto --</option>';
-
-        if (!swNombre) {
-            if (hiddenPuerto) hiddenPuerto.value = '';
-            if (hiddenSwitch) hiddenSwitch.value = '';
-            if (previewTxt) previewTxt.textContent = 'Sin puerto asignado';
-            return;
-        }
-
-        if (hiddenSwitch) hiddenSwitch.value = swNombre;
-
-        let cantPuertos = 48;
-        if (selSwitch && selSwitch.selectedOptions.length > 0) {
-            const pAttr = selSwitch.selectedOptions[0].getAttribute('data-puertos');
-            if (pAttr) cantPuertos = parseInt(pAttr, 10) || 48;
-        } else if (window.switchesDisponiblesSite) {
-            const found = window.switchesDisponiblesSite.find(s => (s.nombre_equipo || '').trim() === swNombre.trim());
-            if (found && found.cantidad_puertos) {
-                cantPuertos = parseInt(found.cantidad_puertos, 10) || 48;
-            }
-        }
-
-        const cleanDefaultNum = defaultPuerto ? String(defaultPuerto).replace(/[^0-9]/g, '') : '';
-        let portFound = false;
-
-        for (let i = 1; i <= cantPuertos; i++) {
-            const pVal = 'Puerto ' + i;
-            const opt = document.createElement('option');
-            opt.value = pVal;
-            opt.textContent = pVal;
-            if (cleanDefaultNum && parseInt(cleanDefaultNum, 10) === i) {
-                opt.selected = true;
-                portFound = true;
-            }
-            selPuerto.appendChild(opt);
-        }
-
-        const selectedP = selPuerto.value || (portFound ? ('Puerto ' + cleanDefaultNum) : '');
-        if (selectedP) {
-            selPuerto.value = selectedP;
-            if (hiddenPuerto) hiddenPuerto.value = swNombre + ' / ' + selectedP;
-            if (previewTxt) previewTxt.textContent = swNombre + ' / ' + selectedP;
-            if (!skipReverseSync) {
-                verificarNodoAsociadoAPuerto(swNombre, selectedP);
-            }
-        } else {
-            if (hiddenPuerto) hiddenPuerto.value = swNombre;
-            if (previewTxt) previewTxt.textContent = swNombre + ' (Sin puerto)';
-        }
-    }
-
-    /**
-     * Al cambiar el Puerto en el formulario de equipos
-     */
-    function alCambiarPuertoEnFormularioEquipos(puertoVal) {
-        const selSwitch = document.getElementById('combo_form_switch_select');
-        const hiddenPuerto = document.getElementById('field_puerto_sw');
-        const hiddenSwitch = document.getElementById('field_switch_nombre');
-        const previewTxt = document.getElementById('preview_puerto_sw_text');
-        const swNom = selSwitch ? selSwitch.value : '';
-
-        if (hiddenSwitch) hiddenSwitch.value = swNom;
-
-        if (hiddenPuerto) {
-            if (swNom && puertoVal) {
-                hiddenPuerto.value = swNom + ' / ' + puertoVal;
-            } else if (swNom) {
-                hiddenPuerto.value = swNom;
-            } else {
-                hiddenPuerto.value = puertoVal;
-            }
-        }
-        if (previewTxt) {
-            previewTxt.textContent = hiddenPuerto && hiddenPuerto.value ? hiddenPuerto.value : 'Sin puerto asignado';
-        }
-
-        if (swNom && puertoVal) {
-            verificarNodoAsociadoAPuerto(swNom, puertoVal);
-        }
-    }
-
-    /**
-     * Comprueba si el Switch y Puerto seleccionados ya tienen un Nodo asignado en la infraestructura (VICEVERSA)
-     * Si lo tienen -> lo llena automáticamente en el combo de nodos.
-     * Si no lo tienen -> se deja para selección o llenado manual.
-     */
-    function verificarNodoAsociadoAPuerto(swNom, puertoVal) {
-        if (window._isSyncingNodoSwitch) return;
-        if (!swNom || !puertoVal) return;
-
-        const pNum = parseInt(String(puertoVal).replace(/[^0-9]/g, ''), 10);
-        if (!pNum || isNaN(pNum)) return;
-
-        let matchedNodo = '';
-        let matchedPatch = '';
-        const swClean = swNom.trim().toLowerCase();
-
-        // 1. Buscar en puertosSwitchMapa (matriz de puertos física)
-        if (window.puertosSwitchMapa && Array.isArray(window.puertosSwitchMapa)) {
-            const foundP = window.puertosSwitchMapa.find(p => {
-                const pSw = (p.switch_nombre || '').trim().toLowerCase();
-                const pPort = parseInt(p.puerto_numero, 10);
-                return (pSw === swClean || pSw.includes(swClean) || swClean.includes(pSw)) && pPort === pNum;
-            });
-            if (foundP && foundP.nodo_codigo && String(foundP.nodo_codigo).trim() !== '') {
-                matchedNodo = String(foundP.nodo_codigo).trim();
-            }
-        }
-
-        // 2. Si no se encontró, buscar en nodosDisponiblesRed
-        if (!matchedNodo && window.nodosDisponiblesRed && Array.isArray(window.nodosDisponiblesRed)) {
-            const foundNd = window.nodosDisponiblesRed.find(nd => {
-                if (nd.switch_nombre_asoc && nd.puerto_num_asoc) {
-                    const ndSw = nd.switch_nombre_asoc.trim().toLowerCase();
-                    return (ndSw === swClean || ndSw.includes(swClean) || swClean.includes(ndSw)) && parseInt(nd.puerto_num_asoc, 10) === pNum;
-                }
-                const ndSwFull = (nd.switch_puerto || '').trim().toLowerCase();
-                if (ndSwFull.includes(swClean) || swClean.includes(ndSwFull.split('/')[0].trim())) {
-                    const m = ndSwFull.match(/(\d+)/);
-                    if (m && parseInt(m[1], 10) === pNum) return true;
-                }
-                return false;
-            });
-            if (foundNd) {
-                matchedNodo = String(foundNd.codigo_nodo).trim();
-                if (foundNd.patch_panel) matchedPatch = foundNd.patch_panel;
-            }
-        }
-
-        // Si este puerto YA tiene un nodo asignado, llenarlo en automático
-        if (matchedNodo) {
-            seleccionarNodoAutomatico(matchedNodo, matchedPatch);
-        }
-        // Si NO tiene nodo asignado: se permite llenarlo manual sin borrar nada
-    }
-
-    /**
-     * Selecciona y refleja el nodo automáticamente en la interfaz
-     */
-    function seleccionarNodoAutomatico(nodoCod, patchVal) {
-        window._isSyncingNodoSwitch = true;
-        try {
-            const selNodo = document.getElementById('combo_form_nodo_select');
-            const hiddenNodo = document.getElementById('field_numero_nodo');
-            const previewNodo = document.getElementById('preview_nodo_text');
-            const boxCustom = document.getElementById('box_custom_nodo_input');
-            const inpCustom = document.getElementById('custom_nodo_input_manual');
-            const inpPatch = document.getElementById('field_puerto_patch_panel');
-
-            if (!selNodo) return;
-
-            const cleanCod = String(nodoCod).trim();
-            let found = false;
-
-            for (let i = 0; i < selNodo.options.length; i++) {
-                if (selNodo.options[i].value === cleanCod || String(selNodo.options[i].value).trim().toLowerCase() === cleanCod.toLowerCase()) {
-                    selNodo.selectedIndex = i;
-                    found = true;
-                    if (!patchVal) {
-                        patchVal = selNodo.options[i].getAttribute('data-patch') || '';
-                    }
-                    break;
-                }
-            }
-
-            if (hiddenNodo) hiddenNodo.value = cleanCod;
-            if (previewNodo) previewNodo.textContent = 'Nodo: ' + cleanCod;
-
-            if (found) {
-                if (boxCustom) boxCustom.style.display = 'none';
-            } else {
-                selNodo.value = '__custom__';
-                if (boxCustom) boxCustom.style.display = 'block';
-                if (inpCustom) inpCustom.value = cleanCod;
-            }
-
-            if (inpPatch && patchVal && (!inpPatch.value || inpPatch.value.trim() === '')) {
-                inpPatch.value = patchVal;
-            }
-        } finally {
-            window._isSyncingNodoSwitch = false;
-        }
-    }
-
-    /**
-     * Limpia la selección de switch y puerto
-     */
-    function limpiarPuertoSwitchEnFormularioEquipos() {
-        const selSwitch = document.getElementById('combo_form_switch_select');
-        const selPuerto = document.getElementById('combo_form_puerto_select');
-        const hiddenPuerto = document.getElementById('field_puerto_sw');
-        const hiddenSwitch = document.getElementById('field_switch_nombre');
-        const previewTxt = document.getElementById('preview_puerto_sw_text');
-
-        if (selSwitch) selSwitch.selectedIndex = 0;
-        if (selPuerto) selPuerto.innerHTML = '<option value="">-- Puerto --</option>';
-        if (hiddenPuerto) hiddenPuerto.value = '';
-        if (hiddenSwitch) hiddenSwitch.value = '';
-        if (previewTxt) previewTxt.textContent = 'Sin puerto asignado';
-    }
-
-    /**
-     * Sincroniza combos al cargar o editar un equipo
-     */
-    function sincronizarCombosSwitchFormulario(puertoSwVal, switchNomVal) {
-        const selSwitch = document.getElementById('combo_form_switch_select');
-        const selPuerto = document.getElementById('combo_form_puerto_select');
-        const hiddenPuerto = document.getElementById('field_puerto_sw');
-        const hiddenSwitch = document.getElementById('field_switch_nombre');
-        const previewTxt = document.getElementById('preview_puerto_sw_text');
-
-        if (!selSwitch || !selPuerto) return;
-
-        if (!puertoSwVal && !switchNomVal) {
-            limpiarPuertoSwitchEnFormularioEquipos();
-            return;
-        }
-
-        let rawVal = String(puertoSwVal || '').trim();
-        let swName = String(switchNomVal || '').trim();
-        let portNum = '';
-
-        if (rawVal.includes('/')) {
-            const parts = rawVal.split('/');
-            swName = parts[0].trim();
-            portNum = parts[1].trim();
-        } else if (rawVal.includes('-')) {
-            const parts = rawVal.split('-');
-            swName = parts[0].trim();
-            portNum = parts[1].trim();
-        } else {
-            const m = rawVal.match(/(\d+)/);
-            if (m) portNum = 'Puerto ' + m[1];
-        }
-
-        if (!swName && switchNomVal) {
-            swName = switchNomVal.trim();
-        }
-
-        let swFound = false;
-        if (swName) {
-            for (let i = 0; i < selSwitch.options.length; i++) {
-                const optVal = selSwitch.options[i].value.trim().toLowerCase();
-                if (optVal === swName.toLowerCase() || optVal.includes(swName.toLowerCase()) || swName.toLowerCase().includes(optVal)) {
-                    selSwitch.selectedIndex = i;
-                    swFound = true;
-                    swName = selSwitch.options[i].value;
-                    break;
-                }
-            }
-        }
-
-        if (swFound) {
-            alCambiarSwitchEnFormularioEquipos(swName, portNum, true);
-        } else {
-            if (hiddenPuerto) hiddenPuerto.value = rawVal;
-            if (hiddenSwitch) hiddenSwitch.value = swName;
-            if (previewTxt) previewTxt.textContent = rawVal || 'Sin asignar';
-        }
-    }
-
-    /**
-     * Al cambiar el Nodo en el formulario de equipos
-     * Si ya tiene Switch y Puerto asignado -> se llena en automático.
-     * Si no tiene -> se deja para llenado manual.
-     */
-    function alCambiarNodoEnFormularioEquipos(nodoCod) {
-        if (window._isSyncingNodoSwitch) return;
-
-        const selNodo = document.getElementById('combo_form_nodo_select');
-        const hiddenNodo = document.getElementById('field_numero_nodo');
-        const boxCustom = document.getElementById('box_custom_nodo_input');
-        const inpCustom = document.getElementById('custom_nodo_input_manual');
-        const previewTxt = document.getElementById('preview_nodo_text');
-
-        if (nodoCod === '__custom__') {
-            if (boxCustom) boxCustom.style.display = 'block';
-            if (inpCustom) {
-                inpCustom.focus();
-                if (hiddenNodo) hiddenNodo.value = inpCustom.value.trim();
-                if (previewTxt) previewTxt.textContent = inpCustom.value.trim() ? ('Nodo: ' + inpCustom.value.trim()) : 'Nodo Manual';
-            }
-            return;
-        }
-
-        if (boxCustom) boxCustom.style.display = 'none';
-
-        if (!nodoCod) {
-            if (hiddenNodo) hiddenNodo.value = '';
-            if (previewTxt) previewTxt.textContent = 'Sin nodo asignado';
-            return;
-        }
-
-        if (hiddenNodo) hiddenNodo.value = nodoCod;
-        if (previewTxt) previewTxt.textContent = 'Nodo: ' + nodoCod;
-
-        // Buscar si este nodo tiene Switch y Puerto asignados
-        let swAsocNom = '';
-        let swAsocPort = '';
-        let patchAsoc = '';
-
-        if (selNodo && selNodo.selectedOptions.length > 0) {
-            const opt = selNodo.selectedOptions[0];
-            swAsocNom = opt.getAttribute('data-swnom') || '';
-            swAsocPort = opt.getAttribute('data-swpnum') || '';
-            patchAsoc = opt.getAttribute('data-patch') || '';
-            if (!swAsocNom) {
-                const rawSw = opt.getAttribute('data-sw') || '';
-                if (rawSw) {
-                    if (rawSw.includes('/')) {
-                        const p = rawSw.split('/');
-                        swAsocNom = p[0].trim();
-                        const m = p[1].match(/(\d+)/);
-                        if (m) swAsocPort = m[1];
-                    } else {
-                        swAsocNom = rawSw.trim();
-                    }
-                }
-            }
-        }
-
-        // Si no se obtuvo de los atributos, buscar en window.nodosDisponiblesRed
-        if ((!swAsocNom || !swAsocPort) && window.nodosDisponiblesRed) {
-            const foundNd = window.nodosDisponiblesRed.find(nd => String(nd.codigo_nodo).trim().toLowerCase() === String(nodoCod).trim().toLowerCase());
-            if (foundNd) {
-                if (foundNd.switch_nombre_asoc) swAsocNom = foundNd.switch_nombre_asoc;
-                if (foundNd.puerto_num_asoc) swAsocPort = String(foundNd.puerto_num_asoc);
-                if (!patchAsoc && foundNd.patch_panel) patchAsoc = foundNd.patch_panel;
-                if (!swAsocNom && foundNd.switch_puerto) {
-                    if (foundNd.switch_puerto.includes('/')) {
-                        const p = foundNd.switch_puerto.split('/');
-                        swAsocNom = p[0].trim();
-                        const m = p[1].match(/(\d+)/);
-                        if (m) swAsocPort = m[1];
-                    } else {
-                        swAsocNom = foundNd.switch_puerto.trim();
-                    }
-                }
-            }
-        }
-
-        // Si aún no, buscar en window.puertosSwitchMapa
-        if ((!swAsocNom || !swAsocPort) && window.puertosSwitchMapa) {
-            const foundP = window.puertosSwitchMapa.find(p => String(p.nodo_codigo).trim().toLowerCase() === String(nodoCod).trim().toLowerCase());
-            if (foundP) {
-                if (foundP.switch_nombre) swAsocNom = foundP.switch_nombre;
-                if (foundP.puerto_numero) swAsocPort = String(foundP.puerto_numero);
-            }
-        }
-
-        // Auto-llenar Patch Panel si existe y está vacío
-        if (patchAsoc) {
-            const inpPatch = document.getElementById('field_puerto_patch_panel');
-            if (inpPatch && (!inpPatch.value || inpPatch.value.trim() === '')) {
-                inpPatch.value = patchAsoc;
-            }
-        }
-
-        // Si este nodo ya tiene asignado un Teléfono PoE, reflejar su extensión solamente
-        const extAsoc = (selNodo && selNodo.selectedOptions.length > 0) ? (selNodo.selectedOptions[0].getAttribute('data-ext') || '') : '';
-        const inpExt = document.getElementById('field_extension');
-        if (inpExt && currentSeccion !== 'telefonos_poe') {
-            if (extAsoc) {
-                inpExt.value = extAsoc;
-            }
-        }
-
-        // Si TIENE Switch y Puerto asignado, llenarlo en automático
-        if (swAsocNom && swAsocPort) {
-            seleccionarSwitchYPuertoAutomatico(swAsocNom, swAsocPort);
-        }
-        // Si NO tiene Switch y Puerto asignado: se deja libre para llenado manual sin borrar nada
-    }
-
-    /**
-     * Selecciona y refleja el switch y puerto automáticamente en la interfaz
-     */
-    function seleccionarSwitchYPuertoAutomatico(swNom, portNum) {
-        window._isSyncingNodoSwitch = true;
-        try {
-            const selSwitch = document.getElementById('combo_form_switch_select');
-            const selPuerto = document.getElementById('combo_form_puerto_select');
-            const hiddenPuerto = document.getElementById('field_puerto_sw');
-            const hiddenSwitch = document.getElementById('field_switch_nombre');
-            const previewTxt = document.getElementById('preview_puerto_sw_text');
-
-            if (!selSwitch || !selPuerto) return;
-
-            const cleanSwTarget = String(swNom).trim().toLowerCase();
-            let swMatchedValue = '';
-            let swMatchedIndex = -1;
-
-            for (let i = 0; i < selSwitch.options.length; i++) {
-                const optVal = selSwitch.options[i].value.trim().toLowerCase();
-                if (!optVal) continue;
-                if (optVal === cleanSwTarget || optVal.includes(cleanSwTarget) || cleanSwTarget.includes(optVal)) {
-                    swMatchedValue = selSwitch.options[i].value;
-                    swMatchedIndex = i;
-                    break;
-                }
-            }
-
-            if (swMatchedIndex >= 0) {
-                selSwitch.selectedIndex = swMatchedIndex;
-                const pTargetNum = String(portNum).replace(/[^0-9]/g, '');
-                alCambiarSwitchEnFormularioEquipos(swMatchedValue, 'Puerto ' + pTargetNum, true);
-                if (previewTxt) {
-                    previewTxt.textContent = swMatchedValue + ' / Puerto ' + pTargetNum;
-                }
-            } else {
-                if (hiddenSwitch) hiddenSwitch.value = swNom;
-                const pTargetNum = String(portNum).replace(/[^0-9]/g, '');
-                const valFull = swNom + ' / Puerto ' + pTargetNum;
-                if (hiddenPuerto) hiddenPuerto.value = valFull;
-                if (previewTxt) previewTxt.textContent = valFull;
-            }
-        } finally {
-            window._isSyncingNodoSwitch = false;
-        }
-    }
-
-    function alEscribirNodoManual(val) {
-        const hiddenNodo = document.getElementById('field_numero_nodo');
-        const previewTxt = document.getElementById('preview_nodo_text');
-        const clean = (val || '').trim();
-        if (hiddenNodo) hiddenNodo.value = clean;
-        if (previewTxt) previewTxt.textContent = clean ? ('Nodo: ' + clean) : 'Sin nodo asignado';
-    }
-
-    function limpiarNodoEnFormularioEquipos() {
-        const selNodo = document.getElementById('combo_form_nodo_select');
-        const hiddenNodo = document.getElementById('field_numero_nodo');
-        const boxCustom = document.getElementById('box_custom_nodo_input');
-        const inpCustom = document.getElementById('custom_nodo_input_manual');
-        const previewTxt = document.getElementById('preview_nodo_text');
-
-        if (selNodo) selNodo.selectedIndex = 0;
-        if (boxCustom) boxCustom.style.display = 'none';
-        if (inpCustom) inpCustom.value = '';
-        if (hiddenNodo) hiddenNodo.value = '';
-        if (previewTxt) previewTxt.textContent = 'Sin nodo asignado';
-    }
-
-    function sincronizarComboNodoFormulario(nodoVal, switchPuertoVal, patchVal) {
-        const selNodo = document.getElementById('combo_form_nodo_select');
-        const hiddenNodo = document.getElementById('field_numero_nodo');
-        const boxCustom = document.getElementById('box_custom_nodo_input');
-        const inpCustom = document.getElementById('custom_nodo_input_manual');
-        const previewTxt = document.getElementById('preview_nodo_text');
-
-        if (!selNodo) return;
-
-        const val = (nodoVal !== null && nodoVal !== undefined) ? String(nodoVal).trim() : '';
-        if (hiddenNodo) hiddenNodo.value = val;
-
-        if (!val) {
-            if (switchPuertoVal && window.nodosDisponiblesRed) {
-                const sClean = String(switchPuertoVal).trim().toLowerCase();
-                const matchNd = window.nodosDisponiblesRed.find(nd => (nd.switch_puerto || '').trim().toLowerCase() === sClean);
-                if (matchNd) {
-                    selNodo.value = matchNd.codigo_nodo;
-                    if (hiddenNodo) hiddenNodo.value = matchNd.codigo_nodo;
-                    if (previewNodo) previewNodo.textContent = 'Nodo: ' + matchNd.codigo_nodo;
-                    if (boxCustom) boxCustom.style.display = 'none';
-                    return;
-                }
-            }
-            limpiarNodoEnFormularioEquipos();
-            return;
-        }
-
-        let found = false;
-        for (let i = 0; i < selNodo.options.length; i++) {
-            if (selNodo.options[i].value === val) {
-                selNodo.selectedIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (found) {
-            if (boxCustom) boxCustom.style.display = 'none';
-            if (previewTxt) previewTxt.textContent = 'Nodo: ' + val;
-        } else {
-            selNodo.value = '__custom__';
-            if (boxCustom) boxCustom.style.display = 'block';
-            if (inpCustom) inpCustom.value = val;
-            if (previewTxt) previewTxt.textContent = 'Nodo: ' + val;
-        }
-    }
 
     // =========================================================================
     // VALIDACIÓN PREVIA DE REGLAS DE UNICIDAD (MAC, IP, SERIE, NODO, PUERTO SW)
@@ -4784,578 +5339,22 @@ function renderBadgeTipoSite($tipo) {
                 return false;
             }
         } catch (err) {
-            console.warn('Error en validación AJAX previa:', err);
+            console.warn("Validación previa omitida por fallo en fetch:", err);
         }
 
-        if (btnSubmit) {
-            btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
-        }
         form.submit();
         return true;
     }
+    window.validarReglasFormularioEquipos = validarReglasFormularioEquipos;
 
-    function onTipoRegistroSiteChange(val) {
-        const siteAllowedByDevice = {
-            'Switch': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'ubicacion', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'garantia', 'contrasena'],
-            'Servidor': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'sistema_op', 'procesador', 'ram', 'almacenamiento', 'cantidad_discos', 'tipo_servidor', 'posicion_rack', 'ubicacion', 'funcion_servicio', 'ambiente', 'criticidad', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
-            'NAS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'firmware_version', 'bahias_nas', 'cantidad_discos', 'capacidad_disco_ind', 'almacenamiento', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'funcion_servicio', 'posicion_rack', 'ubicacion', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
-            'Router / ISP': ['tipo_registro', 'proveedor', 'nombre_equipo', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'ip_publica', 'ip', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'estado', 'costo', 'folio_factura', 'contrasena'],
-            'Fortinet': ['tipo_registro', 'modelo', 'serie', 'nombre_equipo', 'firmware_version', 'ip', 'mac_ethernet', 'ip_publica', 'ip_local', 'costo', 'folio_factura', 'contrasena'],
-            'Gateway UniFi': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'unifi_os_ver', 'controller_ver', 'ip_publica', 'tipo_conexion', 'velocidad_enlace', 'costo', 'folio_factura', 'contrasena'],
-            'Access Point': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'mac_wifi', 'ip', 'firmware_version', 'ssids', 'vlans', 'poe', 'puerto_sw', 'numero_nodo', 'ubicacion', 'estado', 'controlador_ap', 'costo', 'folio_factura', 'contrasena'],
-            'UPS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_compra', 'fecha_bateria', 'autonomia', 'posicion_rack', 'ubicacion', 'ip', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'contrasena']
-        };
-
-        const allowed = siteAllowedByDevice[val] || siteAllowedByDevice['Switch'];
-        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
-        allFieldInputs.forEach(inp => {
-            const colName = inp.id.replace('field_', '');
-            if (colName === 'foto_camara_file' || colName === 'factura_file') return;
-            const colWrapper = inp.closest('.col-md-4');
-            if (!colWrapper) return;
-
-            if (allowed.includes(colName)) {
-                colWrapper.style.display = 'block';
-            } else {
-                colWrapper.style.display = 'none';
-            }
-        });
-
-        // Hide tabs with 0 visible fields
-        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
-        tabPanes.forEach(pane => {
-            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
-            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
-            if (tabBtn && tabBtn.parentElement) {
-                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
-            }
-        });
-
-        // Auto-select first visible tab
-        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
-        if (firstVisibleTabBtn) {
-            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
-            bsTab.show();
-        }
-    }
-
-    function onTipoRegistroMovilChange(val) {
-        const movilAllowedByDevice = {
-            'Celular': [
-                'tipo_registro', 'marca', 'modelo', 'serie', 'imei_1', 'imei_2', 'numero_telefonico',
-                'almacenamiento', 'ram', 'color', 'sistema_op', 'accesorios', 'nombre', 'departamento',
-                'fecha_asignacion', 'fecha_compra', 'proveedor', 'folio_factura', 'garantia', 'mac',
-                'costo', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan'
-            ],
-            'Tableta': [
-                'tipo_registro', 'marca', 'modelo', 'serie', 'almacenamiento', 'ram', 'sistema_op',
-                'color', 'estado_fisico', 'estatus', 'accesorios', 'nombre', 'departamento', 'ubicacion',
-                'fecha_asignacion', 'fecha_compra', 'proveedor', 'garantia', 'costo', 'folio_factura'
-            ],
-            'Pantalla': [
-                'tipo_registro', 'marca', 'modelo', 'serie', 'tamano_pantalla', 'resolucion', 'estado_fisico',
-                'estatus', 'accesorios', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
-                'garantia', 'costo', 'folio_factura', 'observaciones'
-            ],
-            'Otro dispositivo': [
-                'tipo_registro', 'subtipo_dispositivo', 'marca', 'modelo', 'serie', 'especificaciones',
-                'accesorios', 'nombre', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
-                'garantia', 'fecha_asignacion', 'costo', 'folio_factura', 'observaciones'
-            ]
-        };
-
-        const allowed = movilAllowedByDevice[val] || movilAllowedByDevice['Celular'];
-        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
-        allFieldInputs.forEach(inp => {
-            const colName = inp.id.replace('field_', '');
-            if (colName === 'foto_camara_file' || colName === 'factura_file') return;
-            const colWrapper = inp.closest('.col-md-4');
-            if (!colWrapper) return;
-
-            if (allowed.includes(colName)) {
-                colWrapper.style.display = 'block';
-            } else {
-                colWrapper.style.display = 'none';
-            }
-        });
-
-        // Hide tabs with 0 visible fields
-        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
-        tabPanes.forEach(pane => {
-            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
-            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
-            if (tabBtn && tabBtn.parentElement) {
-                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
-            }
-        });
-
-        // Auto-select first visible tab
-        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
-        if (firstVisibleTabBtn) {
-            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
-            bsTab.show();
-        }
-    }
-
-    function abrirModalNuevo() {
-        document.getElementById('modalRegistroLabel').innerHTML = '<i class="bi bi-plus-circle text-primary me-2"></i> Captura de Registro - <?php echo htmlspecialchars($infoSeccion['nombre']); ?>';
-        document.getElementById('form_registro_id').value = '0';
-        
-        const fields = document.querySelectorAll('#contenedorCamposForm input, #contenedorCamposForm select');
-        fields.forEach(inp => {
-            if (inp.tagName === 'SELECT') {
-                inp.selectedIndex = 0;
-            } else {
-                inp.value = '';
-            }
-        });
-
-        limpiarPuertoSwitchEnFormularioEquipos();
-        limpiarNodoEnFormularioEquipos();
-
-        const selTipo = document.getElementById('field_tipo_registro');
-        if (selTipo) {
-            if (currentSeccion === 'site_vw') {
-                onTipoRegistroSiteChange(selTipo.value || 'Switch');
-            } else if (currentSeccion === 'moviles') {
-                onTipoRegistroMovilChange(selTipo.value || 'Celular');
-            } else {
-                onTipoRegistroChange(selTipo.value || 'DVR/NVR');
-            }
-        }
-
-        const modal = new bootstrap.Modal(document.getElementById('modalRegistro'));
-        modal.show();
-    }
-
-    function abrirModalNuevoDVR() {
-        abrirModalNuevo();
-        document.getElementById('modalRegistroLabel').innerHTML = '<i class="bi bi-camera-video-fill text-primary me-2"></i> Registrar Grabador DVR/NVR';
-        const selTipo = document.getElementById('field_tipo_registro');
-        if (selTipo) {
-            selTipo.value = 'DVR/NVR';
-            onTipoRegistroChange('DVR/NVR');
-        }
-    }
-
-    function abrirModalNuevaCamara() {
-        if (!listadoDvrs || listadoDvrs.length === 0) {
-            const modalWarn = new bootstrap.Modal(document.getElementById('modalSinDvrWarning'));
-            modalWarn.show();
-            return;
-        }
-
-        abrirModalNuevo();
-        document.getElementById('modalRegistroLabel').innerHTML = '<i class="bi bi-camera-fill text-info me-2"></i> Registrar Cámara IP / Análoga';
-        const selTipo = document.getElementById('field_tipo_registro');
-        if (selTipo) {
-            selTipo.value = 'Cámara';
-            onTipoRegistroChange('Cámara');
-        }
-    }
-
-    function onSubtipoCamaraChange(subtipoVal) {
-        const selTipo = document.getElementById('field_tipo_registro');
-        if (selTipo && selTipo.value !== 'Cámara') return;
-
-        const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
-        allFieldInputs.forEach(inp => {
-            const colName = inp.id.replace('field_', '');
-            const colWrapper = inp.closest('.col-md-4');
-            if (!colWrapper) return;
-
-            if (subtipoVal === 'Análoga') {
-                if (colName === 'ip' || colName === 'canal_ip') {
-                    colWrapper.style.display = 'none';
-                } else if (colName === 'canal_analogico') {
-                    colWrapper.style.display = 'block';
-                }
-            } else {
-                // IP
-                if (colName === 'ip' || colName === 'canal_ip') {
-                    colWrapper.style.display = 'block';
-                } else if (colName === 'canal_analogico') {
-                    colWrapper.style.display = 'none';
-                }
-            }
-        });
-    }
-
-    function onTipoRegistroChange(val) {
-        if (val === 'Cámara' && (!listadoDvrs || listadoDvrs.length === 0)) {
-            const modalWarn = new bootstrap.Modal(document.getElementById('modalSinDvrWarning'));
-            modalWarn.show();
-            const selTipo = document.getElementById('field_tipo_registro');
-            if (selTipo) selTipo.value = 'DVR/NVR';
-            val = 'DVR/NVR';
-        }
-
-        const boxFotosCam = document.getElementById('box_fotos_camara_form');
-        const selSubtipo = document.getElementById('field_subtipo_camara');
-
-        if (val === 'Cámara') {
-            if (boxFotosCam) boxFotosCam.style.display = 'flex';
-
-            const subtipoVal = selSubtipo ? (selSubtipo.value || 'IP') : 'IP';
-            const cameraBaseAllowed = ['tipo_registro', 'subtipo_camara', 'dvr_vinculado', 'nombre', 'modelo', 'costo', 'contrasena_camara', 'ubicacion'];
-
-            const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
-            allFieldInputs.forEach(inp => {
-                const colName = inp.id.replace('field_', '');
-                if (colName === 'foto_camara_file' || colName === 'foto_vista_file') return;
-                const colWrapper = inp.closest('.col-md-4');
-                if (!colWrapper) return;
-
-                if (cameraBaseAllowed.includes(colName)) {
-                    colWrapper.style.display = 'block';
-                } else if (subtipoVal === 'Análoga' && colName === 'canal_analogico') {
-                    colWrapper.style.display = 'block';
-                } else if (subtipoVal !== 'Análoga' && (colName === 'ip' || colName === 'canal_ip')) {
-                    colWrapper.style.display = 'block';
-                } else {
-                    colWrapper.style.display = 'none';
-                }
-            });
-        } else {
-            // DVR/NVR
-            if (boxFotosCam) boxFotosCam.style.display = 'none';
-
-            const cameraOnlyFields = ['subtipo_camara', 'dvr_vinculado', 'canal_analogico', 'canal_ip', 'ubicacion'];
-            const allFieldInputs = document.querySelectorAll('#contenedorCamposForm [id^="field_"]');
-            allFieldInputs.forEach(inp => {
-                const colName = inp.id.replace('field_', '');
-                const colWrapper = inp.closest('.col-md-4');
-                if (!colWrapper) return;
-
-                if (cameraOnlyFields.includes(colName)) {
-                    colWrapper.style.display = 'none';
-                } else {
-                    colWrapper.style.display = 'block';
-                }
-            });
-        }
-
-        // Hide tabs with 0 visible fields
-        const tabPanes = document.querySelectorAll('#contenedorCamposForm .tab-pane');
-        tabPanes.forEach(pane => {
-            const visibleCols = pane.querySelectorAll('.col-md-4:not([style*="display: none"]), .col-md-6:not([style*="display: none"])');
-            const tabBtn = document.querySelector(`[data-bs-target="#${pane.id}"]`);
-            if (tabBtn && tabBtn.parentElement) {
-                tabBtn.parentElement.style.display = (visibleCols.length > 0) ? 'block' : 'none';
-            }
-        });
-
-        // Auto-select first visible tab
-        const firstVisibleTabBtn = document.querySelector('#tabCapturaEquipos li:not([style*="display: none"]) .nav-link');
-        if (firstVisibleTabBtn) {
-            const bsTab = new bootstrap.Tab(firstVisibleTabBtn);
-            bsTab.show();
-        }
-    }
-
-    function abrirModalNuevoConArea(nomArea) {
-        abrirModalNuevo();
-        const inputDept = document.getElementById('field_departamento') || document.getElementById('field_area');
-        if (inputDept && nomArea) {
-            inputDept.value = nomArea;
-        }
-    }
-
-    function abrirModalEditar(regOrId) {
-        let reg = regOrId;
-        if (typeof regOrId === 'number' || (typeof regOrId === 'string' && /^\d+$/.test(regOrId))) {
-            reg = (window.inventarioRegistros || []).find(r => r.id == regOrId) || null;
-        }
-        if (!reg) return;
-        document.getElementById('modalRegistroLabel').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i> Editar Registro #' + reg.id;
-        document.getElementById('form_registro_id').value = reg.id;
-
-        for (const col in reg) {
-            const el = document.getElementById('field_' + col);
-            if (el) {
-                if (el.tagName === 'SELECT') {
-                    const val = (reg[col] !== null && reg[col] !== undefined) ? String(reg[col]).trim() : '';
-                    let found = false;
-                    for (let i = 0; i < el.options.length; i++) {
-                        if (el.options[i].value === val) {
-                            el.selectedIndex = i;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found && val !== '') {
-                        const opt = new Option(val + ' (Personalizado)', val, true, true);
-                        el.add(opt);
-                    } else if (val === '') {
-                        el.selectedIndex = 0;
-                    }
-                } else {
-                    el.value = (reg[col] !== null && reg[col] !== undefined) ? reg[col] : '';
-                }
-            }
-        }
-
-        sincronizarCombosSwitchFormulario(reg.puerto_sw, reg.switch_nombre);
-        sincronizarComboNodoFormulario(reg.numero_nodo, reg.puerto_sw, reg.puerto_patch_panel);
-
-        if (reg.tipo_registro) {
-            if (currentSeccion === 'site_vw') {
-                onTipoRegistroSiteChange(reg.tipo_registro);
-            } else if (currentSeccion === 'moviles') {
-                onTipoRegistroMovilChange(reg.tipo_registro);
-            } else {
-                onTipoRegistroChange(reg.tipo_registro);
-                if (reg.subtipo_camara) {
-                    onSubtipoCamaraChange(reg.subtipo_camara);
-                }
-            }
-        } else if (currentSeccion === 'site_vw') {
-            onTipoRegistroSiteChange('Switch');
-        } else if (currentSeccion === 'moviles') {
-            onTipoRegistroMovilChange('Celular');
-        }
-
-        const modal = new bootstrap.Modal(document.getElementById('modalRegistro'));
-        modal.show();
-    }
-
-    // getAllowedFieldsForRecord y verExpedienteCompleto operan globalmente desde <head>
-
-    function abrirModalSubirDoc(tipo, regId) {
-        document.getElementById('doc_registro_id').value = regId;
-        document.getElementById('doc_tipo_documento').value = tipo;
-        
-        const labelEl = document.getElementById('modalSubirDocLabel');
-        const instEl = document.getElementById('doc_instrucciones');
-        const fileInput = document.querySelector('#customDocUploadOverlay input[name="documento_file"]');
-
-        if (tipo === 'foto' || tipo === 'foto_equipo') {
-            labelEl.innerHTML = '<i class="bi bi-camera-fill text-warning me-2"></i> Cargar Fotografía del Equipo / Cámara';
-            instEl.textContent = 'Selecciona la fotografía o imagen física de la cámara/equipo (JPG, PNG, WEBP) para adjuntarla al expediente.';
-            if (fileInput) fileInput.setAttribute('accept', 'image/*,.jpg,.jpeg,.png,.webp');
-        } else if (tipo === 'foto_vista' || tipo === 'foto_vista_camara') {
-            labelEl.innerHTML = '<i class="bi bi-camera-reels-fill text-info me-2"></i> Cargar Foto de la Vista de la Cámara';
-            instEl.textContent = 'Selecciona la captura de pantalla o foto de la transmisión/vista que genera esta cámara (JPG, PNG, WEBP).';
-            if (fileInput) fileInput.setAttribute('accept', 'image/*,.jpg,.jpeg,.png,.webp');
-        } else if (tipo === 'responsiva') {
-            labelEl.innerHTML = '<i class="bi bi-file-earmark-check-fill text-primary me-2"></i> Cargar Responsiva de Equipo';
-            instEl.textContent = 'Selecciona la carta responsiva firmada (PDF o Imagen) para adjuntarla al expediente de este equipo.';
-            if (fileInput) fileInput.setAttribute('accept', '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx');
-        } else {
-            labelEl.innerHTML = '<i class="bi bi-receipt-cutoff text-info me-2"></i> Cargar Factura de Equipo';
-            instEl.textContent = 'Selecciona la factura o comprobante digital de compra (PDF o Imagen) para adjuntarla al expediente de este equipo.';
-            if (fileInput) fileInput.setAttribute('accept', '.pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx');
-        }
-
-        const overlay = document.getElementById('customDocUploadOverlay');
-        if (overlay) overlay.style.display = 'flex';
-    }
-
-    function cerrarModalSubirDoc() {
-        const overlay = document.getElementById('customDocUploadOverlay');
-        if (overlay) overlay.style.display = 'none';
-    }
-
-    function cargarSNMPExpediente(ip) {
-        const el = document.getElementById('snmp_expediente_content');
-        const btn = document.getElementById('btn_refresh_snmp_exp');
-        if (btn) btn.disabled = true;
-
-        fetch('equipos.php?action=consultar_impresora_snmp&ip=' + encodeURIComponent(ip))
-            .then(res => res.json())
-            .then(data => {
-                if (btn) btn.disabled = false;
-                if (!el) return;
-
-                if (data.error || !data.online) {
-                    el.innerHTML = `
-                        <div class="col-12">
-                            <div class="alert alert-danger mb-0 rounded-3 d-flex align-items-center gap-2 small">
-                                <i class="bi bi-wifi-off fs-5"></i>
-                                <div>
-                                    <strong>Impresora Fuera de Línea / Sin Respuesta</strong><br>
-                                    No se pudo establecer comunicación SNMP con la IP <code>${escapeHtml(ip)}</code>. Verifica que la impresora esté encendida y conectada a la red local.
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    return;
-                }
-
-                let tonerBar = '';
-                if (data.toner_percent !== null) {
-                    let colorClass = 'bg-success';
-                    if (data.toner_percent <= 15) colorClass = 'bg-danger';
-                    else if (data.toner_percent <= 35) colorClass = 'bg-warning text-dark';
-
-                    tonerBar = `
-                        <div class="card p-3 rounded-3 h-100" style="background: rgba(15, 34, 61, 0.7); border: 1px solid rgba(255,255,255,0.08);">
-                            <div class="small fw-bold text-uppercase mb-1 text-secondary">Nivel de Tóner Cartucho (${escapeHtml(data.toner_cartridge)})</div>
-                            <div class="d-flex align-items-center justify-content-between mb-2">
-                                <span class="fs-4 fw-black ${data.toner_percent <= 15 ? 'text-danger' : 'text-success'}">${data.toner_percent}%</span>
-                                <span class="badge ${data.toner_percent <= 15 ? 'bg-danger' : 'bg-success'} rounded-pill px-2.5 py-1 small">${data.toner_percent <= 15 ? 'CRÍTICO' : 'ÓPTIMO'}</span>
-                            </div>
-                            <div class="progress" style="height: 10px; background: rgba(255,255,255,0.1);">
-                                <div class="progress-bar ${colorClass} progress-bar-striped progress-bar-animated" style="width: ${data.toner_percent}%"></div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    tonerBar = `
-                        <div class="card p-3 rounded-3 h-100" style="background: rgba(15, 34, 61, 0.7); border: 1px solid rgba(255,255,255,0.08);">
-                            <div class="small fw-bold text-uppercase mb-1 text-secondary">Cartucho de Tóner</div>
-                            <div class="fw-bold text-white fs-6">${escapeHtml(data.toner_cartridge)}</div>
-                            <div class="text-secondary small mt-1">Estado reportado: ${escapeHtml(data.status)}</div>
-                        </div>
-                    `;
-                }
-
-                const alertBadgeClass = data.estado_badge === 'danger' ? 'alert-danger' : (data.estado_badge === 'warning' ? 'alert-warning' : 'alert-success');
-
-                el.innerHTML = `
-                    <div class="col-md-5">
-                        ${tonerBar}
-                    </div>
-                    <div class="col-md-4">
-                        <div class="card p-3 rounded-3 h-100" style="background: rgba(15, 34, 61, 0.7); border: 1px solid rgba(255,255,255,0.08);">
-                            <div class="small fw-bold text-uppercase mb-1 text-secondary">Mensaje Consola / Pantalla</div>
-                            <div class="alert ${alertBadgeClass} py-2 px-3 mb-0 rounded-3 font-monospace small fw-bold d-flex align-items-center gap-2">
-                                <i class="bi ${data.es_error ? 'bi-exclamation-octagon-fill fs-5' : 'bi-check-circle-fill fs-5'}"></i>
-                                <div>${escapeHtml(data.status)}</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card p-3 rounded-3 h-100" style="background: rgba(15, 34, 61, 0.7); border: 1px solid rgba(255,255,255,0.08);">
-                            <div class="small fw-bold text-uppercase mb-1 text-secondary">Total Páginas Impresas</div>
-                            <div class="fs-4 fw-black text-info font-monospace">${data.counter}</div>
-                            <div class="text-secondary small" style="font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapeHtml(data.model)}">${escapeHtml(data.model)}</div>
-                        </div>
-                    </div>
-                `;
-            })
-            .catch(err => {
-                if (btn) btn.disabled = false;
-                if (el) {
-                    el.innerHTML = `<div class="col-12 text-danger small"><i class="bi bi-exclamation-triangle me-1"></i> Error al consultar datos SNMP de la impresora.</div>`;
-                }
-            });
-    }
-
-    function consultarSNMPImpresora(ip, regId, btn) {
-        const cell = document.getElementById('snmp_status_cell_' + regId);
-        if (btn) {
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Leyendo...';
-        }
-
-        fetch('equipos.php?action=consultar_impresora_snmp&ip=' + encodeURIComponent(ip))
-            .then(res => res.json())
-            .then(data => {
-                if (!cell) return;
-                if (data.error || !data.online) {
-                    cell.innerHTML = `<span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-25 rounded-pill px-2.5 py-1 small fw-bold" title="${data.error || 'Fuera de línea'}"><i class="bi bi-wifi-off me-1"></i> Offline</span>`;
-                    return;
-                }
-
-                let pctBadge = '';
-                if (data.toner_percent !== null) {
-                    let colorClass = 'bg-success';
-                    if (data.toner_percent <= 15) colorClass = 'bg-danger';
-                    else if (data.toner_percent <= 35) colorClass = 'bg-warning text-dark';
-
-                    pctBadge = `
-                        <div class="d-flex align-items-center gap-1.5 mb-1" style="min-width: 90px;">
-                            <div class="progress flex-grow-1" style="height: 7px; background: rgba(255,255,255,0.15);">
-                                <div class="progress-bar ${colorClass}" style="width: ${data.toner_percent}%"></div>
-                            </div>
-                            <span class="fw-bold small ${data.toner_percent <= 15 ? 'text-danger' : 'text-success'}" style="font-size: 0.78rem;">${data.toner_percent}%</span>
-                        </div>
-                    `;
-                }
-
-                const badgeBg = data.estado_badge === 'danger' ? 'bg-danger text-white' : (data.estado_badge === 'warning' ? 'bg-warning text-dark' : 'bg-success text-white');
-
-                cell.innerHTML = `
-                    <div class="d-flex flex-column gap-1" title="Contador: ${data.counter} | Modelo: ${escapeHtml(data.model)}">
-                        ${pctBadge}
-                        <span class="badge ${badgeBg} bg-opacity-25 border border-${data.estado_badge} rounded-pill px-2 py-0.5 small" style="font-size: 0.72rem;">
-                            <i class="bi ${data.es_error ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill'} me-1"></i> ${escapeHtml(data.status)}
-                        </span>
-                    </div>
-                `;
-            })
-            .catch(err => {
-                if (cell) {
-                    cell.innerHTML = `<span class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i> Error</span>`;
-                }
-            });
-    }
-
-    function eliminarDocEquipo(tipo, regId) {
-        if (confirm('¿Estás seguro de que deseas eliminar el documento de ' + tipo.toUpperCase() + ' adjunto a este equipo?')) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.innerHTML = `
-                <input type="hidden" name="accion" value="eliminar_documento_equipo">
-                <input type="hidden" name="registro_id" value="${regId}">
-                <input type="hidden" name="tipo_documento" value="${tipo}">
-            `;
-            document.body.appendChild(form);
-            form.submit();
-        }
-    }
-
-    // filtrarDatoExpediente y abrirExpedienteSiNoEsBoton operan globalmente desde <head>
-
+    // =========================================================================
+    // GRÁFICAS & ANALYTICS GLOBAL
+    // =========================================================================
     let chartInstanceAreas = null;
     let chartInstanceEstatus = null;
     let chartInstanceCosto = null;
     let chartInstanceRam = null;
     let chartInstanceSecciones = null;
-
-    function cambiarVistaEquipos(tipo) {
-        const tablaView = document.getElementById('vistaTablaEquipos');
-        const areasView = document.getElementById('vistaAreasEquipos');
-        const graficasView = document.getElementById('vistaGraficasEquipos');
-
-        const btnTabla = document.getElementById('btnVistaTablaEquipos');
-        const btnAreas = document.getElementById('btnVistaAreasEquipos');
-        const btnGraficas = document.getElementById('btnVistaGraficasEquipos');
-
-        if (tipo === 'graficas') {
-            if (tablaView) tablaView.classList.add('d-none');
-            if (areasView) areasView.classList.add('d-none');
-            if (graficasView) graficasView.classList.remove('d-none');
-
-            if (btnTabla) btnTabla.className = 'btn-seg';
-            if (btnAreas) btnAreas.className = 'btn-seg';
-            if (btnGraficas) btnGraficas.className = 'btn-seg active';
-
-            localStorage.setItem('vista_equipos_pref', 'graficas');
-            inicializarGraficasEquipos();
-        } else if (tipo === 'areas') {
-            if (tablaView) tablaView.classList.add('d-none');
-            if (graficasView) graficasView.classList.add('d-none');
-            if (areasView) areasView.classList.remove('d-none');
-
-            if (btnTabla) btnTabla.className = 'btn-seg';
-            if (btnGraficas) btnGraficas.className = 'btn-seg';
-            if (btnAreas) btnAreas.className = 'btn-seg active';
-
-            localStorage.setItem('vista_equipos_pref', 'areas');
-        } else {
-            if (areasView) areasView.classList.add('d-none');
-            if (graficasView) graficasView.classList.add('d-none');
-            if (tablaView) tablaView.classList.remove('d-none');
-
-            if (btnAreas) btnAreas.className = 'btn-seg';
-            if (btnGraficas) btnGraficas.className = 'btn-seg';
-            if (btnTabla) btnTabla.className = 'btn-seg active';
-
-            localStorage.setItem('vista_equipos_pref', 'tabla');
-        }
-    }
 
     function inicializarGraficasEquipos() {
         if (typeof Chart === 'undefined') return;
@@ -5373,7 +5372,6 @@ function renderBadgeTipoSite($tipo) {
         const labelRam = <?php echo !empty($jsonRamLabels) ? $jsonRamLabels : '[]'; ?>;
         const countRam = <?php echo !empty($jsonRamCounts) ? $jsonRamCounts : '[]'; ?>;
 
-        // Estilos y Opciones Comunes para Tema Oscuro
         const darkGridOptions = {
             color: 'rgba(255, 255, 255, 0.06)',
             borderColor: 'rgba(255, 255, 255, 0.1)'
@@ -5383,7 +5381,6 @@ function renderBadgeTipoSite($tipo) {
             font: { family: "'Segoe UI', sans-serif", size: 11 }
         };
 
-        // 1. Gráfica de Equipos por Área
         const ctxAreas = document.getElementById('chartEquiposPorArea');
         if (ctxAreas) {
             if (chartInstanceAreas) chartInstanceAreas.destroy();
@@ -5415,7 +5412,6 @@ function renderBadgeTipoSite($tipo) {
             });
         }
 
-        // 2. Gráfica de Estatus de Renovación
         const ctxEstatus = document.getElementById('chartEstatusRenovacion');
         if (ctxEstatus) {
             if (chartInstanceEstatus) chartInstanceEstatus.destroy();
@@ -5426,10 +5422,10 @@ function renderBadgeTipoSite($tipo) {
                     datasets: [{
                         data: countEstatus,
                         backgroundColor: [
-                            'rgba(16, 185, 129, 0.8)', // Vigentes - Verde
-                            'rgba(245, 158, 11, 0.8)', // Próximos - Amarillo
-                            'rgba(239, 68, 68, 0.8)',  // Urgentes - Rojo
-                            'rgba(148, 163, 184, 0.4)' // Sin fecha - Gris
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(148, 163, 184, 0.4)'
                         ],
                         borderColor: '#0a192e',
                         borderWidth: 3
@@ -5449,7 +5445,6 @@ function renderBadgeTipoSite($tipo) {
             });
         }
 
-        // 3. Gráfica de Inversión / Costo por Área
         const ctxCosto = document.getElementById('chartCostoPorArea');
         if (ctxCosto) {
             if (chartInstanceCosto) chartInstanceCosto.destroy();
@@ -5496,7 +5491,6 @@ function renderBadgeTipoSite($tipo) {
             });
         }
 
-        // 4. Gráfica de Distribución por RAM
         const ctxRam = document.getElementById('chartRamDistribucion');
         if (ctxRam) {
             if (chartInstanceRam) chartInstanceRam.destroy();
@@ -5529,7 +5523,7 @@ function renderBadgeTipoSite($tipo) {
                 }
             });
         }
-        // 5. Gráfica de Equipos por Sección de Inventario
+
         const ctxSecciones = document.getElementById('chartEquiposPorSeccion');
         if (ctxSecciones && labelSecciones && labelSecciones.length > 0) {
             if (chartInstanceSecciones) chartInstanceSecciones.destroy();
@@ -5561,52 +5555,20 @@ function renderBadgeTipoSite($tipo) {
             });
         }
     }
+    window.inicializarGraficasEquipos = inicializarGraficasEquipos;
 
-    // Restaurar preferencia de vista al cargar la página
-    document.addEventListener('DOMContentLoaded', function() {
-        const currentSec = "<?php echo htmlspecialchars($seccion_activa); ?>";
-        if (currentSec === 'graficas') {
-            cambiarVistaEquipos('graficas');
-        } else {
-            const prefVista = localStorage.getItem('vista_equipos_pref');
-            if (prefVista === 'areas') {
-                cambiarVistaEquipos('areas');
-            } else {
-                cambiarVistaEquipos('tabla');
-            }
-        }
-    });
-
-    function exportarTablaCSV() {
-        const table = document.getElementById('tablaEquipos');
-        let csv = [];
-        for (let i = 0; i < table.rows.length; i++) {
-            let row = [], cols = table.rows[i].querySelectorAll('td, th');
-            for (let j = 0; j < cols.length - 1; j++) {
-                row.push('"' + cols[j].innerText.replace(/"/g, '""') + '"');
-            }
-            csv.push(row.join(','));
-        }
-        const csvFile = new Blob([csv.join('\n')], {type: 'text/csv;charset=utf-8;'});
-        const downloadLink = document.createElement('a');
-        downloadLink.download = '<?php echo $seccion_activa; ?>_inventario.csv';
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = 'none';
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-    }
-
-    // Exportar explícitamente todas las funciones a window para garantizar accesibilidad en eventos HTML inline
+    // Exportación redundante defensiva para máxima compatibilidad
     window.abrirModalBaja = abrirModalBaja;
     window.abrirModalEditar = abrirModalEditar;
     window.abrirModalNuevo = abrirModalNuevo;
-    window.abrirModalNuevoDVR = (typeof abrirModalNuevoDVR !== 'undefined') ? abrirModalNuevoDVR : null;
-    window.abrirModalNuevaCamara = (typeof abrirModalNuevaCamara !== 'undefined') ? abrirModalNuevaCamara : null;
-    window.abrirModalNuevoConArea = (typeof abrirModalNuevoConArea !== 'undefined') ? abrirModalNuevoConArea : null;
+    window.abrirModalNuevoDVR = abrirModalNuevoDVR;
+    window.abrirModalNuevaCamara = abrirModalNuevaCamara;
+    window.abrirModalNuevoConArea = abrirModalNuevoConArea;
     window.cambiarVistaEquipos = cambiarVistaEquipos;
     window.exportarTablaCSV = exportarTablaCSV;
     window.toggleSidebarNavegacion = toggleSidebarNavegacion;
     window.toggleInputPass = toggleInputPass;
 </script>
+<?php imprimirScriptExportadorExcelJS(); ?>
 </body>
 </html>

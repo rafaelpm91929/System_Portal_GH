@@ -99,6 +99,12 @@ if (!$pdo && (in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1']) || i
         try {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN foto_url VARCHAR(255);");
         } catch (Throwable $t) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN contrasena_correo VARCHAR(255);");
+        } catch (Throwable $t) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN extension VARCHAR(50);");
+        } catch (Throwable $t) {}
 
         $pdo->exec("
             CREATE TABLE IF NOT EXISTS modulos (

@@ -269,16 +269,17 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
         <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
     </div>
 
-    <!-- Módulo 8: Correo Institucional (Próximamente) -->
-    <div class="module-card">
+    <!-- Módulo: Directorio Telefónico y Correos -->
+    <div class="module-card" style="border-color: rgba(236, 72, 153, 0.4);">
+        <span class="active-badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border-color: rgba(236, 72, 153, 0.3);"><i class="bi bi-telephone-inbound-fill me-1"></i> DIRECTORIO</span>
         <div class="icon-box icon-pink">
-            <i class="bi bi-envelope"></i>
+            <i class="bi bi-person-lines-fill"></i>
         </div>
-        <div class="module-title">Correo Institucional</div>
+        <div class="module-title">Directorio</div>
         <div class="module-desc">
-            Cuentas oficiales por sucursal, con seguimiento de altas, bajas y reactivaciones.
+            Directorio oficial de la sucursal: colaboradores por área, correos institucionales, extensiones y gestión de contraseñas de correo.
         </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
+        <a href="directorio.php" class="btn-ingresar" style="background: #db2777; border-color: #db2777;">Ingresar</a>
     </div>
 
 </div>

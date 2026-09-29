@@ -10,6 +10,7 @@ config_privada.php
 reporte_cache.json
 *.log
 *.tmp
+*.zip
 
 # 3. Ignorar entornos virtuales de Python o dependencias de Node
 __pycache__/
