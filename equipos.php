@@ -1618,29 +1618,689 @@ function renderBadgeTipoSite($tipo) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Controlador global e inmediato para abrir el expediente
-        window.abrirExpedienteSiNoEsBoton = function(event, reg) {
-            if (event && event.target && event.target.closest('button, a, select, input, form, .btn, .form-check-input')) {
-                return;
-            }
-            const fn = window.verExpedienteCompleto || (typeof verExpedienteCompleto === 'function' ? verExpedienteCompleto : null);
-            if (fn) {
-                fn(reg);
-            } else {
-                let attempts = 0;
-                const pollInterval = setInterval(function() {
-                    attempts++;
-                    const f = window.verExpedienteCompleto || (typeof verExpedienteCompleto === 'function' ? verExpedienteCompleto : null);
-                    if (f) {
-                        clearInterval(pollInterval);
-                        f(reg);
-                    } else if (attempts >= 15) {
-                        clearInterval(pollInterval);
-                        console.error('El script del expediente tardó demasiado en cargar.');
-                    }
-                }, 100);
-            }
+    // =========================================================================
+    // MOTOR INMEDIATO DE EXPEDIENTE COMPLETO (DISPONIBLE DESDE EL HEAD)
+    // =========================================================================
+    const currentSeccion = "<?php echo htmlspecialchars($seccion_activa); ?>";
+    window.currentSeccion = currentSeccion;
+
+    const CATEGORIAS_EXPEDIENTE = [
+        { id: 'cat_general', titulo: '👤 Datos de Asignación y Dispositivo', icono: 'bi-person-badge-fill', campos: ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'dvr_vinculado', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'estatus', 'tipo_equipo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'extension', 'observaciones'] },
+        { id: 'cat_specs', titulo: '💻 Especificaciones Técnicas y Hardware', icono: 'bi-cpu-fill', campos: ['marca', 'modelo', 'modelo_exacto', 'serie', 'imei_1', 'imei_2', 'almacenamiento', 'ram', 'color', 'sistema_op', 'mac', 'tamano_pantalla', 'resolucion', 'especificaciones', 'accesorios', 'dominio', 'dd', 'procesador', 'ghz', 'mac_wifi', 'mac_ethernet', 'rom', 'pulgadas', 'monitor', 'dvr', 'camaras', 'numero_serie', 'cam_totales_ip', 'disponibles_ip', 'cam_totales_analogicas', 'disponibles', 'capacidad_actual', 'capacidad_discos', 'numero_discos', 'tiene_actual', 'ip', 'tipo_poe', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'cantidad_discos', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia'] },
+        { id: 'cat_credenciales', titulo: '🔑 Credenciales y Accesos', icono: 'bi-key-fill', campos: ['logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds', 'usuario_dvr', 'contrasena_dvr', 'contrasena_camara', 'licencia', 'serie_licencia', 'serie_equipo', 'usuario_impresora', 'contrasena_impresora', 'usuario_impresora_web', 'contrasena_impresora_web', 'contrasena_web', 'tipo_licencia'] },
+        { id: 'cat_telecom', titulo: '📱 Línea, Plan e ISP', icono: 'bi-diagram-2-fill', campos: ['numero_telefonico', 'portabilidad', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan', 'correo', 'correo_oficial_planta', 'extension', 'puerto_patch_panel', 'puerto_sw', 'switch_nombre', 'numero_nodo', 'power_pb', 'contrasena_pb', 'poc', 'contrasena_poc', 'msqp', 'contrasena_msqp', 'grp', 'contrasena_grp', 'etka', 'contrasena_etka', 'mail', 'celular', 'pantalla', 'tablet', 'proveedor', 'contrato', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'ip_publica', 'ip_local'] },
+        { id: 'cat_garantia', titulo: '🧾 Garantía y Facturación', icono: 'bi-receipt', campos: ['costo', 'folio_factura', 'fecha_compra', 'fecha_adquisicion', 'inicio_garantia', 'fin_garantia', 'garantia2', 'garantia', 'renovacion_equipo', 'compra', 'antivirus', 'dia_respaldo', 'hora_respaldo', 'no_break', 'modelo_nobreak', 'serie_nobreak', 'factura', 'plan', 'motivo_baja', 'dias_grabacion'] }
+    ];
+
+    const ETIQUETAS_CUSTOM = {
+        'tipo_licencia': 'TIPO DE LICENCIA',
+        'portabilidad': 'PORTABILIDAD',
+        'extension': 'EXTENSIÓN TELEFÓNICA',
+        'tipo_poe': 'ESTÁNDAR POE (ALIMENTACIÓN)',
+        'servidor_sip': 'SERVIDOR SIP / PBX CONMUTADOR',
+        'contrasena_web': 'CONTRASEÑA ADMIN WEB TELÉFONO',
+        'vlan': 'VLAN DE VOZ',
+        'marca': 'MARCA',
+        'modelo_exacto': 'MODELO EXACTO',
+        'ubicacion': 'UBICACIÓN FÍSICA',
+        'fecha_adquisicion': 'FECHA DE ADQUISICIÓN',
+        'contrato': 'CONTRATO',
+        'usuario_impresora': 'USUARIO IMPRESORA',
+        'contrasena_impresora': 'CONTRASEÑA IMPRESORA',
+        'usuario_impresora_web': 'USUARIO IMPRESORA WEB',
+        'contrasena_impresora_web': 'CONTRASEÑA IMPRESORA WEB'
+    };
+
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+    window.escapeHtml = escapeHtml;
+
+    function getFieldLabel(key) {
+        const k = key.toLowerCase();
+        if (ETIQUETAS_CUSTOM[k]) return ETIQUETAS_CUSTOM[k];
+        const map = {
+            'nombre_equipo': 'NOMBRE DEL EQUIPO',
+            'tipo_equipo': 'TIPO DE EQUIPO',
+            'expediente_completo': 'EXPEDIENTE COMPLETO',
+            'sistema_op': 'SISTEMA OPERATIVO',
+            'fecha_compra': 'FECHA DE COMPRA',
+            'folio_factura': 'FOLIO FACTURA',
+            'inicio_garantia': 'INICIO GARANTÍA',
+            'fin_garantia': 'FIN GARANTÍA',
+            'garantia2': 'TIPO GARANTÍA',
+            'renovacion_equipo': 'RENOVACIÓN EQUIPO',
+            'usuario_equipo_dominio': 'USUARIO DOMINIO',
+            'serie_office': 'SERIE OFFICE',
+            'clave_candado': 'CLAVE CANDADO',
+            'usuario_gds': 'USUARIO GDS',
+            'correo_oficial_vw': 'CORREO OFICIAL VW',
+            'correo_oficial_seat': 'CORREO OFICIAL SEAT',
+            'correo_oficial_planta': 'CORREO OFICIAL PLANTA',
+            'power_pb': 'POWER PB',
+            'contrasena_pb': 'CONTRASEÑA PB',
+            'contrasena_poc': 'CONTRASEÑA POC',
+            'contrasena_msqp': 'CONTRASEÑA MSQP',
+            'contrasena_grp': 'CONTRASEÑA GRP',
+            'contrasena_etka': 'CONTRASEÑA ETKA',
+            'contrasena_facebook': 'CONTRASEÑA FACEBOOK',
+            'contrasena_instagram': 'CONTRASEÑA INSTAGRAM',
+            'contrasena_wish': 'CONTRASEÑA WISH',
+            'contrasena_marketing_cloud': 'CONTRASEÑA MARKETING CLOUD',
+            'sales_cloud_force': 'SALES CLOUD FORCE',
+            'contrasena_sales_cloud_force': 'CONTRASEÑA SALES CLOUD',
+            'pagina_la_villa': 'PÁGINA LA VILLA',
+            'contrasena_pagina_la_villa': 'CONTRASEÑA PÁGINA LA VILLA',
+            'urban_science': 'URBAN SCIENCE',
+            'contrasena_urban_science': 'CONTRASEÑA URBAN SCIENCE',
+            'contrasena_canva': 'CONTRASEÑA CANVA',
+            'cuenta_integral': 'CUENTA INTEGRAL',
+            'contrasena_cuenta_integral': 'CONTRASEÑA CUENTA INTEGRAL',
+            'dia_respaldo': 'DÍA DE RESPALDO',
+            'hora_respaldo': 'HORA DE RESPALDO',
+            'no_break': 'NO BREAK (UPS)',
+            'modelo_nobreak': 'MODELO NO BREAK',
+            'serie_nobreak': 'SERIE NO BREAK',
+            'puerto_patch_panel': 'PATCH PANEL',
+            'puerto_sw': 'PUERTO SWITCH',
+            'numero_nodo': 'NÚMERO DE NODO',
+            'switch_nombre': 'SWITCH ASIGNADO',
+            'motivo_baja': 'MOTIVO DE BAJA',
+            'dvr_vinculado': 'DVR / NVR VINCULADO',
+            'tipo_registro': 'TIPO DE DISPOSITIVO',
+            'dias_grabacion': 'DÍAS DE GRABACIÓN',
+            'usuario_dvr': 'USUARIO DVR',
+            'numero_discos': 'NÚMERO DE DISCOS',
+            'canal_analogico': 'CANAL ANALÓGICO',
+            'canal_ip': 'CANAL IP',
+            'foto_vista_camara': 'VISTA DE CÁMARA',
+            'subtipo_camara': 'SUBTIPO CÁMARA',
+            'subtipo_dispositivo': 'SUBTIPO DISPOSITIVO',
+            'cantidad_puertos': 'CANTIDAD DE PUERTOS',
+            'velocidad_puertos': 'VELOCIDAD DE PUERTOS',
+            'tipo_switch': 'TIPO DE SWITCH',
+            'firmware_version': 'VERSIÓN FIRMWARE',
+            'posicion_rack': 'POSICIÓN EN RACK',
+            'cantidad_discos': 'CANTIDAD DE DISCOS',
+            'tipo_servidor': 'TIPO DE SERVIDOR',
+            'funcion_servicio': 'FUNCIÓN / SERVICIO',
+            'bahias_nas': 'BAHÍAS NAS',
+            'capacidad_disco_ind': 'CAPACIDAD DISCO INDIVIDUAL',
+            'capacidad_disponible': 'CAPACIDAD DISPONIBLE',
+            'config_raid': 'CONFIGURACIÓN RAID',
+            'tipo_discos': 'TIPO DE DISCOS',
+            'protocolos_nas': 'PROTOCOLOS NAS',
+            'tipo_enlace': 'TIPO DE ENLACE',
+            'ancho_banda': 'ANCHO DE BANDA',
+            'simetria_enlace': 'SIMETRÍA DE ENLACE',
+            'tipo_conexion': 'TIPO DE CONEXIÓN',
+            'numero_contrato': 'NÚMERO DE CONTRATO',
+            'numero_cuenta': 'NÚMERO DE CUENTA',
+            'circuit_id': 'CIRCUIT ID',
+            'soporte_contacto': 'CONTACTO DE SOPORTE',
+            'ip_publica': 'IP PÚBLICA',
+            'ip_local': 'IP LOCAL',
+            'unifi_os_ver': 'UNIFI OS VERSIÓN',
+            'controller_ver': 'NETWORK CONTROLLER VER.',
+            'velocidad_enlace': 'VELOCIDAD DE ENLACE',
+            'controlador_ap': 'CONTROLADOR AP',
+            'capacidad_va': 'CAPACIDAD (VA)',
+            'capacidad_w': 'CAPACIDAD (WATTS)',
+            'tipo_ups': 'TIPO DE UPS',
+            'voltaje_entrada': 'VOLTAJE ENTRADA',
+            'voltaje_salida': 'VOLTAJE SALIDA',
+            'cant_baterias': 'CANTIDAD DE BATERÍAS',
+            'specs_baterias': 'ESPECIFICACIONES BATERÍAS',
+            'fecha_bateria': 'ÚLTIMO CAMBIO BATERÍAS',
+            'tiene_plan_celular': 'TIENE PLAN CELULAR',
+            'vencimiento_plan': 'VENCIMIENTO PLAN',
+            'proveedor_plan': 'PROVEEDOR PLAN',
+            'numero_contrato_plan': 'NÚMERO CONTRATO PLAN',
+            'estado_fisico': 'ESTADO FÍSICO',
+            'tamano_pantalla': 'TAMAÑO PANTALLA',
+            'resolucion': 'RESOLUCIÓN',
+            'modelo_exacto': 'MODELO EXACTO',
+            'fecha_adquisicion': 'FECHA DE ADQUISICIÓN',
+            'usuario_impresora': 'USUARIO IMPRESORA',
+            'contrasena_impresora': 'CONTRASEÑA IMPRESORA',
+            'usuario_impresora_web': 'USUARIO WEB IMPRESORA',
+            'contrasena_impresora_web': 'CONTRASEÑA WEB IMPRESORA'
         };
+        return map[k] || key.replace(/_/g, ' ').toUpperCase();
+    }
+    window.getFieldLabel = getFieldLabel;
+
+    function formatUnitValue(key, val) {
+        if (val === null || val === undefined || String(val).trim() === '') {
+            return '<span class="text-muted small">Sin información</span>';
+        }
+        const k = key.toLowerCase();
+        const str = String(val).trim();
+        if (k === 'ram' && !str.toUpperCase().includes('GB') && !str.toUpperCase().includes('MB')) {
+            return escapeHtml(str) + ' GB';
+        }
+        if (k === 'dd' || k === 'almacenamiento' || k === 'capacidad_disponible' || k === 'capacidad_disco_ind') {
+            if (!str.toUpperCase().includes('GB') && !str.toUpperCase().includes('TB') && !str.toUpperCase().includes('MB')) {
+                const num = parseFloat(str);
+                if (!isNaN(num) && num > 0) {
+                    return num >= 1000 ? (num / 1000) + ' TB' : num + ' GB';
+                }
+            }
+        }
+        if (k === 'costo' && !str.includes('$')) {
+            const num = parseFloat(str);
+            if (!isNaN(num)) {
+                return '$' + num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+        return escapeHtml(str);
+    }
+    window.formatUnitValue = formatUnitValue;
+
+    function togglePassSpan(id, btn) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const realPass = el.getAttribute('data-pass') || '';
+        const icon = btn ? btn.querySelector('i') : null;
+        if (el.textContent === '••••••••') {
+            el.textContent = realPass;
+            if (icon) icon.className = 'bi bi-eye-slash-fill';
+        } else {
+            el.textContent = '••••••••';
+            if (icon) icon.className = 'bi bi-eye-fill';
+        }
+    }
+    window.togglePassSpan = togglePassSpan;
+    var togglePassSpan = window.togglePassSpan;
+
+    function getAllowedFieldsForRecord(reg, seccion) {
+        let tipo = (reg.tipo_registro || '').trim();
+        if (seccion === 'site_vw') {
+            if (!tipo) tipo = 'Switch';
+            const siteMap = {
+                'Switch': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'ubicacion', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'garantia', 'contrasena'],
+                'Servidor': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'sistema_op', 'procesador', 'ram', 'almacenamiento', 'cantidad_discos', 'tipo_servidor', 'posicion_rack', 'ubicacion', 'funcion_servicio', 'ambiente', 'criticidad', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
+                'NAS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'firmware_version', 'bahias_nas', 'cantidad_discos', 'capacidad_disco_ind', 'almacenamiento', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'funcion_servicio', 'posicion_rack', 'ubicacion', 'estado', 'fecha_compra', 'garantia', 'costo', 'folio_factura', 'puerto_sw', 'numero_nodo', 'contrasena'],
+                'Router / ISP': ['tipo_registro', 'proveedor', 'nombre_equipo', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'ip_publica', 'ip', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'estado', 'costo', 'folio_factura', 'contrasena'],
+                'Fortinet': ['tipo_registro', 'modelo', 'serie', 'nombre_equipo', 'firmware_version', 'ip', 'mac_ethernet', 'ip_publica', 'ip_local', 'costo', 'folio_factura', 'contrasena'],
+                'Gateway UniFi': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'ip', 'mac_ethernet', 'unifi_os_ver', 'controller_ver', 'ip_publica', 'tipo_conexion', 'velocidad_enlace', 'costo', 'folio_factura', 'contrasena'],
+                'Access Point': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'nombre_equipo', 'mac_wifi', 'ip', 'firmware_version', 'ssids', 'vlans', 'poe', 'puerto_sw', 'numero_nodo', 'ubicacion', 'estado', 'controlador_ap', 'costo', 'folio_factura', 'contrasena'],
+                'UPS': ['tipo_registro', 'fabricante', 'modelo', 'serie', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_compra', 'fecha_bateria', 'autonomia', 'posicion_rack', 'ubicacion', 'ip', 'numero_nodo', 'estado', 'costo', 'folio_factura', 'contrasena']
+            };
+            return siteMap[tipo] || siteMap['Switch'];
+        }
+
+        if (seccion === 'moviles') {
+            if (!tipo) tipo = 'Celular';
+            const movilMap = {
+                'Celular': [
+                    'tipo_registro', 'marca', 'modelo', 'serie', 'imei_1', 'imei_2', 'numero_telefonico',
+                    'almacenamiento', 'ram', 'color', 'sistema_op', 'accesorios', 'nombre', 'departamento',
+                    'fecha_asignacion', 'fecha_compra', 'proveedor', 'folio_factura', 'garantia', 'mac',
+                    'costo', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan'
+                ],
+                'Tableta': [
+                    'tipo_registro', 'marca', 'modelo', 'serie', 'almacenamiento', 'ram', 'sistema_op',
+                    'color', 'estado_fisico', 'estatus', 'accesorios', 'nombre', 'departamento', 'ubicacion',
+                    'fecha_asignacion', 'fecha_compra', 'proveedor', 'garantia', 'costo', 'folio_factura'
+                ],
+                'Pantalla': [
+                    'tipo_registro', 'marca', 'modelo', 'serie', 'tamano_pantalla', 'resolucion', 'estado_fisico',
+                    'estatus', 'accesorios', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
+                    'garantia', 'costo', 'folio_factura', 'observaciones'
+                ],
+                'Otro dispositivo': [
+                    'tipo_registro', 'subtipo_dispositivo', 'marca', 'modelo', 'serie', 'especificaciones',
+                    'accesorios', 'nombre', 'departamento', 'ubicacion', 'fecha_compra', 'proveedor',
+                    'garantia', 'fecha_asignacion', 'costo', 'folio_factura', 'observaciones'
+                ]
+            };
+            return movilMap[tipo] || movilMap['Celular'];
+        }
+
+        if (seccion === 'dvr') {
+            if (tipo === 'Cámara') {
+                return ['tipo_registro', 'subtipo_camara', 'dvr_vinculado', 'nombre', 'modelo', 'ip', 'costo', 'contrasena_camara', 'canal_analogico', 'canal_ip', 'ubicacion'];
+            } else {
+                return ['tipo_registro', 'nombre', 'dvr', 'ip', 'numero_serie', 'almacenamiento', 'numero_discos', 'usuario_dvr', 'contrasena_dvr', 'dias_grabacion', 'costo', 'folio_factura', 'ubicacion', 'puerto_sw'];
+            }
+        }
+
+        if (seccion === 'telefonos_poe') {
+            return [
+                'usuario', 'area', 'modelo', 'serie', 'mac', 'ip',
+                'numero_telefonico', 'extension', 'tipo_licencia', 'correo', 'portabilidad',
+                'folio_factura', 'numero_nodo', 'puerto_sw', 'switch_nombre'
+            ];
+        }
+
+        if (seccion === 'monitores') {
+            return [
+                'marca', 'modelo_exacto', 'serie', 'departamento', 'ubicacion',
+                'fecha_adquisicion', 'proveedor', 'contrato',
+                'ip', 'numero_nodo', 'puerto_sw',
+                'usuario_impresora', 'contrasena_impresora',
+                'usuario_impresora_web', 'contrasena_impresora_web'
+            ];
+        }
+
+        if (seccion === 'equipos_vw' || seccion === 'equipos_corp' || seccion === 'equipos_baja') {
+            return [
+                'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo',
+                'dominio', 'dd', 'procesador', 'ghz', 'ram', 'ip', 'mac_wifi', 'mac_ethernet', 'sistema_op', 'serie',
+                'logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds',
+                'correo', 'extension', 'puerto_patch_panel', 'puerto_sw', 'numero_nodo',
+                'costo', 'fecha_compra', 'folio_factura', 'inicio_garantia', 'fin_garantia', 'renovacion_equipo', 'compra', 'proveedor', 'antivirus', 'dia_respaldo', 'hora_respaldo', 'no_break', 'modelo_nobreak', 'serie_nobreak'
+            ];
+        }
+
+        return null;
+    }
+    window.getAllowedFieldsForRecord = getAllowedFieldsForRecord;
+
+    window.verExpedienteCompleto = function(reg) {
+        if (!reg) return;
+        const isCam = (reg.tipo_registro === 'Cámara');
+        const isTel = (currentSeccion === 'telefonos_poe');
+        
+        const subtituloEl = document.getElementById('expediente_subtitulo');
+        if (subtituloEl) {
+            if (isTel) {
+                subtituloEl.textContent = 'Teléfono IP PoE | Ext: ' + (reg.extension || 'S/E') + ' | Asignado: ' + (reg.usuario || 'Sin Asignar');
+            } else {
+                subtituloEl.textContent = (isCam ? 'Cámara: ' : 'Equipo: ') + (reg.nombre_equipo || reg.equipo || reg.nombre || 'N/A') + (isCam ? ' | DVR/NVR: ' + (reg.dvr_vinculado || 'N/A') : ' | Usuario: ' + (reg.usuario || reg.nombre || 'N/A'));
+            }
+        }
+        
+        const busquedaInput = document.getElementById('busquedaExpediente');
+        if (busquedaInput) busquedaInput.value = '';
+        
+        const container = document.getElementById('contenedorExpedienteDetalles');
+        if (!container) return;
+        container.innerHTML = '';
+
+        // 1. Tarjeta Hero / Fotografía
+        const photoHeroBlock = document.createElement('div');
+        photoHeroBlock.className = 'col-12 mb-3 cat-header-block';
+        photoHeroBlock.setAttribute('data-cat-id', 'cat_foto');
+        photoHeroBlock.setAttribute('data-search', 'fotografia foto imagen equipo camara vista');
+
+        if (isCam) {
+            let fotoCamHtml = reg.foto_equipo ? `
+                <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                    <div class="d-flex flex-column align-items-center text-center">
+                        <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
+                            <img src="${escapeHtml(reg.foto_equipo)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Ver a tamaño completo">
+                        </div>
+                        <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
+                            <i class="bi bi-camera-fill me-1"></i> Fotografía Física de la Cámara
+                        </span>
+                        <div class="d-flex gap-2">
+                            <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
+                            <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
+                        </div>
+                    </div>
+                </div>
+            ` : `
+                <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                    <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera opacity-50"></i></div>
+                    <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-image text-info me-1"></i> Foto Cámara Física</h6>
+                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto', ${reg.id})"><i class="bi bi-camera-fill me-1"></i> Subir Foto Cámara</button>
+                </div>
+            `;
+
+            let fotoVistaHtml = reg.foto_vista_camara ? `
+                <div class="card p-3 rounded-4 h-100" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                    <div class="d-flex flex-column align-items-center text-center">
+                        <div style="width: 100%; height: 130px; border-radius: 10px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px;">
+                            <img src="${escapeHtml(reg.foto_vista_camara)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_vista_camara)}', '_blank')" title="Ver a tamaño completo">
+                        </div>
+                        <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.75rem;">
+                            <i class="bi bi-camera-reels-fill me-1"></i> Fotografía de la Vista / Transmisión
+                        </span>
+                        <div class="d-flex gap-2">
+                            <a href="${escapeHtml(reg.foto_vista_camara)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold"><i class="bi bi-arrows-fullscreen"></i> Ver</a>
+                            <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-arrow-repeat"></i> Cambiar</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto_vista', ${reg.id})"><i class="bi bi-trash-fill"></i></button>
+                        </div>
+                    </div>
+                </div>
+            ` : `
+                <div class="card p-3 rounded-4 h-100 text-center" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                    <div style="height: 90px; display: flex; align-items: center; justify-content: center;" class="text-secondary fs-1"><i class="bi bi-camera-reels opacity-50"></i></div>
+                    <h6 class="fw-bold text-white mb-2 small"><i class="bi bi-display text-primary me-1"></i> Foto Vista / Transmisión</h6>
+                    <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})"><i class="bi bi-camera-reels-fill me-1"></i> Subir Foto Vista</button>
+                </div>
+            `;
+
+            photoHeroBlock.innerHTML = `<div class="row g-3"><div class="col-md-6">${fotoCamHtml}</div><div class="col-md-6">${fotoVistaHtml}</div></div>`;
+        } else {
+            let fotoHtml = '';
+            if (reg.foto_equipo && reg.foto_equipo.trim() !== '') {
+                fotoHtml = `
+                    <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px solid rgba(56, 189, 248, 0.3);">
+                        <div class="d-flex flex-column flex-md-row align-items-center gap-4">
+                            <div style="width: 190px; height: 145px; border-radius: 12px; background: #050d1a; border: 1px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+                                <img src="${escapeHtml(reg.foto_equipo)}" alt="Foto del Equipo" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(reg.foto_equipo)}', '_blank')" title="Clic para ver foto a tamaño completo">
+                            </div>
+                            <div class="flex-grow-1 text-center text-md-start">
+                                <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-25 rounded-pill px-3 py-1 mb-2 fw-bold" style="font-size: 0.78rem;">
+                                    <i class="bi bi-camera-fill me-1"></i> Fotografía Oficial del Equipo
+                                </span>
+                                <h5 class="fw-bold text-white mb-1">${escapeHtml(reg.nombre_equipo || reg.equipo || reg.nombre || (currentSeccion === 'telefonos_poe' ? ('Teléfono ' + (reg.modelo || '') + (reg.extension ? ' (Ext. ' + reg.extension + ')' : '')) : 'Equipo'))}</h5>
+                                <p class="text-secondary small mb-3">Fotografía registrada para identificación física de este activo en la sucursal.</p>
+                                <div class="d-flex flex-wrap gap-2 justify-content-center justify-content-md-start">
+                                    <a href="${escapeHtml(reg.foto_equipo)}" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
+                                        <i class="bi bi-arrows-fullscreen me-1"></i> Ver Imagen Completa
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-3 font-semibold" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                                        <i class="bi bi-arrow-repeat me-1"></i> Cambiar Fotografía
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-danger rounded-3 font-semibold" onclick="eliminarDocEquipo('foto', ${reg.id})">
+                                        <i class="bi bi-trash-fill me-1"></i> Eliminar Foto
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                fotoHtml = `
+                    <div class="card p-3 rounded-4" style="background: linear-gradient(135deg, #0d213a 0%, #071527 100%); border: 1.5px dashed rgba(255, 255, 255, 0.15);">
+                        <div class="d-flex flex-column flex-md-row align-items-center gap-4">
+                            <div style="width: 140px; height: 105px; border-radius: 12px; background: rgba(15, 34, 61, 0.6); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; flex-shrink: 0;" class="text-secondary fs-1">
+                                <i class="bi bi-camera-fill opacity-50"></i>
+                            </div>
+                            <div class="flex-grow-1 text-center text-md-start">
+                                <h6 class="fw-bold text-white mb-1"><i class="bi bi-image me-1 text-info"></i> Fotografía del Equipo</h6>
+                                <p class="text-secondary small mb-3">Aún no se ha subido una fotografía física de este equipo al expediente.</p>
+                                <button type="button" class="btn btn-sm btn-primary rounded-3 px-3 fw-bold shadow-sm" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                                    <i class="bi bi-camera-fill me-1"></i> Subir Fotografía del Equipo
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            photoHeroBlock.innerHTML = fotoHtml;
+        }
+        container.appendChild(photoHeroBlock);
+
+        // Tarjeta SNMP
+        if (currentSeccion === 'monitores' && reg.ip && reg.ip.trim() !== '') {
+            const snmpCard = document.createElement('div');
+            snmpCard.className = 'col-12 mb-3 cat-header-block';
+            snmpCard.setAttribute('data-cat-id', 'cat_snmp_live');
+            snmpCard.setAttribute('data-search', 'snmp toner impresiones estado error impresora ip consola web');
+            snmpCard.innerHTML = `
+                <div class="card p-3 rounded-4 shadow-lg" style="background: linear-gradient(135deg, #091a30 0%, #0d2747 100%); border: 1.5px solid rgba(56, 189, 248, 0.35);">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="w-10 h-10 rounded-3 bg-primary bg-opacity-25 text-info d-flex align-items-center justify-content-center fs-5" style="width: 40px; height: 40px;">
+                                <i class="bi bi-printer-fill"></i>
+                            </div>
+                            <div>
+                                <h6 class="fw-bold text-white mb-0">Diagnóstico SNMP en Tiempo Real (Tóner & Estado)</h6>
+                                <span class="text-secondary small">IP: <strong class="text-info font-monospace">${escapeHtml(reg.ip)}</strong></span>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <a href="http://${escapeHtml(reg.ip)}/" target="_blank" class="btn btn-sm btn-outline-info rounded-3 font-semibold">
+                                <i class="bi bi-globe me-1"></i> Abrir Web Image Monitor
+                            </a>
+                            <button type="button" class="btn btn-sm btn-primary rounded-3 font-semibold" id="btn_refresh_snmp_exp" onclick="cargarSNMPExpediente('${escapeHtml(reg.ip)}')">
+                                <i class="bi bi-arrow-clockwise me-1"></i> Actualizar SNMP
+                            </button>
+                        </div>
+                    </div>
+                    <div id="snmp_expediente_content" class="row g-3">
+                        <div class="col-12 text-center py-3 text-info">
+                            <span class="spinner-border spinner-border-sm me-2"></span> Consultando nivel de tóner y pantalla de la impresora vía SNMP...
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(snmpCard);
+            const ipTarget = reg.ip.trim();
+            setTimeout(function() { if (typeof cargarSNMPExpediente === 'function') cargarSNMPExpediente(ipTarget); }, 150);
+        }
+
+        const allowedDeviceFields = getAllowedFieldsForRecord(reg, currentSeccion);
+        const dvrExcludedFields = ['correo_oficial_planta', 'puerto_patch_panel', 'numero_nodo', 'contrasena_remoto', 'contrasena_gds', 'garantia2', 'subtipo_camara', 'canal_analogico', 'canal_ip'];
+        const systemInternalFields = ['id', 'foto_equipo', 'foto_vista_camara', 'factura_url', 'responsiva_url', 'actualizado_en'];
+
+        CATEGORIAS_EXPEDIENTE.forEach(cat => {
+            let camposDeCat = [];
+            cat.campos.forEach(kLower => {
+                for (const key in reg) {
+                    if (key.toLowerCase() === kLower) {
+                        const kL = key.toLowerCase();
+                        if (systemInternalFields.includes(kL)) continue;
+                        if (currentSeccion === 'dvr' && dvrExcludedFields.includes(kL)) continue;
+                        if (allowedDeviceFields && Array.isArray(allowedDeviceFields)) {
+                            if (!allowedDeviceFields.includes(kL)) continue;
+                        }
+                        camposDeCat.push(key);
+                        break;
+                    }
+                }
+            });
+
+            if (camposDeCat.length > 0) {
+                let catTitle = cat.titulo;
+                if (cat.id === 'cat_garantia' && currentSeccion === 'dvr') {
+                    catTitle = '💾 Respaldo';
+                }
+                const secHeader = document.createElement('div');
+                secHeader.className = 'col-12 mt-3 mb-1 cat-header-block';
+                secHeader.setAttribute('data-cat-id', cat.id);
+                secHeader.innerHTML = `<h6 class="fw-bold text-info border-bottom border-secondary pb-2 mb-0"><i class="bi ${cat.icono} me-2"></i> ${catTitle}</h6>`;
+                container.appendChild(secHeader);
+
+                camposDeCat.forEach(key => {
+                    const valRaw = reg[key];
+                    const isPass = key.toLowerCase().includes('contrasena') || key.toLowerCase().includes('password') || key.toLowerCase().includes('clave');
+                    const valFormatted = formatUnitValue(key, valRaw);
+                    const keyTitle = getFieldLabel(key);
+
+                    const card = document.createElement('div');
+                    card.className = 'col-md-4 col-lg-3 card-item-block';
+                    card.setAttribute('data-cat-id', cat.id);
+                    card.setAttribute('data-search', (keyTitle + ' ' + (valRaw || '')).toLowerCase());
+
+                    let valHtml = '';
+                    if (isPass && valRaw) {
+                        const passId = 'pass_exp_' + Math.random().toString(36).substr(2, 9);
+                        valHtml = `
+                            <div class="d-flex align-items-center justify-content-between">
+                                <span class="pass-cell font-monospace" id="${passId}" data-pass="${escapeHtml(valRaw)}">••••••••</span>
+                                <button type="button" class="btn btn-sm text-info p-0 ms-1" onclick="togglePassSpan('${passId}', this)" title="Mostrar / Ocultar Contraseña">
+                                    <i class="bi bi-eye-fill"></i>
+                                </button>
+                            </div>
+                        `;
+                    } else {
+                        valHtml = `<div class="fw-semibold text-white">${valFormatted}</div>`;
+                    }
+
+                    card.innerHTML = `
+                        <div class="card h-100 p-3 rounded-3" style="background: #0f223d; border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="small fw-bold mb-1 text-uppercase" style="font-size: 0.7rem; color: #94a3b8;">${keyTitle}</div>
+                            ${valHtml}
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            }
+        });
+
+        // Botones Footer
+        const footerDocs = document.getElementById('expediente_footer_docs');
+        if (footerDocs) {
+            let htmlDocs = '';
+            const labelFotoBtn = isCam ? 'Foto Cámara' : (currentSeccion === 'site_vw' ? 'Foto Dispositivo SITE' : 'Foto Equipo');
+            if (reg.foto_equipo && reg.foto_equipo.trim() !== '') {
+                htmlDocs += `
+                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                        <i class="bi bi-camera-fill me-1"></i> Cambiar ${labelFotoBtn}
+                    </button>
+                `;
+            } else {
+                htmlDocs += `
+                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3" onclick="abrirModalSubirDoc('foto', ${reg.id})">
+                        <i class="bi bi-camera-fill me-1"></i> Cargar ${labelFotoBtn}
+                    </button>
+                `;
+            }
+
+            if (isCam) {
+                if (reg.foto_vista_camara && reg.foto_vista_camara.trim() !== '') {
+                    htmlDocs += `
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})">
+                            <i class="bi bi-camera-reels-fill me-1"></i> Cambiar Foto Vista
+                        </button>
+                    `;
+                } else {
+                    htmlDocs += `
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('foto_vista', ${reg.id})">
+                            <i class="bi bi-camera-reels me-1"></i> Cargar Foto Vista
+                        </button>
+                    `;
+                }
+            }
+
+            if (reg.factura_url && reg.factura_url.trim() !== '') {
+                htmlDocs += `
+                    <div class="btn-group ms-1">
+                        <a href="${reg.factura_url}" target="_blank" class="btn btn-success btn-sm fw-bold rounded-start px-3">
+                            <i class="bi bi-file-earmark-pdf-fill me-1"></i> Visualizar Factura
+                        </a>
+                        <button type="button" class="btn btn-outline-success btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                            <span class="visually-hidden">Opciones Factura</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-dark shadow">
+                            <li><a class="dropdown-item" href="${reg.factura_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Visualizar Factura</a></li>
+                            <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('factura', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Factura</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('factura', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Factura</a></li>
+                        </ul>
+                    </div>
+                `;
+            } else {
+                htmlDocs += `
+                    <button type="button" class="btn btn-outline-info btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('factura', ${reg.id})">
+                        <i class="bi bi-file-earmark-plus me-1"></i> Cargar Factura
+                    </button>
+                `;
+            }
+
+            if (['equipos_vw', 'equipos_corp', 'moviles'].includes(currentSeccion)) {
+                if (reg.responsiva_url && reg.responsiva_url.trim() !== '') {
+                    htmlDocs += `
+                        <div class="btn-group ms-1">
+                            <a href="${reg.responsiva_url}" target="_blank" class="btn btn-primary btn-sm fw-bold rounded-start px-3">
+                                <i class="bi bi-file-earmark-check-fill me-1"></i> Visualizar Responsiva
+                            </a>
+                            <button type="button" class="btn btn-outline-primary btn-sm dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                                <span class="visually-hidden">Opciones Responsiva</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark shadow">
+                                <li><a class="dropdown-item" href="${reg.responsiva_url}" target="_blank"><i class="bi bi-eye me-2 text-info"></i> Abrir / Visualizar Responsiva</a></li>
+                                <li><a class="dropdown-item" href="javascript:void(0)" onclick="abrirModalSubirDoc('responsiva', ${reg.id})"><i class="bi bi-arrow-repeat me-2 text-warning"></i> Reemplazar Responsiva</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item text-danger" href="javascript:void(0)" onclick="eliminarDocEquipo('responsiva', ${reg.id})"><i class="bi bi-trash me-2"></i> Eliminar Responsiva</a></li>
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    htmlDocs += `
+                        <button type="button" class="btn btn-outline-primary btn-sm fw-bold px-3 rounded-3 ms-1" onclick="abrirModalSubirDoc('responsiva', ${reg.id})">
+                            <i class="bi bi-file-earmark-plus me-1"></i> Cargar Responsiva
+                        </button>
+                    `;
+                }
+
+                htmlDocs += `
+                    <a href="generar_responsiva.php?id=${reg.id}&sec=${currentSeccion}" target="_blank" class="btn btn-warning btn-sm fw-bold px-3 rounded-3 ms-1" title="Generar e imprimir Carta Responsiva en PDF">
+                        <i class="bi bi-printer-fill me-1"></i> Generar Responsiva PDF
+                    </a>
+                `;
+            }
+            footerDocs.innerHTML = htmlDocs;
+        }
+
+        // Abrir Modal de forma segura
+        const modalEl = document.getElementById('modalExpediente');
+        if (modalEl) {
+            if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            } else {
+                modalEl.classList.add('show');
+                modalEl.style.display = 'block';
+                document.body.classList.add('modal-open');
+                let backdrop = document.querySelector('.modal-backdrop');
+                if (!backdrop) {
+                    backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    document.body.appendChild(backdrop);
+                }
+            }
+        }
+    };
+    var verExpedienteCompleto = window.verExpedienteCompleto;
+
+    window.abrirExpedienteSiNoEsBoton = function(event, reg) {
+        if (event && event.target && event.target.closest('button, a, select, input, form, .btn, .form-check-input')) {
+            return;
+        }
+        window.verExpedienteCompleto(reg);
+    };
+    var abrirExpedienteSiNoEsBoton = window.abrirExpedienteSiNoEsBoton;
+
+    function filtrarDatoExpediente() {
+        const busqInput = document.getElementById('busquedaExpediente');
+        if (!busqInput) return;
+        const q = busqInput.value.toLowerCase().trim();
+        const cards = document.querySelectorAll('#contenedorExpedienteDetalles .card-item-block');
+        const headers = document.querySelectorAll('#contenedorExpedienteDetalles .cat-header-block');
+        const visibleCats = new Set();
+        cards.forEach(card => {
+            const text = card.getAttribute('data-search') || '';
+            const matches = text.includes(q);
+            card.style.display = matches ? '' : 'none';
+            if (matches) visibleCats.add(card.getAttribute('data-cat-id'));
+        });
+        headers.forEach(h => {
+            const catId = h.getAttribute('data-cat-id');
+            h.style.display = visibleCats.has(catId) ? '' : 'none';
+        });
+    }
+    window.filtrarDatoExpediente = filtrarDatoExpediente;
+    var filtrarDatoExpediente = window.filtrarDatoExpediente;
+
+    // Escuchador global de cierre para el modal en cualquier circunstancia
+    document.addEventListener('click', function(e) {
+        if (e.target && (e.target.closest('[data-bs-dismiss="modal"]') || e.target.classList.contains('modal-backdrop'))) {
+            const openModal = document.querySelector('.modal.show');
+            if (openModal) {
+                if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                    const inst = bootstrap.Modal.getInstance(openModal);
+                    if (inst) inst.hide();
+                }
+                openModal.classList.remove('show');
+                openModal.style.display = 'none';
+                document.body.classList.remove('modal-open');
+                document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+            }
+        }
+    });
     </script>
     <style>
         body {
