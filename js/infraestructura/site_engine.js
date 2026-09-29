@@ -1646,6 +1646,7 @@ function drawSite2DRackElevation(targetCanvasId) {
     const startY = isCompact ? 42 : 48;
     const gap = isCompact ? 15 : 25;
     const marginX = isCompact ? 15 : 25;
+    const slotH = rackHeight / 21;
 
     canvas.width = Math.max(580, marginX * 2 + (totalRacks * (rW + gap)) + 40);
     canvas.height = isCompact ? 440 : 540;
@@ -6883,7 +6884,9 @@ function mostrarNotificacionToast(tipo, titulo, mensaje) {
 // =========================================================================
 
 let siteFloorPlanObjects = [];
-
+let selectedFloorPlanObj = null;
+let floorPlanDragOffset = { x: 0, y: 0 };
+let isDraggingFloorPlanObj = false;
 let isResizingFloorPlanObj = false;
 let isRotatingFloorPlanObj = false;
 let isSiteFloorPlan2DInited = false;
