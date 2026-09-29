@@ -1618,20 +1618,27 @@ function renderBadgeTipoSite($tipo) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Definición temprana garantizada para eventos onclick en la tabla
+        // Controlador global e inmediato para abrir el expediente
         window.abrirExpedienteSiNoEsBoton = function(event, reg) {
             if (event && event.target && event.target.closest('button, a, select, input, form, .btn, .form-check-input')) {
                 return;
             }
-            if (typeof window.verExpedienteCompleto === 'function') {
-                window.verExpedienteCompleto(reg);
+            const fn = window.verExpedienteCompleto || (typeof verExpedienteCompleto === 'function' ? verExpedienteCompleto : null);
+            if (fn) {
+                fn(reg);
             } else {
-                console.warn('Cargando expediente...');
-                setTimeout(function() {
-                    if (typeof window.verExpedienteCompleto === 'function') {
-                        window.verExpedienteCompleto(reg);
+                let attempts = 0;
+                const pollInterval = setInterval(function() {
+                    attempts++;
+                    const f = window.verExpedienteCompleto || (typeof verExpedienteCompleto === 'function' ? verExpedienteCompleto : null);
+                    if (f) {
+                        clearInterval(pollInterval);
+                        f(reg);
+                    } else if (attempts >= 15) {
+                        clearInterval(pollInterval);
+                        console.error('El script del expediente tardó demasiado en cargar.');
                     }
-                }, 200);
+                }, 100);
             }
         };
     </script>
@@ -4516,7 +4523,7 @@ function renderBadgeTipoSite($tipo) {
         return null;
     }
 
-    function verExpedienteCompleto(reg) {
+    window.verExpedienteCompleto = function(reg) {
         const isCam = (reg.tipo_registro === 'Cámara');
         const isTel = (currentSeccion === 'telefonos_poe');
         if (isTel) {
@@ -4860,8 +4867,33 @@ function renderBadgeTipoSite($tipo) {
             footerDocs.innerHTML = htmlDocs;
         }
 
-        const modal = new bootstrap.Modal(document.getElementById('modalExpediente'));
-        modal.show();
+        const modalEl = document.getElementById('modalExpediente');
+        if (modalEl) {
+            if (typeof bootstrap !== 'undefined' && bootstrap && bootstrap.Modal) {
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else {
+                // Fallback nativo si Bootstrap JS está bloqueado o lento
+                modalEl.classList.add('show');
+                modalEl.style.display = 'block';
+                document.body.classList.add('modal-open');
+                let backdrop = document.querySelector('.modal-backdrop');
+                if (!backdrop) {
+                    backdrop = document.createElement('div');
+                    backdrop.className = 'modal-backdrop fade show';
+                    document.body.appendChild(backdrop);
+                }
+                modalEl.querySelectorAll('[data-bs-dismiss="modal"]').forEach(btn => {
+                    btn.onclick = function() {
+                        modalEl.classList.remove('show');
+                        modalEl.style.display = 'none';
+                        document.body.classList.remove('modal-open');
+                        const bd = document.querySelector('.modal-backdrop');
+                        if (bd) bd.remove();
+                    };
+                });
+            }
+        }
     }
 
     function abrirModalSubirDoc(tipo, regId) {
@@ -5071,12 +5103,12 @@ function renderBadgeTipoSite($tipo) {
         });
     }
 
-    function abrirExpedienteSiNoEsBoton(event, reg) {
+    window.abrirExpedienteSiNoEsBoton = function(event, reg) {
         if (event.target.closest('button, a, select, input, form, .btn, .form-check-input')) {
             return;
         }
-        verExpedienteCompleto(reg);
-    }
+        window.verExpedienteCompleto(reg);
+    };
 
     let chartInstanceAreas = null;
     let chartInstanceEstatus = null;
