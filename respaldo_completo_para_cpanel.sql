@@ -1,22 +1,120 @@
 -- ==========================================================
 -- RESPALDO COMPLETO DE BASE DE DATOS PARA CPANEL (MYSQL)
 -- Generado automáticamente para: divolavilla_sistemas
--- Fecha: 2026-09-29 17:40:38
+-- Fecha: 2026-09-29 17:44:02
 -- ==========================================================
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
+
+DROP TABLE IF EXISTS `usuario_permisos`;
+DROP TABLE IF EXISTS `modulos`;
+DROP TABLE IF EXISTS `usuarios`;
+DROP TABLE IF EXISTS `agencia_areas`;
+DROP TABLE IF EXISTS `agencias`;
+DROP TABLE IF EXISTS `infra_diagramas`;
+DROP TABLE IF EXISTS `infra_nodos`;
+DROP TABLE IF EXISTS `infra_planos_2d`;
+DROP TABLE IF EXISTS `infra_red_idf`;
+DROP TABLE IF EXISTS `infra_site`;
+DROP TABLE IF EXISTS `infra_switch_puertos`;
+DROP TABLE IF EXISTS `infra_vlans`;
+DROP TABLE IF EXISTS `inv_archivo`;
+DROP TABLE IF EXISTS `inv_dispositivos_moviles`;
+DROP TABLE IF EXISTS `inv_dvr_camaras`;
+DROP TABLE IF EXISTS `inv_equipos_baja`;
+DROP TABLE IF EXISTS `inv_equipos_corp`;
+DROP TABLE IF EXISTS `inv_equipos_vw`;
+DROP TABLE IF EXISTS `inv_licencias_office`;
+DROP TABLE IF EXISTS `inv_monitores`;
+DROP TABLE IF EXISTS `inv_nobreak_baja`;
+DROP TABLE IF EXISTS `inv_site_vw`;
+DROP TABLE IF EXISTS `inv_telefonos_poe`;
 
 -- --------------------------------------------------------
--- Tabla: `agencia_areas` (5 columnas)
+-- Estructura para la tabla `usuario_permisos` (9 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `agencia_areas`;
+CREATE TABLE `usuario_permisos` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `usuario_id` INT NULL,
+  `modulo_clave` VARCHAR(50) NOT NULL,
+  `puede_ver` INT DEFAULT 1,
+  `puede_crear` INT DEFAULT 1,
+  `puede_editar` INT DEFAULT 1,
+  `puede_eliminar` INT DEFAULT 1,
+  `puede_exportar` INT DEFAULT 1,
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_usuario_permiso` (`usuario_id`, `modulo_clave`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Datos para la tabla `usuario_permisos` (6 registros)
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (1, 549, 'usuarios', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (2, 549, 'ordenes_servicio', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (3, 549, 'equipos', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (4, 549, 'celulares', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (5, 549, 'licencias', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (6, 549, 'infraestructura', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
+
+-- --------------------------------------------------------
+-- Estructura para la tabla `modulos` (8 columnas)
+-- --------------------------------------------------------
+CREATE TABLE `modulos` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `clave` VARCHAR(50) NOT NULL,
+  `nombre` VARCHAR(100) NULL,
+  `descripcion` TEXT NULL,
+  `icono` VARCHAR(50) NULL,
+  `orden` INT DEFAULT 0,
+  `estatus` INT DEFAULT 1,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_modulos_clave` (`clave`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Datos para la tabla `modulos` (6 registros)
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (1, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos', 'bi-people-fill', 1, 1, '2026-09-17 21:46:53');
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (2, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos', 'bi-file-earmark-bar-graph', 2, 1, '2026-09-17 21:46:53');
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (3, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1, '2026-09-17 21:46:53');
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (4, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas', 'bi-phone-fill', 4, 1, '2026-09-17 21:46:53');
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (5, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo', 'bi-key-fill', 5, 1, '2026-09-17 21:46:53');
+INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (6, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks y cableado', 'bi-hdd-rack-fill', 6, 1, '2026-09-17 21:46:53');
+
+-- --------------------------------------------------------
+-- Estructura para la tabla `usuarios` (14 columnas)
+-- --------------------------------------------------------
+CREATE TABLE `usuarios` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `usuario` VARCHAR(50) NOT NULL,
+  `nombre` VARCHAR(100) NULL,
+  `email` VARCHAR(100) NULL,
+  `password` VARCHAR(255) NULL,
+  `agencia` VARCHAR(100) NULL,
+  `rol` VARCHAR(20) NULL,
+  `activo` INT DEFAULT 1,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `acceso_portal` INT DEFAULT 1,
+  `area` VARCHAR(100) NULL,
+  `puesto` VARCHAR(100) NULL,
+  `telefono` VARCHAR(50) NULL,
+  `foto_url` VARCHAR(255) NULL,
+  UNIQUE KEY `uq_usuarios_usuario` (`usuario`)
+) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Datos para la tabla `usuarios` (3 registros)
+INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (1, 'admin', 'Administrador Central', 'admin@grupohuerta.mx', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'DIVOL LA VILLA', 'SuperAdmin', 1, '2026-09-17 21:46:53', 1, NULL, NULL, NULL, NULL);
+INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (2, 'sistemas', 'Sistemas Grupo Huerta', 'sistemas@grupohuerta.mx', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'DIVOL LA VILLA', 'Admin', 1, '2026-09-17 21:46:53', 1, NULL, NULL, NULL, NULL);
+INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (549, 'gcomercial@divolavilla.com', 'Alejandro Tejeda', 'gcomercial@divolavilla.com', '$2y$10$3xmaloYrtHAFjcgAZNMVk.zT6EkvLV6JVrEfesK6VQzObwsHWnb.2', 'DIVOL LA VILLA', 'Usuario', 1, '2026-09-18 21:47:46', 1, 'Ventas', 'Gerente Comercial', 5512121212, 'uploads/usuarios/usr_549_1789834534.png');
+
+-- --------------------------------------------------------
+-- Estructura para la tabla `agencia_areas` (5 columnas)
+-- --------------------------------------------------------
 CREATE TABLE `agencia_areas` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `agencia_id` INT NULL,
-  `nombre` TEXT NULL,
+  `nombre` VARCHAR(100) NULL,
   `estatus` INT DEFAULT 1,
-  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_agencia_area` (`agencia_id`, `nombre`(100))
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Datos para la tabla `agencia_areas` (19 registros)
@@ -41,20 +139,19 @@ INSERT INTO `agencia_areas` (`id`, `agencia_id`, `nombre`, `estatus`, `creado_en
 INSERT INTO `agencia_areas` (`id`, `agencia_id`, `nombre`, `estatus`, `creado_en`) VALUES (19, 1, 'Sistemas', 1, '2026-09-21 17:52:20');
 
 -- --------------------------------------------------------
--- Tabla: `agencias` (12 columnas)
+-- Estructura para la tabla `agencias` (12 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `agencias`;
 CREATE TABLE `agencias` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `nombre` TEXT NULL,
-  `razon_social` TEXT NULL,
-  `rfc` TEXT NULL,
+  `nombre` VARCHAR(100) NULL,
+  `razon_social` VARCHAR(150) NULL,
+  `rfc` VARCHAR(20) NULL,
   `direccion` TEXT NULL,
-  `encargado_sistemas` TEXT NULL,
-  `telefono_sistemas` TEXT NULL,
-  `correo_sistemas` TEXT NULL,
-  `logo_url` TEXT NULL,
-  `foto_url` TEXT NULL,
+  `encargado_sistemas` VARCHAR(100) NULL,
+  `telefono_sistemas` VARCHAR(50) NULL,
+  `correo_sistemas` VARCHAR(100) NULL,
+  `logo_url` VARCHAR(255) NULL,
+  `foto_url` VARCHAR(255) NULL,
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `maps_url` TEXT NULL
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -64,9 +161,8 @@ INSERT INTO `agencias` (`id`, `nombre`, `razon_social`, `rfc`, `direccion`, `enc
 Divol la villa', 'Heriberto Rojo', 5555866655, 'sistemas@divolavilla.com', 'uploads/agencias/logo_2_1789832448.png', 'uploads/agencias/foto_2_1789832448.jpg', '2026-09-19 15:40:05', '');
 
 -- --------------------------------------------------------
--- Tabla: `infra_diagramas` (7 columnas)
+-- Estructura para la tabla `infra_diagramas` (7 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_diagramas`;
 CREATE TABLE `infra_diagramas` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `titulo` TEXT NULL,
@@ -78,9 +174,8 @@ CREATE TABLE `infra_diagramas` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `infra_nodos` (13 columnas)
+-- Estructura para la tabla `infra_nodos` (13 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_nodos`;
 CREATE TABLE `infra_nodos` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `codigo_nodo` TEXT NULL,
@@ -104,9 +199,8 @@ INSERT INTO `infra_nodos` (`id`, `codigo_nodo`, `tipo_nodo`, `ubicacion`, `patch
 INSERT INTO `infra_nodos` (`id`, `codigo_nodo`, `tipo_nodo`, `ubicacion`, `patch_panel`, `switch_puerto`, `vlan`, `estatus`, `notas`, `actualizado_en`, `tiene_telefono_poe`, `telefono_poe_id`, `telefono_poe_info`) VALUES (4, 45, 'Voz y Datos', 'Usados/Ventas', 'pp2/45', 'sw core', 27, 'Activo', 'Auto-creado desde Inventario: mx344430044444', '2026-09-25 19:49:48', '0', '0', NULL);
 
 -- --------------------------------------------------------
--- Tabla: `infra_planos_2d` (7 columnas)
+-- Estructura para la tabla `infra_planos_2d` (7 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_planos_2d`;
 CREATE TABLE `infra_planos_2d` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nombre_plano` TEXT NULL,
@@ -122,9 +216,8 @@ INSERT INTO `infra_planos_2d` (`id`, `nombre_plano`, `imagen_fondo_url`, `ancho_
 INSERT INTO `infra_planos_2d` (`id`, `nombre_plano`, `imagen_fondo_url`, `ancho_canvas`, `alto_canvas`, `elementos_json`, `actualizado_en`) VALUES (3, 'taller la villa', '', 1200, 800, '[]', '2026-09-22 23:13:50');
 
 -- --------------------------------------------------------
--- Tabla: `infra_red_idf` (12 columnas)
+-- Estructura para la tabla `infra_red_idf` (12 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_red_idf`;
 CREATE TABLE `infra_red_idf` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nombre_idf` TEXT NULL,
@@ -141,9 +234,8 @@ CREATE TABLE `infra_red_idf` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `infra_site` (16 columnas)
+-- Estructura para la tabla `infra_site` (16 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_site`;
 CREATE TABLE `infra_site` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `nombre_site` TEXT NULL,
@@ -167,9 +259,8 @@ CREATE TABLE `infra_site` (
 INSERT INTO `infra_site` (`id`, `nombre_site`, `ubicacion`, `tipo_espacio`, `temperatura_objetivo`, `aire_acondicionado`, `btu`, `aire_estatus`, `ups_principal`, `cap_ups`, `planta_luz`, `control_acceso`, `contra_incendio`, `foto_site`, `observaciones`, `actualizado_en`) VALUES (1, 'SITE Principal', NULL, 'SITE Principal', NULL, NULL, NULL, 'Operativo', NULL, NULL, NULL, NULL, NULL, NULL, '{\"racks\":{\"rack_1790294094108\":{\"title\":\"RACK 01\",\"items\":[{\"u\":1,\"name\":\"BARRA TIERRA F\\u00cdSICA\",\"color\":\"#22c55e\",\"type\":\"barra_tierra\",\"slotPos\":\"left\"},{\"u\":14,\"name\":\"ONT INFINITUM\",\"color\":\"#0a0f18\",\"type\":\"ont\",\"slotPos\":\"left\"},{\"u\":16,\"name\":\"ENLACE MCM\",\"color\":\"#8b5cf6\",\"type\":\"enlace_mcm\",\"slotPos\":\"left\"},{\"u\":17,\"name\":\"FORTINET FIREWALL\",\"color\":\"#ffffff\",\"type\":\"fortinet\",\"slotPos\":\"left\",\"inventoryKey\":\"SITE-5\",\"inventoryData\":{\"id\":\"5\",\"key\":\"SITE-5\",\"origen\":\"inv_site_vw\",\"label\":\"Fortinet MCM\",\"sub\":\"FORTINET 123\",\"tipo\":\"Fortinet\",\"ip\":\"201.185.25.02\",\"mac\":\"32:25:58:48\",\"serie\":\"QWERTY2345\",\"estatus\":\"Operativo\",\"usuario\":\"Sistemas\",\"departamento\":\"Sistemas\",\"ubicacion\":\"SITE Principal\",\"foto_url\":\"\",\"raw\":{\"id\":\"5\",\"departamento\":\"Sistemas\",\"puesto\":null,\"usuario\":\"\",\"nombre_equipo\":\"Fortinet MCM\",\"estado\":\"\",\"equipo\":null,\"modelo\":\"FORTINET 123\",\"serie\":\"QWERTY2345\",\"fecha_compra\":\"\",\"folio_factura\":\"\",\"actualizado_en\":\"2026-09-21 19:52:29\",\"garantia2\":null,\"garantia\":\"\",\"contrasena_remoto\":null,\"contrasena_gds\":null,\"correo_oficial_planta\":null,\"motivo_baja\":null,\"puerto_patch_panel\":null,\"puerto_sw\":\"\",\"numero_nodo\":null,\"factura_url\":null,\"responsiva_url\":null,\"costo\":\"\",\"foto_equipo\":null,\"dvr_vinculado\":null,\"tipo_registro\":\"Fortinet\",\"dias_grabacion\":null,\"usuario_dvr\":null,\"numero_discos\":null,\"canal_analogico\":null,\"canal_ip\":null,\"ubicacion\":\"\",\"foto_vista_camara\":null,\"subtipo_camara\":null,\"fabricante\":\"\",\"mac_ethernet\":\"32:25:58:48\",\"mac_wifi\":\"\",\"cantidad_puertos\":\"\",\"velocidad_puertos\":\"\",\"tipo_switch\":\"\",\"firmware_version\":\"1.2.3\",\"posicion_rack\":\"\",\"sistema_op\":\"\",\"procesador\":\"\",\"ram\":\"\",\"almacenamiento\":\"\",\"cantidad_discos\":\"\",\"tipo_servidor\":\"\",\"funcion_servicio\":\"\",\"ambiente\":\"\",\"criticidad\":\"\",\"bahias_nas\":\"\",\"capacidad_disco_ind\":\"\",\"capacidad_disponible\":\"\",\"config_raid\":\"\",\"tipo_discos\":\"\",\"protocolos_nas\":\"\",\"proveedor\":\"\",\"tipo_enlace\":\"\",\"ancho_banda\":\"\",\"simetria_enlace\":\"\",\"tipo_conexion\":\"\",\"numero_contrato\":\"\",\"numero_cuenta\":\"\",\"circuit_id\":\"\",\"soporte_contacto\":\"\",\"ip_publica\":\"\",\"ip_local\":\"192.168.26.0\",\"unifi_os_ver\":\"\",\"controller_ver\":\"\",\"velocidad_enlace\":\"\",\"ssids\":\"\",\"vlans\":\"\",\"poe\":\"\",\"controlador_ap\":\"\",\"capacidad_va\":\"\",\"capacidad_w\":\"\",\"tipo_ups\":\"\",\"voltaje_entrada\":\"\",\"voltaje_salida\":\"\",\"cant_baterias\":\"\",\"specs_baterias\":\"\",\"fecha_bateria\":\"\",\"autonomia\":\"\",\"imei_1\":null,\"imei_2\":null,\"numero_telefonico\":null,\"color\":null,\"accesorios\":null,\"fecha_asignacion\":null,\"tiene_plan_celular\":null,\"vencimiento_plan\":null,\"proveedor_plan\":null,\"numero_contrato_plan\":null,\"estado_fisico\":null,\"tamano_pantalla\":null,\"resolucion\":null,\"subtipo_dispositivo\":null,\"especificaciones\":null,\"observaciones\":null,\"marca\":null,\"ip\":\"201.185.25.02\",\"contrasena\":\"\",\"modelo_exacto\":null,\"fecha_adquisicion\":null,\"contrato\":null,\"usuario_impresora\":null,\"contrasena_impresora\":null,\"usuario_impresora_web\":null,\"contrasena_impresora_web\":null}}},{\"u\":12,\"name\":\"BARRA PDU 220V\",\"color\":\"#1e293b\",\"type\":\"barra_pdu\",\"slotPos\":\"left\"},{\"u\":6,\"name\":\"UPS 1 INDUSTRONIC\",\"color\":\"#080c14\",\"type\":\"ups_1\",\"slotPos\":\"left\"},{\"u\":10,\"name\":\"NAS QNAP\",\"color\":\"#e2e8f0\",\"type\":\"nas_qnap\",\"slotPos\":\"left\"},{\"u\":8,\"name\":\"NAS QNAP\",\"color\":\"#e2e8f0\",\"type\":\"nas_qnap\",\"slotPos\":\"left\"}]},\"rack_1790344227192\":{\"title\":\"RACK 02\",\"items\":[{\"u\":1,\"name\":\"BARRA TIERRA F\\u00cdSICA\",\"color\":\"#22c55e\",\"type\":\"barra_tierra\"},{\"u\":19,\"name\":\"SWITCH 24P\",\"color\":\"#d8dde6\",\"type\":\"switch\",\"slotPos\":\"left\"},{\"u\":18,\"name\":\"SWITCH 24P\",\"color\":\"#d8dde6\",\"type\":\"switch\",\"slotPos\":\"left\"},{\"u\":15,\"name\":\"SWITCH 24P\",\"color\":\"#d8dde6\",\"type\":\"switch\",\"slotPos\":\"left\"},{\"u\":14,\"name\":\"UDM PRO\",\"color\":\"#d8dde6\",\"type\":\"udm_pro\",\"slotPos\":\"left\"},{\"u\":12,\"name\":\"BARRA PDU 220V\",\"color\":\"#1e293b\",\"type\":\"barra_pdu\",\"slotPos\":\"left\"},{\"u\":5,\"name\":\"UPS 2 APC 3000\",\"color\":\"#1e222b\",\"type\":\"ups_2\",\"slotPos\":\"left\"},{\"u\":5,\"name\":\"UPS 2 APC 3000\",\"color\":\"#1e222b\",\"type\":\"ups_2\",\"slotPos\":\"right\"}]},\"rack_1790344235243\":{\"title\":\"RACK 03\",\"items\":[{\"u\":1,\"name\":\"BARRA TIERRA F\\u00cdSICA\",\"color\":\"#22c55e\",\"type\":\"barra_tierra\"},{\"u\":5,\"name\":\"SERVIDOR 2 MODULAR\",\"color\":\"#1f2937\",\"type\":\"servidor_2\",\"slotPos\":\"left\"},{\"u\":5,\"name\":\"UPS 1 INDUSTRONIC\",\"color\":\"#080c14\",\"type\":\"ups_1\",\"slotPos\":\"right\"},{\"u\":8,\"name\":\"SERVIDOR\",\"color\":\"#0a0e17\",\"type\":\"servidor\",\"slotPos\":\"left\"},{\"u\":7,\"name\":\"SERVIDOR\",\"color\":\"#0a0e17\",\"type\":\"servidor\",\"slotPos\":\"left\"},{\"u\":11,\"name\":\"NAS BUFFALO\",\"color\":\"#334155\",\"type\":\"nas_buffalo\",\"slotPos\":\"left\"},{\"u\":12,\"name\":\"BARRA PDU 220V\",\"color\":\"#1e293b\",\"type\":\"barra_pdu\",\"slotPos\":\"left\"},{\"u\":14,\"name\":\"NAS DATTO\",\"color\":\"#00b4d8\",\"type\":\"nas_datto\",\"slotPos\":\"left\"},{\"u\":15,\"name\":\"COMPONENTE PERSONALIZADO\",\"color\":\"#1e293b\",\"type\":\"router_cisco\",\"slotPos\":\"left\"},{\"u\":16,\"name\":\"FORTINET FIREWALL\",\"color\":\"#ffffff\",\"type\":\"fortinet\",\"slotPos\":\"left\"},{\"u\":19,\"name\":\"BTAC BOX\",\"color\":\"#1f6ca5\",\"type\":\"btac_box\",\"slotPos\":\"left\"}]}},\"floorplan\":[{\"id\":\"minisplit_1\",\"name\":\"MINISPLIT INVERTER\",\"type\":\"minisplit\",\"x\":172,\"y\":307,\"w\":110,\"h\":34,\"rot\":180},{\"id\":\"extintor_1\",\"name\":\"EXTINTOR SOLKAFLAM\",\"type\":\"extintor\",\"x\":656,\"y\":403,\"w\":44,\"h\":44,\"rot\":0},{\"id\":\"rack_1790294094108\",\"name\":\"RACK 01\",\"type\":\"rack\",\"x\":293,\"y\":249,\"w\":126,\"h\":129,\"rot\":0},{\"id\":\"rack_1790344227192\",\"name\":\"RACK 02\",\"type\":\"rack\",\"x\":446,\"y\":248,\"w\":116,\"h\":133,\"rot\":0},{\"id\":\"rack_1790344235243\",\"name\":\"RACK 03\",\"type\":\"rack\",\"x\":592,\"y\":247,\"w\":131,\"h\":133,\"rot\":0},{\"id\":\"cam_1790344249171\",\"name\":\"C\\u00c1MARA CCTV 01\",\"type\":\"camara_seguridad\",\"x\":195,\"y\":417,\"w\":40,\"h\":40,\"rot\":0},{\"id\":\"libreta_1790344260514\",\"name\":\"BIT\\u00c1CORA \\/ LIBRETA\",\"type\":\"libreta\",\"x\":764,\"y\":318,\"w\":40,\"h\":50,\"rot\":0},{\"id\":\"extintor_verde_1790344263726\",\"name\":\"EXTINTOR VERDE (SOLKAFLAM)\",\"type\":\"extintor_verde\",\"x\":558,\"y\":403,\"w\":44,\"h\":44,\"rot\":0},{\"id\":\"detector_humo_1790344268368\",\"name\":\"DETECTOR DE HUMO\",\"type\":\"detector_humo\",\"x\":342,\"y\":415,\"w\":38,\"h\":38,\"rot\":0},{\"id\":\"termometro_digital_1790344275122\",\"name\":\"TERM\\u00d3METRO DIGITAL\",\"type\":\"termometro_digital\",\"x\":443,\"y\":424,\"w\":42,\"h\":52,\"rot\":180},{\"id\":\"puerta_1790349444174\",\"name\":\"PUERTA DESLIZABLE 01\",\"type\":\"puerta_deslizable\",\"x\":743,\"y\":329,\"w\":232,\"h\":25,\"rot\":90},{\"id\":\"piso_1790349517074\",\"name\":\"PISO T\\u00c9CNICO 01\",\"type\":\"piso\",\"x\":190,\"y\":229,\"w\":660,\"h\":228,\"rot\":0},{\"id\":\"pared_1790349537438\",\"name\":\"PARED 01\",\"type\":\"pared\",\"x\":173,\"y\":466,\"w\":685,\"h\":25,\"rot\":0},{\"id\":\"pared_1790349626901\",\"name\":\"PARED 01 (Copia)\",\"type\":\"pared\",\"x\":171,\"y\":201,\"w\":676,\"h\":25,\"rot\":0},{\"id\":\"pared_1790349873861\",\"name\":\"PARED 01 (Copia) (Copia)\",\"type\":\"pared\",\"x\":35,\"y\":329,\"w\":293,\"h\":25,\"rot\":90},{\"id\":\"cota_1790353921827\",\"name\":\"3.60 m\",\"type\":\"cota\",\"x\":166,\"y\":135,\"w\":699,\"h\":28,\"rot\":0},{\"id\":\"cota_1790353952331\",\"name\":\"2.00 m\",\"type\":\"cota\",\"x\":-40,\"y\":325,\"w\":281,\"h\":28,\"rot\":270}]}', '2026-09-23 21:57:20');
 
 -- --------------------------------------------------------
--- Tabla: `infra_switch_puertos` (19 columnas)
+-- Estructura para la tabla `infra_switch_puertos` (19 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_switch_puertos`;
 CREATE TABLE `infra_switch_puertos` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `switch_key` TEXT NULL,
@@ -198,9 +289,8 @@ INSERT INTO `infra_switch_puertos` (`id`, `switch_key`, `switch_nombre`, `puerto
 INSERT INTO `infra_switch_puertos` (`id`, `switch_key`, `switch_nombre`, `puerto_numero`, `equipo_key`, `equipo_nombre`, `equipo_tipo`, `equipo_ip`, `nodo_codigo`, `vlan`, `estatus`, `notas`, `created_at`, `updated_at`, `tiene_telefono_poe`, `telefono_poe_key`, `telefono_poe_nombre`, `telefono_poe_ip`, `telefono_poe_ext`) VALUES (9, 'SW-sw 2', 'sw 2', 41, 'EQ-2', 'Alejandro Tejeda', 'Equipo', '192.1698.26.123', 50, NULL, 'activo', NULL, '2026-09-25 23:57:38', '2026-09-25 23:57:38', '0', NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `infra_vlans` (9 columnas)
+-- Estructura para la tabla `infra_vlans` (9 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `infra_vlans`;
 CREATE TABLE `infra_vlans` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `vlan_id` INT NULL,
@@ -217,9 +307,8 @@ CREATE TABLE `infra_vlans` (
 INSERT INTO `infra_vlans` (`id`, `vlan_id`, `nombre_vlan`, `subred`, `gateway`, `dhcp_rango`, `descripcion`, `estatus`, `actualizado_en`) VALUES (15, 27, 'Divol_Admon', '192.168.27.0', '192.168.27.1', '192.168.27.11 - 192.168.27.250', '', 'Activa', '2026-09-23 19:26:53');
 
 -- --------------------------------------------------------
--- Tabla: `inv_archivo` (107 columnas)
+-- Estructura para la tabla `inv_archivo` (107 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_archivo`;
 CREATE TABLE `inv_archivo` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -331,9 +420,8 @@ CREATE TABLE `inv_archivo` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `inv_dispositivos_moviles` (118 columnas)
+-- Estructura para la tabla `inv_dispositivos_moviles` (118 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_dispositivos_moviles`;
 CREATE TABLE `inv_dispositivos_moviles` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -351,7 +439,7 @@ CREATE TABLE `inv_dispositivos_moviles` (
   `mac` TEXT NULL,
   `plan` TEXT NULL,
   `factura` TEXT NULL,
-  `fecha_compra` VARCHAR(50) NULL,
+  `fecha_compra` DATE NULL,
   `proveedor` TEXT NULL,
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `garantia2` TEXT NULL,
@@ -461,9 +549,8 @@ INSERT INTO `inv_dispositivos_moviles` (`id`, `departamento`, `puesto`, `nombre`
 INSERT INTO `inv_dispositivos_moviles` (`id`, `departamento`, `puesto`, `nombre`, `tablet`, `celular`, `pantalla`, `contrasena`, `serie`, `rom`, `ram`, `android`, `mail`, `mac`, `plan`, `factura`, `fecha_compra`, `proveedor`, `actualizado_en`, `garantia2`, `garantia`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `fabricante`, `folio_factura`, `mac_ethernet`, `mac_wifi`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `sistema_op`, `procesador`, `almacenamiento`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `estatus`, `modelo`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`, `ip`) VALUES (3, 'Ventas', NULL, 'Alejandro Tejeda', NULL, NULL, NULL, NULL, '134edx', NULL, 16, NULL, NULL, '33:33:33:33', NULL, NULL, '2026-09-01', 'at&t', '2026-09-21 19:39:29', NULL, ' 3 años ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 6000, NULL, NULL, 'Celular', NULL, NULL, NULL, NULL, NULL, '', NULL, NULL, NULL, 'aqw123', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'android', NULL, 256, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'wee3456764', 987654321, 55123424, 'azul', 'cargador, funda ', '2026-09-14', 'Sí', '2026-09-26', 'at&t', 3323232, 'Excelente', '', '', '', '', '', 'lenovo ', 'Activo', 'lenovo phone ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `inv_dvr_camaras` (119 columnas)
+-- Estructura para la tabla `inv_dvr_camaras` (119 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_dvr_camaras`;
 CREATE TABLE `inv_dvr_camaras` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `camaras` TEXT NULL,
@@ -591,9 +678,8 @@ INSERT INTO `inv_dvr_camaras` (`id`, `camaras`, `dvr`, `ip`, `numero_serie`, `al
 INSERT INTO `inv_dvr_camaras` (`id`, `camaras`, `dvr`, `ip`, `numero_serie`, `almacenamiento`, `contrasena_dvr`, `contrasena_camara`, `cam_totales_ip`, `disponibles_ip`, `cam_totales_analogicas`, `disponibles`, `modelo`, `nombre`, `capacidad_actual`, `cotizar`, `maximo_por_disco`, `capacidad_discos`, `tiene_actual`, `columna1`, `actualizado_en`, `garantia2`, `garantia`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `departamento`, `fabricante`, `folio_factura`, `mac_ethernet`, `mac_wifi`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `sistema_op`, `procesador`, `ram`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `proveedor`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`) VALUES (9, '', '', '192.168.26.72', '', '', '', 'DIVOL199', '', '', '', '', 'HIKVISION', 'SALA DE VENTAS VW', '', NULL, NULL, '', NULL, NULL, '2026-09-21 17:13:33', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 800, 'uploads/equipos/foto_camara_inv_dvr_camaras_9_1790010813.png', 'NVR LA VILLA SAPI', 'Cámara', '', '', '', '', 4, 'SALA DE VENTAS', 'uploads/equipos/foto_vista_inv_dvr_camaras_9_1790010813.png', 'IP', 'Sistemas', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `inv_equipos_baja` (136 columnas)
+-- Estructura para la tabla `inv_equipos_baja` (136 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_equipos_baja`;
 CREATE TABLE `inv_equipos_baja` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -613,10 +699,10 @@ CREATE TABLE `inv_equipos_baja` (
   `mac_wifi` TEXT NULL,
   `mac_ethernet` TEXT NULL,
   `sistema_op` TEXT NULL,
-  `fecha_compra` VARCHAR(50) NULL,
+  `fecha_compra` DATE NULL,
   `folio_factura` TEXT NULL,
-  `inicio_garantia` VARCHAR(50) NULL,
-  `fin_garantia` VARCHAR(50) NULL,
+  `inicio_garantia` DATE NULL,
+  `fin_garantia` DATE NULL,
   `garantia` TEXT NULL,
   `renovacion_equipo` TEXT NULL,
   `usuario_equipo` TEXT NULL,
@@ -737,9 +823,8 @@ CREATE TABLE `inv_equipos_baja` (
 INSERT INTO `inv_equipos_baja` (`id`, `departamento`, `puesto`, `usuario`, `nombre_equipo`, `estado`, `tipo_equipo`, `dominio`, `logmein`, `serie`, `dd`, `procesador`, `ghz`, `ram`, `direccion_mac`, `mac_wifi`, `mac_ethernet`, `sistema_op`, `fecha_compra`, `folio_factura`, `inicio_garantia`, `fin_garantia`, `garantia`, `renovacion_equipo`, `usuario_equipo`, `contrasena`, `office`, `serie_office`, `clave_candado`, `gds`, `correo`, `correo_oficial_vw`, `correo_oficial_seat`, `extension`, `compra`, `proveedor`, `antivirus`, `dia_respaldo`, `hora_respaldo`, `no_break`, `modelo_nobreak`, `serie_nobreak`, `expediente_completo`, `columna1`, `actualizado_en`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `garantia2`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `fabricante`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `almacenamiento`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`, `ip`) VALUES (1, 'Servicio', 'Gerente Servicio', 'Oswaldo Pineda', 'MX38080VC0045', 'Baja', 'Laptop', 'si', 'no', 'QWERGTREW', '', 'core i5 1325525', 2.15, 16, '35:58:49:19:14', '35:58:49:19:14', '35:58:49:19:14', 'Windows ', '29 Agosto 2025', '', '29 Agosto 2025', '29 Agosto 2025', NULL, '29 Agosto 2028', NULL, 'GEse5894', '', '', 'N/A', '7.1.0.1 A', 'gservicio@divolavilla.com', 'gservicio@divolavilla.com', '', 7004, '', 'Lenovo', 'Cylance ', 'Miercoles', '18:00', 12345, 'koblence ', '123456543253', 'si', NULL, '2026-09-17 23:35:35', NULL, NULL, NULL, 'ok', '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `inv_equipos_corp` (137 columnas)
+-- Estructura para la tabla `inv_equipos_corp` (137 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_equipos_corp`;
 CREATE TABLE `inv_equipos_corp` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -759,10 +844,10 @@ CREATE TABLE `inv_equipos_corp` (
   `mac_wifi` TEXT NULL,
   `mac_ethernet` TEXT NULL,
   `sistema_op` TEXT NULL,
-  `fecha_compra` VARCHAR(50) NULL,
+  `fecha_compra` DATE NULL,
   `folio_factura` TEXT NULL,
-  `inicio_garantia` VARCHAR(50) NULL,
-  `fin_garantia` VARCHAR(50) NULL,
+  `inicio_garantia` DATE NULL,
+  `fin_garantia` DATE NULL,
   `garantia` TEXT NULL,
   `renovacion_equipo` TEXT NULL,
   `usuario_equipo` TEXT NULL,
@@ -881,9 +966,8 @@ CREATE TABLE `inv_equipos_corp` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `inv_equipos_vw` (170 columnas)
+-- Estructura para la tabla `inv_equipos_vw` (170 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_equipos_vw`;
 CREATE TABLE `inv_equipos_vw` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -904,10 +988,10 @@ CREATE TABLE `inv_equipos_vw` (
   `mac_wifi` TEXT NULL,
   `mac_ethernet` TEXT NULL,
   `sistema_op` TEXT NULL,
-  `fecha_compra` VARCHAR(50) NULL,
+  `fecha_compra` DATE NULL,
   `folio_factura` TEXT NULL,
-  `inicio_garantia` VARCHAR(50) NULL,
-  `fin_garantia` VARCHAR(50) NULL,
+  `inicio_garantia` DATE NULL,
+  `fin_garantia` DATE NULL,
   `garantia2` TEXT NULL,
   `renovacion_equipo` TEXT NULL,
   `usuario_equipo_dominio` TEXT NULL,
@@ -1064,9 +1148,8 @@ INSERT INTO `inv_equipos_vw` (`id`, `departamento`, `puesto`, `usuario`, `nombre
 INSERT INTO `inv_equipos_vw` (`id`, `departamento`, `puesto`, `usuario`, `nombre_equipo`, `estado`, `tipo_equipo`, `expediente_completo`, `dominio`, `logmein`, `serie`, `dd`, `procesador`, `ghz`, `ram`, `direccion_mac`, `mac_wifi`, `mac_ethernet`, `sistema_op`, `fecha_compra`, `folio_factura`, `inicio_garantia`, `fin_garantia`, `garantia2`, `renovacion_equipo`, `usuario_equipo_dominio`, `contrasena`, `office`, `serie_office`, `clave_candado`, `gds`, `por_usuario`, `equipo`, `remoto`, `usuario_gds`, `correo`, `correo_oficial_vw`, `correo_oficial_seat`, `extension`, `power_pb`, `contrasena_pb`, `poc`, `contrasena_poc`, `msqp`, `contrasena_msqp`, `grp`, `contrasena_grp`, `etka`, `contrasena_etka`, `facebook`, `contrasena_facebook`, `instagram`, `contrasena_instagram`, `wish`, `contrasena_wish`, `marketing_cloud`, `contrasena_marketing_cloud`, `sales_cloud_force`, `contrasena_sales_cloud_force`, `pagina_la_villa`, `contrasena_pagina_la_villa`, `urban_science`, `contrasena_urban_science`, `canva`, `contrasena_canva`, `cuenta_integral`, `contrasena_cuenta_integral`, `compra`, `proveedor`, `antivirus`, `dia_respaldo`, `hora_respaldo`, `no_break`, `modelo_nobreak`, `serie_nobreak`, `columna1`, `columna2`, `actualizado_en`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `garantia`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `fabricante`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `almacenamiento`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`, `ip`, `switch_nombre`) VALUES (5, '', '', '', '', '', '', '', '', '', '', '', '', '', '', NULL, '', '', '', '', '', '', '', '', '', NULL, '', '', '', '', '', NULL, NULL, '', '', '', NULL, NULL, '', '', '', '', '', '', '', '', '', '', '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '', '', '', '', '', '', '', '', NULL, NULL, '2026-09-21 19:49:14', '', '', '', NULL, NULL, '', '', '', NULL, NULL, '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `inv_licencias_office` (109 columnas)
+-- Estructura para la tabla `inv_licencias_office` (109 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_licencias_office`;
 CREATE TABLE `inv_licencias_office` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `licencia` TEXT NULL,
@@ -1180,9 +1263,8 @@ CREATE TABLE `inv_licencias_office` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `inv_monitores` (107 columnas)
+-- Estructura para la tabla `inv_monitores` (107 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_monitores`;
 CREATE TABLE `inv_monitores` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -1300,9 +1382,8 @@ INSERT INTO `inv_monitores` (`id`, `departamento`, `puesto`, `nombre`, `monitor`
 INSERT INTO `inv_monitores` (`id`, `departamento`, `puesto`, `nombre`, `monitor`, `pulgadas`, `serie`, `actualizado_en`, `garantia2`, `garantia`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `fabricante`, `folio_factura`, `mac_ethernet`, `mac_wifi`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `sistema_op`, `procesador`, `ram`, `almacenamiento`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `proveedor`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`, `ip`) VALUES (6, 'Ventas', NULL, NULL, NULL, NULL, '3359P100735', '2026-09-23 16:11:47', NULL, NULL, NULL, NULL, NULL, NULL, NULL, 12, 12, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Pool de Ventas ', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'GCPO', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'RICOH', 'IM 430', '2026-09-01', 12323, 'admin', 1234, 'admin', 1234, '192.168.26.20');
 
 -- --------------------------------------------------------
--- Tabla: `inv_nobreak_baja` (110 columnas)
+-- Estructura para la tabla `inv_nobreak_baja` (110 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_nobreak_baja`;
 CREATE TABLE `inv_nobreak_baja` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -1417,9 +1498,8 @@ CREATE TABLE `inv_nobreak_baja` (
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- Tabla: `inv_site_vw` (112 columnas)
+-- Estructura para la tabla `inv_site_vw` (112 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_site_vw`;
 CREATE TABLE `inv_site_vw` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `departamento` TEXT NULL,
@@ -1430,7 +1510,7 @@ CREATE TABLE `inv_site_vw` (
   `equipo` TEXT NULL,
   `modelo` TEXT NULL,
   `serie` TEXT NULL,
-  `fecha_compra` VARCHAR(50) NULL,
+  `fecha_compra` DATE NULL,
   `folio_factura` TEXT NULL,
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `garantia2` TEXT NULL,
@@ -1549,9 +1629,8 @@ INSERT INTO `inv_site_vw` (`id`, `departamento`, `puesto`, `usuario`, `nombre_eq
 INSERT INTO `inv_site_vw` (`id`, `departamento`, `puesto`, `usuario`, `nombre_equipo`, `estado`, `equipo`, `modelo`, `serie`, `fecha_compra`, `folio_factura`, `actualizado_en`, `garantia2`, `garantia`, `contrasena_remoto`, `contrasena_gds`, `correo_oficial_planta`, `motivo_baja`, `puerto_patch_panel`, `puerto_sw`, `numero_nodo`, `factura_url`, `responsiva_url`, `costo`, `foto_equipo`, `dvr_vinculado`, `tipo_registro`, `dias_grabacion`, `usuario_dvr`, `numero_discos`, `canal_analogico`, `canal_ip`, `ubicacion`, `foto_vista_camara`, `subtipo_camara`, `fabricante`, `mac_ethernet`, `mac_wifi`, `cantidad_puertos`, `velocidad_puertos`, `tipo_switch`, `firmware_version`, `posicion_rack`, `sistema_op`, `procesador`, `ram`, `almacenamiento`, `cantidad_discos`, `tipo_servidor`, `funcion_servicio`, `ambiente`, `criticidad`, `bahias_nas`, `capacidad_disco_ind`, `capacidad_disponible`, `config_raid`, `tipo_discos`, `protocolos_nas`, `proveedor`, `tipo_enlace`, `ancho_banda`, `simetria_enlace`, `tipo_conexion`, `numero_contrato`, `numero_cuenta`, `circuit_id`, `soporte_contacto`, `ip_publica`, `ip_local`, `unifi_os_ver`, `controller_ver`, `velocidad_enlace`, `ssids`, `vlans`, `poe`, `controlador_ap`, `capacidad_va`, `capacidad_w`, `tipo_ups`, `voltaje_entrada`, `voltaje_salida`, `cant_baterias`, `specs_baterias`, `fecha_bateria`, `autonomia`, `imei_1`, `imei_2`, `numero_telefonico`, `color`, `accesorios`, `fecha_asignacion`, `tiene_plan_celular`, `vencimiento_plan`, `proveedor_plan`, `numero_contrato_plan`, `estado_fisico`, `tamano_pantalla`, `resolucion`, `subtipo_dispositivo`, `especificaciones`, `observaciones`, `marca`, `ip`, `contrasena`, `modelo_exacto`, `fecha_adquisicion`, `contrato`, `usuario_impresora`, `contrasena_impresora`, `usuario_impresora_web`, `contrasena_impresora_web`, `switch_nombre`) VALUES (11, 'Sistemas', NULL, '', '', '', NULL, '', '', '', '', '2026-09-21 19:56:00', NULL, '', NULL, NULL, NULL, NULL, NULL, '', NULL, NULL, NULL, '', NULL, NULL, 'UPS', NULL, NULL, NULL, NULL, NULL, '', NULL, NULL, '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '', '', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
--- Tabla: `inv_telefonos_poe` (33 columnas)
+-- Estructura para la tabla `inv_telefonos_poe` (33 columnas)
 -- --------------------------------------------------------
-DROP TABLE IF EXISTS `inv_telefonos_poe`;
 CREATE TABLE `inv_telefonos_poe` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
   `extension` TEXT NULL,
@@ -1590,82 +1669,6 @@ CREATE TABLE `inv_telefonos_poe` (
 
 -- Datos para la tabla `inv_telefonos_poe` (1 registros)
 INSERT INTO `inv_telefonos_poe` (`id`, `extension`, `usuario`, `departamento`, `puesto`, `ubicacion`, `estado`, `marca`, `modelo`, `serie`, `mac`, `ip`, `tipo_poe`, `numero_nodo`, `puerto_patch_panel`, `puerto_sw`, `switch_nombre`, `vlan`, `servidor_sip`, `contrasena_web`, `costo`, `fecha_compra`, `folio_factura`, `proveedor`, `observaciones`, `foto_equipo`, `actualizado_en`, `area`, `numero_telefonico`, `tipo_licencia`, `correo`, `portabilidad`, `factura_url`) VALUES (2, 8005, 'Alejandro Tejeda', NULL, NULL, NULL, 'Activo', NULL, 'poly v311', 'sdjsjndfdf322222', '33:33:33:33:89', '192.1698.26.123', '802.3af PoE', 50, NULL, 'sw 2 / Puerto 41', '', NULL, NULL, NULL, NULL, NULL, 'aq123311', NULL, NULL, 'uploads/equipos/foto_inv_telefonos_poe_2_1790380709.png', '2026-09-25 23:57:38', 'Ventas', 5512342469, 'Estándar ', 'gservicio@divolavilla.com', 'si', NULL);
-
--- --------------------------------------------------------
--- Tabla: `modulos` (8 columnas)
--- --------------------------------------------------------
-DROP TABLE IF EXISTS `modulos`;
-CREATE TABLE `modulos` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `clave` TEXT NULL,
-  `nombre` TEXT NULL,
-  `descripcion` TEXT NULL,
-  `icono` TEXT NULL,
-  `orden` INT DEFAULT 0,
-  `estatus` INT DEFAULT 1,
-  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY `uq_modulos_clave` (`clave`(50))
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Datos para la tabla `modulos` (6 registros)
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (1, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos', 'bi-people-fill', 1, 1, '2026-09-17 21:46:53');
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (2, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos', 'bi-file-earmark-bar-graph', 2, 1, '2026-09-17 21:46:53');
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (3, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1, '2026-09-17 21:46:53');
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (4, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas', 'bi-phone-fill', 4, 1, '2026-09-17 21:46:53');
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (5, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo', 'bi-key-fill', 5, 1, '2026-09-17 21:46:53');
-INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES (6, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks y cableado', 'bi-hdd-rack-fill', 6, 1, '2026-09-17 21:46:53');
-
--- --------------------------------------------------------
--- Tabla: `usuario_permisos` (9 columnas)
--- --------------------------------------------------------
-DROP TABLE IF EXISTS `usuario_permisos`;
-CREATE TABLE `usuario_permisos` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `usuario_id` INT NULL,
-  `modulo_clave` TEXT NULL,
-  `puede_ver` INT DEFAULT 1,
-  `puede_crear` INT DEFAULT 1,
-  `puede_editar` INT DEFAULT 1,
-  `puede_eliminar` INT DEFAULT 1,
-  `puede_exportar` INT DEFAULT 1,
-  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY `uq_usuario_permiso` (`usuario_id`, `modulo_clave`(50))
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Datos para la tabla `usuario_permisos` (6 registros)
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (1, 549, 'usuarios', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (2, 549, 'ordenes_servicio', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (3, 549, 'equipos', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (4, 549, 'celulares', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (5, 549, 'licencias', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-INSERT INTO `usuario_permisos` (`id`, `usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`, `actualizado_en`) VALUES (6, 549, 'infraestructura', '0', '0', '0', '0', '0', '2026-09-19 15:58:15');
-
--- --------------------------------------------------------
--- Tabla: `usuarios` (14 columnas)
--- --------------------------------------------------------
-DROP TABLE IF EXISTS `usuarios`;
-CREATE TABLE `usuarios` (
-  `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `usuario` TEXT NULL,
-  `nombre` TEXT NULL,
-  `email` TEXT NULL,
-  `password` TEXT NULL,
-  `agencia` TEXT NULL,
-  `rol` TEXT NULL,
-  `activo` INT DEFAULT 1,
-  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `acceso_portal` INT DEFAULT 1,
-  `area` TEXT NULL,
-  `puesto` TEXT NULL,
-  `telefono` TEXT NULL,
-  `foto_url` TEXT NULL,
-  UNIQUE KEY `uq_usuarios_usuario` (`usuario`(50))
-) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Datos para la tabla `usuarios` (3 registros)
-INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (1, 'admin', 'Administrador Central', 'admin@grupohuerta.mx', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'DIVOL LA VILLA', 'SuperAdmin', 1, '2026-09-17 21:46:53', 1, NULL, NULL, NULL, NULL);
-INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (2, 'sistemas', 'Sistemas Grupo Huerta', 'sistemas@grupohuerta.mx', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'DIVOL LA VILLA', 'Admin', 1, '2026-09-17 21:46:53', 1, NULL, NULL, NULL, NULL);
-INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `creado_en`, `acceso_portal`, `area`, `puesto`, `telefono`, `foto_url`) VALUES (549, 'gcomercial@divolavilla.com', 'Alejandro Tejeda', 'gcomercial@divolavilla.com', '$2y$10$3xmaloYrtHAFjcgAZNMVk.zT6EkvLV6JVrEfesK6VQzObwsHWnb.2', 'DIVOL LA VILLA', 'Usuario', 1, '2026-09-18 21:47:46', 1, 'Ventas', 'Gerente Comercial', 5512121212, 'uploads/usuarios/usr_549_1789834534.png');
 
 SET FOREIGN_KEY_CHECKS = 1;
 -- FIN DEL RESPALDO COMPLETO
