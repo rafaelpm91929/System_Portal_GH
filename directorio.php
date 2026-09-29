@@ -598,40 +598,56 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
         }
 
         .directory-table-container {
-            background: #0d1e36;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #0b1a30;
+            border: 1px solid rgba(56, 189, 248, 0.2);
             border-radius: 18px;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5);
         }
 
         .table-custom {
             margin-bottom: 0;
-            color: #ffffff;
+            color: #ffffff !important;
             width: 100%;
+            --bs-table-bg: transparent !important;
+            --bs-table-accent-bg: transparent !important;
+            --bs-table-striped-bg: transparent !important;
+            --bs-table-hover-bg: rgba(56, 189, 248, 0.08) !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
         }
         .table-custom thead th {
-            background: rgba(14, 36, 64, 0.95);
-            color: #94a3b8;
-            font-size: 0.78rem;
+            background: #08162b !important;
+            color: #38bdf8 !important;
+            font-size: 0.8rem;
             text-transform: uppercase;
             letter-spacing: 1px;
             font-weight: 700;
             padding: 16px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            border-bottom: 2px solid rgba(56, 189, 248, 0.3) !important;
             white-space: nowrap;
         }
         .table-custom tbody tr {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background 0.15s ease;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+            transition: all 0.15s ease;
         }
-        .table-custom tbody tr:hover {
-            background: rgba(255, 255, 255, 0.035);
+        .table-custom tbody tr:nth-child(odd) td {
+            background-color: #0b1c34 !important;
+            color: #ffffff !important;
+        }
+        .table-custom tbody tr:nth-child(even) td {
+            background-color: #0e223f !important;
+            color: #ffffff !important;
+        }
+        .table-custom tbody tr:hover td {
+            background-color: #14325c !important;
+            color: #ffffff !important;
         }
         .table-custom tbody td {
             padding: 16px 20px;
             vertical-align: middle;
             font-size: 0.92rem;
+            box-shadow: none !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
         }
 
         .avatar-circle {
@@ -647,7 +663,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
             color: #ffffff;
             flex-shrink: 0;
             overflow: hidden;
-            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+            border: 1.5px solid rgba(255, 255, 255, 0.2);
         }
         .avatar-circle img {
             width: 100%;
@@ -657,46 +674,52 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
 
         .avatar-dept {
             background: linear-gradient(135deg, #0284c7, #2563eb) !important;
+            border-color: rgba(56, 189, 248, 0.4) !important;
         }
 
         .ext-badge {
-            background: rgba(37, 99, 235, 0.15);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            color: #60a5fa;
-            border-radius: 8px;
-            padding: 5px 12px;
-            font-family: 'Consolas', monospace;
-            font-weight: 700;
+            background: rgba(37, 99, 235, 0.28);
+            border: 1px solid rgba(96, 165, 250, 0.5);
+            color: #93c5fd;
+            border-radius: 10px;
+            padding: 6px 14px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-weight: 800;
             font-size: 0.95rem;
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
         }
 
         .ext-badge-empty {
-            background: rgba(234, 179, 8, 0.1);
-            border: 1px dashed rgba(234, 179, 8, 0.3);
-            color: #fde047;
-            font-size: 0.78rem;
-            padding: 4px 10px;
+            background: rgba(234, 179, 8, 0.14);
+            border: 1px dashed rgba(250, 204, 21, 0.45);
+            color: #facc15;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 5px 12px;
             border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
         }
 
         .area-tag {
-            font-size: 0.75rem;
+            font-size: 0.76rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 4px 10px;
-            border-radius: 6px;
+            letter-spacing: 0.6px;
+            padding: 5px 12px;
+            border-radius: 8px;
             display: inline-block;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
         }
-        .area-ventas { background: rgba(59, 130, 246, 0.18); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
-        .area-servicio { background: rgba(34, 197, 94, 0.18); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3); }
-        .area-refacciones { background: rgba(249, 115, 22, 0.18); color: #fdba74; border: 1px solid rgba(249, 115, 22, 0.3); }
-        .area-administracion { background: rgba(168, 85, 247, 0.18); color: #d8b4fe; border: 1px solid rgba(168, 85, 247, 0.3); }
-        .area-sistemas { background: rgba(6, 182, 212, 0.18); color: #67e8f9; border: 1px solid rgba(6, 182, 212, 0.3); }
-        .area-default { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.25); }
+        .area-ventas { background: rgba(37, 99, 235, 0.28); color: #93c5fd; border: 1px solid rgba(96, 165, 250, 0.5); }
+        .area-servicio { background: rgba(34, 197, 94, 0.28); color: #86efac; border: 1px solid rgba(74, 222, 128, 0.5); }
+        .area-refacciones { background: rgba(249, 115, 22, 0.28); color: #fdba74; border: 1px solid rgba(251, 146, 60, 0.5); }
+        .area-administracion { background: rgba(168, 85, 247, 0.28); color: #d8b4fe; border: 1px solid rgba(192, 132, 252, 0.5); }
+        .area-sistemas { background: rgba(6, 182, 212, 0.28); color: #67e8f9; border: 1px solid rgba(34, 211, 238, 0.5); }
+        .area-default { background: rgba(148, 163, 184, 0.22); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.4); }
 
         .btn-action-icon {
             width: 32px;
@@ -705,26 +728,50 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #94a3b8;
-            transition: all 0.15s;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            color: #cbd5e1;
+            transition: all 0.15s ease;
             cursor: pointer;
         }
         .btn-action-icon:hover {
-            background: rgba(219, 39, 119, 0.2);
-            border-color: #db2777;
+            background: rgba(56, 189, 248, 0.25);
+            border-color: #38bdf8;
             color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        .btn-asignar-pass {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #cbd5e1;
+            font-size: 0.82rem;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .btn-asignar-pass:hover {
+            background: rgba(234, 179, 8, 0.22);
+            border-color: #facc15;
+            color: #fef08a;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(234, 179, 8, 0.25);
         }
 
         .password-container {
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            background: rgba(0, 0, 0, 0.25);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #061120;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 8px;
             padding: 4px 8px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
         }
 
         /* Estilos de Impresión */
@@ -1065,9 +1112,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
                                                 <i class="bi bi-pencil" style="font-size: 0.72rem;"></i>
                                             </button>
                                         </div>
-                                    <?php else: ?>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-2.5 py-0.5 small text-secondary border-opacity-25" onclick="abrirModalGestionarPassword(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Asignar contraseña de correo">
-                                            <i class="bi bi-key me-1"></i> Asignar Pass
+                                        <button type="button" class="btn-asignar-pass" onclick="abrirModalGestionarPassword(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Asignar contraseña de correo">
+                                            <i class="bi bi-key-fill text-warning"></i> Asignar Pass
                                         </button>
                                     <?php endif; ?>
                                 </td>
