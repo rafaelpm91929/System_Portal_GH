@@ -1,5 +1,8 @@
 <?php
 session_start();
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
 
@@ -1614,6 +1617,24 @@ function renderBadgeTipoSite($tipo) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Definición temprana garantizada para eventos onclick en la tabla
+        window.abrirExpedienteSiNoEsBoton = function(event, reg) {
+            if (event && event.target && event.target.closest('button, a, select, input, form, .btn, .form-check-input')) {
+                return;
+            }
+            if (typeof window.verExpedienteCompleto === 'function') {
+                window.verExpedienteCompleto(reg);
+            } else {
+                console.warn('Cargando expediente...');
+                setTimeout(function() {
+                    if (typeof window.verExpedienteCompleto === 'function') {
+                        window.verExpedienteCompleto(reg);
+                    }
+                }, 200);
+            }
+        };
+    </script>
     <style>
         body {
             background-color: #040d1a;
@@ -5109,18 +5130,18 @@ function renderBadgeTipoSite($tipo) {
     function inicializarGraficasEquipos() {
         if (typeof Chart === 'undefined') return;
 
-        const labelSecciones = <?php echo $jsonSeccionesLabels; ?>;
-        const countSecciones = <?php echo $jsonSeccionesCounts; ?>;
+        const labelSecciones = <?php echo !empty($jsonSeccionesLabels) ? $jsonSeccionesLabels : '[]'; ?>;
+        const countSecciones = <?php echo !empty($jsonSeccionesCounts) ? $jsonSeccionesCounts : '[]'; ?>;
 
-        const labelAreas = <?php echo $jsonAreasLabels; ?>;
-        const countAreas = <?php echo $jsonAreasCounts; ?>;
-        const costAreas  = <?php echo $jsonAreasCosts; ?>;
+        const labelAreas = <?php echo !empty($jsonAreasLabels) ? $jsonAreasLabels : '[]'; ?>;
+        const countAreas = <?php echo !empty($jsonAreasCounts) ? $jsonAreasCounts : '[]'; ?>;
+        const costAreas  = <?php echo !empty($jsonAreasCosts) ? $jsonAreasCosts : '[]'; ?>;
 
-        const labelEstatus = <?php echo $jsonEstatusRenovLabels; ?>;
-        const countEstatus = <?php echo $jsonEstatusRenovCounts; ?>;
+        const labelEstatus = <?php echo !empty($jsonEstatusRenovLabels) ? $jsonEstatusRenovLabels : '[]'; ?>;
+        const countEstatus = <?php echo !empty($jsonEstatusRenovCounts) ? $jsonEstatusRenovCounts : '[]'; ?>;
 
-        const labelRam = <?php echo $jsonRamLabels; ?>;
-        const countRam = <?php echo $jsonRamCounts; ?>;
+        const labelRam = <?php echo !empty($jsonRamLabels) ? $jsonRamLabels : '[]'; ?>;
+        const countRam = <?php echo !empty($jsonRamCounts) ? $jsonRamCounts : '[]'; ?>;
 
         // Estilos y Opciones Comunes para Tema Oscuro
         const darkGridOptions = {
