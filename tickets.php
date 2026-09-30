@@ -35,11 +35,16 @@ if (!function_exists('normalizarAgencia')) {
     }
 }
 
-// Protección de Sesión
+// Protección de Sesión y Control de Acceso Estricto
 if (!isset($_SESSION['usuario_id'])) {
     header("Location: login.php");
     exit();
 }
+
+if ($pdo) {
+    cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
+}
+requerirPermiso('tickets', 'puede_ver');
 
 // Cargar datos de usuario
 $usuarioId = $_SESSION['usuario_id'];

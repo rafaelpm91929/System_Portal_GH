@@ -1,14 +1,20 @@
 <?php
 session_start();
 
-// Protección de Sesión
+require_once 'conexion.php';
+require_once 'permisos_helper.php';
+include_once 'config_agencias.php';
+
+// Protección de Sesión y Control de Acceso Estricto
 if (!isset($_SESSION['usuario_id'])) {
     header("Location: login.php");
     exit();
 }
 
-include_once 'config_agencias.php';
-include_once 'permisos_helper.php';
+if ($pdo) {
+    cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
+}
+requerirPermiso('agencias', 'puede_ver');
 
 $agencia_key = $_GET['agencia'] ?? 'divolavilla';
 if (!isset($CATALOGO_AGENCIAS[$agencia_key])) {

@@ -59,12 +59,13 @@ function asegurarTablasPermisos($pdo) {
         $pdo->exec("
         INSERT INTO `modulos` (`clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`) VALUES
         ('usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos del portal', 'bi-people-fill', 1, 1),
-        ('ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 2, 1),
-        ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1),
-        ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 4, 1),
-        ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 5, 1),
-        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
-        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 7, 1)
+        ('agencias', 'Agencias (Catálogo cPanel)', 'Monitoreo y administración de sucursales cPanel', 'bi-buildings-fill', 2, 1),
+        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 3, 1),
+        ('ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 1),
+        ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 5, 1),
+        ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 6, 1),
+        ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 7, 1),
+        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 8, 1)
         ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
 
     } catch (Throwable $e) {
@@ -113,28 +114,30 @@ function tienePermiso($modulo_clave, $accion = 'puede_ver') {
         return false;
     }
 
-    // Los roles SuperAdmin y Admin tienen permiso total implícito
-    $rol = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'Usuario';
-    if (in_array(strtolower($rol), ['superadmin', 'admin'])) {
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+
+    // SuperAdmin tiene acceso total a todos los módulos
+    if ($rol === 'superadmin') {
         return true;
     }
 
-    // Para el módulo de gestión de usuarios, solo Admin o SuperAdmin pueden ingresar
-    if ($modulo_clave === 'usuarios') {
-        return false;
-    }
-
     // Verificar en la matriz de permisos de la sesión
-    $permisos = $_SESSION['permisos'][$modulo_clave] ?? null;
-    if (!$permisos) {
-        return false;
+    $permisos = $_SESSION['permisos'] ?? [];
+    if (isset($permisos[$modulo_clave])) {
+        return !empty($permisos[$modulo_clave][$accion]);
     }
 
-    return !empty($permisos[$accion]);
+    // Si es Admin pero aún no tiene configuración explícita guardada
+    if ($rol === 'admin') {
+        return true;
+    }
+
+    // Si es Usuario y no tiene el permiso explícito: DENEGADO
+    return false;
 }
 
 /**
- * Exige un permiso o bloquea la ejecución con mensaje de Acceso Denegado
+ * Exige un permiso o bloquea la ejecución con mensaje de Acceso Denegado (403)
  */
 function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
     if (!tienePermiso($modulo_clave, $accion)) {
@@ -143,13 +146,54 @@ function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
         <html lang="es">
         <head>
             <meta charset="UTF-8">
-            <title>Acceso Denegado - 403</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Acceso Restringido - 403 Forbidden</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+            <style>
+                body {
+                    background-color: #040d1a;
+                    background-image: radial-gradient(#0b223e 1px, transparent 1px);
+                    background-size: 28px 28px;
+                    color: #ffffff;
+                    font-family: \'Segoe UI\', system-ui, sans-serif;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .error-card {
+                    background: #0a192e;
+                    border: 1px solid rgba(239, 68, 68, 0.4);
+                    border-radius: 24px;
+                    padding: 45px 35px;
+                    max-width: 520px;
+                    text-align: center;
+                    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+                }
+            </style>
         </head>
-        <body class="bg-dark text-white d-flex align-items-center justify-content-center vh-100 text-center">
-            <div class="card bg-secondary bg-opacity-25 border-danger p-5 rounded-4 shadow-lg text-white" style="max-width: 500px;">
-                <a href="menu.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
+        <body>
+            <div class="error-card">
+                <div class="mb-3">
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-danger bg-opacity-15 text-danger p-3" style="width: 86px; height: 86px; font-size: 2.8rem;">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </span>
+                </div>
+                <h3 class="fw-bold text-white mb-2">Acceso No Autorizado (403)</h3>
+                <div class="badge bg-danger bg-opacity-25 text-danger border border-danger px-3 py-1 mb-3">Módulo: ' . htmlspecialchars($modulo_clave) . '</div>
+                <p class="text-secondary small mb-4">
+                    Tu usuario no tiene permisos asignados para ver o utilizar este módulo. Si requieres acceso para tus funciones, solicita la autorización al <strong>Administrador de Sistemas</strong> en Gestión de Usuarios.
+                </p>
+                <div class="d-grid gap-2">
+                    <a href="menu.php" class="btn btn-primary rounded-3 py-2 fw-semibold">
+                        <i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal
+                    </a>
+                    <a href="logout.php" class="btn btn-outline-secondary rounded-3 py-2 text-white">
+                        <i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión
+                    </a>
+                </div>
             </div>
         </body>
         </html>';

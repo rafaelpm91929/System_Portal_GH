@@ -1,11 +1,19 @@
 <?php
 session_start();
 
-// Protección de Sesión
+require_once 'conexion.php';
+require_once 'permisos_helper.php';
+
+// Protección de Sesión y Control de Acceso Estricto
 if (!isset($_SESSION['usuario_id'])) {
     header("Location: login.php");
     exit();
 }
+
+if ($pdo) {
+    cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
+}
+requerirPermiso('agencias', 'puede_ver');
 
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? 'SuperAdmin Grupo Huerta';
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';

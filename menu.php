@@ -7,9 +7,24 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+require_once 'conexion.php';
+require_once 'permisos_helper.php';
+
+// Refrescar permisos actualizados en sesión
+if ($pdo && isset($_SESSION['usuario_id'])) {
+    cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
+}
+
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? 'SuperAdmin Grupo Huerta';
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
 $rolUsuario = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'SuperAdmin';
+
+// Validación de permisos por módulo
+$puedeVerUsuarios = tienePermiso('usuarios', 'puede_ver');
+$puedeVerAgencias = tienePermiso('agencias', 'puede_ver');
+$puedeVerTickets  = tienePermiso('tickets', 'puede_ver');
+
+$totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -165,6 +180,16 @@ $rolUsuario = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'SuperAdmin';
             color: #ffffff;
             filter: brightness(1.15);
         }
+
+        .empty-modules-card {
+            background: #0a192e;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 22px;
+            padding: 50px 30px;
+            text-align: center;
+            max-width: 650px;
+            margin: 40px auto;
+        }
     </style>
 </head>
 <body>
@@ -190,75 +215,96 @@ $rolUsuario = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'SuperAdmin';
 <div class="header-section">
     <div class="master-badge"><i class="bi bi-shield-check"></i> DIRECCIÓN CENTRAL MAESTRA</div>
     <h1 class="header-title">Portal Dirección de Sistemas</h1>
-    <p class="header-desc">Selecciona el módulo correspondiente para la administración y operación de los servicios de Sistemas Grupo Huerta.</p>
+    <p class="header-desc">Módulos autorizados para tu perfil en los servicios de Sistemas Grupo Huerta.</p>
 </div>
 
-<!-- Contenedor con los 3 Módulos Exclusivos -->
+<!-- Contenedor con los Módulos Permitidos -->
 <div class="section-container">
 
-    <div class="main-modules-grid">
+    <?php if ($totalModulosVisibles > 0): ?>
+        <div class="main-modules-grid">
 
-        <!-- 1. GESTIÓN DE USUARIOS -->
-        <div class="main-module-card card-usuarios">
-            <span class="module-badge" style="background: rgba(37, 99, 235, 0.15); color: #60a5fa; border: 1px solid rgba(37, 99, 235, 0.3);">
-                <i class="bi bi-shield-lock-fill"></i> SEGURIDAD TI
-            </span>
+            <!-- 1. GESTIÓN DE USUARIOS -->
+            <?php if ($puedeVerUsuarios): ?>
+                <div class="main-module-card card-usuarios">
+                    <span class="module-badge" style="background: rgba(37, 99, 235, 0.15); color: #60a5fa; border: 1px solid rgba(37, 99, 235, 0.3);">
+                        <i class="bi bi-shield-lock-fill"></i> SEGURIDAD TI
+                    </span>
 
-            <div class="module-icon-box" style="background: rgba(37, 99, 235, 0.15); color: #3b82f6;">
-                <i class="bi bi-people-fill"></i>
-            </div>
+                    <div class="module-icon-box" style="background: rgba(37, 99, 235, 0.15); color: #3b82f6;">
+                        <i class="bi bi-people-fill"></i>
+                    </div>
 
-            <div class="module-title">Gestión de Usuarios</div>
-            <div class="module-desc">
-                Administración de cuentas, asignación de roles (SuperAdmin, Admin, Usuario), restablecimiento de contraseñas y control granular de permisos a módulos.
-            </div>
+                    <div class="module-title">Gestión de Usuarios</div>
+                    <div class="module-desc">
+                        Administración de cuentas, asignación de roles (SuperAdmin, Admin, Usuario), restablecimiento de contraseñas y control granular de permisos a módulos.
+                    </div>
 
-            <a href="usuarios.php" class="btn-module" style="background: #2563eb; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);">
-                Ingresar a Usuarios <i class="bi bi-arrow-right ms-1"></i>
+                    <a href="usuarios.php" class="btn-module" style="background: #2563eb; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);">
+                        Ingresar a Usuarios <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+
+            <!-- 2. AGENCIAS -->
+            <?php if ($puedeVerAgencias): ?>
+                <div class="main-module-card card-agencias">
+                    <span class="module-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
+                        <i class="bi bi-buildings-fill"></i> SUCURSALES
+                    </span>
+
+                    <div class="module-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+                        <i class="bi bi-buildings-fill"></i>
+                    </div>
+
+                    <div class="module-title">Agencias</div>
+                    <div class="module-desc">
+                        Catálogo de sucursales Grupo Huerta. Acceso y monitoreo de las bases de datos cPanel locales (VW Divol La Villa, Seat La Villa, Cupra Garage).
+                    </div>
+
+                    <a href="agencias.php" class="btn-module" style="background: #059669; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);">
+                        Ingresar a Agencias <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+
+            <!-- 3. TICKETS SOPORTE DIRECCIÓN SISTEMAS -->
+            <?php if ($puedeVerTickets): ?>
+                <div class="main-module-card card-tickets">
+                    <span class="module-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);">
+                        <i class="bi bi-headset"></i> SOPORTE TI
+                    </span>
+
+                    <div class="module-icon-box" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">
+                        <i class="bi bi-ticket-detailed-fill"></i>
+                    </div>
+
+                    <div class="module-title">Tickets</div>
+                    <div class="module-desc">
+                        Recepción, seguimiento y resolución de tickets de soporte para: Desarrollo, Cyberseguridad, Infraestructura, Redes Sociales, Auditoría y Corporativo.
+                    </div>
+
+                    <a href="tickets.php" class="btn-module" style="background: #0284c7; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);">
+                        Ingresar a Tickets <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+
+        </div>
+    <?php else: ?>
+        <!-- Mensaje cuando el usuario no tiene módulos asignados -->
+        <div class="empty-modules-card">
+            <i class="bi bi-shield-slash-fill text-warning display-4 mb-3 d-block"></i>
+            <h4 class="fw-bold text-white mb-2">Sin Módulos Asignados</h4>
+            <p class="text-secondary small mb-4">
+                Tu usuario está activo pero actualmente no tiene permisos de acceso a los módulos del portal. 
+                Por favor solicita a tu <strong>Administrador de Sistemas</strong> que configure tus permisos en Gestión de Usuarios.
+            </p>
+            <a href="logout.php" class="btn btn-outline-danger rounded-3 px-4">
+                <i class="bi bi-box-arrow-right me-1"></i> Cerrar Sesión
             </a>
         </div>
-
-        <!-- 2. AGENCIAS -->
-        <div class="main-module-card card-agencias">
-            <span class="module-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
-                <i class="bi bi-buildings-fill"></i> SUCURSALES
-            </span>
-
-            <div class="module-icon-box" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
-                <i class="bi bi-buildings-fill"></i>
-            </div>
-
-            <div class="module-title">Agencias</div>
-            <div class="module-desc">
-                Catálogo de sucursales Grupo Huerta. Acceso y monitoreo de las bases de datos cPanel locales (VW Divol La Villa, Seat La Villa, Cupra Garage).
-            </div>
-
-            <a href="agencias.php" class="btn-module" style="background: #059669; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);">
-                Ingresar a Agencias <i class="bi bi-arrow-right ms-1"></i>
-            </a>
-        </div>
-
-        <!-- 3. TICKETS SOPORTE DIRECCIÓN SISTEMAS -->
-        <div class="main-module-card card-tickets">
-            <span class="module-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3);">
-                <i class="bi bi-headset"></i> SOPORTE TI
-            </span>
-
-            <div class="module-icon-box" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">
-                <i class="bi bi-ticket-detailed-fill"></i>
-            </div>
-
-            <div class="module-title">Tickets</div>
-            <div class="module-desc">
-                Recepción, seguimiento y resolución de tickets de soporte para: Desarrollo, Cyberseguridad, Infraestructura, Redes Sociales, Auditoría y Corporativo.
-            </div>
-
-            <a href="tickets.php" class="btn-module" style="background: #0284c7; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);">
-                Ingresar a Tickets <i class="bi bi-arrow-right ms-1"></i>
-            </a>
-        </div>
-
-    </div>
+    <?php endif; ?>
 
 </div>
 
