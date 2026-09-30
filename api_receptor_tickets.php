@@ -100,6 +100,33 @@ elseif (isset($_FILES['archivo_adjunto']) && $_FILES['archivo_adjunto']['error']
 // 5. Generar Folio e Insertar en Base de Datos Central
 try {
     $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+
+    // Verificación anti-duplicados por recargas accidentales (últimos 60 segundos)
+    $sqlFechaCond = ($driver === 'sqlite') ? "creado_en >= datetime('now', '-60 seconds')" : "creado_en >= DATE_SUB(NOW(), INTERVAL 60 SECOND)";
+    $stmtDup = $pdo->prepare("
+        SELECT id, folio FROM tickets_soporte 
+        WHERE solicitante_agencia = :ag 
+          AND titulo = :tit 
+          AND area_sistemas = :area 
+          AND $sqlFechaCond
+        ORDER BY id DESC LIMIT 1
+    ");
+    $stmtDup->execute([':ag' => $agenciaNombre, ':tit' => $titulo, ':area' => $area]);
+    $dup = $stmtDup->fetch(PDO::FETCH_ASSOC);
+
+    if ($dup && !empty($dup['folio'])) {
+        echo json_encode([
+            'status'         => 'ok',
+            'mensaje'        => 'Ticket recibido previamente (duplicado detectado y prevenido).',
+            'ticket_id'      => $dup['id'],
+            'folio'          => $dup['folio'],
+            'agencia'        => $agenciaNombre,
+            'area_sistemas'  => $area,
+            'duplicado'      => true
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($driver === 'sqlite') {
         $countStmt = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
     } else {

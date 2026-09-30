@@ -51,8 +51,9 @@ $AREAS_SISTEMAS = [
     'CORPORATIVO'     => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)']
 ];
 
-$mensaje = '';
-$error = '';
+$mensaje = $_SESSION['flash_mensaje'] ?? '';
+$error = $_SESSION['flash_error'] ?? '';
+unset($_SESSION['flash_mensaje'], $_SESSION['flash_error']);
 
 // ====================================================
 // MANEJO DE ACCIONES POST (CREAR, EDITAR, ATENDER)
@@ -186,6 +187,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
         }
     }
+
+    // Patrón Post/Redirect/Get: Previene duplicados al recargar con F5
+    $_SESSION['flash_mensaje'] = $mensaje;
+    $_SESSION['flash_error'] = $error;
+    header("Location: tickets.php");
+    exit();
 }
 
 // ====================================================
