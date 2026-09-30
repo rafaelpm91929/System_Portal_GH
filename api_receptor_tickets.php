@@ -57,6 +57,9 @@ if (!$datos && !empty($_POST)) {
 }
 
 $agenciaNombre = trim($datos['agencia'] ?? ($datos['solicitante_agencia'] ?? 'Agencia Desconocida'));
+if (stripos($agenciaNombre, 'divol') !== false) {
+    $agenciaNombre = 'Divol La Villa';
+}
 $area = strtoupper(trim($datos['area_sistemas'] ?? ($datos['area'] ?? 'INFRAESTRUCTURA')));
 $titulo = trim($datos['titulo'] ?? '');
 $descripcion = trim($datos['descripcion'] ?? '');

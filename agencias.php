@@ -103,10 +103,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     if (empty($nombre) || empty($subdominio) || empty($token)) {
         $error = "Por favor completa los campos obligatorios: Nombre, Subdominio/URL y Token Secreto.";
     } else {
-        // Generar slug/identificador único
+        // Generar slug/identificador único y normalizar
         $idLimpio = preg_replace('/[^a-z0-9]/', '', strtolower($nombre));
         if (empty($idLimpio)) {
             $idLimpio = 'agencia_' . time();
+        }
+        if (strpos($idLimpio, 'divol') !== false || strpos(strtolower($subdominio), 'divol') !== false) {
+            $idLimpio = 'divolavilla';
+            $nombre = 'Divol La Villa';
         }
 
         $endpoint = 'https://' . $subdominio . '/sistemas/api_obtener_datos.php';
@@ -114,6 +118,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
         $custom = [];
         if (file_exists($archivoAgenciasCustom)) {
             $custom = json_decode(file_get_contents($archivoAgenciasCustom), true) ?: [];
+        }
+
+        // Si es Divol, limpiar variantes previas (ej. divollavilla) para mantener solo una
+        if ($idLimpio === 'divolavilla') {
+            foreach (array_keys($custom) as $k) {
+                if (strpos(strtolower($k), 'divol') !== false) {
+                    unset($custom[$k]);
+                }
+            }
         }
 
         $custom[$idLimpio] = [
@@ -142,8 +155,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
         $custom = json_decode(file_get_contents($archivoAgenciasCustom), true) ?: [];
         if (isset($custom[$eliminarId])) {
             unset($custom[$eliminarId]);
-            file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-            $mensaje = "La agencia personalizada ha sido eliminada del catálogo.";
+        }
+        // Si era variante de divol, remover también cualquier clave similar
+        if (strpos(strtolower($eliminarId), 'divol') !== false) {
+            foreach (array_keys($custom) as $k) {
+                if (strpos(strtolower($k), 'divol') !== false) {
+                    unset($custom[$k]);
+                }
+            }
+        }
+        file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $mensaje = "La agencia personalizada ha sido eliminada del catálogo.";
+    }
+}
+
+// Limpieza automática preventiva de duplicados si existe el archivo custom
+if (file_exists($archivoAgenciasCustom)) {
+    $rawCustom = json_decode(file_get_contents($archivoAgenciasCustom), true);
+    if (is_array($rawCustom)) {
+        $hayDuplicadosDivol = false;
+        $divolCount = 0;
+        foreach ($rawCustom as $k => $v) {
+            if (strpos(strtolower($k), 'divol') !== false) {
+                $divolCount++;
+            }
+        }
+        if ($divolCount > 1 || isset($rawCustom['divollavilla'])) {
+            $nuevoCustom = [];
+            foreach ($rawCustom as $k => $v) {
+                if (strpos(strtolower($k), 'divol') !== false) {
+                    $nuevoCustom['divolavilla'] = $v;
+                    $nuevoCustom['divolavilla']['id'] = 'divolavilla';
+                    $nuevoCustom['divolavilla']['nombre'] = 'Divol La Villa';
+                } else {
+                    $nuevoCustom[$k] = $v;
+                }
+            }
+            file_put_contents($archivoAgenciasCustom, json_encode($nuevoCustom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         }
     }
 }

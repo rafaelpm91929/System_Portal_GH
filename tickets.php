@@ -24,6 +24,17 @@ require_once 'permisos_helper.php';
 require_once 'excel_helper.php';
 include_once 'config_agencias.php';
 
+// Normalizador unificado de nombres de agencia
+if (!function_exists('normalizarAgencia')) {
+    function normalizarAgencia($nombre) {
+        $nombre = trim($nombre ?? '');
+        if (empty($nombre)) return 'Oficina Central Grupo Huerta';
+        if (stripos($nombre, 'divol') !== false) return 'Divol La Villa';
+        if (stripos($nombre, 'central') !== false) return 'Oficina Central Grupo Huerta';
+        return $nombre;
+    }
+}
+
 // Protección de Sesión
 if (!isset($_SESSION['usuario_id'])) {
     header("Location: login.php");
@@ -69,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $prioridad = trim($_POST['prioridad'] ?? 'Media');
         $solicitanteNombre = trim($_POST['solicitante_nombre'] ?? $nombreUsuario);
         $solicitanteEmail = trim($_POST['solicitante_email'] ?? '');
-        $solicitanteAgencia = trim($_POST['solicitante_agencia'] ?? 'VW Divol La Villa');
+        $solicitanteAgencia = normalizarAgencia(trim($_POST['solicitante_agencia'] ?? 'Divol La Villa'));
         $asignadoA = trim($_POST['asignado_a'] ?? '');
 
         if (empty($titulo) || empty($descripcion) || empty($area)) {
@@ -280,10 +291,11 @@ $totalResueltos = 0;
 $totalSinAsignar = 0;
 $conteoPorAgencia = [];
 
-// Inicializar conteos por cada agencia conectada
+// Inicializar conteos por cada agencia conectada (normalizadas y sin duplicados)
 if (!empty($CATALOGO_AGENCIAS)) {
     foreach ($CATALOGO_AGENCIAS as $ag) {
-        $conteoPorAgencia[$ag['nombre']] = 0;
+        $nomNorm = normalizarAgencia($ag['nombre'] ?? '');
+        $conteoPorAgencia[$nomNorm] = 0;
     }
 }
 $conteoPorAgencia['Oficina Central Grupo Huerta'] = 0;
@@ -308,7 +320,7 @@ if ($pdo) {
                 $totalSinAsignar++;
             }
 
-            $agNom = $t['solicitante_agencia'] ?? 'Oficina Central Grupo Huerta';
+            $agNom = normalizarAgencia($t['solicitante_agencia'] ?? 'Oficina Central Grupo Huerta');
             if (!isset($conteoPorAgencia[$agNom])) {
                 $conteoPorAgencia[$agNom] = 0;
             }
@@ -804,7 +816,7 @@ if ($pdo) {
                             $infoArea = $AREAS_SISTEMAS[$area] ?? ['nombre' => $area, 'icono' => 'bi-ticket-detailed', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.3)'];
                             $prio = ucfirst(strtolower($t['prioridad'] ?? 'Media'));
                             $estado = ucfirst(strtolower($t['estado'] ?? 'Abierto'));
-                            $agenciaTicket = $t['solicitante_agencia'] ?? 'Desconocida';
+                            $agenciaTicket = normalizarAgencia($t['solicitante_agencia'] ?? 'Desconocida');
                             $asignado = $t['asignado_a'] ?? '';
 
                             $prioClass = 'badge-prio-media';
