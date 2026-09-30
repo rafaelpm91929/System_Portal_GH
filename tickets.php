@@ -218,6 +218,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         ':notas'     => $notasResolucion,
                         ':id'        => $ticketId
                     ]);
+
+                    // Notificar a la agencia sucursal en tiempo real si tiene endpoint configurado
+                    try {
+                        $stmtTInfo = $pdo->prepare("SELECT folio, solicitante_agencia FROM tickets_soporte WHERE id = ?");
+                        $stmtTInfo->execute([$ticketId]);
+                        $tInfo = $stmtTInfo->fetch(PDO::FETCH_ASSOC);
+
+                        if ($tInfo && !empty($tInfo['solicitante_agencia'])) {
+                            $agKey = strpos(strtolower($tInfo['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
+                            $targetUrl = 'https://portal.divolavilla.com/sistemas/api_webhook_ticket.php';
+                            if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
+                                $targetUrl = str_replace('api_obtener_datos.php', 'api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
+                            }
+
+                            $payloadWebhook = json_encode([
+                                'token'            => 'GedasDivolavilla2026!',
+                                'folio'            => $tInfo['folio'],
+                                'estado'           => $nuevoEstado,
+                                'asignado_a'       => $asignadoA,
+                                'prioridad'        => $prioridad,
+                                'notas_resolucion' => $notasResolucion,
+                                'actualizado_en'   => date('Y-m-d H:i:s')
+                            ]);
+
+                            $chWh = curl_init($targetUrl);
+                            curl_setopt_array($chWh, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST           => true,
+                                CURLOPT_POSTFIELDS     => $payloadWebhook,
+                                CURLOPT_TIMEOUT        => 3,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_HTTPHEADER     => ['Content-Type: application/json']
+                            ]);
+                            @curl_exec($chWh);
+                            @curl_close($chWh);
+                        }
+                    } catch (Throwable $eWh) {}
+
                     $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
                 }
             } catch (Throwable $e) {

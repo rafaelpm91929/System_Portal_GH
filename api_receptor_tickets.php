@@ -56,6 +56,34 @@ if (!$datos && !empty($_POST)) {
     $datos = $_POST;
 }
 
+// Acción de consulta de estado por folios o agencia
+$accionReq = $datos['accion'] ?? ($_GET['accion'] ?? ($_POST['accion'] ?? ''));
+if ($accionReq === 'consultar' || $accionReq === 'consultar_estado' || isset($_GET['consultar'])) {
+    $foliosParam = $datos['folios'] ?? ($_POST['folios'] ?? ($_GET['folios'] ?? null));
+    $agenciaParam = trim($datos['agencia'] ?? ($_POST['agencia'] ?? ($_GET['agencia'] ?? '')));
+    $where = [];
+    $p = [];
+    if (!empty($foliosParam)) {
+        $arr = is_array($foliosParam) ? $foliosParam : array_filter(array_map('trim', explode(',', $foliosParam)));
+        if (!empty($arr)) {
+            $where[] = "folio IN (" . implode(',', array_fill(0, count($arr), '?')) . ")";
+            foreach ($arr as $x) $p[] = $x;
+        }
+    } elseif (!empty($agenciaParam)) {
+        $where[] = "LOWER(solicitante_agencia) LIKE ?";
+        $p[] = '%' . strtolower($agenciaParam) . '%';
+    }
+    $sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, creado_en, actualizado_en, solicitante_agencia FROM tickets_soporte";
+    if (!empty($where)) $sql .= " WHERE " . implode(' AND ', $where);
+    $sql .= " ORDER BY id DESC LIMIT 100";
+    try {
+        $stmtC = $pdo->prepare($sql);
+        $stmtC->execute($p);
+        echo json_encode(['status' => 'ok', 'tickets' => $stmtC->fetchAll(PDO::FETCH_ASSOC)], JSON_UNESCAPED_UNICODE);
+        exit;
+    } catch (Throwable $e) {}
+}
+
 $agenciaNombre = trim($datos['agencia'] ?? ($datos['solicitante_agencia'] ?? 'Agencia Desconocida'));
 if (stripos($agenciaNombre, 'divol') !== false) {
     $agenciaNombre = 'Divol La Villa';
