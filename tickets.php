@@ -167,21 +167,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $mensaje = "ℹ️ Ticket registrado en el portal de la agencia con Folio <strong>$folio</strong>.";
                 }
 
+                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+                $sqlFecha = ($driver === 'sqlite') ? "datetime('now', 'localtime')" : "NOW()";
+
                 $stmtIns = $pdo->prepare("
                     INSERT INTO tickets_soporte 
                     (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                    VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, $sqlFecha)
                 ");
-                
-                // Fallback para MySQL vs SQLite en la fecha
-                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                if ($driver !== 'sqlite') {
-                    $stmtIns = $pdo->prepare("
-                        INSERT INTO tickets_soporte 
-                        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
-                        VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, NOW())
-                    ");
-                }
 
                 $stmtIns->execute([
                     $folio,
