@@ -68,8 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 // Guardar permisos para cada módulo en usuario_permisos (Compatible con SQLite y MySQL)
                 if ($targetUserId > 0) {
-                    $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
-                    $modulosCatalog = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
+                    $modulosCatalog = array_column(obtenerCatalogoModulos($pdo), 'clave');
 
                     $stmtDel = $pdo->prepare("DELETE FROM usuario_permisos WHERE usuario_id = ?");
                     $stmtDel->execute([$targetUserId]);
@@ -116,9 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($target_user_id > 0) {
             try {
-                // Obtener todos los módulos activos del catálogo
-                $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
-                $modulosCatalog = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
+                // Obtener todos los módulos activos del catálogo garantizado
+                $modulosCatalog = array_column(obtenerCatalogoModulos($pdo), 'clave');
 
                 $stmtDel = $pdo->prepare("DELETE FROM usuario_permisos WHERE usuario_id = ?");
                 $stmtDel->execute([$target_user_id]);
@@ -172,9 +170,8 @@ if ($pdo) {
         $stmtU = $pdo->query("SELECT * FROM usuarios ORDER BY id DESC");
         $usuarios = $stmtU->fetchAll(PDO::FETCH_ASSOC);
 
-        // Obtener catálogo de módulos
-        $stmtM = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
-        $modulosCat = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+        // Obtener catálogo de módulos garantizado
+        $modulosCat = obtenerCatalogoModulos($pdo);
 
         // Obtener permisos existentes
         $stmtP = $pdo->query("SELECT * FROM usuario_permisos");
@@ -185,6 +182,10 @@ if ($pdo) {
     } catch (PDOException $e) {
         $error = "Error consultando datos: " . $e->getMessage();
     }
+}
+
+if (empty($modulosCat)) {
+    $modulosCat = obtenerCatalogoModulos($pdo);
 }
 ?>
 <!DOCTYPE html>
@@ -537,8 +538,8 @@ if ($pdo) {
                         <div class="row g-2" id="gridModulosUsuario">
                             <?php foreach ($modulosCat as $mod): ?>
                                 <div class="col-12 col-md-6 col-lg-3">
-                                    <div class="perm-module-card" id="card_mod_<?php echo $mod['clave']; ?>" onclick="toggleModuloCard('<?php echo $mod['clave']; ?>')">
-                                        <div class="d-flex align-items-center gap-2 overflow-hidden">
+                                    <label class="perm-module-card w-100" id="card_mod_<?php echo $mod['clave']; ?>" for="mod_check_<?php echo $mod['clave']; ?>">
+                                        <div class="d-flex align-items-center gap-2 overflow-hidden flex-grow-1">
                                             <div class="perm-module-icon bg-primary bg-opacity-20 text-info">
                                                 <i class="bi <?php echo $mod['icono']; ?>"></i>
                                             </div>
@@ -547,10 +548,10 @@ if ($pdo) {
                                                 <div class="text-secondary" style="font-size: 0.7rem; line-height: 1.2;"><?php echo htmlspecialchars($mod['descripcion']); ?></div>
                                             </div>
                                         </div>
-                                        <div class="form-check form-switch m-0 ms-2" onclick="event.stopPropagation()">
-                                            <input class="form-check-input mod-perm-check" type="checkbox" name="modulos_permitidos[]" value="<?php echo $mod['clave']; ?>" id="mod_check_<?php echo $mod['clave']; ?>" onchange="actualizarCardStyle('<?php echo $mod['clave']; ?>')">
+                                        <div class="form-check form-switch m-0 ms-2">
+                                            <input class="form-check-input mod-perm-check" type="checkbox" name="modulos_permitidos[]" value="<?php echo $mod['clave']; ?>" id="mod_check_<?php echo $mod['clave']; ?>" onchange="onModuloCheckboxChange('<?php echo $mod['clave']; ?>')">
                                         </div>
-                                    </div>
+                                    </label>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -647,9 +648,18 @@ if ($pdo) {
         }
     }
 
+    function onModuloCheckboxChange(modClave) {
+        const rol = document.getElementById('form_rol').value;
+        const cb = document.getElementById('mod_check_' + modClave);
+        if (rol === 'SuperAdmin' && cb) {
+            cb.checked = true; // SuperAdmin siempre tiene todos
+        }
+        actualizarCardStyle(modClave);
+    }
+
     function toggleModuloCard(modClave) {
         const rol = document.getElementById('form_rol').value;
-        if (rol === 'SuperAdmin') return; // Bloqueado en SuperAdmin
+        if (rol === 'SuperAdmin') return;
 
         const cb = document.getElementById('mod_check_' + modClave);
         if (cb) {

@@ -11,60 +11,100 @@ function asegurarTablasPermisos($pdo) {
     if (!$pdo) return;
 
     try {
-        // 1. Tabla usuarios
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `usuarios` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `usuario` VARCHAR(50) NOT NULL UNIQUE,
-          `nombre` VARCHAR(100) NOT NULL,
-          `email` VARCHAR(100) NOT NULL UNIQUE,
-          `password` VARCHAR(255) NOT NULL,
-          `agencia` VARCHAR(100) DEFAULT 'VW Divol La Villa',
-          `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
-          `activo` TINYINT(1) DEFAULT 1,
-          `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        $driver = '';
+        try {
+            $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        } catch (Throwable $ed) {}
 
-        // 2. Tabla modulos
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `modulos` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `clave` VARCHAR(50) NOT NULL UNIQUE,
-          `nombre` VARCHAR(100) NOT NULL,
-          `descripcion` TEXT,
-          `icono` VARCHAR(50) DEFAULT 'bi-app-indicator',
-          `orden` INT DEFAULT 0,
-          `estatus` TINYINT(1) DEFAULT 1,
-          `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS usuarios (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              usuario VARCHAR(50) NOT NULL UNIQUE,
+              nombre VARCHAR(100) NOT NULL,
+              email VARCHAR(100) NOT NULL UNIQUE,
+              password VARCHAR(255) NOT NULL,
+              agencia VARCHAR(100) DEFAULT 'VW Divol La Villa',
+              rol VARCHAR(20) DEFAULT 'Admin',
+              activo INTEGER DEFAULT 1,
+              creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS modulos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              clave VARCHAR(50) NOT NULL UNIQUE,
+              nombre VARCHAR(100) NOT NULL,
+              descripcion TEXT,
+              icono VARCHAR(50) DEFAULT 'bi-app-indicator',
+              orden INTEGER DEFAULT 0,
+              estatus INTEGER DEFAULT 1,
+              creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS usuario_permisos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              usuario_id INTEGER NOT NULL,
+              modulo_clave VARCHAR(50) NOT NULL,
+              puede_ver INTEGER DEFAULT 0,
+              puede_crear INTEGER DEFAULT 0,
+              puede_editar INTEGER DEFAULT 0,
+              puede_eliminar INTEGER DEFAULT 0,
+              puede_exportar INTEGER DEFAULT 0,
+              actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (usuario_id, modulo_clave)
+            );");
+        } else {
+            // 1. Tabla usuarios MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `usuarios` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `usuario` VARCHAR(50) NOT NULL UNIQUE,
+              `nombre` VARCHAR(100) NOT NULL,
+              `email` VARCHAR(100) NOT NULL UNIQUE,
+              `password` VARCHAR(255) NOT NULL,
+              `agencia` VARCHAR(100) DEFAULT 'VW Divol La Villa',
+              `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
+              `activo` TINYINT(1) DEFAULT 1,
+              `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 3. Tabla usuario_permisos
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `usuario_permisos` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `usuario_id` INT NOT NULL,
-          `modulo_clave` VARCHAR(50) NOT NULL,
-          `puede_ver` TINYINT(1) DEFAULT 0,
-          `puede_crear` TINYINT(1) DEFAULT 0,
-          `puede_editar` TINYINT(1) DEFAULT 0,
-          `puede_eliminar` TINYINT(1) DEFAULT 0,
-          `puede_exportar` TINYINT(1) DEFAULT 0,
-          `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE CASCADE,
-          FOREIGN KEY (`modulo_clave`) REFERENCES `modulos`(`clave`) ON DELETE CASCADE ON UPDATE CASCADE,
-          UNIQUE KEY `uq_usuario_modulo` (`usuario_id`, `modulo_clave`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+            // 2. Tabla modulos MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `modulos` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `clave` VARCHAR(50) NOT NULL UNIQUE,
+              `nombre` VARCHAR(100) NOT NULL,
+              `descripcion` TEXT,
+              `icono` VARCHAR(50) DEFAULT 'bi-app-indicator',
+              `orden` INT DEFAULT 0,
+              `estatus` TINYINT(1) DEFAULT 1,
+              `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+
+            // 3. Tabla usuario_permisos MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `usuario_permisos` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `usuario_id` INT NOT NULL,
+              `modulo_clave` VARCHAR(50) NOT NULL,
+              `puede_ver` TINYINT(1) DEFAULT 0,
+              `puede_crear` TINYINT(1) DEFAULT 0,
+              `puede_editar` TINYINT(1) DEFAULT 0,
+              `puede_eliminar` TINYINT(1) DEFAULT 0,
+              `puede_exportar` TINYINT(1) DEFAULT 0,
+              `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY `uq_usuario_modulo` (`usuario_id`, `modulo_clave`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        }
 
         // 4. Sembrado Inicial de Módulos (Compatible universalmente con MySQL y SQLite)
         $modulosBase = [
-            ['usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos del portal', 'bi-people-fill', 1, 1],
-            ['agencias', 'Agencias (Catálogo cPanel)', 'Monitoreo y administración de sucursales cPanel', 'bi-buildings-fill', 2, 1],
-            ['tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 3, 1],
-            ['ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 1],
-            ['equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 5, 1],
-            ['celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 6, 1],
-            ['licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 7, 1],
-            ['infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 8, 1]
+            ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 1, 1],
+            ['agencias',         'Agencias (Catálogo cPanel)',         'Monitoreo y administración de sucursales cPanel',            'bi-buildings-fill',       2, 1],
+            ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',   'bi-people-fill',          3, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 1],
+            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',          'bi-display-fill',            5, 1],
+            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',          'bi-phone-fill',              6, 1],
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',        'bi-key-fill',                7, 1],
+            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',        'bi-hdd-rack-fill',           8, 1]
         ];
 
         foreach ($modulosBase as $m) {
@@ -82,6 +122,33 @@ function asegurarTablasPermisos($pdo) {
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
     }
+}
+
+/**
+ * Obtiene el catálogo oficial de módulos del sistema, garantizando datos siempre.
+ */
+function obtenerCatalogoModulos($pdo = null) {
+    $modulosDefault = [
+        ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'icono' => 'bi-ticket-detailed-fill', 'orden' => 1],
+        ['clave' => 'agencias',         'nombre' => 'Agencias (Catálogo cPanel)',         'descripcion' => 'Monitoreo y administración de sucursales cPanel',            'icono' => 'bi-buildings-fill',       'orden' => 2],
+        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',   'icono' => 'bi-people-fill',          'orden' => 3],
+        ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 4],
+        ['clave' => 'equipos',          'nombre' => 'Inventario de Equipos',              'descripcion' => 'Control de PCs, laptops, servidores e impresoras',          'icono' => 'bi-display-fill',            'orden' => 5],
+        ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',          'icono' => 'bi-phone-fill',              'orden' => 6],
+        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',        'icono' => 'bi-key-fill',                'orden' => 7],
+        ['clave' => 'infraestructura',   'nombre' => 'Infraestructura (SITE / IDF)',       'descripcion' => 'Control de racks, switches y cableado estructurado',        'icono' => 'bi-hdd-rack-fill',           'orden' => 8]
+    ];
+
+    if ($pdo) {
+        try {
+            $stmt = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
+            $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+            if (!empty($rows)) {
+                return $rows;
+            }
+        } catch (Throwable $e) {}
+    }
+    return $modulosDefault;
 }
 
 /**
