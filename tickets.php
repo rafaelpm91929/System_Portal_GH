@@ -105,6 +105,108 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     return ['ok' => false, 'error' => $err ?: "HTTP $httpCode"];
 }
 
+/**
+ * Sincroniza en tiempo real los estados y respuestas de TI desde la Central (portal.grupohuerta.mx)
+ */
+function sincronizarTicketsConCentral($pdo) {
+    if (!$pdo) return 0;
+
+    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php';
+    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+
+    try {
+        // Obtener folios locales registrados
+        $stmtFolios = $pdo->query("SELECT folio FROM tickets_soporte WHERE folio IS NOT NULL AND folio != '' ORDER BY id DESC LIMIT 50");
+        $folios = $stmtFolios ? $stmtFolios->fetchAll(PDO::FETCH_COLUMN) : [];
+
+        $payload = [
+            'token'   => $token,
+            'agencia' => 'Divol La Villa'
+        ];
+        if (!empty($folios)) {
+            $payload['folios'] = $folios;
+        }
+
+        $ch = curl_init($urlCentral);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($payload),
+            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $token,
+                'User-Agent: PortalAgencia/2.0'
+            ]
+        ]);
+
+        $res = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($res !== false && $httpCode === 200) {
+            $dec = json_decode($res, true);
+            if ($dec && ($dec['status'] ?? '') === 'ok' && !empty($dec['tickets'])) {
+                $actualizados = 0;
+                $stmtUpd = $pdo->prepare("
+                    UPDATE tickets_soporte 
+                    SET estado = :estado, 
+                        asignado_a = :asignado, 
+                        notas_resolucion = :notas, 
+                        prioridad = :prioridad,
+                        actualizado_en = :act
+                    WHERE folio = :folio
+                ");
+
+                $stmtIns = $pdo->prepare("
+                    INSERT INTO tickets_soporte 
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, solicitante_agencia, creado_en, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+
+                foreach ($dec['tickets'] as $tc) {
+                    if (empty($tc['folio'])) continue;
+
+                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
+                    $stmtChk->execute([$tc['folio']]);
+                    $existe = $stmtChk->fetchColumn();
+
+                    if ($existe) {
+                        $stmtUpd->execute([
+                            ':estado'    => $tc['estado'] ?? 'Abierto',
+                            ':asignado'  => $tc['asignado_a'] ?? '',
+                            ':notas'     => $tc['notas_resolucion'] ?? '',
+                            ':prioridad' => $tc['prioridad'] ?? 'Media',
+                            ':act'       => $tc['actualizado_en'] ?? date('Y-m-d H:i:s'),
+                            ':folio'     => $tc['folio']
+                        ]);
+                    } else {
+                        $stmtIns->execute([
+                            $tc['folio'],
+                            $tc['area_sistemas'] ?? 'INFRAESTRUCTURA',
+                            $tc['titulo'] ?? 'Requerimiento de Sistemas',
+                            $tc['descripcion'] ?? '',
+                            $tc['prioridad'] ?? 'Media',
+                            $tc['estado'] ?? 'Abierto',
+                            $tc['asignado_a'] ?? '',
+                            $tc['notas_resolucion'] ?? '',
+                            $tc['solicitante_agencia'] ?? 'Divol La Villa',
+                            $tc['creado_en'] ?? date('Y-m-d H:i:s'),
+                            $tc['actualizado_en'] ?? date('Y-m-d H:i:s')
+                        ]);
+                    }
+                    $actualizados++;
+                }
+                $_SESSION['ultimo_sync_tickets'] = time();
+                return $actualizados;
+            }
+        }
+    } catch (Throwable $e) {}
+
+    return 0;
+}
+
 // ====================================================
 // MANEJO DE ACCIONES POST (CREAR, EDITAR, ELIMINAR)
 // ====================================================
@@ -335,6 +437,17 @@ $totalResueltos = 0;
 
 if ($pdo) {
     try {
+        // Sincronizar automáticamente con Central (portal.grupohuerta.mx)
+        $forzarSync = isset($_GET['sincronizar']) || isset($_GET['sync']);
+        $tiempoUltimoSync = $_SESSION['ultimo_sync_tickets'] ?? 0;
+
+        if ($forzarSync || (time() - $tiempoUltimoSync) > 10) {
+            $numSync = sincronizarTicketsConCentral($pdo);
+            if ($forzarSync && $numSync > 0) {
+                $mensaje = "✅ Se sincronizaron $numSync tickets con la Dirección Central de Sistemas (portal.grupohuerta.mx).";
+            }
+        }
+
         $stmtAll = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
         $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
 
@@ -688,6 +801,9 @@ if ($pdo) {
         </div>
 
         <div class="col-md-7 col-lg-8 d-flex justify-content-md-end gap-2 flex-wrap">
+            <a href="tickets.php?sincronizar=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" title="Consultar avances y respuestas en vivo de la Dirección de Sistemas">
+                <i class="bi bi-arrow-repeat"></i> Sincronizar con Central
+            </a>
             <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
                 <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel
             </a>
@@ -786,6 +902,21 @@ if ($pdo) {
                                     <div class="text-secondary small text-truncate" style="max-width: 380px;">
                                         <?php echo htmlspecialchars(mb_substr($t['descripcion'], 0, 90)); ?><?php echo mb_strlen($t['descripcion']) > 90 ? '...' : ''; ?>
                                     </div>
+                                    <?php if (!empty(trim($t['notas_resolucion'] ?? ''))): ?>
+                                        <div class="mt-2 p-2 rounded-2" style="background: rgba(14, 165, 233, 0.12); border-left: 3px solid #38bdf8; max-width: 440px;">
+                                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                                <span class="small fw-bold text-info" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-headset me-1"></i> Respuesta TI Central <?php if (!empty($t['asignado_a'])): ?>— <strong><?php echo htmlspecialchars($t['asignado_a']); ?></strong><?php endif; ?>:
+                                                </span>
+                                                <?php if (!empty($t['actualizado_en'])): ?>
+                                                    <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['actualizado_en'])); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="text-white small" style="font-size: 0.82rem; white-space: pre-line; line-height: 1.4;">
+                                                <?php echo htmlspecialchars($t['notas_resolucion']); ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                 </td>
 
                                 <!-- Prioridad -->
@@ -990,6 +1121,16 @@ if ($pdo) {
                         </div>
                     </div>
 
+                    <!-- Respuesta y Seguimiento de la Dirección Central de TI -->
+                    <div id="viewRespuestaCentral" class="p-3 rounded-3 mb-3" style="background: rgba(14, 165, 233, 0.14); border: 1px solid rgba(56, 189, 248, 0.4); display: none;">
+                        <div class="d-flex align-items-center justify-content-between mb-1">
+                            <h6 class="fw-bold text-info mb-0"><i class="bi bi-headset me-2"></i> Respuesta de la Dirección Central de Sistemas</h6>
+                            <span class="badge bg-primary rounded-pill px-2.5 py-1" id="viewRespuestaAgente">Central TI</span>
+                        </div>
+                        <div class="text-secondary small mb-2" id="viewRespuestaFecha" style="font-size: 0.72rem;"></div>
+                        <div class="text-white small p-2.5 rounded-2" id="viewRespuestaTexto" style="background: rgba(4, 13, 26, 0.6); white-space: pre-line; line-height: 1.5;"></div>
+                    </div>
+
                     <hr class="border-secondary border-opacity-25 my-3">
 
                     <!-- SECCIÓN DE SEGUIMIENTO Y RESOLUCIÓN -->
@@ -1085,6 +1226,21 @@ if ($pdo) {
         document.getElementById('editEstado').value = ticket.estado || 'Abierto';
         document.getElementById('editAsignadoA').value = ticket.asignado_a || '';
         document.getElementById('editNotas').value = ticket.notas_resolucion || '';
+
+        // Desplegar respuesta de la Dirección Central de TI si ya fue atendido
+        const boxResp = document.getElementById('viewRespuestaCentral');
+        const txtResp = document.getElementById('viewRespuestaTexto');
+        const agResp = document.getElementById('viewRespuestaAgente');
+        const fResp = document.getElementById('viewRespuestaFecha');
+
+        if (ticket.notas_resolucion && ticket.notas_resolucion.trim() !== '') {
+            if (boxResp) boxResp.style.display = 'block';
+            if (txtResp) txtResp.textContent = ticket.notas_resolucion;
+            if (agResp) agResp.textContent = ticket.asignado_a ? ('Atendido por: ' + ticket.asignado_a) : 'Dirección Central TI';
+            if (fResp && ticket.actualizado_en) fResp.textContent = 'Actualizado el ' + ticket.actualizado_en;
+        } else {
+            if (boxResp) boxResp.style.display = 'none';
+        }
 
         const badgeEl = document.getElementById('viewAreaBadge');
         if (badgeEl) {
