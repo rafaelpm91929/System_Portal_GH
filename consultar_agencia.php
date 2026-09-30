@@ -19,25 +19,56 @@ if (empty($agencia_id) || !isset($CATALOGO_AGENCIAS[$agencia_id])) {
 $info_agencia = $CATALOGO_AGENCIAS[$agencia_id];
 $endpoint     = $info_agencia['endpoint'];
 $token        = $info_agencia['token'];
+$subdominio   = $info_agencia['subdominio'];
 
-// Consultar el cPanel remoto de la agencia vía HTTPS seguro
-$ch = curl_init();
-curl_setopt_array($ch, [
-    CURLOPT_URL            => $endpoint . '?token=' . urlencode($token),
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT        => 8,
-    CURLOPT_SSL_VERIFYPEER => false, // Ajustable según el certificado SSL
-    CURLOPT_HTTPHEADER     => [
-        'User-Agent: PortalMaestroGrupoHuerta/2.0',
-        'X-Requested-With: XMLHttpRequest',
-        'Authorization: Bearer ' . $token
-    ]
-]);
+// Rutas candidatas automáticas (soporta tanto public_html/sistemas/ como public_html/)
+$candidatos = [$endpoint];
+if (strpos($endpoint, '/sistemas/') === false) {
+    $candidatos[] = str_replace('/api_obtener_datos.php', '/sistemas/api_obtener_datos.php', $endpoint);
+} else {
+    $candidatos[] = str_replace('/sistemas/api_obtener_datos.php', '/api_obtener_datos.php', $endpoint);
+}
+if (strpos($subdominio, 'portal.') === 0) {
+    $dominioBase = substr($subdominio, 7);
+    $candidatos[] = "https://{$dominioBase}/sistemas/api_obtener_datos.php";
+}
+$candidatos = array_unique($candidatos);
 
-$response = curl_exec($ch);
-$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$curl_error = curl_error($ch);
-curl_close($ch);
+$response = false;
+$http_code = 0;
+$curl_error = '';
+$endpoint_usado = $endpoint;
+
+foreach ($candidatos as $urlTest) {
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $urlTest . '?token=' . urlencode($token),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 6,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER     => [
+            'User-Agent: PortalMaestroGrupoHuerta/2.0',
+            'X-Requested-With: XMLHttpRequest',
+            'Authorization: Bearer ' . $token
+        ]
+    ]);
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($code === 200 && $res !== false) {
+        $response = $res;
+        $http_code = $code;
+        $endpoint_usado = $urlTest;
+        break;
+    } else {
+        $response = $res;
+        $http_code = $code;
+        $curl_error = $err;
+        $endpoint_usado = $urlTest;
+    }
+}
 
 if ($response === false || $http_code !== 200) {
     // Si la agencia aún no tiene endpoint HTTPS activo o falla la red, intentar leer caché de respaldo local si existe

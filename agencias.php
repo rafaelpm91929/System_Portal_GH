@@ -29,7 +29,7 @@ if (isset($_GET['descargar_api'])) {
         $phpCode = '<?php
 // ====================================================================
 // ENDPOINT RECEPTOR EN CPANEL: ' . $ag['nombre'] . '
-// Ubicación recomendada en cPanel: public_html/api_obtener_datos.php
+// Ubicación exacta en cPanel: public_html/sistemas/api_obtener_datos.php
 // ====================================================================
 header("Content-Type: application/json; charset=utf-8");
 
@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             $idLimpio = 'agencia_' . time();
         }
 
-        $endpoint = 'https://' . $subdominio . '/api_obtener_datos.php';
+        $endpoint = 'https://' . $subdominio . '/sistemas/api_obtener_datos.php';
 
         $custom = [];
         if (file_exists($archivoAgenciasCustom)) {
@@ -604,7 +604,7 @@ include 'config_agencias.php';
                 </div>
                 <div class="mb-4">
                     <h6 class="fw-bold text-warning"><span class="badge bg-warning text-dark me-2">Paso 3</span> Subirlo al cPanel de la sucursal</h6>
-                    <p class="small text-secondary mb-0">Entra al cPanel de la sucursal, abre el <strong>Administrador de Archivos</strong> y coloca <code>api_obtener_datos.php</code> en la carpeta <code>public_html</code>.</p>
+                    <p class="small text-secondary mb-0">Entra al cPanel de la sucursal, abre el <strong>Administrador de Archivos</strong> y coloca <code>api_obtener_datos.php</code> dentro de la carpeta <code>public_html/sistemas/</code>.</p>
                 </div>
                 <div>
                     <h6 class="fw-bold text-info"><span class="badge bg-info text-dark me-2">Paso 4</span> Probar la conexión en vivo</h6>
