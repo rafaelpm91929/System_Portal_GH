@@ -64,8 +64,8 @@ if (!$pdo && (in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1']) || i
     }
 }
 
-// 3. Fallback a SQLite local (Zero Config) para pruebas locales garantizadas
-if (!$pdo && (in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1']) || isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'localhost') !== false || php_sapi_name() === 'cli-server' || php_sapi_name() === 'cli')) {
+// 3. Fallback a SQLite (Zero Config) para garantizar funcionamiento si MySQL no responde
+if (!$pdo) {
     try {
         $dbDir = __DIR__ . '/database';
         if (!is_dir($dbDir)) {
