@@ -235,6 +235,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
+    // 4. Vaciar Todos los Tickets (Solo SuperAdmin)
+    elseif ($accion === 'vaciar_todos_tickets' && $esAdmin) {
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+            if ($driver === 'sqlite') {
+                $pdo->exec("DELETE FROM tickets_soporte;");
+                $pdo->exec("DELETE FROM sqlite_sequence WHERE name='tickets_soporte';");
+            } else {
+                $pdo->exec("TRUNCATE TABLE `tickets_soporte`;");
+            }
+            $dir = __DIR__ . '/uploads/tickets/';
+            if (is_dir($dir)) {
+                foreach (glob($dir . '*.*') as $f) {
+                    if (basename($f) !== '.gitkeep') {
+                        @unlink($f);
+                    }
+                }
+            }
+            $mensaje = "Se han eliminado todos los tickets y reseteado los folios.";
+        } catch (Throwable $t) {
+            $error = "Error al vaciar tickets: " . $t->getMessage();
+        }
+    }
+
     // Patrón Post/Redirect/Get: Previene duplicación de tickets al recargar con F5
     $_SESSION['flash_mensaje'] = $mensaje;
     $_SESSION['flash_error'] = $error;
