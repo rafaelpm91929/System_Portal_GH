@@ -188,6 +188,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
+    // 5. Vaciar Todos los Tickets (Solo SuperAdmin)
+    if ($accion === 'vaciar_todos_tickets' && $esAdmin) {
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+            if ($driver === 'sqlite') {
+                $pdo->exec("DELETE FROM tickets_soporte;");
+                $pdo->exec("DELETE FROM sqlite_sequence WHERE name='tickets_soporte';");
+            } else {
+                $pdo->exec("TRUNCATE TABLE `tickets_soporte`;");
+            }
+            $dir = __DIR__ . '/uploads/tickets/';
+            if (is_dir($dir)) {
+                foreach (glob($dir . '*.*') as $f) {
+                    if (basename($f) !== '.gitkeep') {
+                        @unlink($f);
+                    }
+                }
+            }
+            $mensaje = "Se han eliminado todos los tickets y se ha reiniciado el contador de folios a 0.";
+        } catch (Throwable $e) {
+            $error = "Error al vaciar tickets: " . $e->getMessage();
+        }
+    }
+
     // Patrón Post/Redirect/Get: Previene duplicados al recargar con F5
     $_SESSION['flash_mensaje'] = $mensaje;
     $_SESSION['flash_error'] = $error;
@@ -714,6 +738,14 @@ if ($pdo) {
 
         <!-- Botones de Acción para Agente -->
         <div class="d-flex align-items-center gap-2">
+            <?php if ($esAdmin && $totalTickets > 0): ?>
+                <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar TODOS los tickets registrados y reiniciar el contador a 0?');" style="display:inline;">
+                    <input type="hidden" name="accion" value="vaciar_todos_tickets">
+                    <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-1" title="Eliminar todos los tickets de prueba">
+                        <i class="bi bi-trash3-fill"></i> <span>Vaciar Tickets</span>
+                    </button>
+                </form>
+            <?php endif; ?>
             <a href="tickets.php?export=excel" class="btn btn-success btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
                 <i class="bi bi-file-earmark-excel-fill"></i> <span>Exportar a Excel</span>
             </a>
