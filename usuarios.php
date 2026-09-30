@@ -66,20 +66,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     }
                 }
 
-                // Guardar permisos para cada módulo en usuario_permisos
+                // Guardar permisos para cada módulo en usuario_permisos (Compatible con SQLite y MySQL)
                 if ($targetUserId > 0) {
                     $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
                     $modulosCatalog = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
 
+                    $stmtDel = $pdo->prepare("DELETE FROM usuario_permisos WHERE usuario_id = ?");
+                    $stmtDel->execute([$targetUserId]);
+
                     $stmtSave = $pdo->prepare("
                         INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON DUPLICATE KEY UPDATE
-                            puede_ver = VALUES(puede_ver),
-                            puede_crear = VALUES(puede_crear),
-                            puede_editar = VALUES(puede_editar),
-                            puede_eliminar = VALUES(puede_eliminar),
-                            puede_exportar = VALUES(puede_exportar)
                     ");
 
                     foreach ($modulosCatalog as $mClave) {
@@ -103,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 }
 
             } catch (PDOException $e) {
-                if (strpos($e->getMessage(), 'Duplicate entry') !== false) {
+                if (strpos($e->getMessage(), 'Duplicate entry') !== false || strpos($e->getMessage(), 'UNIQUE constraint failed') !== false) {
                     $error = "El nombre de usuario o correo ya existe en el sistema.";
                 } else {
                     $error = "Error al guardar usuario: " . $e->getMessage();
@@ -123,15 +120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
                 $modulosCatalog = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
 
+                $stmtDel = $pdo->prepare("DELETE FROM usuario_permisos WHERE usuario_id = ?");
+                $stmtDel->execute([$target_user_id]);
+
                 $stmtSave = $pdo->prepare("
                     INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE
-                        puede_ver = VALUES(puede_ver),
-                        puede_crear = VALUES(puede_crear),
-                        puede_editar = VALUES(puede_editar),
-                        puede_eliminar = VALUES(puede_eliminar),
-                        puede_exportar = VALUES(puede_exportar)
                 ");
 
                 foreach ($modulosCatalog as $mClave) {

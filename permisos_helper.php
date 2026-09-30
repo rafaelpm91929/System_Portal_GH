@@ -55,18 +55,29 @@ function asegurarTablasPermisos($pdo) {
           UNIQUE KEY `uq_usuario_modulo` (`usuario_id`, `modulo_clave`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 4. Sembrado Inicial
-        $pdo->exec("
-        INSERT INTO `modulos` (`clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`) VALUES
-        ('usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos del portal', 'bi-people-fill', 1, 1),
-        ('agencias', 'Agencias (Catálogo cPanel)', 'Monitoreo y administración de sucursales cPanel', 'bi-buildings-fill', 2, 1),
-        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 3, 1),
-        ('ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 1),
-        ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 5, 1),
-        ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 6, 1),
-        ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 7, 1),
-        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 8, 1)
-        ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
+        // 4. Sembrado Inicial de Módulos (Compatible universalmente con MySQL y SQLite)
+        $modulosBase = [
+            ['usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos del portal', 'bi-people-fill', 1, 1],
+            ['agencias', 'Agencias (Catálogo cPanel)', 'Monitoreo y administración de sucursales cPanel', 'bi-buildings-fill', 2, 1],
+            ['tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 3, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 1],
+            ['equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 5, 1],
+            ['celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 6, 1],
+            ['licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 7, 1],
+            ['infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 8, 1]
+        ];
+
+        foreach ($modulosBase as $m) {
+            $stmtCheck = $pdo->prepare("SELECT id FROM modulos WHERE clave = ?");
+            $stmtCheck->execute([$m[0]]);
+            if ($stmtCheck->fetch()) {
+                $stmtUpd = $pdo->prepare("UPDATE modulos SET nombre=?, descripcion=?, icono=?, orden=?, estatus=? WHERE clave=?");
+                $stmtUpd->execute([$m[1], $m[2], $m[3], $m[4], $m[5], $m[0]]);
+            } else {
+                $stmtIns = $pdo->prepare("INSERT INTO modulos (clave, nombre, descripcion, icono, orden, estatus) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmtIns->execute([$m[0], $m[1], $m[2], $m[3], $m[4], $m[5]]);
+            }
+        }
 
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
