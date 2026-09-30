@@ -42,14 +42,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             try {
                 $targetUserId = 0;
                 if ($id > 0) {
+                    // Procesar configuración de áreas autorizadas de tickets
+                    $areasPost = $_POST['areas_tickets'] ?? [];
+                    $areasFinal = 'TODOS';
+                    if (strtolower($rol) === 'superadmin') {
+                        $areasFinal = 'TODOS';
+                    } elseif (in_array('tickets', $modulosPermitidos)) {
+                        if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
+                            $areasFinal = 'TODOS';
+                        } elseif (!empty($areasPost)) {
+                            $areasFinal = implode(',', array_map('strtoupper', $areasPost));
+                        } else {
+                            $areasFinal = 'NINGUNA';
+                        }
+                    } else {
+                        $areasFinal = '';
+                    }
+
                     // Actualizar Usuario existente
                     if (!empty($password)) {
                         $hash = password_hash($password, PASSWORD_DEFAULT);
-                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=? WHERE id=?");
-                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $id]);
+                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=?, areas_tickets=? WHERE id=?");
+                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal, $id]);
                     } else {
-                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, rol=?, agencia=?, activo=? WHERE id=?");
-                        $stmt->execute([$usuario, $nombre, $email, $rol, $agencia, $activo, $id]);
+                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, rol=?, agencia=?, activo=?, areas_tickets=? WHERE id=?");
+                        $stmt->execute([$usuario, $nombre, $email, $rol, $agencia, $activo, $areasFinal, $id]);
                     }
                     $targetUserId = $id;
                     $mensaje = "Usuario <strong>".htmlspecialchars($usuario)."</strong> y permisos de módulos actualizados con éxito.";
@@ -58,9 +75,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     if (empty($password)) {
                         $error = "La contraseña es obligatoria para un usuario nuevo.";
                     } else {
+                        $areasPost = $_POST['areas_tickets'] ?? [];
+                        $areasFinal = 'TODOS';
+                        if (strtolower($rol) === 'superadmin') {
+                            $areasFinal = 'TODOS';
+                        } elseif (in_array('tickets', $modulosPermitidos)) {
+                            if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
+                                $areasFinal = 'TODOS';
+                            } elseif (!empty($areasPost)) {
+                                $areasFinal = implode(',', array_map('strtoupper', $areasPost));
+                            } else {
+                                $areasFinal = 'NINGUNA';
+                            }
+                        } else {
+                            $areasFinal = '';
+                        }
+
                         $hash = password_hash($password, PASSWORD_DEFAULT);
-                        $stmt = $pdo->prepare("INSERT INTO usuarios (usuario, nombre, email, password, rol, agencia, activo) VALUES (?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo]);
+                        $stmt = $pdo->prepare("INSERT INTO usuarios (usuario, nombre, email, password, rol, agencia, activo, areas_tickets) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal]);
                         $targetUserId = (int)$pdo->lastInsertId();
                         $mensaje = "Nuevo usuario <strong>".htmlspecialchars($usuario)."</strong> creado correctamente con sus módulos de acceso configurados.";
                     }
@@ -406,6 +439,31 @@ if (empty($modulosCat)) {
                                                     </span>
                                                 <?php endforeach; ?>
                                             </div>
+                                            <?php 
+                                            // Si tiene módulo tickets, mostrar resumen de áreas autorizadas
+                                            $tieneTickets = false;
+                                            foreach ($modsActivos as $ma) {
+                                                if ($ma['clave'] === 'tickets') { $tieneTickets = true; break; }
+                                            }
+                                            if ($tieneTickets): 
+                                                $uAreas = trim($u['areas_tickets'] ?? 'TODOS');
+                                            ?>
+                                                <div class="mt-1">
+                                                    <?php if (strtoupper($uAreas) === 'TODOS' || $uAreas === '*'): ?>
+                                                        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30" style="font-size:0.68rem;" title="Acceso total a todas las áreas de tickets">
+                                                            <i class="bi bi-check-all"></i> Áreas TI: TODAS
+                                                        </span>
+                                                    <?php elseif (empty($uAreas) || strtoupper($uAreas) === 'NINGUNA'): ?>
+                                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30" style="font-size:0.68rem;">
+                                                            <i class="bi bi-slash-circle"></i> Áreas TI: Ninguna
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30" style="font-size:0.68rem;" title="Áreas autorizadas: <?php echo htmlspecialchars($uAreas); ?>">
+                                                            <i class="bi bi-diagram-3"></i> Áreas TI: <?php echo htmlspecialchars($uAreas); ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            <?php endif; ?>
                                         <?php else: ?>
                                             <span class="badge bg-secondary bg-opacity-25 text-warning border border-warning border-opacity-25 rounded-pill px-2 py-1">
                                                 <i class="bi bi-slash-circle me-1"></i> Sin acceso a módulos
@@ -534,10 +592,10 @@ if (empty($modulosCat)) {
                             <i class="bi bi-shield-fill-check me-2 fs-5"></i> <strong>Modo SuperAdmin:</strong> Este rol cuenta con acceso total e ilimitado a todos los módulos automáticamente.
                         </div>
 
-                        <!-- Grid de tarjetas de módulos -->
+                        <!-- Grid de tarjetas de módulos (3 módulos vigentes) -->
                         <div class="row g-2" id="gridModulosUsuario">
                             <?php foreach ($modulosCat as $mod): ?>
-                                <div class="col-12 col-md-6 col-lg-3">
+                                <div class="col-12 col-md-4">
                                     <label class="perm-module-card w-100" id="card_mod_<?php echo $mod['clave']; ?>" for="mod_check_<?php echo $mod['clave']; ?>">
                                         <div class="d-flex align-items-center gap-2 overflow-hidden flex-grow-1">
                                             <div class="perm-module-icon bg-primary bg-opacity-20 text-info">
@@ -554,6 +612,61 @@ if (empty($modulosCat)) {
                                     </label>
                                 </div>
                             <?php endforeach; ?>
+                        </div>
+
+                        <!-- Sub-panel: Configuración de Áreas de Sistemas Autorizadas para Tickets -->
+                        <div id="panelAreasTickets" class="mt-3 p-3 rounded-3" style="background: rgba(14, 36, 68, 0.75); border: 1px solid rgba(56, 189, 248, 0.4); display: none;">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 pb-2 border-bottom border-secondary border-opacity-25">
+                                <div>
+                                    <h6 class="fw-bold text-warning mb-0 d-flex align-items-center gap-2">
+                                        <i class="bi bi-diagram-3-fill"></i> Áreas de Sistemas Autorizadas para Tickets
+                                    </h6>
+                                    <div class="text-secondary" style="font-size: 0.75rem;">
+                                        Selecciona las áreas de tickets que este usuario puede ver. <strong>Si un área no está seleccionada, NO podrá verla por nada del mundo.</strong>
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-outline-warning btn-sm py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem;" onclick="marcarTodasAreasTickets(true)"><i class="bi bi-check-all me-1"></i> Marcar TODAS</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-pill text-light" style="font-size: 0.72rem;" onclick="marcarTodasAreasTickets(false)"><i class="bi bi-x me-1"></i> Desmarcar</button>
+                                </div>
+                            </div>
+
+                            <!-- Interruptor TODOS -->
+                            <div class="mb-2 p-2 rounded-2" style="background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.35);">
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" id="check_area_todos" onchange="onToggleTodosAreas(this.checked)">
+                                    <label class="form-check-label fw-bold text-warning small ms-1" for="check_area_todos" style="cursor: pointer;">
+                                        <i class="bi bi-asterisk me-1"></i> TODOS (Acceso total a tickets de cualquier área de Sistemas)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Grid de 6 áreas oficiales -->
+                            <div class="row g-2">
+                                <?php 
+                                $areasCatalogoSistemas = [
+                                    'DESARROLLO'      => ['icono' => 'bi-code-slash', 'color' => '#38bdf8', 'desc' => 'Desarrollo de software y portales'],
+                                    'CYBERSEGURIDAD'  => ['icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'desc' => 'Seguridad perimetral y accesos'],
+                                    'INFRAESTRUCTURA' => ['icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'desc' => 'Servidores, enlaces y site'],
+                                    'REDES SOCIALES'  => ['icono' => 'bi-share-fill', 'color' => '#a855f7', 'desc' => 'Gestión de redes y perfiles'],
+                                    'AUDITORIA'       => ['icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'desc' => 'Revisiones, normas e inventarios'],
+                                    'CORPORATIVO'     => ['icono' => 'bi-building-fill', 'color' => '#6366f1', 'desc' => 'Mesa de ayuda corporativa']
+                                ];
+                                foreach ($areasCatalogoSistemas as $ak => $ainfo):
+                                    $idChk = 'area_check_' . preg_replace('/[^a-zA-Z0-9]/', '_', $ak);
+                                ?>
+                                    <div class="col-6 col-md-4">
+                                        <label class="d-flex align-items-center gap-2 p-2 rounded-2 border border-secondary border-opacity-25 w-100 mb-0 h-100" style="background: #081a33; cursor: pointer;" for="<?php echo $idChk; ?>">
+                                            <input type="checkbox" class="form-check-input m-0 check-area-ticket flex-shrink-0" name="areas_tickets[]" value="<?php echo $ak; ?>" id="<?php echo $idChk; ?>" onchange="onIndividualAreaChange()">
+                                            <i class="bi <?php echo $ainfo['icono']; ?> fs-5" style="color: <?php echo $ainfo['color']; ?>;"></i>
+                                            <div class="overflow-hidden">
+                                                <div class="fw-bold text-white text-truncate" style="font-size: 0.8rem;"><?php echo $ak; ?></div>
+                                                <div class="text-secondary text-truncate" style="font-size: 0.65rem;"><?php echo $ainfo['desc']; ?></div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -648,6 +761,35 @@ if (empty($modulosCat)) {
         }
     }
 
+    function actualizarVisibilidadPanelAreas() {
+        const cbTickets = document.getElementById('mod_check_tickets');
+        const panel = document.getElementById('panelAreasTickets');
+        if (!panel) return;
+        if (cbTickets && cbTickets.checked) {
+            panel.style.display = 'block';
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    function marcarTodasAreasTickets(marcar) {
+        const checks = document.querySelectorAll('.check-area-ticket');
+        checks.forEach(c => { c.checked = marcar; });
+        const cbTodos = document.getElementById('check_area_todos');
+        if (cbTodos) cbTodos.checked = marcar;
+    }
+
+    function onToggleTodosAreas(checked) {
+        marcarTodasAreasTickets(checked);
+    }
+
+    function onIndividualAreaChange() {
+        const checks = document.querySelectorAll('.check-area-ticket');
+        const allChecked = Array.from(checks).length > 0 && Array.from(checks).every(c => c.checked);
+        const cbTodos = document.getElementById('check_area_todos');
+        if (cbTodos) cbTodos.checked = allChecked;
+    }
+
     function onModuloCheckboxChange(modClave) {
         const rol = document.getElementById('form_rol').value;
         const cb = document.getElementById('mod_check_' + modClave);
@@ -655,6 +797,9 @@ if (empty($modulosCat)) {
             cb.checked = true; // SuperAdmin siempre tiene todos
         }
         actualizarCardStyle(modClave);
+        if (modClave === 'tickets') {
+            actualizarVisibilidadPanelAreas();
+        }
     }
 
     function toggleModuloCard(modClave) {
@@ -665,6 +810,9 @@ if (empty($modulosCat)) {
         if (cb) {
             cb.checked = !cb.checked;
             actualizarCardStyle(modClave);
+            if (modClave === 'tickets') {
+                actualizarVisibilidadPanelAreas();
+            }
         }
     }
 
@@ -685,6 +833,7 @@ if (empty($modulosCat)) {
             }
             actualizarCardStyle(clave);
         });
+        actualizarVisibilidadPanelAreas();
     }
 
     function onRolChange() {
@@ -698,9 +847,11 @@ if (empty($modulosCat)) {
                 cb.checked = true;
                 actualizarCardStyle(cb.value);
             });
+            marcarTodasAreasTickets(true);
         } else {
             if (notice) notice.classList.add('d-none');
         }
+        actualizarVisibilidadPanelAreas();
     }
 
     function abrirModalNuevoUsuario() {
@@ -715,9 +866,11 @@ if (empty($modulosCat)) {
         document.getElementById('form_activo').checked = true;
         document.getElementById('pass_help').textContent = 'Obligatoria al crear un nuevo usuario.';
 
-        // Preset inicial por defecto: Tickets de soporte habilitado
+        // Preset inicial por defecto: Tickets de soporte habilitado y todas sus áreas autorizadas
         aplicarPresetModulos('tickets');
+        marcarTodasAreasTickets(true);
         onRolChange();
+        actualizarVisibilidadPanelAreas();
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();
@@ -742,6 +895,7 @@ if (empty($modulosCat)) {
                 cb.checked = true;
                 actualizarCardStyle(cb.value);
             });
+            marcarTodasAreasTickets(true);
         } else {
             const uPerms = permisosMapGlobal[u.id] || {};
             checkboxes.forEach(cb => {
@@ -750,9 +904,28 @@ if (empty($modulosCat)) {
                 cb.checked = Boolean(tieneAcceso);
                 actualizarCardStyle(clave);
             });
+
+            // Cargar áreas de tickets autorizadas
+            const areasStr = (u.areas_tickets || 'TODOS').trim().toUpperCase();
+            if (areasStr === 'TODOS' || areasStr === '*') {
+                marcarTodasAreasTickets(true);
+            } else if (areasStr === 'NINGUNA' || areasStr === '') {
+                marcarTodasAreasTickets(false);
+            } else {
+                marcarTodasAreasTickets(false);
+                const arrAreas = areasStr.split(',').map(s => s.trim().toUpperCase());
+                const checks = document.querySelectorAll('.check-area-ticket');
+                checks.forEach(c => {
+                    if (arrAreas.includes(c.value.toUpperCase())) {
+                        c.checked = true;
+                    }
+                });
+                onIndividualAreaChange();
+            }
         }
 
         onRolChange();
+        actualizarVisibilidadPanelAreas();
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();

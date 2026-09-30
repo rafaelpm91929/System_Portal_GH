@@ -50,15 +50,16 @@ requerirPermiso('tickets', 'puede_ver');
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Agente de Sistemas');
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
-$rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'admin');
+$rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+$esSuperAdmin = ($rolActual === 'superadmin');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
 if ($pdo) {
     asegurarTablaTickets($pdo);
 }
 
-// Catálogo Oficial de Áreas de Sistemas
-$AREAS_SISTEMAS = [
+// Catálogo Oficial Maestro de Áreas de Sistemas
+$AREAS_SISTEMAS_CATALOGO = [
     'DESARROLLO'      => ['nombre' => 'DESARROLLO', 'icono' => 'bi-code-slash', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.45)'],
     'CYBERSEGURIDAD'  => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'bg' => 'rgba(244, 63, 94, 0.18)', 'border' => 'rgba(244, 63, 94, 0.45)'],
     'INFRAESTRUCTURA' => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'bg' => 'rgba(16, 185, 129, 0.18)', 'border' => 'rgba(16, 185, 129, 0.45)'],
@@ -66,6 +67,44 @@ $AREAS_SISTEMAS = [
     'AUDITORIA'       => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
     'CORPORATIVO'     => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)']
 ];
+
+// Obtener áreas de tickets autorizadas para este usuario (desde sesión o recargar de BD)
+$areasRaw = trim($_SESSION['areas_tickets'] ?? '');
+if (empty($areasRaw) && $pdo && !empty($usuarioId)) {
+    try {
+        $stmtU = $pdo->prepare("SELECT rol, areas_tickets FROM usuarios WHERE id = ?");
+        $stmtU->execute([$usuarioId]);
+        $rowU = $stmtU->fetch(PDO::FETCH_ASSOC);
+        if ($rowU) {
+            $areasRaw = trim($rowU['areas_tickets'] ?? '');
+            $_SESSION['areas_tickets'] = $areasRaw;
+            if (isset($rowU['rol'])) {
+                $_SESSION['usuario_rol'] = $rowU['rol'];
+                $rolActual = strtolower($rowU['rol']);
+                $esSuperAdmin = ($rolActual === 'superadmin');
+                $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
+            }
+        }
+    } catch (Throwable $e) {}
+}
+
+$accesoTodasAreas = ($esSuperAdmin || strtoupper($areasRaw) === 'TODOS' || $areasRaw === '*');
+$areasAutorizadas = [];
+
+if ($accesoTodasAreas) {
+    $areasAutorizadas = array_keys($AREAS_SISTEMAS_CATALOGO);
+} elseif (!empty($areasRaw) && strtoupper($areasRaw) !== 'NINGUNA') {
+    $parts = array_map('trim', explode(',', strtoupper($areasRaw)));
+    $areasAutorizadas = array_values(array_intersect($parts, array_keys($AREAS_SISTEMAS_CATALOGO)));
+}
+
+// Catálogo activo para la sesión actual (determina qué chips y selects se despliegan)
+$AREAS_SISTEMAS = [];
+foreach ($areasAutorizadas as $aKey) {
+    if (isset($AREAS_SISTEMAS_CATALOGO[$aKey])) {
+        $AREAS_SISTEMAS[$aKey] = $AREAS_SISTEMAS_CATALOGO[$aKey];
+    }
+}
 
 $mensaje = $_SESSION['flash_mensaje'] ?? '';
 $error = $_SESSION['flash_error'] ?? '';
@@ -88,7 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $solicitanteAgencia = normalizarAgencia(trim($_POST['solicitante_agencia'] ?? 'Divol La Villa'));
         $asignadoA = trim($_POST['asignado_a'] ?? '');
 
-        if (empty($titulo) || empty($descripcion) || empty($area)) {
+        if (!$accesoTodasAreas && !in_array(strtoupper($area), $areasAutorizadas)) {
+            $error = "Acceso denegado: No tienes autorización para registrar tickets en el área '$area'.";
+        } elseif (empty($titulo) || empty($descripcion) || empty($area)) {
             $error = "Por favor completa el Área de Sistemas, Título y Descripción del ticket.";
         } else {
             $archivoUrl = null;
@@ -157,19 +198,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($ticketId > 0) {
             try {
-                $stmt = $pdo->prepare("
-                    UPDATE tickets_soporte 
-                    SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas 
-                    WHERE id = :id
-                ");
-                $stmt->execute([
-                    ':estado'    => $nuevoEstado,
-                    ':asignado'  => $asignadoA,
-                    ':prioridad' => $prioridad,
-                    ':notas'     => $notasResolucion,
-                    ':id'        => $ticketId
-                ]);
-                $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
+                // Validación estricta de área autorizada
+                $stmtChk = $pdo->prepare("SELECT area_sistemas FROM tickets_soporte WHERE id = ?");
+                $stmtChk->execute([$ticketId]);
+                $areaTicket = strtoupper(trim($stmtChk->fetchColumn() ?: ''));
+
+                if (!$accesoTodasAreas && !in_array($areaTicket, $areasAutorizadas)) {
+                    $error = "Acceso denegado: No tienes autorización para modificar tickets del área '$areaTicket'.";
+                } else {
+                    $stmt = $pdo->prepare("
+                        UPDATE tickets_soporte 
+                        SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas 
+                        WHERE id = :id
+                    ");
+                    $stmt->execute([
+                        ':estado'    => $nuevoEstado,
+                        ':asignado'  => $asignadoA,
+                        ':prioridad' => $prioridad,
+                        ':notas'     => $notasResolucion,
+                        ':id'        => $ticketId
+                    ]);
+                    $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
+                }
             } catch (Throwable $e) {
                 $error = "Error al actualizar el ticket: " . $e->getMessage();
             }
@@ -181,9 +231,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         if ($ticketId > 0) {
             try {
-                $stmt = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :nombre, estado = CASE WHEN estado = 'Abierto' THEN 'En Proceso' ELSE estado END WHERE id = :id");
-                $stmt->execute([':nombre' => $nombreUsuario, ':id' => $ticketId]);
-                $mensaje = "Te has autoasignado el ticket #$ticketId. Estado actualizado a 'En Proceso'.";
+                $stmtChk = $pdo->prepare("SELECT area_sistemas FROM tickets_soporte WHERE id = ?");
+                $stmtChk->execute([$ticketId]);
+                $areaTicket = strtoupper(trim($stmtChk->fetchColumn() ?: ''));
+
+                if (!$accesoTodasAreas && !in_array($areaTicket, $areasAutorizadas)) {
+                    $error = "Acceso denegado: No tienes autorización para tomar tickets del área '$areaTicket'.";
+                } else {
+                    $stmt = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :nombre, estado = CASE WHEN estado = 'Abierto' THEN 'En Proceso' ELSE estado END WHERE id = :id");
+                    $stmt->execute([':nombre' => $nombreUsuario, ':id' => $ticketId]);
+                    $mensaje = "Te has autoasignado el ticket #$ticketId. Estado actualizado a 'En Proceso'.";
+                }
             } catch (Throwable $e) {
                 $error = "Error al autoasignar: " . $e->getMessage();
             }
@@ -240,16 +298,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 // ====================================================
 if (isset($_GET['export']) && $_GET['export'] === 'excel' && $pdo) {
     $agenciaFiltro = trim($_GET['agencia'] ?? '');
+    $whereParts = [];
+    $whereParams = [];
+
     if (!empty($agenciaFiltro) && $agenciaFiltro !== 'TODAS') {
-        $stmtExp = $pdo->prepare("SELECT * FROM tickets_soporte WHERE LOWER(solicitante_agencia) LIKE ? ORDER BY id DESC");
-        $stmtExp->execute(['%' . strtolower($agenciaFiltro) . '%']);
+        $whereParts[] = "LOWER(solicitante_agencia) LIKE ?";
+        $whereParams[] = '%' . strtolower($agenciaFiltro) . '%';
         $fileName = 'Reporte_Tickets_' . preg_replace('/[^A-Za-z0-9]/', '_', $agenciaFiltro) . '_' . date('Ymd_His') . '.xls';
         $agenciaInfo = ['nombre' => $agenciaFiltro . ' - Grupo Huerta'];
     } else {
-        $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
         $fileName = 'Reporte_Tickets_Helpdesk_TI_' . date('Ymd_His') . '.xls';
         $agenciaInfo = ['nombre' => 'Dirección Central de Sistemas - Grupo Huerta'];
     }
+
+    if (!$accesoTodasAreas) {
+        if (empty($areasAutorizadas)) {
+            $whereParts[] = "1 = 0";
+        } else {
+            $inQ = implode(',', array_fill(0, count($areasAutorizadas), '?'));
+            $whereParts[] = "UPPER(area_sistemas) IN ($inQ)";
+            foreach ($areasAutorizadas as $ar) {
+                $whereParams[] = $ar;
+            }
+        }
+    }
+
+    $sqlExp = "SELECT * FROM tickets_soporte";
+    if (!empty($whereParts)) {
+        $sqlExp .= " WHERE " . implode(" AND ", $whereParts);
+    }
+    $sqlExp .= " ORDER BY id DESC";
+
+    $stmtExp = $pdo->prepare($sqlExp);
+    $stmtExp->execute($whereParams);
     $registros = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
 
     $columnasExcel = [
@@ -347,8 +428,19 @@ if (!isset($agenciasList['Oficina Central Grupo Huerta'])) {
 
 if ($pdo) {
     try {
-        $stmtAll = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
-        $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
+        if ($accesoTodasAreas) {
+            $stmtAll = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+            $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
+        } else {
+            if (empty($areasAutorizadas)) {
+                $tickets = [];
+            } else {
+                $inQ = implode(',', array_fill(0, count($areasAutorizadas), '?'));
+                $stmtAll = $pdo->prepare("SELECT * FROM tickets_soporte WHERE UPPER(area_sistemas) IN ($inQ) ORDER BY id DESC");
+                $stmtAll->execute($areasAutorizadas);
+                $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
+            }
+        }
 
         $totalTickets = count($tickets);
         foreach ($tickets as $t) {
@@ -784,6 +876,33 @@ if ($pdo) {
             <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo $error; ?>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
+    <?php endif; ?>
+
+    <?php if (!$accesoTodasAreas): ?>
+        <?php if (empty($areasAutorizadas)): ?>
+            <div class="alert alert-warning border-0 rounded-4 p-4 text-center my-4" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35) !important;" role="alert">
+                <i class="bi bi-shield-lock-fill text-warning fs-1 d-block mb-2"></i>
+                <h5 class="fw-bold text-white mb-2">Sin Áreas de Sistemas Autorizadas</h5>
+                <p class="text-secondary small mb-0" style="max-width: 600px; margin: 0 auto;">
+                    Tu usuario no tiene ninguna área de Sistemas asignada para tickets. Por políticas de seguridad, no puedes consultar ni dar seguimiento a requerimientos de otras áreas. Solicita a un Administrador que configure tus áreas en la Gestión de Usuarios.
+                </p>
+            </div>
+        <?php else: ?>
+            <div class="alert alert-info border-0 rounded-3 py-2 px-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(2, 132, 199, 0.15); border: 1px solid rgba(56, 189, 248, 0.3) !important;">
+                <div class="small text-light d-flex flex-wrap align-items-center gap-2">
+                    <i class="bi bi-shield-lock-fill text-info fs-5"></i>
+                    <span>Áreas de Sistemas autorizadas para tu perfil:</span>
+                    <?php foreach ($areasAutorizadas as $ak): 
+                        $inf = $AREAS_SISTEMAS_CATALOGO[$ak] ?? null;
+                    ?>
+                        <span class="badge" style="background: <?php echo $inf['bg'] ?? '#0284c7'; ?>; color: <?php echo $inf['color'] ?? '#38bdf8'; ?>; border: 1px solid <?php echo $inf['border'] ?? '#38bdf8'; ?>;">
+                            <i class="bi <?php echo $inf['icono'] ?? 'bi-tag'; ?> me-1"></i><?php echo $ak; ?>
+                        </span>
+                    <?php endforeach; ?>
+                </div>
+                <span class="badge bg-secondary bg-opacity-50 text-light small">Filtro de Seguridad Activo</span>
+            </div>
+        <?php endif; ?>
     <?php endif; ?>
 
     <!-- ======================================================= -->
