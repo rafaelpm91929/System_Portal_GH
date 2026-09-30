@@ -239,11 +239,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 // EXPORTACIÓN A EXCEL CORPORATIVO
 // ====================================================
 if (isset($_GET['export']) && $_GET['export'] === 'excel' && $pdo) {
-    $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+    $agenciaFiltro = trim($_GET['agencia'] ?? '');
+    if (!empty($agenciaFiltro) && $agenciaFiltro !== 'TODAS') {
+        $stmtExp = $pdo->prepare("SELECT * FROM tickets_soporte WHERE LOWER(solicitante_agencia) LIKE ? ORDER BY id DESC");
+        $stmtExp->execute(['%' . strtolower($agenciaFiltro) . '%']);
+        $fileName = 'Reporte_Tickets_' . preg_replace('/[^A-Za-z0-9]/', '_', $agenciaFiltro) . '_' . date('Ymd_His') . '.xls';
+        $agenciaInfo = ['nombre' => $agenciaFiltro . ' - Grupo Huerta'];
+    } else {
+        $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+        $fileName = 'Reporte_Tickets_Helpdesk_TI_' . date('Ymd_His') . '.xls';
+        $agenciaInfo = ['nombre' => 'Dirección Central de Sistemas - Grupo Huerta'];
+    }
     $registros = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
-
-    $fileName = 'Reporte_Tickets_Helpdesk_TI_' . date('Ymd_His') . '.xls';
-    $agenciaInfo = ['nombre' => 'Dirección Central de Sistemas - Grupo Huerta'];
 
     $columnasExcel = [
         ['titulo' => 'FOLIO', 'ancho' => 110, 'align' => 'center'],
@@ -295,15 +302,48 @@ $totalEnProceso = 0;
 $totalResueltos = 0;
 $totalSinAsignar = 0;
 $conteoPorAgencia = [];
+$agenciasList = [];
 
-// Inicializar conteos por cada agencia conectada (normalizadas y sin duplicados)
+// 1. Inicializar agencias del catálogo oficial y personalizadas
 if (!empty($CATALOGO_AGENCIAS)) {
-    foreach ($CATALOGO_AGENCIAS as $ag) {
+    foreach ($CATALOGO_AGENCIAS as $k => $ag) {
         $nomNorm = normalizarAgencia($ag['nombre'] ?? '');
         $conteoPorAgencia[$nomNorm] = 0;
+        $agenciasList[$nomNorm] = [
+            'id'          => $ag['id'] ?? $k,
+            'nombre'      => $nomNorm,
+            'cpanel'      => $ag['cpanel'] ?? ($ag['subdominio'] ?? 'cPanel Conectado'),
+            'subdominio'  => $ag['subdominio'] ?? '',
+            'icono'       => $ag['icono'] ?? 'bi-building-fill-check',
+            'color'       => $ag['color'] ?? '#2563eb',
+            'descripcion' => $ag['descripcion'] ?? 'Agencia cPanel Conectada',
+            'total'       => 0,
+            'abiertos'    => 0,
+            'en_proceso'  => 0,
+            'resueltos'   => 0,
+            'ultimo_ticket' => null
+        ];
     }
 }
-$conteoPorAgencia['Oficina Central Grupo Huerta'] = 0;
+
+// 2. Garantizar presencia de Oficina Central Grupo Huerta
+if (!isset($agenciasList['Oficina Central Grupo Huerta'])) {
+    $conteoPorAgencia['Oficina Central Grupo Huerta'] = 0;
+    $agenciasList['Oficina Central Grupo Huerta'] = [
+        'id'          => 'oficina_central',
+        'nombre'      => 'Oficina Central Grupo Huerta',
+        'cpanel'      => 'portal.grupohuerta.mx',
+        'subdominio'  => 'portal.grupohuerta.mx',
+        'icono'       => 'bi-buildings-fill',
+        'color'       => '#10b981',
+        'descripcion' => 'Dirección Central de Sistemas y TI',
+        'total'       => 0,
+        'abiertos'    => 0,
+        'en_proceso'  => 0,
+        'resueltos'   => 0,
+        'ultimo_ticket' => null
+    ];
+}
 
 if ($pdo) {
     try {
@@ -312,7 +352,7 @@ if ($pdo) {
 
         $totalTickets = count($tickets);
         foreach ($tickets as $t) {
-            $estLower = strtolower($t['estado'] ?? '');
+            $estLower = strtolower(trim($t['estado'] ?? ''));
             if ($estLower === 'abierto') {
                 $totalAbiertos++;
             } elseif ($estLower === 'en proceso') {
@@ -326,9 +366,37 @@ if ($pdo) {
             }
 
             $agNom = normalizarAgencia($t['solicitante_agencia'] ?? 'Oficina Central Grupo Huerta');
-            if (!isset($conteoPorAgencia[$agNom])) {
+            if (!isset($agenciasList[$agNom])) {
                 $conteoPorAgencia[$agNom] = 0;
+                $agenciasList[$agNom] = [
+                    'id'          => preg_replace('/[^a-z0-9]/', '_', strtolower($agNom)),
+                    'nombre'      => $agNom,
+                    'cpanel'      => 'Sucursal Registrada',
+                    'subdominio'  => '',
+                    'icono'       => 'bi-building',
+                    'color'       => '#6366f1',
+                    'descripcion' => 'Sucursal Grupo Huerta',
+                    'total'       => 0,
+                    'abiertos'    => 0,
+                    'en_proceso'  => 0,
+                    'resueltos'   => 0,
+                    'ultimo_ticket' => null
+                ];
             }
+
+            $agenciasList[$agNom]['total']++;
+            if ($estLower === 'abierto') {
+                $agenciasList[$agNom]['abiertos']++;
+            } elseif ($estLower === 'en proceso') {
+                $agenciasList[$agNom]['en_proceso']++;
+            } elseif ($estLower === 'resuelto' || $estLower === 'cerrado') {
+                $agenciasList[$agNom]['resueltos']++;
+            }
+
+            if ($agenciasList[$agNom]['ultimo_ticket'] === null) {
+                $agenciasList[$agNom]['ultimo_ticket'] = $t;
+            }
+
             if ($estLower !== 'resuelto' && $estLower !== 'cerrado') {
                 $conteoPorAgencia[$agNom]++;
             }
@@ -431,6 +499,71 @@ if ($pdo) {
             padding: 2px 7px;
             border-radius: 12px;
             font-weight: 700;
+        }
+
+        /* Hub de Agencias (Vista Inicial) */
+        .agency-ticket-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 22px;
+        }
+        .agency-ticket-card {
+            background: #091a32;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 22px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .agency-ticket-card:hover {
+            transform: translateY(-5px);
+            border-color: #38bdf8;
+            background: #0e2444;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(56, 189, 248, 0.18);
+        }
+        .agency-ticket-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            flex-shrink: 0;
+        }
+        .agency-stat-box {
+            background: rgba(4, 13, 26, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 10px 8px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+        .agency-ticket-card:hover .agency-stat-box {
+            background: rgba(4, 13, 26, 0.95);
+            border-color: rgba(56, 189, 248, 0.25);
+        }
+        .agency-stat-box.highlight-open {
+            border-color: rgba(245, 158, 11, 0.45);
+            background: rgba(245, 158, 11, 0.1);
+        }
+        .stat-number {
+            font-size: 1.4rem;
+            font-weight: 800;
+            line-height: 1.1;
+        }
+        .stat-label {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #94a3b8;
+            letter-spacing: 0.6px;
+            margin-top: 4px;
         }
 
         /* KPIs */
@@ -653,138 +786,252 @@ if ($pdo) {
         </div>
     <?php endif; ?>
 
-    <!-- ============================================== -->
-    <!-- 1. MONITOR DE AGENCIAS CONECTADAS (VISTA AGENTE) -->
-    <!-- ============================================== -->
-    <div class="agencies-monitor-bar">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-2">
-            <div class="d-flex align-items-center gap-2">
-                <i class="bi bi-buildings-fill text-success fs-5"></i>
-                <span class="fw-bold text-white">Agencias Conectadas (Filtro Rápido):</span>
-                <span class="small text-secondary">Haz clic en una sucursal para ver sus tickets</span>
+    <!-- ======================================================= -->
+    <!-- VISTA 1: CATÁLOGO DE AGENCIAS Y RECUA DROS KPIS (INICIAL) -->
+    <!-- ======================================================= -->
+    <div id="vistaAgencias">
+        <!-- Encabezado de Vista de Agencias -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1 fw-bold">
+                        <i class="bi bi-shield-check me-1"></i> Mesa de Ayuda TI
+                    </span>
+                    <span class="text-secondary small">&bull; Dirección Central de Sistemas</span>
+                </div>
+                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-buildings text-info"></i> Agencias y Sucursales Conectadas
+                </h3>
+                <p class="text-secondary mb-0 small">
+                    Monitoreo en tiempo real de tickets. Selecciona una agencia para revisar su historial o atender requerimientos.
+                </p>
             </div>
-            <a href="agencias.php" class="btn btn-outline-info btn-sm rounded-3 px-3">
-                <i class="bi bi-gear-fill me-1"></i> Administrar cPanels / Conexiones
-            </a>
-        </div>
-
-        <div class="d-flex flex-wrap gap-2 pt-1" id="agenciasFilterContainer">
-            <!-- Botón Todas -->
-            <button class="agency-pill-btn active" onclick="filtrarPorAgencia('TODAS', this)">
-                <i class="bi bi-globe2 text-info"></i>
-                <span>Todas las Agencias</span>
-                <span class="pending-count-badge bg-primary text-white"><?php echo $totalTickets; ?></span>
-            </button>
-
-            <!-- Botones por cada Agencia Conectada -->
-            <?php foreach ($conteoPorAgencia as $nomAg => $pendientes): 
-                if ($nomAg === 'Oficina Central Grupo Huerta') continue;
-            ?>
-                <button class="agency-pill-btn" onclick="filtrarPorAgencia('<?php echo htmlspecialchars($nomAg); ?>', this)">
-                    <i class="bi bi-building text-warning"></i>
-                    <span><?php echo htmlspecialchars($nomAg); ?></span>
-                    <?php if ($pendientes > 0): ?>
-                        <span class="pending-count-badge bg-danger text-white"><?php echo $pendientes; ?> pend.</span>
-                    <?php else: ?>
-                        <span class="pending-count-badge bg-secondary text-light">0 pend.</span>
-                    <?php endif; ?>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-info rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2" onclick="mostrarHistorialAgencia('TODAS')">
+                    <i class="bi bi-globe2"></i> <span>Ver Historial Consolidado (Todas)</span>
                 </button>
+                <a href="agencias.php" class="btn btn-outline-secondary text-white rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-gear-fill"></i> <span>Administrar cPanels</span>
+                </a>
+                <button class="btn btn-primary rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
+                    <i class="bi bi-plus-circle-fill"></i> <span>+ Registrar Ticket Manual</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- KPIs Generales Globales del Sistema -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-cyan"><i class="bi bi-inbox-fill"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
+                        <div class="small text-secondary fw-semibold">TOTAL TICKETS SISTEMA</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
+                        <div class="small text-secondary fw-semibold">ABIERTOS / SIN ATENDER</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-blue"><i class="bi bi-gear-wide-connected"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
+                        <div class="small text-secondary fw-semibold">EN ATENCIÓN / PROCESO</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-green"><i class="bi bi-check2-circle"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-success"><?php echo $totalResueltos; ?></div>
+                        <div class="small text-secondary fw-semibold">RESUELTOS / CERRADOS</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grid de Agencias con sus Recuadros de Métricas -->
+        <div class="agency-ticket-grid mb-5">
+            <?php foreach ($agenciasList as $nomAg => $agInfo): ?>
+                <div class="agency-ticket-card" onclick="mostrarHistorialAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>')">
+                    <!-- Top de la Tarjeta de Agencia -->
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="agency-ticket-icon" style="background: <?php echo $agInfo['color']; ?>22; color: <?php echo $agInfo['color']; ?>; border: 1px solid <?php echo $agInfo['color']; ?>44;">
+                                <i class="bi <?php echo $agInfo['icono']; ?>"></i>
+                            </div>
+                            <div>
+                                <h5 class="fw-bold text-white mb-0"><?php echo htmlspecialchars($nomAg); ?></h5>
+                                <span class="text-secondary small font-monospace"><?php echo htmlspecialchars($agInfo['cpanel']); ?></span>
+                            </div>
+                        </div>
+                        <div>
+                            <?php if ($agInfo['abiertos'] > 0): ?>
+                                <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 px-3 py-2 rounded-pill">
+                                    <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $agInfo['abiertos']; ?> sin atender
+                                </span>
+                            <?php elseif ($agInfo['total'] > 0): ?>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 rounded-pill">
+                                    <i class="bi bi-check2-all me-1"></i> Al día
+                                </span>
+                            <?php else: ?>
+                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50 px-3 py-2 rounded-pill">
+                                    <i class="bi bi-dash-circle me-1"></i> Sin incidencias
+                                </span>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Recuadros de Métricas Solicitados -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-3">
+                            <div class="agency-stat-box">
+                                <div class="stat-number text-white"><?php echo $agInfo['total']; ?></div>
+                                <div class="stat-label">TOTALES</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="agency-stat-box <?php echo $agInfo['abiertos'] > 0 ? 'highlight-open' : ''; ?>">
+                                <div class="stat-number text-warning"><?php echo $agInfo['abiertos']; ?></div>
+                                <div class="stat-label">SIN ATENDER</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="agency-stat-box">
+                                <div class="stat-number text-info"><?php echo $agInfo['en_proceso']; ?></div>
+                                <div class="stat-label">EN PROCESO</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="agency-stat-box">
+                                <div class="stat-number text-success"><?php echo $agInfo['resueltos']; ?></div>
+                                <div class="stat-label">RESUELTOS</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pie de Tarjeta con botón de acceso -->
+                    <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-15">
+                        <span class="text-secondary small">
+                            <?php if ($agInfo['ultimo_ticket']): ?>
+                                Último: <strong class="text-white"><?php echo htmlspecialchars($agInfo['ultimo_ticket']['folio'] ?? ('TK-'.$agInfo['ultimo_ticket']['id'])); ?></strong> &bull; <?php echo date('d/m/Y', strtotime($agInfo['ultimo_ticket']['creado_en'])); ?>
+                            <?php else: ?>
+                                Sin tickets registrados aún
+                            <?php endif; ?>
+                        </span>
+                        <span class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 fw-bold text-nowrap">
+                            Ver Historial <i class="bi bi-arrow-right ms-1"></i>
+                        </span>
+                    </div>
+                </div>
             <?php endforeach; ?>
-
-            <!-- Central -->
-            <button class="agency-pill-btn" onclick="filtrarPorAgencia('Oficina Central Grupo Huerta', this)">
-                <i class="bi bi-building-lock text-info"></i>
-                <span>Oficina Central</span>
-                <span class="pending-count-badge bg-secondary text-light"><?php echo $conteoPorAgencia['Oficina Central Grupo Huerta'] ?? 0; ?></span>
-            </button>
         </div>
     </div>
 
-    <!-- ============================================== -->
-    <!-- 2. KPIs DE CONTROL DE LA MESA DE AYUDA -->
-    <!-- ============================================== -->
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-cyan"><i class="bi bi-inbox-fill"></i></div>
+    <!-- ======================================================= -->
+    <!-- VISTA 2: HISTORIAL DE TICKETS DE LA AGENCIA SELECCIONADA -->
+    <!-- ======================================================= -->
+    <div id="vistaHistorialTickets" style="display: none;">
+        <!-- Botón de Retorno y Título Dinámico -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4 pb-3 border-bottom border-secondary border-opacity-20">
+            <div class="d-flex align-items-center gap-3">
+                <button type="button" class="btn btn-outline-secondary text-white rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2" onclick="mostrarVistaAgencias()">
+                    <i class="bi bi-arrow-left"></i> <span>Volver a Selección de Agencias</span>
+                </button>
                 <div>
-                    <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
-                    <div class="small text-secondary fw-semibold">TOTAL TICKETS</div>
+                    <h4 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
+                        <i class="bi bi-clock-history text-info"></i>
+                        <span id="tituloHistorialAgencia">Historial de Tickets</span>
+                    </h4>
+                    <span class="text-secondary small" id="subtituloHistorialAgencia">Auditoría detallada e incidencias reportadas</span>
                 </div>
             </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
-                <div>
-                    <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
-                    <div class="small text-secondary fw-semibold">ABIERTOS / EN ESPERA</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-blue"><i class="bi bi-gear-wide-connected"></i></div>
-                <div>
-                    <div class="fs-4 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
-                    <div class="small text-secondary fw-semibold">EN ATENCIÓN / PROCESO</div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-green"><i class="bi bi-check2-circle"></i></div>
-                <div>
-                    <div class="fs-4 fw-bold text-success"><?php echo $totalResueltos; ?></div>
-                    <div class="small text-secondary fw-semibold">RESUELTOS / CERRADOS</div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- ============================================== -->
-    <!-- 3. BARRA DE HERRAMIENTAS: BÚSQUEDA Y ACCIONES -->
-    <!-- ============================================== -->
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-        <!-- Buscador -->
-        <div class="search-box-wrapper flex-grow-1" style="max-width: 500px;">
-            <i class="bi bi-search text-secondary"></i>
-            <input type="text" id="busquedaInput" class="search-input" placeholder="Buscar por folio, requerimiento, solicitante o técnico..." oninput="filtrarTickets()">
-            <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBusqueda()"><i class="bi bi-x-circle-fill"></i></button>
+            <!-- Mini Recuadros de Métricas de la Agencia Seleccionada -->
+            <div class="d-flex flex-wrap gap-2" id="kpisAgenciaSeleccionada">
+                <!-- Se actualiza reactivamente vía JS -->
+            </div>
         </div>
 
-        <!-- Botones de Acción para Agente -->
-        <div class="d-flex align-items-center gap-2">
-            <?php if ($esAdmin && $totalTickets > 0): ?>
-                <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar TODOS los tickets registrados y reiniciar el contador a 0?');" style="display:inline;">
-                    <input type="hidden" name="accion" value="vaciar_todos_tickets">
-                    <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-1" title="Eliminar todos los tickets de prueba">
-                        <i class="bi bi-trash3-fill"></i> <span>Vaciar Tickets</span>
+        <!-- Barra de Filtro Rápido entre Agencias (Pills) -->
+        <div class="agencies-monitor-bar mb-3">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <div class="d-flex align-items-center gap-2">
+                    <i class="bi bi-funnel-fill text-info"></i>
+                    <span class="fw-bold text-white small text-uppercase">Cambiar Agencia:</span>
+                </div>
+                <button type="button" class="btn btn-link text-info text-decoration-none btn-sm p-0" onclick="mostrarVistaAgencias()">
+                    <i class="bi bi-grid-3x3-gap-fill me-1"></i> Ver todas en cuadrícula
+                </button>
+            </div>
+            <div class="d-flex flex-wrap gap-2 pt-1" id="agenciasFilterContainer">
+                <button class="agency-pill-btn active" data-agencia="TODAS" onclick="filtrarPorAgencia('TODAS', this)">
+                    <i class="bi bi-globe2 text-info"></i>
+                    <span>Todas las Agencias</span>
+                    <span class="pending-count-badge bg-primary text-white"><?php echo $totalTickets; ?></span>
+                </button>
+                <?php foreach ($agenciasList as $nomAg => $agInfo): ?>
+                    <button class="agency-pill-btn" data-agencia="<?php echo htmlspecialchars($nomAg); ?>" onclick="filtrarPorAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>', this)">
+                        <i class="bi <?php echo $agInfo['icono']; ?> text-warning"></i>
+                        <span><?php echo htmlspecialchars($nomAg); ?></span>
+                        <?php if ($agInfo['abiertos'] > 0): ?>
+                            <span class="pending-count-badge bg-danger text-white"><?php echo $agInfo['abiertos']; ?> pend.</span>
+                        <?php else: ?>
+                            <span class="pending-count-badge bg-secondary text-light"><?php echo $agInfo['total']; ?> tot.</span>
+                        <?php endif; ?>
                     </button>
-                </form>
-            <?php endif; ?>
-            <a href="tickets.php?export=excel" class="btn btn-success btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
-                <i class="bi bi-file-earmark-excel-fill"></i> <span>Exportar a Excel</span>
-            </a>
-            <button class="btn btn-primary btn-sm rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
-                <i class="bi bi-plus-circle-fill"></i> <span>+ Registrar Ticket Manual</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- ============================================== -->
-    <!-- 4. CHIPS DE FILTRADO POR ÁREA DE SISTEMAS -->
-    <!-- ============================================== -->
-    <div class="d-flex flex-wrap gap-2 mb-4" id="areasFilterContainer">
-        <div class="area-pill active" onclick="filtrarPorArea('TODAS', this)">
-            <i class="bi bi-grid-fill"></i> Todas las Áreas
-        </div>
-        <?php foreach ($AREAS_SISTEMAS as $areaKey => $areaInfo): ?>
-            <div class="area-pill" onclick="filtrarPorArea('<?php echo $areaKey; ?>', this)">
-                <i class="bi <?php echo $areaInfo['icono']; ?>"></i> <?php echo $areaInfo['nombre']; ?>
+                <?php endforeach; ?>
             </div>
-        <?php endforeach; ?>
-    </div>
+        </div>
+
+        <!-- Barra de Búsqueda y Acciones de la Mesa de Ayuda -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+            <!-- Buscador -->
+            <div class="search-box-wrapper flex-grow-1" style="max-width: 500px;">
+                <i class="bi bi-search text-secondary"></i>
+                <input type="text" id="busquedaInput" class="search-input" placeholder="Buscar por folio, requerimiento, solicitante o técnico..." oninput="filtrarTickets()">
+                <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBusqueda()"><i class="bi bi-x-circle-fill"></i></button>
+            </div>
+
+            <!-- Botones de Acción -->
+            <div class="d-flex align-items-center gap-2">
+                <?php if ($esAdmin && $totalTickets > 0): ?>
+                    <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar TODOS los tickets registrados y reiniciar el contador a 0?');" style="display:inline;">
+                        <input type="hidden" name="accion" value="vaciar_todos_tickets">
+                        <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-1" title="Eliminar todos los tickets">
+                            <i class="bi bi-trash3-fill"></i> <span>Vaciar Tickets</span>
+                        </button>
+                    </form>
+                <?php endif; ?>
+                <a href="tickets.php?export=excel" id="btnExportarExcel" class="btn btn-success btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-excel-fill"></i> <span>Exportar a Excel</span>
+                </a>
+                <button class="btn btn-primary btn-sm rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
+                    <i class="bi bi-plus-circle-fill"></i> <span>+ Registrar Ticket Manual</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Chips de Filtrado por Área de Sistemas -->
+        <div class="d-flex flex-wrap gap-2 mb-4" id="areasFilterContainer">
+            <div class="area-pill active" onclick="filtrarPorArea('TODAS', this)">
+                <i class="bi bi-grid-fill"></i> Todas las Áreas
+            </div>
+            <?php foreach ($AREAS_SISTEMAS as $areaKey => $areaInfo): ?>
+                <div class="area-pill" onclick="filtrarPorArea('<?php echo $areaKey; ?>', this)">
+                    <i class="bi <?php echo $areaInfo['icono']; ?>"></i> <?php echo $areaInfo['nombre']; ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
 
     <!-- ============================================== -->
     <!-- 5. TABLA DE TICKETS - VISTA DE AGENTE TI -->
@@ -929,8 +1176,9 @@ if ($pdo) {
             </table>
         </div>
     </div>
+    </div> <!-- /#vistaHistorialTickets -->
 
-</div>
+</div> <!-- /.main-container -->
 
 <!-- ============================================== -->
 <!-- MODAL: REGISTRAR TICKET MANUAL POR EL AGENTE -->
@@ -951,7 +1199,7 @@ if ($pdo) {
                         <!-- Agencia de Origen -->
                         <div class="col-md-6">
                             <label class="form-label small text-secondary fw-semibold">Agencia / Sucursal de Origen *</label>
-                            <select name="solicitante_agencia" class="form-select" required>
+                            <select name="solicitante_agencia" id="form_solicitante_agencia" class="form-select" required>
                                 <?php foreach ($conteoPorAgencia as $nomAg => $c): ?>
                                     <option value="<?php echo htmlspecialchars($nomAg); ?>"><?php echo htmlspecialchars($nomAg); ?></option>
                                 <?php endforeach; ?>
@@ -1114,20 +1362,104 @@ if ($pdo) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const agenciasData = <?php echo json_encode($agenciasList); ?>;
+const totalesGlobales = {
+    total: <?php echo $totalTickets; ?>,
+    abiertos: <?php echo $totalAbiertos; ?>,
+    en_proceso: <?php echo $totalEnProceso; ?>,
+    resueltos: <?php echo $totalResueltos; ?>
+};
+
 let filtroAgenciaActual = 'TODAS';
 let filtroAreaActual = 'TODAS';
 
-function filtrarPorAgencia(agencia, elem) {
+function mostrarVistaAgencias() {
+    const vistaAg = document.getElementById('vistaAgencias');
+    const vistaHist = document.getElementById('vistaHistorialTickets');
+    if (vistaAg && vistaHist) {
+        vistaAg.style.display = 'block';
+        vistaHist.style.display = 'none';
+    }
+    history.pushState(null, '', 'tickets.php');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function mostrarHistorialAgencia(agencia) {
     filtroAgenciaActual = agencia;
-    document.querySelectorAll('#agenciasFilterContainer .agency-pill-btn').forEach(btn => btn.classList.remove('active'));
-    elem.classList.add('active');
+
+    const vistaAg = document.getElementById('vistaAgencias');
+    const vistaHist = document.getElementById('vistaHistorialTickets');
+    if (vistaAg && vistaHist) {
+        vistaAg.style.display = 'none';
+        vistaHist.style.display = 'block';
+    }
+
+    const tituloEl = document.getElementById('tituloHistorialAgencia');
+    const subtituloEl = document.getElementById('subtituloHistorialAgencia');
+    const kpisEl = document.getElementById('kpisAgenciaSeleccionada');
+    const btnExcel = document.getElementById('btnExportarExcel');
+    const selectModalAgencia = document.getElementById('form_solicitante_agencia');
+
+    let metrics = totalesGlobales;
+    if (agencia !== 'TODAS' && agenciasData[agencia]) {
+        metrics = agenciasData[agencia];
+        if (tituloEl) tituloEl.innerHTML = `<span class="text-info">${agencia}</span> &bull; Historial de Tickets`;
+        if (subtituloEl) subtituloEl.textContent = `Listado cronológico de incidencias y requerimientos de ${agencia}`;
+        if (btnExcel) btnExcel.href = `tickets.php?export=excel&agencia=${encodeURIComponent(agencia)}`;
+        if (selectModalAgencia) selectModalAgencia.value = agencia;
+        history.pushState(null, '', `tickets.php?agencia=${encodeURIComponent(agencia)}`);
+    } else {
+        filtroAgenciaActual = 'TODAS';
+        if (tituloEl) tituloEl.innerHTML = `Todas las Agencias &bull; Historial Consolidado`;
+        if (subtituloEl) subtituloEl.textContent = `Mostrando incidencias globales de todas las sucursales conectadas`;
+        if (btnExcel) btnExcel.href = `tickets.php?export=excel`;
+        history.pushState(null, '', `tickets.php?agencia=TODAS`);
+    }
+
+    // Mini recuadros en la barra de historial
+    if (kpisEl) {
+        kpisEl.innerHTML = `
+            <div class="px-3 py-1 rounded-3 d-flex align-items-center gap-2" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);">
+                <span class="small text-secondary">Totales:</span>
+                <strong class="text-white">${metrics.total}</strong>
+            </div>
+            <div class="px-3 py-1 rounded-3 d-flex align-items-center gap-2" style="background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.3);">
+                <span class="small text-warning">Sin atender:</span>
+                <strong class="text-warning">${metrics.abiertos}</strong>
+            </div>
+            <div class="px-3 py-1 rounded-3 d-flex align-items-center gap-2" style="background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.3);">
+                <span class="small text-info">En proceso:</span>
+                <strong class="text-info">${metrics.en_proceso}</strong>
+            </div>
+            <div class="px-3 py-1 rounded-3 d-flex align-items-center gap-2" style="background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3);">
+                <span class="small text-success">Resueltos:</span>
+                <strong class="text-success">${metrics.resueltos}</strong>
+            </div>
+        `;
+    }
+
+    // Sincronizar pills activas
+    document.querySelectorAll('#agenciasFilterContainer .agency-pill-btn').forEach(btn => {
+        const btnAg = btn.dataset.agencia || '';
+        if (btnAg.toLowerCase() === filtroAgenciaActual.toLowerCase()) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
     filtrarTickets();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function filtrarPorAgencia(agencia, elem) {
+    mostrarHistorialAgencia(agencia);
 }
 
 function filtrarPorArea(area, elem) {
     filtroAreaActual = area;
     document.querySelectorAll('#areasFilterContainer .area-pill').forEach(pill => pill.classList.remove('active'));
-    elem.classList.add('active');
+    if (elem) elem.classList.add('active');
     filtrarTickets();
 }
 
@@ -1211,6 +1543,28 @@ function abrirModalAtender(ticket) {
     const modal = new bootstrap.Modal(document.getElementById('modalAtenderTicket'));
     modal.show();
 }
+
+// Router de inicio según URL
+window.addEventListener('DOMContentLoaded', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const agParam = urlParams.get('agencia');
+    if (agParam) {
+        mostrarHistorialAgencia(agParam);
+    } else {
+        mostrarVistaAgencias();
+    }
+});
+
+// Navegación atrás / adelante del navegador
+window.addEventListener('popstate', () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const agParam = urlParams.get('agencia');
+    if (agParam) {
+        mostrarHistorialAgencia(agParam);
+    } else {
+        mostrarVistaAgencias();
+    }
+});
 </script>
 </body>
 </html>
