@@ -22,6 +22,7 @@ header("Expires: 0");
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
 require_once 'excel_helper.php';
+include_once 'config_agencias.php';
 
 // Protección de Sesión
 if (!isset($_SESSION['usuario_id'])) {
@@ -29,11 +30,11 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
-// Cargar permisos y asegurar tablas
+// Cargar datos de usuario
 $usuarioId = $_SESSION['usuario_id'];
-$nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Usuario');
-$agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
-$rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+$nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Agente de Sistemas');
+$agenciaUsuario = $_SESSION['agencia'] ?? 'Oficina Central Grupo Huerta';
+$rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'admin');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
 if ($pdo) {
@@ -54,25 +55,25 @@ $mensaje = '';
 $error = '';
 
 // ====================================================
-// MANEJO DE ACCIONES POST (CREAR, EDITAR, ELIMINAR)
+// MANEJO DE ACCIONES POST (CREAR, EDITAR, ATENDER)
 // ====================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     $accion = $_POST['accion'] ?? '';
 
-    // 1. Crear Nuevo Ticket
+    // 1. Crear / Registrar Nuevo Ticket de Soporte (Por Agente)
     if ($accion === 'crear_ticket') {
         $area = trim($_POST['area_sistemas'] ?? '');
         $titulo = trim($_POST['titulo'] ?? '');
         $descripcion = trim($_POST['descripcion'] ?? '');
         $prioridad = trim($_POST['prioridad'] ?? 'Media');
         $solicitanteNombre = trim($_POST['solicitante_nombre'] ?? $nombreUsuario);
-        $solicitanteEmail = trim($_POST['solicitante_email'] ?? ($_SESSION['usuario_email'] ?? ''));
-        $solicitanteAgencia = trim($_POST['solicitante_agencia'] ?? $agenciaUsuario);
+        $solicitanteEmail = trim($_POST['solicitante_email'] ?? '');
+        $solicitanteAgencia = trim($_POST['solicitante_agencia'] ?? 'VW Divol La Villa');
+        $asignadoA = trim($_POST['asignado_a'] ?? '');
 
         if (empty($titulo) || empty($descripcion) || empty($area)) {
             $error = "Por favor completa el Área de Sistemas, Título y Descripción del ticket.";
         } else {
-            // Manejo de archivo adjunto (opcional)
             $archivoUrl = null;
             if (isset($_FILES['archivo_adjunto']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
                 $fileTmp = $_FILES['archivo_adjunto']['tmp_name'];
@@ -94,129 +95,132 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
 
             try {
-                // Generar Folio consecutivo
-                $stmtCount = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
-                $conteo = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
-                $folio = 'TK-' . date('Y') . '-' . str_pad($conteo + 1, 4, '0', STR_PAD_LEFT);
-
-                $stmtIns = $pdo->prepare("
-                    INSERT INTO tickets_soporte 
-                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, datetime('now', 'localtime'))
-                ");
-                
-                // Fallback para MySQL vs SQLite en la fecha
-                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                if ($driver !== 'sqlite') {
-                    $stmtIns = $pdo->prepare("
-                        INSERT INTO tickets_soporte 
-                        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
-                        VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, NOW())
-                    ");
+                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+                if ($driver === 'sqlite') {
+                    $countStmt = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
+                } else {
+                    $countStmt = $pdo->query("SELECT COUNT(*) FROM `tickets_soporte`");
                 }
+                $nextNum = ($countStmt ? (int)$countStmt->fetchColumn() : 0) + 1;
+                $folio = 'TK-' . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
-                $stmtIns->execute([
-                    $folio,
-                    $area,
-                    $titulo,
-                    $descripcion,
-                    $prioridad,
-                    $usuarioId,
-                    $solicitanteNombre,
-                    $solicitanteEmail,
-                    $solicitanteAgencia,
-                    $archivoUrl
+                $stmt = $pdo->prepare("
+                    INSERT INTO tickets_soporte 
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, asignado_a, archivo_adjunto)
+                    VALUES
+                    (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_id, :sol_nom, :sol_em, :sol_ag, :asignado, :archivo)
+                ");
+                $stmt->execute([
+                    ':folio'     => $folio,
+                    ':area'      => $area,
+                    ':titulo'    => $titulo,
+                    ':desc'      => $descripcion,
+                    ':prio'      => $prioridad,
+                    ':sol_id'    => $usuarioId,
+                    ':sol_nom'   => $solicitanteNombre,
+                    ':sol_em'    => $solicitanteEmail,
+                    ':sol_ag'    => $solicitanteAgencia,
+                    ':asignado'  => $asignadoA,
+                    ':archivo'   => $archivoUrl
                 ]);
-
-                $mensaje = "Ticket <strong>" . htmlspecialchars($folio) . "</strong> generado con éxito para el área de <strong>" . htmlspecialchars($area) . "</strong>.";
-            } catch (Throwable $t) {
-                $error = "Error al crear el ticket: " . $t->getMessage();
+                $mensaje = "Ticket con Folio <strong>$folio</strong> para la agencia <strong>" . htmlspecialchars($solicitanteAgencia) . "</strong> registrado con éxito.";
+            } catch (Throwable $e) {
+                $error = "Error al registrar el ticket: " . $e->getMessage();
             }
         }
     }
 
-    // 2. Actualizar Estado / Seguimiento de Ticket
-    elseif ($accion === 'actualizar_ticket') {
+    // 2. Actualizar Estado, Asignación y Notas de Resolución por el Agente
+    if ($accion === 'actualizar_ticket') {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         $nuevoEstado = trim($_POST['estado'] ?? 'Abierto');
         $asignadoA = trim($_POST['asignado_a'] ?? '');
-        $notas = trim($_POST['notas_resolucion'] ?? '');
+        $prioridad = trim($_POST['prioridad'] ?? 'Media');
+        $notasResolucion = trim($_POST['notas_resolucion'] ?? '');
 
         if ($ticketId > 0) {
             try {
-                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                $sqlFecha = ($driver === 'sqlite') ? "datetime('now', 'localtime')" : "NOW()";
-
-                $stmtUp = $pdo->prepare("
+                $stmt = $pdo->prepare("
                     UPDATE tickets_soporte 
-                    SET estado = ?, asignado_a = ?, notas_resolucion = ?, actualizado_en = $sqlFecha
-                    WHERE id = ?
+                    SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas 
+                    WHERE id = :id
                 ");
-                $stmtUp->execute([$nuevoEstado, $asignadoA, $notas, $ticketId]);
-
-                $mensaje = "El ticket ha sido actualizado a estado <strong>" . htmlspecialchars($nuevoEstado) . "</strong>.";
-            } catch (Throwable $t) {
-                $error = "Error al actualizar ticket: " . $t->getMessage();
+                $stmt->execute([
+                    ':estado'    => $nuevoEstado,
+                    ':asignado'  => $asignadoA,
+                    ':prioridad' => $prioridad,
+                    ':notas'     => $notasResolucion,
+                    ':id'        => $ticketId
+                ]);
+                $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
+            } catch (Throwable $e) {
+                $error = "Error al actualizar el ticket: " . $e->getMessage();
             }
         }
     }
 
-    // 3. Eliminar Ticket (Solo Administradores)
-    elseif ($accion === 'eliminar_ticket' && $esAdmin) {
+    // 3. Auto-asignarme ticket
+    if ($accion === 'autoasignar_ticket') {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         if ($ticketId > 0) {
             try {
-                $stmtDel = $pdo->prepare("DELETE FROM tickets_soporte WHERE id = ?");
-                $stmtDel->execute([$ticketId]);
-                $mensaje = "Ticket eliminado correctamente.";
-            } catch (Throwable $t) {
-                $error = "Error al eliminar ticket: " . $t->getMessage();
+                $stmt = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :nombre, estado = CASE WHEN estado = 'Abierto' THEN 'En Proceso' ELSE estado END WHERE id = :id");
+                $stmt->execute([':nombre' => $nombreUsuario, ':id' => $ticketId]);
+                $mensaje = "Te has autoasignado el ticket #$ticketId. Estado actualizado a 'En Proceso'.";
+            } catch (Throwable $e) {
+                $error = "Error al autoasignar: " . $e->getMessage();
+            }
+        }
+    }
+
+    // 4. Eliminar Ticket
+    if ($accion === 'eliminar_ticket' && $esAdmin) {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        if ($ticketId > 0) {
+            try {
+                $stmt = $pdo->prepare("DELETE FROM tickets_soporte WHERE id = :id");
+                $stmt->execute([':id' => $ticketId]);
+                $mensaje = "El ticket #$ticketId ha sido eliminado correctamente.";
+            } catch (Throwable $e) {
+                $error = "Error al eliminar el ticket: " . $e->getMessage();
             }
         }
     }
 }
 
 // ====================================================
-// EXPORTACIÓN A EXCEL (.XLS CON MEMBRETE Y LOGO OFICIAL)
+// EXPORTACIÓN A EXCEL CORPORATIVO
 // ====================================================
-if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
-    $agenciaInfo = obtenerDatosAgenciaExcel($pdo, $agenciaUsuario);
-    $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
-    $fileName = "Tickets_Sistemas_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
+if (isset($_GET['export']) && $_GET['export'] === 'excel' && $pdo) {
+    $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+    $registros = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
 
-    $filasDb = [];
-    if ($pdo) {
-        try {
-            $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
-            $filasDb = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
-        } catch (Throwable $e) {}
-    }
+    $fileName = 'Reporte_Tickets_Helpdesk_TI_' . date('Ymd_His') . '.xls';
+    $agenciaInfo = ['nombre' => 'Dirección Central de Sistemas - Grupo Huerta'];
 
     $columnasExcel = [
-        ['label' => 'Folio', 'width' => '90px', 'align' => 'center', 'is_text' => true],
-        ['label' => 'Área de Sistemas', 'width' => '150px', 'align' => 'left'],
-        ['label' => 'Título / Requerimiento', 'width' => '220px', 'align' => 'left'],
-        ['label' => 'Prioridad', 'width' => '100px', 'align' => 'center'],
-        ['label' => 'Estado', 'width' => '110px', 'align' => 'center'],
-        ['label' => 'Solicitante', 'width' => '170px', 'align' => 'left'],
-        ['label' => 'Correo Solicitante', 'width' => '190px', 'align' => 'left', 'is_text' => true],
-        ['label' => 'Agencia / Sucursal', 'width' => '140px', 'align' => 'left'],
-        ['label' => 'Asignado a', 'width' => '150px', 'align' => 'left'],
-        ['label' => 'Fecha de Creación', 'width' => '130px', 'align' => 'center', 'is_text' => true],
-        ['label' => 'Notas / Resolución', 'width' => '240px', 'align' => 'left']
+        ['titulo' => 'FOLIO', 'ancho' => 110, 'align' => 'center'],
+        ['titulo' => 'AGENCIA ORIGEN', 'ancho' => 180, 'align' => 'left'],
+        ['titulo' => 'ÁREA SISTEMAS', 'ancho' => 140, 'align' => 'center'],
+        ['titulo' => 'TÍTULO / ASUNTO', 'ancho' => 240, 'align' => 'left'],
+        ['titulo' => 'PRIORIDAD', 'ancho' => 110, 'align' => 'center'],
+        ['titulo' => 'ESTADO', 'ancho' => 120, 'align' => 'center'],
+        ['titulo' => 'SOLICITANTE', 'ancho' => 170, 'align' => 'left'],
+        ['titulo' => 'AGENTE ASIGNADO', 'ancho' => 170, 'align' => 'left'],
+        ['titulo' => 'FECHA REGISTRO', 'ancho' => 150, 'align' => 'center'],
+        ['titulo' => 'NOTAS RESOLUCIÓN', 'ancho' => 280, 'align' => 'left']
     ];
 
     $filasExcel = [];
-    foreach ($filasDb as $r) {
+    foreach ($registros as $r) {
         $filasExcel[] = [
-            ['val' => '<b>' . htmlspecialchars($r['folio'] ?? ('#TK-' . $r['id'])) . '</b>', 'align' => 'center', 'is_text' => true],
-            ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['area_sistemas'] ?? '') . '</span>', 'align' => 'left'],
-            ['val' => '<strong>' . htmlspecialchars($r['titulo'] ?? '') . '</strong>', 'align' => 'left'],
+            ['val' => htmlspecialchars($r['folio'] ?? 'TK-' . $r['id']), 'align' => 'center', 'is_bold' => true],
+            ['val' => htmlspecialchars($r['solicitante_agencia'] ?? 'Central'), 'align' => 'left'],
+            ['val' => htmlspecialchars($r['area_sistemas'] ?? '---'), 'align' => 'center'],
+            ['val' => htmlspecialchars($r['titulo'] ?? '---'), 'align' => 'left'],
             ['val' => htmlspecialchars($r['prioridad'] ?? 'Media'), 'align' => 'center'],
-            ['val' => '<span class="badge-pill ' . (strtolower($r['estado'] ?? '') === 'resuelto' || strtolower($r['estado'] ?? '') === 'cerrado' ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($r['estado'] ?? 'Abierto') . '</span>', 'align' => 'center'],
+            ['val' => htmlspecialchars($r['estado'] ?? 'Abierto'), 'align' => 'center'],
             ['val' => htmlspecialchars($r['solicitante_nombre'] ?? '---'), 'align' => 'left'],
-            ['val' => htmlspecialchars($r['solicitante_email'] ?? '---'), 'align' => 'left', 'is_text' => true],
-            ['val' => htmlspecialchars($r['solicitante_agencia'] ?? '---'), 'align' => 'left'],
             ['val' => htmlspecialchars($r['asignado_a'] ?? 'Sin asignar'), 'align' => 'left'],
             ['val' => htmlspecialchars($r['creado_en'] ?? '---'), 'align' => 'center', 'is_text' => true],
             ['val' => htmlspecialchars($r['notas_resolucion'] ?? '---'), 'align' => 'left']
@@ -224,24 +228,34 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
     }
 
     descargarExcelConDiseno(
-        'TICKETS DE SOPORTE &bull; DIRECCIÓN DE SISTEMAS',
-        'Control y Gestión Integral de Requerimientos e Incidencias TI',
+        'TICKETS DE SOPORTE &bull; MESA DE AYUDA TI',
+        'Panel de Agentes - Control de Incidencias de Agencias Grupo Huerta',
         $columnasExcel,
         $filasExcel,
         $agenciaInfo,
         $fileName,
-        'Tickets Sistemas'
+        'Tickets Helpdesk'
     );
 }
 
 // ====================================================
-// CONSULTA DE TICKETS Y MÉTRICAS
+// CONSULTA DE TICKETS Y MÉTRICAS DE AGENTES
 // ====================================================
 $tickets = [];
 $totalTickets = 0;
 $totalAbiertos = 0;
 $totalEnProceso = 0;
 $totalResueltos = 0;
+$totalSinAsignar = 0;
+$conteoPorAgencia = [];
+
+// Inicializar conteos por cada agencia conectada
+if (!empty($CATALOGO_AGENCIAS)) {
+    foreach ($CATALOGO_AGENCIAS as $ag) {
+        $conteoPorAgencia[$ag['nombre']] = 0;
+    }
+}
+$conteoPorAgencia['Oficina Central Grupo Huerta'] = 0;
 
 if ($pdo) {
     try {
@@ -251,9 +265,25 @@ if ($pdo) {
         $totalTickets = count($tickets);
         foreach ($tickets as $t) {
             $estLower = strtolower($t['estado'] ?? '');
-            if ($estLower === 'abierto') $totalAbiertos++;
-            elseif ($estLower === 'en proceso') $totalEnProceso++;
-            elseif ($estLower === 'resuelto' || $estLower === 'cerrado') $totalResueltos++;
+            if ($estLower === 'abierto') {
+                $totalAbiertos++;
+            } elseif ($estLower === 'en proceso') {
+                $totalEnProceso++;
+            } elseif ($estLower === 'resuelto' || $estLower === 'cerrado') {
+                $totalResueltos++;
+            }
+
+            if (empty(trim($t['asignado_a'] ?? ''))) {
+                $totalSinAsignar++;
+            }
+
+            $agNom = $t['solicitante_agencia'] ?? 'Oficina Central Grupo Huerta';
+            if (!isset($conteoPorAgencia[$agNom])) {
+                $conteoPorAgencia[$agNom] = 0;
+            }
+            if ($estLower !== 'resuelto' && $estLower !== 'cerrado') {
+                $conteoPorAgencia[$agNom]++;
+            }
         }
     } catch (Throwable $e) {}
 }
@@ -263,11 +293,11 @@ if ($pdo) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tickets Soporte Dirección Sistemas - Portal Grupo Huerta</title>
+    <title>Panel de Agentes TI - Tickets Soporte Dirección Sistemas</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
         body {
             background-color: #061325;
@@ -280,7 +310,7 @@ if ($pdo) {
         }
 
         .top-navbar {
-            background: rgba(6, 19, 37, 0.92);
+            background: rgba(6, 19, 37, 0.95);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             padding: 14px 35px;
@@ -290,19 +320,80 @@ if ($pdo) {
         }
 
         .main-container {
-            max-width: 1440px;
+            max-width: 1560px;
             margin: 0 auto;
-            padding: 30px 35px;
+            padding: 25px 35px;
         }
 
+        /* Banner de Agente */
+        .agent-badge {
+            background: rgba(14, 165, 233, 0.15);
+            border: 1px solid rgba(14, 165, 233, 0.35);
+            color: #38bdf8;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        /* Barra de Agencias Conectadas */
+        .agencies-monitor-bar {
+            background: #091a32;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+        }
+        .agency-pill-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #cbd5e1;
+            padding: 7px 16px;
+            border-radius: 25px;
+            font-size: 0.86rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            user-select: none;
+        }
+        .agency-pill-btn:hover {
+            background: rgba(56, 189, 248, 0.15);
+            border-color: #38bdf8;
+            color: #ffffff;
+            transform: translateY(-2px);
+        }
+        .agency-pill-btn.active {
+            background: #0284c7 !important;
+            border-color: #38bdf8 !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45);
+        }
+        .pending-count-badge {
+            font-size: 0.7rem;
+            padding: 2px 7px;
+            border-radius: 12px;
+            font-weight: 700;
+        }
+
+        /* KPIs */
         .kpi-card {
             background: #0d1e36;
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 16px;
-            padding: 20px 24px;
+            padding: 20px 22px;
             display: flex;
             align-items: center;
-            gap: 18px;
+            gap: 16px;
             transition: all 0.2s ease;
         }
         .kpi-card:hover {
@@ -321,8 +412,32 @@ if ($pdo) {
         }
         .kpi-cyan { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
         .kpi-yellow { background: rgba(234, 179, 8, 0.15); color: #fde047; }
+        .kpi-red { background: rgba(244, 63, 94, 0.15); color: #fb7185; }
         .kpi-blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
         .kpi-green { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+
+        /* Filtros por Área */
+        .area-pill {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+        }
+        .area-pill:hover, .area-pill.active {
+            color: #ffffff;
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.2);
+            box-shadow: 0 2px 8px rgba(56, 189, 248, 0.25);
+        }
 
         .search-box-wrapper {
             background: #0d1e36;
@@ -347,173 +462,125 @@ if ($pdo) {
             width: 100%;
             font-size: 0.95rem;
         }
-        .search-input::placeholder {
-            color: #64748b;
-        }
 
-        .filter-pill {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #94a3b8;
-            border-radius: 30px;
-            padding: 6px 14px;
-            font-size: 0.82rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            white-space: nowrap;
-            user-select: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-        .filter-pill:hover, .filter-pill.active {
-            background: #0284c7;
-            border-color: #38bdf8;
-            color: #ffffff;
-            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
-        }
-
-        .tickets-table-container {
-            background: #0b1a30;
-            border: 1px solid rgba(56, 189, 248, 0.2);
+        /* Tabla de Tickets */
+        .tickets-table-card {
+            background: #091a32;
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 18px;
             overflow: hidden;
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
         }
-
-        .table-custom {
+        .table {
             margin-bottom: 0;
-            color: #ffffff !important;
-            width: 100%;
-            --bs-table-bg: transparent !important;
-            --bs-table-accent-bg: transparent !important;
-            --bs-table-striped-bg: transparent !important;
-            --bs-table-hover-bg: rgba(56, 189, 248, 0.08) !important;
-            border-color: rgba(255, 255, 255, 0.08) !important;
+            --bs-table-bg: transparent;
+            --bs-table-color: #ffffff;
+            border-collapse: collapse;
         }
-        .table-custom thead th {
-            background: #08162b !important;
-            color: #38bdf8 !important;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+        .table thead th {
+            background-color: #0b2242 !important;
+            color: #94a3b8;
+            font-size: 0.78rem;
             font-weight: 700;
-            padding: 16px 20px;
-            border-bottom: 2px solid rgba(56, 189, 248, 0.3) !important;
-            white-space: nowrap;
-        }
-        .table-custom tbody tr {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
-            transition: all 0.15s ease;
-        }
-        .table-custom tbody tr:nth-child(odd) td {
-            background-color: #0b1c34 !important;
-            color: #ffffff !important;
-        }
-        .table-custom tbody tr:nth-child(even) td {
-            background-color: #0e223f !important;
-            color: #ffffff !important;
-        }
-        .table-custom tbody tr:hover td {
-            background-color: #14325c !important;
-            color: #ffffff !important;
-        }
-        .table-custom tbody td {
-            padding: 16px 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 15px 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             vertical-align: middle;
-            font-size: 0.92rem;
-            box-shadow: none !important;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+        }
+        .table tbody tr {
+            background-color: #08172c !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background-color 0.15s ease;
+        }
+        .table tbody tr:nth-of-type(even) {
+            background-color: #0b1f3b !important;
+        }
+        .table tbody tr:hover {
+            background-color: #122b52 !important;
+        }
+        .table tbody td {
+            padding: 14px 18px;
+            vertical-align: middle;
+            font-size: 0.88rem;
+            color: #e2e8f0;
+            border-top: none;
         }
 
-        .area-badge {
-            font-size: 0.75rem;
+        .badge-folio {
+            font-family: monospace;
             font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 5px 12px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25);
+            font-size: 0.85rem;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.12);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            padding: 3px 8px;
+            border-radius: 6px;
         }
-
-        .status-badge {
-            font-size: 0.76rem;
+        .badge-agencia {
+            font-size: 0.8rem;
             font-weight: 700;
             padding: 4px 10px;
-            border-radius: 20px;
+            border-radius: 12px;
+            background: rgba(16, 185, 129, 0.15);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.35);
             display: inline-flex;
             align-items: center;
             gap: 5px;
         }
-        .status-abierto { background: rgba(234, 179, 8, 0.2); color: #fde047; border: 1px solid rgba(234, 179, 8, 0.4); }
-        .status-proceso { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.4); }
-        .status-resuelto { background: rgba(34, 197, 94, 0.2); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.4); }
-        .status-cerrado { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
 
-        .prio-badge {
-            font-size: 0.72rem;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 6px;
-            text-transform: uppercase;
-        }
-        .prio-baja { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
-        .prio-media { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
-        .prio-alta { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
-        .prio-urgente { background: rgba(244, 63, 94, 0.25); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.4); }
+        .badge-prio-urgente { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); }
+        .badge-prio-alta    { background: rgba(249, 115, 22, 0.2); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.4); }
+        .badge-prio-media   { background: rgba(234, 179, 8, 0.2); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); }
+        .badge-prio-baja    { background: rgba(100, 116, 139, 0.2); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.4); }
 
-        .btn-action-icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            color: #cbd5e1;
-            transition: all 0.15s ease;
-            cursor: pointer;
+        .badge-status-abierto    { background: rgba(234, 179, 8, 0.18); color: #facc15; border: 1px solid rgba(234, 179, 8, 0.4); }
+        .badge-status-proceso    { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); }
+        .badge-status-resuelto   { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.4); }
+        .badge-status-cerrado    { background: rgba(100, 116, 139, 0.25); color: #cbd5e1; border: 1px solid rgba(100, 116, 139, 0.4); }
+
+        /* Modales */
+        .modal-content {
+            background-color: #0b1f3b;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            border-radius: 20px;
         }
-        .btn-action-icon:hover {
-            background: rgba(56, 189, 248, 0.25);
+        .modal-header { border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding: 18px 25px; }
+        .modal-footer { border-top: 1px solid rgba(255, 255, 255, 0.08); padding: 15px 25px; }
+        .form-control, .form-select {
+            background-color: #061325;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            border-radius: 10px;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #0a1f3d;
             border-color: #38bdf8;
             color: #ffffff;
-            transform: translateY(-1px);
-        }
-
-        .modal-content {
-            background-color: #0b1a30;
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            color: #ffffff;
-            border-radius: 18px;
-        }
-        .modal-header, .modal-footer {
-            border-color: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
         }
     </style>
 </head>
 <body>
 
-<!-- Navbar Principal -->
+<!-- Navbar de Agente -->
 <div class="top-navbar d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm rounded-3 px-3 text-white border-opacity-25" title="Regresar al Menú Principal">
-            <i class="bi bi-arrow-left me-1"></i> Menú
+        <a href="menu.php" class="btn btn-outline-light btn-sm rounded-3 px-3 py-1 d-flex align-items-center gap-2">
+            <i class="bi bi-arrow-left"></i> <span>Menú Principal</span>
         </a>
-        <div class="d-flex align-items-center gap-2">
-            <i class="bi bi-ticket-detailed-fill fs-4" style="color: #38bdf8;"></i>
-            <span class="fw-bold tracking-wide">TICKETS SOPORTE <span class="text-secondary fw-normal">| Dirección de Sistemas</span></span>
+        <div class="d-flex align-items-center gap-2 border-start border-secondary ps-3">
+            <i class="bi bi-headset text-info fs-4"></i>
+            <span class="fw-bold tracking-wide">MESA DE AYUDA TI <span class="text-secondary fw-normal">| Panel de Agentes de Sistemas</span></span>
+            <span class="agent-badge ms-2"><i class="bi bi-person-badge-fill"></i> VISTA DE AGENTE</span>
         </div>
     </div>
     <div class="d-flex align-items-center gap-3">
         <div class="text-end d-none d-md-block">
             <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
-            <div class="text-secondary" style="font-size: 0.75rem;"><?php echo strtoupper($rolActual); ?> &bull; <?php echo htmlspecialchars($agenciaUsuario); ?></div>
+            <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolActual); ?></span></div>
         </div>
         <a href="logout.php" class="btn btn-outline-danger btn-sm rounded-3 px-3">
             <i class="bi bi-box-arrow-right me-1"></i> Salir
@@ -523,223 +590,281 @@ if ($pdo) {
 
 <div class="main-container">
 
-    <!-- Mensajes de Notificación -->
+    <!-- Notificaciones -->
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-left: 4px solid #22c55e !important;">
+        <div class="alert alert-success alert-dismissible fade show rounded-3 bg-success bg-opacity-25 text-white border-success mb-3" role="alert">
             <i class="bi bi-check-circle-fill me-2 fs-5"></i> <?php echo $mensaje; ?>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    <?php endif; ?>
-    <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border-left: 4px solid #ef4444 !important;">
-            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo htmlspecialchars($error); ?>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
-    <!-- Tarjetas de Métricas (KPIs) -->
+    <?php if (!empty($error)): ?>
+        <div class="alert alert-danger alert-dismissible fade show rounded-3 bg-danger bg-opacity-25 text-white border-danger mb-3" role="alert">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo $error; ?>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+
+    <!-- ============================================== -->
+    <!-- 1. MONITOR DE AGENCIAS CONECTADAS (VISTA AGENTE) -->
+    <!-- ============================================== -->
+    <div class="agencies-monitor-bar">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-2">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-buildings-fill text-success fs-5"></i>
+                <span class="fw-bold text-white">Agencias Conectadas (Filtro Rápido):</span>
+                <span class="small text-secondary">Haz clic en una sucursal para ver sus tickets</span>
+            </div>
+            <a href="agencias.php" class="btn btn-outline-info btn-sm rounded-3 px-3">
+                <i class="bi bi-gear-fill me-1"></i> Administrar cPanels / Conexiones
+            </a>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 pt-1" id="agenciasFilterContainer">
+            <!-- Botón Todas -->
+            <button class="agency-pill-btn active" onclick="filtrarPorAgencia('TODAS', this)">
+                <i class="bi bi-globe2 text-info"></i>
+                <span>Todas las Agencias</span>
+                <span class="pending-count-badge bg-primary text-white"><?php echo $totalTickets; ?></span>
+            </button>
+
+            <!-- Botones por cada Agencia Conectada -->
+            <?php foreach ($conteoPorAgencia as $nomAg => $pendientes): 
+                if ($nomAg === 'Oficina Central Grupo Huerta') continue;
+            ?>
+                <button class="agency-pill-btn" onclick="filtrarPorAgencia('<?php echo htmlspecialchars($nomAg); ?>', this)">
+                    <i class="bi bi-building text-warning"></i>
+                    <span><?php echo htmlspecialchars($nomAg); ?></span>
+                    <?php if ($pendientes > 0): ?>
+                        <span class="pending-count-badge bg-danger text-white"><?php echo $pendientes; ?> pend.</span>
+                    <?php else: ?>
+                        <span class="pending-count-badge bg-secondary text-light">0 pend.</span>
+                    <?php endif; ?>
+                </button>
+            <?php endforeach; ?>
+
+            <!-- Central -->
+            <button class="agency-pill-btn" onclick="filtrarPorAgencia('Oficina Central Grupo Huerta', this)">
+                <i class="bi bi-building-lock text-info"></i>
+                <span>Oficina Central</span>
+                <span class="pending-count-badge bg-secondary text-light"><?php echo $conteoPorAgencia['Oficina Central Grupo Huerta'] ?? 0; ?></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 2. KPIs DE CONTROL DE LA MESA DE AYUDA -->
+    <!-- ============================================== -->
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
             <div class="kpi-card">
-                <div class="kpi-icon kpi-cyan">
-                    <i class="bi bi-collection-fill"></i>
-                </div>
+                <div class="kpi-icon kpi-cyan"><i class="bi bi-inbox-fill"></i></div>
                 <div>
-                    <div class="text-secondary small fw-bold">TOTAL TICKETS</div>
-                    <div class="fs-3 fw-bold text-white"><?php echo $totalTickets; ?></div>
+                    <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
+                    <div class="small text-secondary fw-semibold">TOTAL TICKETS</div>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="kpi-card">
-                <div class="kpi-icon kpi-yellow">
-                    <i class="bi bi-clock-history"></i>
-                </div>
+                <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
                 <div>
-                    <div class="text-secondary small fw-bold">EN ESPERA / ABIERTOS</div>
-                    <div class="fs-3 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
+                    <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
+                    <div class="small text-secondary fw-semibold">ABIERTOS / EN ESPERA</div>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="kpi-card">
-                <div class="kpi-icon kpi-blue">
-                    <i class="bi bi-gear-wide-connected"></i>
-                </div>
+                <div class="kpi-icon kpi-blue"><i class="bi bi-gear-wide-connected"></i></div>
                 <div>
-                    <div class="text-secondary small fw-bold">EN PROCESO</div>
-                    <div class="fs-3 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
+                    <div class="fs-4 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
+                    <div class="small text-secondary fw-semibold">EN ATENCIÓN / PROCESO</div>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
             <div class="kpi-card">
-                <div class="kpi-icon kpi-green">
-                    <i class="bi bi-check2-all"></i>
-                </div>
+                <div class="kpi-icon kpi-green"><i class="bi bi-check2-circle"></i></div>
                 <div>
-                    <div class="text-secondary small fw-bold">RESUELTOS / CERRADOS</div>
-                    <div class="fs-3 fw-bold text-success"><?php echo $totalResueltos; ?></div>
+                    <div class="fs-4 fw-bold text-success"><?php echo $totalResueltos; ?></div>
+                    <div class="small text-secondary fw-semibold">RESUELTOS / CERRADOS</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Barra de Búsqueda, Filtros y Botones -->
-    <div class="row g-3 align-items-center mb-4">
-        <div class="col-md-5 col-lg-4">
-            <div class="search-box-wrapper">
-                <i class="bi bi-search text-secondary"></i>
-                <input type="text" id="buscadorTickets" class="search-input" placeholder="Buscar por folio, asunto, solicitante..." onkeyup="filtrarTicketsEnVivo()">
-                <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBuscador()" title="Limpiar">
-                    <i class="bi bi-x-circle-fill"></i>
-                </button>
-            </div>
+    <!-- ============================================== -->
+    <!-- 3. BARRA DE HERRAMIENTAS: BÚSQUEDA Y ACCIONES -->
+    <!-- ============================================== -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+        <!-- Buscador -->
+        <div class="search-box-wrapper flex-grow-1" style="max-width: 500px;">
+            <i class="bi bi-search text-secondary"></i>
+            <input type="text" id="busquedaInput" class="search-input" placeholder="Buscar por folio, requerimiento, solicitante o técnico..." oninput="filtrarTickets()">
+            <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBusqueda()"><i class="bi bi-x-circle-fill"></i></button>
         </div>
 
-        <div class="col-md-7 col-lg-8 d-flex justify-content-md-end gap-2 flex-wrap">
-            <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
-                <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel
+        <!-- Botones de Acción para Agente -->
+        <div class="d-flex align-items-center gap-2">
+            <a href="tickets.php?export=excel" class="btn btn-success btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
+                <i class="bi bi-file-earmark-excel-fill"></i> <span>Exportar a Excel</span>
             </a>
-            <button type="button" class="btn btn-primary btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" style="background: #0284c7; border-color: #0284c7;" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
-                <i class="bi bi-plus-lg"></i> Levantar Nuevo Ticket
+            <button class="btn btn-primary btn-sm rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
+                <i class="bi bi-plus-circle-fill"></i> <span>+ Registrar Ticket Manual</span>
             </button>
         </div>
-
-        <!-- Filtros de Áreas de Sistemas -->
-        <div class="col-12 mt-2">
-            <div class="d-flex align-items-center gap-2 overflow-x-auto pb-1" id="pillsAreasSistemas">
-                <span class="filter-pill active" onclick="filtrarPorArea('TODAS', this)">
-                    <i class="bi bi-grid-fill"></i> Todas las Áreas
-                </span>
-                <?php foreach ($AREAS_SISTEMAS as $claveArea => $infoArea): ?>
-                    <span class="filter-pill" onclick="filtrarPorArea('<?php echo $claveArea; ?>', this)">
-                        <i class="bi <?php echo $infoArea['icono']; ?>" style="color: <?php echo $infoArea['color']; ?>;"></i> <?php echo $claveArea; ?>
-                    </span>
-                <?php endforeach; ?>
-            </div>
-        </div>
     </div>
 
-    <!-- Tabla Principal de Tickets -->
-    <div class="tickets-table-container">
+    <!-- ============================================== -->
+    <!-- 4. CHIPS DE FILTRADO POR ÁREA DE SISTEMAS -->
+    <!-- ============================================== -->
+    <div class="d-flex flex-wrap gap-2 mb-4" id="areasFilterContainer">
+        <div class="area-pill active" onclick="filtrarPorArea('TODAS', this)">
+            <i class="bi bi-grid-fill"></i> Todas las Áreas
+        </div>
+        <?php foreach ($AREAS_SISTEMAS as $areaKey => $areaInfo): ?>
+            <div class="area-pill" onclick="filtrarPorArea('<?php echo $areaKey; ?>', this)">
+                <i class="bi <?php echo $areaInfo['icono']; ?>"></i> <?php echo $areaInfo['nombre']; ?>
+            </div>
+        <?php endforeach; ?>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- 5. TABLA DE TICKETS - VISTA DE AGENTE TI -->
+    <!-- ============================================== -->
+    <div class="tickets-table-card">
         <div class="table-responsive">
-            <table class="table table-custom align-middle" id="tablaTickets">
+            <table class="table align-middle" id="tablaTickets">
                 <thead>
                     <tr>
-                        <th style="width: 10%;">Folio</th>
-                        <th style="width: 16%;">Área Destino</th>
-                        <th style="width: 28%;">Título / Requerimiento</th>
-                        <th style="width: 11%;">Prioridad</th>
-                        <th style="width: 12%;">Estado</th>
-                        <th style="width: 15%;">Solicitante / Agencia</th>
-                        <th class="text-end" style="width: 8%;">Acciones</th>
+                        <th style="width: 130px;">FOLIO & FECHA</th>
+                        <th style="width: 170px;">AGENCIA ORIGEN</th>
+                        <th style="width: 140px;">ÁREA DESTINO</th>
+                        <th>REQUERIMIENTO / ASUNTO</th>
+                        <th style="width: 110px;">PRIORIDAD</th>
+                        <th style="width: 120px;">ESTADO</th>
+                        <th style="width: 160px;">SOLICITANTE</th>
+                        <th style="width: 160px;">AGENTE ASIGNADO</th>
+                        <th style="width: 140px;" class="text-center">ACCIONES</th>
                     </tr>
                 </thead>
-                <tbody id="tbodyTickets">
+                <tbody id="ticketsTbody">
                     <?php if (empty($tickets)): ?>
                         <tr id="filaSinTickets">
-                            <td colspan="7" class="text-center py-5 text-secondary">
-                                <i class="bi bi-ticket-perforated fs-1 d-block mb-2 text-muted"></i>
-                                <div class="fw-semibold">No hay tickets registrados en el sistema.</div>
-                                <div class="small text-muted mt-1">Presiona <strong>"Levantar Nuevo Ticket"</strong> para solicitar soporte a una de las áreas de Sistemas.</div>
+                            <td colspan="9" class="text-center py-5">
+                                <i class="bi bi-inbox text-secondary display-3 d-block mb-3"></i>
+                                <h5 class="fw-bold text-white mb-1">No hay tickets registrados en el sistema</h5>
+                                <p class="small text-secondary mb-0">Los tickets enviados desde los cPanels de las agencias o registrados por llamada aparecerán aquí.</p>
                             </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($tickets as $t): 
-                            $areaKey = strtoupper(trim($t['area_sistemas'] ?? 'DESARROLLO'));
-                            $areaConf = $AREAS_SISTEMAS[$areaKey] ?? [
-                                'nombre' => $areaKey, 'icono' => 'bi-gear-fill', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.35)'
-                            ];
+                            $folio = $t['folio'] ?: ('TK-' . date('Y') . '-' . str_pad($t['id'], 4, '0', STR_PAD_LEFT));
+                            $area = strtoupper($t['area_sistemas'] ?? '');
+                            $infoArea = $AREAS_SISTEMAS[$area] ?? ['nombre' => $area, 'icono' => 'bi-ticket-detailed', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.3)'];
+                            $prio = ucfirst(strtolower($t['prioridad'] ?? 'Media'));
+                            $estado = ucfirst(strtolower($t['estado'] ?? 'Abierto'));
+                            $agenciaTicket = $t['solicitante_agencia'] ?? 'Desconocida';
+                            $asignado = $t['asignado_a'] ?? '';
 
-                            $prioLower = strtolower($t['prioridad'] ?? 'media');
-                            $prioClass = 'prio-media';
-                            if ($prioLower === 'urgente') $prioClass = 'prio-urgente';
-                            elseif ($prioLower === 'alta') $prioClass = 'prio-alta';
-                            elseif ($prioLower === 'baja') $prioClass = 'prio-baja';
+                            $prioClass = 'badge-prio-media';
+                            if ($prio === 'Urgente') $prioClass = 'badge-prio-urgente';
+                            elseif ($prio === 'Alta') $prioClass = 'badge-prio-alta';
+                            elseif ($prio === 'Baja') $prioClass = 'badge-prio-baja';
 
-                            $estLower = strtolower($t['estado'] ?? 'abierto');
-                            $estClass = 'status-abierto';
-                            if ($estLower === 'en proceso') $estClass = 'status-proceso';
-                            elseif ($estLower === 'resuelto') $estClass = 'status-resuelto';
-                            elseif ($estLower === 'cerrado') $estClass = 'status-cerrado';
+                            $statusClass = 'badge-status-abierto';
+                            if ($estado === 'En proceso') $statusClass = 'badge-status-proceso';
+                            elseif ($estado === 'Resuelto') $statusClass = 'badge-status-resuelto';
+                            elseif ($estado === 'Cerrado') $statusClass = 'badge-status-cerrado';
                         ?>
                             <tr class="ticket-row" 
-                                data-folio="<?php echo htmlspecialchars(mb_strtolower($t['folio'] ?? '')); ?>"
-                                data-area="<?php echo htmlspecialchars($areaKey); ?>"
-                                data-titulo="<?php echo htmlspecialchars(mb_strtolower($t['titulo'] ?? '')); ?>"
-                                data-solicitante="<?php echo htmlspecialchars(mb_strtolower($t['solicitante_nombre'] ?? '')); ?>"
-                                data-estado="<?php echo htmlspecialchars($estLower); ?>">
+                                data-id="<?php echo $t['id']; ?>"
+                                data-folio="<?php echo htmlspecialchars($folio); ?>"
+                                data-area="<?php echo htmlspecialchars($area); ?>"
+                                data-agencia="<?php echo htmlspecialchars($agenciaTicket); ?>"
+                                data-estado="<?php echo htmlspecialchars($estado); ?>"
+                                data-titulo="<?php echo htmlspecialchars($t['titulo']); ?>"
+                                data-solicitante="<?php echo htmlspecialchars($t['solicitante_nombre'] ?? ''); ?>"
+                                data-asignado="<?php echo htmlspecialchars($asignado); ?>">
                                 
-                                <!-- Folio -->
                                 <td>
-                                    <span class="font-monospace fw-bold text-info">
-                                        <?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?>
-                                    </span>
-                                </td>
-
-                                <!-- Área Destino -->
-                                <td>
-                                    <span class="area-badge" style="background: <?php echo $areaConf['bg']; ?>; color: <?php echo $areaConf['color']; ?>; border: 1px solid <?php echo $areaConf['border']; ?>;">
-                                        <i class="bi <?php echo $areaConf['icono']; ?>"></i> <?php echo $areaConf['nombre']; ?>
-                                    </span>
-                                </td>
-
-                                <!-- Título / Asunto -->
-                                <td>
-                                    <div class="fw-bold text-white fs-6">
-                                        <?php echo htmlspecialchars($t['titulo']); ?>
-                                        <?php if (!empty($t['archivo_adjunto'])): ?>
-                                            <i class="bi bi-paperclip text-info ms-1" title="Contiene archivo adjunto"></i>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="text-secondary small text-truncate" style="max-width: 380px;">
-                                        <?php echo htmlspecialchars(mb_substr($t['descripcion'], 0, 90)); ?><?php echo mb_strlen($t['descripcion']) > 90 ? '...' : ''; ?>
+                                    <span class="badge-folio"><?php echo htmlspecialchars($folio); ?></span>
+                                    <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
+                                        <i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['creado_en'])); ?>
                                     </div>
                                 </td>
 
-                                <!-- Prioridad -->
                                 <td>
-                                    <span class="prio-badge <?php echo $prioClass; ?>">
-                                        <?php echo htmlspecialchars($t['prioridad'] ?? 'Media'); ?>
+                                    <span class="badge-agencia">
+                                        <i class="bi bi-building"></i> <?php echo htmlspecialchars($agenciaTicket); ?>
                                     </span>
                                 </td>
 
-                                <!-- Estado -->
                                 <td>
-                                    <span class="status-badge <?php echo $estClass; ?>">
-                                        <i class="bi bi-circle-fill" style="font-size: 0.45rem;"></i>
-                                        <?php echo htmlspecialchars($t['estado'] ?? 'Abierto'); ?>
+                                    <span style="font-size: 0.75rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: <?php echo $infoArea['bg']; ?>; color: <?php echo $infoArea['color']; ?>; border: 1px solid <?php echo $infoArea['border']; ?>; display: inline-flex; align-items: center; gap: 5px;">
+                                        <i class="bi <?php echo $infoArea['icono']; ?>"></i> <?php echo $infoArea['nombre']; ?>
                                     </span>
                                 </td>
 
-                                <!-- Solicitante y Sucursal -->
                                 <td>
-                                    <div class="fw-semibold text-white small"><?php echo htmlspecialchars($t['solicitante_nombre'] ?? '---'); ?></div>
-                                    <div class="text-secondary" style="font-size: 0.75rem;">
-                                        <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($t['solicitante_agencia'] ?? 'General'); ?>
+                                    <div class="fw-bold text-white mb-1"><?php echo htmlspecialchars($t['titulo']); ?></div>
+                                    <div class="text-secondary small text-truncate" style="max-width: 320px;">
+                                        <?php echo htmlspecialchars(mb_strimwidth($t['descripcion'], 0, 75, '...')); ?>
                                     </div>
+                                    <?php if (!empty($t['archivo_adjunto'])): ?>
+                                        <span class="badge bg-dark border border-secondary text-info mt-1" style="font-size: 0.7rem;">
+                                            <i class="bi bi-paperclip me-1"></i> Evidencia adjunta
+                                        </span>
+                                    <?php endif; ?>
                                 </td>
 
-                                <!-- Acciones -->
-                                <td class="text-end">
-                                    <div class="d-inline-flex gap-1.5">
-                                        <!-- Ver Detalle / Seguimiento -->
-                                        <button type="button" class="btn-action-icon text-info" onclick="abrirModalDetalleTicket(<?php echo htmlspecialchars(json_encode($t), ENT_QUOTES, 'UTF-8'); ?>)" title="Ver Detalle y Dar Seguimiento">
-                                            <i class="bi bi-eye-fill"></i>
-                                        </button>
-                                        
-                                        <?php if ($esAdmin): ?>
-                                            <!-- Eliminar Ticket -->
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar este ticket definitivamente?');">
-                                                <input type="hidden" name="accion" value="eliminar_ticket">
-                                                <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
-                                                <button type="submit" class="btn-action-icon text-danger" title="Eliminar Ticket">
-                                                    <i class="bi bi-trash-fill"></i>
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
-                                    </div>
+                                <td>
+                                    <span class="badge rounded-pill <?php echo $prioClass; ?> px-2 py-1" style="font-size: 0.75rem;">
+                                        <?php echo $prio; ?>
+                                    </span>
+                                </td>
+
+                                <td>
+                                    <span class="badge rounded-pill <?php echo $statusClass; ?> px-2 py-1" style="font-size: 0.75rem;">
+                                        <i class="bi bi-circle-fill me-1" style="font-size: 0.45rem;"></i> <?php echo $estado; ?>
+                                    </span>
+                                </td>
+
+                                <td>
+                                    <div class="fw-semibold text-white"><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></div>
+                                    <div class="text-secondary small" style="font-size: 0.75rem;"><?php echo htmlspecialchars($t['solicitante_email'] ?? '---'); ?></div>
+                                </td>
+
+                                <td>
+                                    <?php if (!empty($asignado)): ?>
+                                        <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1">
+                                            <i class="bi bi-person-fill-check me-1"></i> <?php echo htmlspecialchars($asignado); ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <form method="POST" style="display:inline;">
+                                            <input type="hidden" name="accion" value="autoasignar_ticket">
+                                            <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
+                                            <button type="submit" class="btn btn-outline-warning btn-sm rounded-pill px-2 py-0" style="font-size: 0.75rem;" title="Tomar este ticket y asignármelo">
+                                                <i class="bi bi-hand-index-thumb"></i> Asignarme
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+
+                                <td class="text-center">
+                                    <button class="btn btn-sm btn-info rounded-3 px-2 py-1 text-dark fw-bold" onclick="abrirModalAtender(<?php echo htmlspecialchars(json_encode($t)); ?>)" title="Gestionar y resolver ticket">
+                                        <i class="bi bi-headset me-1"></i> Atender
+                                    </button>
+                                    <?php if ($esAdmin): ?>
+                                        <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente este ticket?');" style="display:inline;">
+                                            <input type="hidden" name="accion" value="eliminar_ticket">
+                                            <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger border-0 p-1" title="Eliminar ticket">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -748,90 +873,98 @@ if ($pdo) {
             </table>
         </div>
     </div>
+
 </div>
 
-<!-- ====================================================
-     MODAL: LEVANTAR NUEVO TICKET
-     ==================================================== -->
-<div class="modal fade" id="modalNuevoTicket" tabindex="-1" aria-hidden="true">
+<!-- ============================================== -->
+<!-- MODAL: REGISTRAR TICKET MANUAL POR EL AGENTE -->
+<!-- ============================================== -->
+<div class="modal fade" id="modalNuevoTicket" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg">
-            <div class="modal-header py-3">
-                <div class="d-flex align-items-center gap-2">
-                    <div class="kpi-icon kpi-cyan" style="width: 40px; height: 40px; font-size: 1.2rem;">
-                        <i class="bi bi-ticket-detailed-fill"></i>
-                    </div>
-                    <div>
-                        <h5 class="modal-title fw-bold mb-0">Levantar Nuevo Ticket de Soporte</h5>
-                        <small class="text-secondary">Dirección de Sistemas - Requerimientos e Incidencias</small>
-                    </div>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
+        <div class="modal-content">
             <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="accion" value="crear_ticket">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold d-flex align-items-center gap-2">
+                        <i class="bi bi-headset text-primary"></i> Registrar Ticket de Soporte (Mesa de Ayuda)
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
                 <div class="modal-body p-4">
                     <div class="row g-3">
-                        <!-- Área de Sistemas Destinataria -->
-                        <div class="col-md-7">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Área de Sistemas Asignada <span class="text-danger">*</span></label>
-                            <select name="area_sistemas" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
-                                <option value="" disabled selected>Selecciona el área de soporte...</option>
-                                <?php foreach ($AREAS_SISTEMAS as $k => $info): ?>
-                                    <option value="<?php echo $k; ?>"><?php echo $k; ?></option>
+                        <!-- Agencia de Origen -->
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Agencia / Sucursal de Origen *</label>
+                            <select name="solicitante_agencia" class="form-select" required>
+                                <?php foreach ($conteoPorAgencia as $nomAg => $c): ?>
+                                    <option value="<?php echo htmlspecialchars($nomAg); ?>"><?php echo htmlspecialchars($nomAg); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <!-- Área de Sistemas -->
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Área Destino de Sistemas *</label>
+                            <select name="area_sistemas" class="form-select" required>
+                                <option value="" disabled selected>-- Selecciona el Área --</option>
+                                <?php foreach ($AREAS_SISTEMAS as $areaKey => $areaInfo): ?>
+                                    <option value="<?php echo $areaKey; ?>"><?php echo $areaInfo['nombre']; ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
 
                         <!-- Prioridad -->
-                        <div class="col-md-5">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Nivel de Prioridad <span class="text-danger">*</span></label>
-                            <select name="prioridad" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
-                                <option value="Baja">Baja (Requerimiento general)</option>
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Nivel de Prioridad *</label>
+                            <select name="prioridad" class="form-select" required>
+                                <option value="Baja">Baja (Requerimiento programado)</option>
                                 <option value="Media" selected>Media (Operación normal)</option>
-                                <option value="Alta">Alta (Afecta operación parcial)</option>
-                                <option value="Urgente">Urgente (Bloqueo crítico)</option>
+                                <option value="Alta">Alta (Afecta operación de usuario)</option>
+                                <option value="Urgente">Urgente (Sistema o red caída)</option>
                             </select>
                         </div>
 
-                        <!-- Título / Asunto -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Título / Asunto Breve <span class="text-danger">*</span></label>
-                            <input type="text" name="titulo" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Ej. Falla en enlace de Internet / Acceso a base de datos / Publicación en Redes..." required>
+                        <!-- Agente Asignado -->
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Asignar a Técnico / Agente</label>
+                            <input type="text" name="asignado_a" class="form-control" value="<?php echo htmlspecialchars($nombreUsuario); ?>" placeholder="Nombre del especialista de TI">
                         </div>
 
-                        <!-- Descripción Detallada -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Descripción Detallada del Requerimiento o Falla <span class="text-danger">*</span></label>
-                            <textarea name="descripcion" rows="4" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Describe detalladamente qué necesitas o qué error ocurre..." required></textarea>
+                        <!-- Solicitante -->
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Nombre del Usuario / Solicitante *</label>
+                            <input type="text" name="solicitante_nombre" class="form-control" placeholder="Ej: Lic. Carlos Ramírez" required>
                         </div>
 
-                        <!-- Archivo Adjunto -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Adjuntar Archivo o Captura (Opcional)</label>
-                            <input type="file" name="archivo_adjunto" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.zip">
-                            <div class="form-text text-secondary small">Formatos permitidos: Imágenes (PNG, JPG), PDF, Documentos Word/Excel.</div>
+                        <!-- Email Solicitante -->
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary fw-semibold">Correo o Teléfono del Solicitante</label>
+                            <input type="text" name="solicitante_email" class="form-control" placeholder="carlos@divolavilla.com o Ext. 104">
                         </div>
 
-                        <!-- Datos del Solicitante Prellenados -->
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Solicitante</label>
-                            <input type="text" name="solicitante_nombre" value="<?php echo htmlspecialchars($nombreUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                        <!-- Título -->
+                        <div class="col-12">
+                            <label class="form-label small text-secondary fw-semibold">Título / Asunto Breve *</label>
+                            <input type="text" name="titulo" class="form-control" placeholder="Ej: No conecta a SQL Server en taller o Falla switch principal" required>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Sucursal / Agencia</label>
-                            <input type="text" name="solicitante_agencia" value="<?php echo htmlspecialchars($agenciaUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+
+                        <!-- Descripción -->
+                        <div class="col-12">
+                            <label class="form-label small text-secondary fw-semibold">Descripción Detallada del Requerimiento *</label>
+                            <textarea name="descripcion" class="form-control" rows="4" placeholder="Describe los síntomas, equipo afectado y datos importantes del caso..." required></textarea>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Correo de Contacto</label>
-                            <input type="email" name="solicitante_email" value="<?php echo htmlspecialchars($_SESSION['usuario_email'] ?? ''); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" placeholder="correo@empresa.com">
+
+                        <!-- Archivo de Evidencia -->
+                        <div class="col-12">
+                            <label class="form-label small text-secondary fw-semibold">Adjuntar Captura o Archivo (Opcional)</label>
+                            <input type="file" name="archivo_adjunto" class="form-control" accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.zip">
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer py-3">
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 px-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-4 fw-bold shadow-sm" style="background: #0284c7; border-color: #0284c7;">
-                        <i class="bi bi-send-fill me-1"></i> Registrar Ticket
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 fw-bold">
+                        <i class="bi bi-save2 me-1"></i> Registrar Ticket
                     </button>
                 </div>
             </form>
@@ -839,95 +972,83 @@ if ($pdo) {
     </div>
 </div>
 
-<!-- ====================================================
-     MODAL: DETALLE Y SEGUIMIENTO DE TICKET
-     ==================================================== -->
-<div class="modal fade" id="modalDetalleTicket" tabindex="-1" aria-hidden="true">
+<!-- ============================================== -->
+<!-- MODAL: ATENCIÓN Y SEGUIMIENTO POR EL AGENTE -->
+<!-- ============================================== -->
+<div class="modal fade" id="modalAtenderTicket" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg">
-            <div class="modal-header py-3">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="font-monospace fs-5 fw-bold text-info" id="viewFolio">TK-0000</span>
-                    <span id="viewAreaBadge" class="area-badge">ÁREA</span>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
+        <div class="modal-content">
             <form method="POST">
                 <input type="hidden" name="accion" value="actualizar_ticket">
-                <input type="hidden" name="ticket_id" id="editTicketId" value="0">
+                <input type="hidden" name="ticket_id" id="atenderTicketId">
+
+                <div class="modal-header">
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge-folio fs-6" id="atenderFolio">TK-2026-0000</span>
+                            <span class="badge-agencia" id="atenderAgencia">VW Divol La Villa</span>
+                        </div>
+                        <h5 class="modal-title fw-bold mt-2" id="atenderTitulo">Detalle del Ticket</h5>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
 
                 <div class="modal-body p-4">
-                    <!-- Título -->
-                    <h5 class="fw-bold text-white mb-2" id="viewTitulo">Título del Ticket</h5>
-
-                    <!-- Metadatos -->
-                    <div class="p-3 rounded-3 mb-3" style="background: rgba(6, 19, 37, 0.7); border: 1px solid rgba(255, 255, 255, 0.08);">
-                        <div class="row g-2">
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Solicitante</div>
-                                <div class="text-white small fw-semibold" id="viewSolicitante">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Agencia / Sucursal</div>
-                                <div class="text-white small fw-semibold" id="viewAgencia">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Prioridad</div>
-                                <div class="small fw-bold" id="viewPrioridad">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Fecha Creación</div>
-                                <div class="text-secondary small font-monospace" id="viewFecha">--</div>
-                            </div>
+                    <!-- Solicitud Original -->
+                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex justify-content-between small text-secondary mb-2">
+                            <div><i class="bi bi-person me-1"></i> Solicitante: <strong class="text-white" id="atenderSolicitante">---</strong> (<span id="atenderEmail">---</span>)</div>
+                            <div><i class="bi bi-diagram-3 me-1"></i> Área: <strong class="text-info" id="atenderArea">---</strong></div>
                         </div>
-                    </div>
+                        <div class="text-light small" id="atenderDescripcion" style="white-space: pre-line; line-height: 1.6;"></div>
 
-                    <!-- Descripción -->
-                    <div class="mb-3">
-                        <label class="form-label text-secondary small fw-bold text-uppercase mb-1">Descripción del Requerimiento</label>
-                        <div class="p-3 rounded-3 text-white small" id="viewDescripcion" style="background: #061325; border: 1px solid rgba(255, 255, 255, 0.08); white-space: pre-line; min-height: 80px;">
-                            --
-                        </div>
-                    </div>
-
-                    <!-- Archivo Adjunto -->
-                    <div class="mb-3" id="viewContenedorAdjunto" style="display: none;">
-                        <label class="form-label text-secondary small fw-bold text-uppercase mb-1">Evidencia / Archivo Adjunto</label>
-                        <div>
-                            <a href="#" id="viewArchivoLink" target="_blank" class="btn btn-outline-info btn-sm rounded-3">
-                                <i class="bi bi-paperclip me-1"></i> Visualizar Archivo Adjunto
+                        <div id="contenedorAdjunto" class="mt-3 pt-2 border-top border-secondary border-opacity-25 d-none">
+                            <span class="small text-secondary">Archivo de Evidencia: </span>
+                            <a href="#" id="linkAdjunto" target="_blank" class="btn btn-outline-info btn-sm rounded-pill py-0 px-3">
+                                <i class="bi bi-paperclip me-1"></i> Ver / Descargar Evidencia
                             </a>
                         </div>
                     </div>
 
-                    <hr class="border-secondary border-opacity-25 my-3">
-
-                    <!-- SECCIÓN DE SEGUIMIENTO Y RESOLUCIÓN -->
-                    <h6 class="fw-bold text-info mb-3"><i class="bi bi-arrow-repeat me-1"></i> Actualizar Estatus y Seguimiento</h6>
+                    <!-- Panel de Gestión del Agente -->
+                    <h6 class="fw-bold text-info mb-3"><i class="bi bi-pencil-square me-1"></i> Gestión y Resolución del Agente TI</h6>
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Estado del Ticket</label>
-                            <select name="estado" id="editEstado" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;">
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary fw-semibold">Estado del Ticket *</label>
+                            <select name="estado" id="atenderEstado" class="form-select" required>
                                 <option value="Abierto">Abierto (En espera)</option>
-                                <option value="En Proceso">En Proceso (Trabajando)</option>
-                                <option value="Resuelto">Resuelto (Solución entregada)</option>
+                                <option value="En Proceso">En Proceso (En atención)</option>
+                                <option value="Resuelto">Resuelto (Trabajo terminado)</option>
                                 <option value="Cerrado">Cerrado (Finalizado)</option>
                             </select>
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Técnico / Responsable Asignado</label>
-                            <input type="text" name="asignado_a" id="editAsignadoA" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Ej. Ing. de Desarrollo / Soporte TI...">
+
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary fw-semibold">Prioridad</label>
+                            <select name="prioridad" id="atenderPrioridad" class="form-select">
+                                <option value="Baja">Baja</option>
+                                <option value="Media">Media</option>
+                                <option value="Alta">Alta</option>
+                                <option value="Urgente">Urgente</option>
+                            </select>
                         </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary fw-semibold">Agente / Especialista Asignado</label>
+                            <input type="text" name="asignado_a" id="atenderAsignado" class="form-control" placeholder="Técnico a cargo">
+                        </div>
+
                         <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Notas de Seguimiento / Solución Aplicada</label>
-                            <textarea name="notas_resolucion" id="editNotas" rows="3" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Escribe aquí los avances, respuesta o solución dada al ticket..."></textarea>
+                            <label class="form-label small text-secondary fw-semibold">Bitácora / Notas de Resolución del Agente</label>
+                            <textarea name="notas_resolucion" id="atenderNotas" class="form-control" rows="4" placeholder="Escribe aquí las acciones realizadas, diagnóstico, solución aplicada o motivo de cierre..."></textarea>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer py-3">
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 px-3" data-bs-dismiss="modal">Cerrar</button>
-                    <button type="submit" class="btn btn-success btn-sm rounded-3 px-4 fw-bold shadow-sm" style="background: #16a34a; border-color: #16a34a;">
-                        <i class="bi bi-check2-circle me-1"></i> Guardar Cambios
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="submit" class="btn btn-info rounded-3 px-4 fw-bold text-dark">
+                        <i class="bi bi-check2-circle me-1"></i> Guardar Cambios de Atención
                     </button>
                 </div>
             </form>
@@ -935,84 +1056,105 @@ if ($pdo) {
     </div>
 </div>
 
-<!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    let areaFiltroActual = 'TODAS';
+let filtroAgenciaActual = 'TODAS';
+let filtroAreaActual = 'TODAS';
 
-    function filtrarPorArea(area, el) {
-        areaFiltroActual = area.toUpperCase();
-        document.querySelectorAll('#pillsAreasSistemas .filter-pill').forEach(p => p.classList.remove('active'));
-        if (el) el.classList.add('active');
-        filtrarTicketsEnVivo();
-    }
+function filtrarPorAgencia(agencia, elem) {
+    filtroAgenciaActual = agencia;
+    document.querySelectorAll('#agenciasFilterContainer .agency-pill-btn').forEach(btn => btn.classList.remove('active'));
+    elem.classList.add('active');
+    filtrarTickets();
+}
 
-    function filtrarTicketsEnVivo() {
-        const query = (document.getElementById('buscadorTickets').value || '').trim().toLowerCase();
-        const filas = document.querySelectorAll('#tbodyTickets .ticket-row');
-        let visibles = 0;
+function filtrarPorArea(area, elem) {
+    filtroAreaActual = area;
+    document.querySelectorAll('#areasFilterContainer .area-pill').forEach(pill => pill.classList.remove('active'));
+    elem.classList.add('active');
+    filtrarTickets();
+}
 
-        filas.forEach(row => {
-            const folio = row.getAttribute('data-folio') || '';
-            const area = (row.getAttribute('data-area') || '').toUpperCase();
-            const titulo = row.getAttribute('data-titulo') || '';
-            const solicitante = row.getAttribute('data-solicitante') || '';
+function filtrarTickets() {
+    const texto = (document.getElementById('busquedaInput').value || '').toLowerCase().trim();
+    const rows = document.querySelectorAll('.ticket-row');
+    let visibles = 0;
 
-            const coincideArea = (areaFiltroActual === 'TODAS' || area === areaFiltroActual);
-            const coincideTexto = (query === '' || folio.includes(query) || titulo.includes(query) || solicitante.includes(query) || area.toLowerCase().includes(query));
+    rows.forEach(row => {
+        const areaRow = (row.dataset.area || '').toUpperCase();
+        const agenciaRow = (row.dataset.agencia || '').toLowerCase();
+        const folioRow = (row.dataset.folio || '').toLowerCase();
+        const tituloRow = (row.dataset.titulo || '').toLowerCase();
+        const solicitanteRow = (row.dataset.solicitante || '').toLowerCase();
+        const asignadoRow = (row.dataset.asignado || '').toLowerCase();
 
-            if (coincideArea && coincideTexto) {
-                row.style.display = '';
-                visibles++;
-            } else {
-                row.style.display = 'none';
-            }
-        });
-
-        const filaSin = document.getElementById('filaSinTickets');
-        if (filaSin) {
-            filaSin.style.display = (visibles === 0) ? '' : 'none';
-        }
-    }
-
-    function limpiarBuscador() {
-        document.getElementById('buscadorTickets').value = '';
-        filtrarTicketsEnVivo();
-    }
-
-    function abrirModalDetalleTicket(ticket) {
-        if (!ticket) return;
-
-        document.getElementById('editTicketId').value = ticket.id;
-        document.getElementById('viewFolio').textContent = ticket.folio || ('#TK-' + ticket.id);
-        document.getElementById('viewTitulo').textContent = ticket.titulo || 'Sin Título';
-        document.getElementById('viewSolicitante').textContent = ticket.solicitante_nombre || '---';
-        document.getElementById('viewAgencia').textContent = ticket.solicitante_agencia || 'General';
-        document.getElementById('viewPrioridad').textContent = ticket.prioridad || 'Media';
-        document.getElementById('viewFecha').textContent = ticket.creado_en || '---';
-        document.getElementById('viewDescripcion').textContent = ticket.descripcion || 'Sin descripción';
-        
-        document.getElementById('editEstado').value = ticket.estado || 'Abierto';
-        document.getElementById('editAsignadoA').value = ticket.asignado_a || '';
-        document.getElementById('editNotas').value = ticket.notas_resolucion || '';
-
-        const badgeEl = document.getElementById('viewAreaBadge');
-        if (badgeEl) {
-            badgeEl.textContent = ticket.area_sistemas || 'GENERAL';
+        // 1. Filtro por Agencia
+        let matchAgencia = true;
+        if (filtroAgenciaActual !== 'TODAS') {
+            matchAgencia = (agenciaRow === filtroAgenciaActual.toLowerCase());
         }
 
-        const contenedorAdjunto = document.getElementById('viewContenedorAdjunto');
-        const linkAdjunto = document.getElementById('viewArchivoLink');
-        if (ticket.archivo_adjunto && ticket.archivo_adjunto.trim() !== '') {
-            contenedorAdjunto.style.display = 'block';
-            linkAdjunto.href = ticket.archivo_adjunto;
+        // 2. Filtro por Área
+        let matchArea = true;
+        if (filtroAreaActual !== 'TODAS') {
+            matchArea = (areaRow === filtroAreaActual);
+        }
+
+        // 3. Filtro por Búsqueda de texto
+        let matchTexto = true;
+        if (texto !== '') {
+            matchTexto = folioRow.includes(texto) ||
+                         tituloRow.includes(texto) ||
+                         solicitanteRow.includes(texto) ||
+                         asignadoRow.includes(texto) ||
+                         agenciaRow.includes(texto);
+        }
+
+        if (matchAgencia && matchArea && matchTexto) {
+            row.style.display = '';
+            visibles++;
         } else {
-            contenedorAdjunto.style.display = 'none';
+            row.style.display = 'none';
         }
+    });
 
-        const modal = new bootstrap.Modal(document.getElementById('modalDetalleTicket'));
-        modal.show();
+    const filaSin = document.getElementById('filaSinTickets');
+    if (filaSin) {
+        filaSin.style.display = (visibles === 0) ? '' : 'none';
     }
+}
+
+function limpiarBusqueda() {
+    document.getElementById('busquedaInput').value = '';
+    filtrarTickets();
+}
+
+function abrirModalAtender(ticket) {
+    document.getElementById('atenderTicketId').value = ticket.id;
+    document.getElementById('atenderFolio').innerText = ticket.folio || ('TK-' + ticket.id);
+    document.getElementById('atenderAgencia').innerText = ticket.solicitante_agencia || 'Agencia General';
+    document.getElementById('atenderTitulo').innerText = ticket.titulo || 'Sin título';
+    document.getElementById('atenderSolicitante').innerText = ticket.solicitante_nombre || 'Usuario';
+    document.getElementById('atenderEmail').innerText = ticket.solicitante_email || 'Sin correo';
+    document.getElementById('atenderArea').innerText = ticket.area_sistemas || 'SISTEMAS';
+    document.getElementById('atenderDescripcion').innerText = ticket.descripcion || '';
+    document.getElementById('atenderEstado').value = ticket.estado || 'Abierto';
+    document.getElementById('atenderPrioridad').value = ticket.prioridad || 'Media';
+    document.getElementById('atenderAsignado').value = ticket.asignado_a || '';
+    document.getElementById('atenderNotas').value = ticket.notas_resolucion || '';
+
+    const contenedorAdj = document.getElementById('contenedorAdjunto');
+    const linkAdj = document.getElementById('linkAdjunto');
+    if (ticket.archivo_adjunto && ticket.archivo_adjunto !== '') {
+        linkAdj.href = ticket.archivo_adjunto;
+        contenedorAdj.classList.remove('d-none');
+    } else {
+        contenedorAdj.classList.add('d-none');
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('modalAtenderTicket'));
+    modal.show();
+}
 </script>
 </body>
 </html>
