@@ -53,6 +53,57 @@ $AREAS_SISTEMAS = [
 $mensaje = '';
 $error = '';
 
+/**
+ * Envía el ticket en tiempo real al Portal Maestro Central de la Dirección de Sistemas
+ */
+function enviarTicketACentral($datosTicket, $archivoLocal = null) {
+    $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php';
+    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+
+    $payload = [
+        'token'              => $token,
+        'agencia'            => $datosTicket['agencia'] ?? 'VW Divol La Villa',
+        'area_sistemas'      => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
+        'titulo'             => $datosTicket['titulo'] ?? '',
+        'descripcion'        => $datosTicket['descripcion'] ?? '',
+        'prioridad'          => $datosTicket['prioridad'] ?? 'Media',
+        'solicitante_nombre' => $datosTicket['solicitante_nombre'] ?? 'Usuario',
+        'solicitante_email'  => $datosTicket['solicitante_email'] ?? ''
+    ];
+
+    if ($archivoLocal && file_exists(__DIR__ . '/' . $archivoLocal)) {
+        $payload['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoLocal));
+        $payload['archivo_nombre'] = basename($archivoLocal);
+    }
+
+    $ch = curl_init($urlCentral);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => json_encode($payload),
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_HTTPHEADER     => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $token,
+            'User-Agent: PortalAgencia/2.0'
+        ]
+    ]);
+
+    $res = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+
+    if ($res !== false && $httpCode === 200) {
+        $dec = json_decode($res, true);
+        if ($dec && ($dec['status'] ?? '') === 'ok') {
+            return ['ok' => true, 'folio' => $dec['folio'] ?? null, 'datos' => $dec];
+        }
+    }
+    return ['ok' => false, 'error' => $err ?: "HTTP $httpCode"];
+}
+
 // ====================================================
 // MANEJO DE ACCIONES POST (CREAR, EDITAR, ELIMINAR)
 // ====================================================
@@ -94,10 +145,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
 
             try {
-                // Generar Folio consecutivo
-                $stmtCount = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
-                $conteo = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
-                $folio = 'TK-' . date('Y') . '-' . str_pad($conteo + 1, 4, '0', STR_PAD_LEFT);
+                // Enviar primero a la Dirección Central de Sistemas (portal.grupohuerta.mx)
+                $resCentral = enviarTicketACentral([
+                    'agencia'            => $solicitanteAgencia,
+                    'area_sistemas'      => $area,
+                    'titulo'             => $titulo,
+                    'descripcion'        => $descripcion,
+                    'prioridad'          => $prioridad,
+                    'solicitante_nombre' => $solicitanteNombre,
+                    'solicitante_email'  => $solicitanteEmail
+                ], $archivoUrl);
+
+                $folio = null;
+                if ($resCentral['ok'] && !empty($resCentral['folio'])) {
+                    $folio = $resCentral['folio'];
+                    $mensaje = "✅ ¡Ticket con Folio oficial <strong>$folio</strong> enviado con éxito a la Dirección Central de Sistemas (portal.grupohuerta.mx)! Un agente de TI atenderá tu solicitud a la brevedad.";
+                } else {
+                    $stmtCount = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
+                    $conteo = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
+                    $folio = 'TK-' . date('Y') . '-' . str_pad($conteo + 1, 4, '0', STR_PAD_LEFT);
+                    $mensaje = "ℹ️ Ticket registrado en el portal de la agencia con Folio <strong>$folio</strong>.";
+                }
 
                 $stmtIns = $pdo->prepare("
                     INSERT INTO tickets_soporte 
@@ -127,10 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $solicitanteAgencia,
                     $archivoUrl
                 ]);
-
-                $mensaje = "Ticket <strong>" . htmlspecialchars($folio) . "</strong> generado con éxito para el área de <strong>" . htmlspecialchars($area) . "</strong>.";
             } catch (Throwable $t) {
-                $error = "Error al crear el ticket: " . $t->getMessage();
+                $error = "Error al registrar el ticket: " . $t->getMessage();
             }
         }
     }
