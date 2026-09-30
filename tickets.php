@@ -63,7 +63,7 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
 
     $payload = [
         'token'              => $token,
-        'agencia'            => $datosTicket['agencia'] ?? 'VW Divol La Villa',
+        'agencia'            => $datosTicket['agencia'] ?? 'Divol La Villa',
         'area_sistemas'      => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
         'titulo'             => $datosTicket['titulo'] ?? '',
         'descripcion'        => $datosTicket['descripcion'] ?? '',
