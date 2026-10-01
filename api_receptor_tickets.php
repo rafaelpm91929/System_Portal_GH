@@ -93,6 +93,7 @@ $titulo = trim($datos['titulo'] ?? '');
 $descripcion = trim($datos['descripcion'] ?? '');
 $prioridad = ucfirst(strtolower(trim($datos['prioridad'] ?? 'Media')));
 $solicitanteNombre = trim($datos['solicitante_nombre'] ?? 'Usuario Sucursal');
+$solicitanteUsuario = trim($datos['solicitante_usuario'] ?? ($_POST['solicitante_usuario'] ?? ''));
 $solicitanteEmail = trim($datos['solicitante_email'] ?? '');
 
 if (empty($titulo) || empty($descripcion)) {
@@ -168,9 +169,9 @@ try {
 
     $stmt = $pdo->prepare("
         INSERT INTO tickets_soporte 
-        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto)
+        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto)
         VALUES
-        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_nom, :sol_em, :sol_ag, :archivo)
+        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_usr, :sol_nom, :sol_em, :sol_ag, :archivo)
     ");
     $stmt->execute([
         ':folio'    => $folio,
@@ -178,6 +179,7 @@ try {
         ':titulo'   => $titulo,
         ':desc'     => $descripcion,
         ':prio'     => $prioridad,
+        ':sol_usr'  => $solicitanteUsuario,
         ':sol_nom'  => $solicitanteNombre,
         ':sol_em'   => $solicitanteEmail,
         ':sol_ag'   => $agenciaNombre,

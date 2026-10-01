@@ -92,7 +92,7 @@ if (!empty($desdeFecha)) {
     $params[] = $desdeFecha;
 }
 
-$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, creado_en, actualizado_en, solicitante_agencia FROM tickets_soporte";
+$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, creado_en, actualizado_en, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia FROM tickets_soporte";
 if (!empty($whereClauses)) {
     $sql .= " WHERE " . implode(' AND ', $whereClauses);
 }

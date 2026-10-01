@@ -162,11 +162,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $nextNum = ($countStmt ? (int)$countStmt->fetchColumn() : 0) + 1;
                 $folio = 'TK-' . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
+                $solicitanteUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
                 $stmt = $pdo->prepare("
                     INSERT INTO tickets_soporte 
-                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, asignado_a, archivo_adjunto)
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, asignado_a, archivo_adjunto)
                     VALUES
-                    (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_id, :sol_nom, :sol_em, :sol_ag, :asignado, :archivo)
+                    (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_id, :sol_usr, :sol_nom, :sol_em, :sol_ag, :asignado, :archivo)
                 ");
                 $stmt->execute([
                     ':folio'     => $folio,
@@ -175,6 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     ':desc'      => $descripcion,
                     ':prio'      => $prioridad,
                     ':sol_id'    => $usuarioId,
+                    ':sol_usr'   => $solicitanteUsuario,
                     ':sol_nom'   => $solicitanteNombre,
                     ':sol_em'    => $solicitanteEmail,
                     ':sol_ag'    => $solicitanteAgencia,
@@ -1245,7 +1247,7 @@ if ($pdo) {
                                 data-agencia="<?php echo htmlspecialchars($agenciaTicket); ?>"
                                 data-estado="<?php echo htmlspecialchars($estado); ?>"
                                 data-titulo="<?php echo htmlspecialchars($t['titulo']); ?>"
-                                data-solicitante="<?php echo htmlspecialchars($t['solicitante_nombre'] ?? ''); ?>"
+                                data-solicitante="<?php echo htmlspecialchars(($t['solicitante_nombre'] ?? '') . ' ' . ($t['solicitante_usuario'] ?? '')); ?>"
                                 data-asignado="<?php echo htmlspecialchars($asignado); ?>">
                                 
                                 <td>
@@ -1292,8 +1294,17 @@ if ($pdo) {
                                 </td>
 
                                 <td>
-                                    <div class="fw-semibold text-white"><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></div>
-                                    <div class="text-secondary small" style="font-size: 0.75rem;"><?php echo htmlspecialchars($t['solicitante_email'] ?? '---'); ?></div>
+                                    <div class="fw-semibold text-white d-flex align-items-center gap-1.5 flex-wrap">
+                                        <span><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></span>
+                                        <?php if (!empty($t['solicitante_usuario'])): ?>
+                                            <span class="badge bg-dark border text-info font-monospace py-0 px-1" style="font-size: 0.68rem;" title="Usuario del sistema: <?php echo htmlspecialchars($t['solicitante_usuario']); ?>">
+                                                @<?php echo htmlspecialchars($t['solicitante_usuario']); ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="text-secondary small" style="font-size: 0.73rem;">
+                                        <i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($t['solicitante_email'] ?? '---'); ?>
+                                    </div>
                                 </td>
 
                                 <td>
@@ -1679,7 +1690,11 @@ function abrirModalAtender(ticket) {
     document.getElementById('atenderFolio').innerText = ticket.folio || ('TK-' + ticket.id);
     document.getElementById('atenderAgencia').innerText = ticket.solicitante_agencia || 'Agencia General';
     document.getElementById('atenderTitulo').innerText = ticket.titulo || 'Sin título';
-    document.getElementById('atenderSolicitante').innerText = ticket.solicitante_nombre || 'Usuario';
+    let solicitanteTxt = ticket.solicitante_nombre || 'Usuario';
+    if (ticket.solicitante_usuario) {
+        solicitanteTxt += ' (@' + ticket.solicitante_usuario + ')';
+    }
+    document.getElementById('atenderSolicitante').innerText = solicitanteTxt;
     document.getElementById('atenderEmail').innerText = ticket.solicitante_email || 'Sin correo';
     document.getElementById('atenderArea').innerText = ticket.area_sistemas || 'SISTEMAS';
     document.getElementById('atenderDescripcion').innerText = ticket.descripcion || '';
