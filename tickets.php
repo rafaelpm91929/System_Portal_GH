@@ -658,7 +658,7 @@ if ($pdo) {
 // CÁLCULO DE MÉTRICAS Y ESTADÍSTICAS DEL SISTEMA
 // ====================================================
 $conteoPorArea = [];
-foreach ($AREAS_SISTEMAS_CATALOGO as $k => $v) {
+foreach ($AREAS_SISTEMAS as $k => $v) {
     $conteoPorArea[$k] = 0;
 }
 $conteoPorEstado = ['Abierto' => 0, 'En Proceso' => 0, 'Resuelto' => 0, 'Cerrado' => 0];
@@ -668,8 +668,6 @@ foreach ($tickets as $t) {
     $a = strtoupper(trim($t['area_sistemas'] ?? ''));
     if (isset($conteoPorArea[$a])) {
         $conteoPorArea[$a]++;
-    } elseif (!empty($a)) {
-        $conteoPorArea[$a] = 1;
     }
 
     $e = strtolower(trim($t['estado'] ?? 'abierto'));
@@ -1998,7 +1996,7 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                 <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <h6 class="fw-bold text-white mb-0"><i class="bi bi-bar-chart-fill text-warning me-2"></i> Carga por Área de Sistemas</h6>
-                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.7rem;">6 Áreas</span>
+                        <span class="badge bg-dark text-info border border-info border-opacity-25" style="font-size: 0.7rem;"><?php echo count($AREAS_SISTEMAS); ?> <?php echo count($AREAS_SISTEMAS) === 1 ? 'Área Asignada' : 'Áreas Asignadas'; ?></span>
                     </div>
                     <div style="height: 250px; position: relative;">
                         <canvas id="chartTicketsArea"></canvas>
@@ -2025,38 +2023,47 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             <!-- Desglose por Área -->
             <div class="col-lg-6">
                 <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
-                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-diagram-3-fill text-info me-2"></i> Desglose Detallado por Área TI</h6>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="fw-bold text-white mb-0"><i class="bi bi-diagram-3-fill text-info me-2"></i> Desglose Detallado por Área TI</h6>
+                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.7rem;"><?php echo count($AREAS_SISTEMAS); ?> Visibles</span>
+                    </div>
                     <div class="table-responsive">
                         <table class="table align-middle">
                             <thead>
                                 <tr>
-                                    <th>Área</th>
+                                    <th>Área Asignada</th>
                                     <th class="text-center">Tickets</th>
                                     <th>% del Total</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ($AREAS_SISTEMAS_CATALOGO as $ak => $ainf): 
-                                    $cnt = $conteoPorArea[$ak] ?? 0;
-                                    $pct = $totalTickets > 0 ? round(($cnt / $totalTickets) * 100, 1) : 0;
-                                ?>
+                                <?php if (empty($AREAS_SISTEMAS)): ?>
                                     <tr>
-                                        <td>
-                                            <span style="font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 6px;">
-                                                <i class="bi <?php echo $ainf['icono']; ?>"></i> <?php echo $ainf['nombre']; ?>
-                                            </span>
-                                        </td>
-                                        <td class="text-center fw-bold text-white"><?php echo $cnt; ?></td>
-                                        <td style="width: 40%;">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <div class="progress flex-grow-1" style="height: 6px; background: rgba(255,255,255,0.08);">
-                                                    <div class="progress-bar" style="width: <?php echo $pct; ?>%; background: <?php echo $ainf['color']; ?>;"></div>
-                                                </div>
-                                                <span class="small font-monospace text-secondary" style="font-size: 0.75rem; width: 45px;"><?php echo $pct; ?>%</span>
-                                            </div>
-                                        </td>
+                                        <td colspan="3" class="text-center text-secondary py-3">No tienes áreas de sistemas asignadas a tu usuario.</td>
                                     </tr>
-                                <?php endforeach; ?>
+                                <?php else: ?>
+                                    <?php foreach ($AREAS_SISTEMAS as $ak => $ainf): 
+                                        $cnt = $conteoPorArea[$ak] ?? 0;
+                                        $pct = $totalTickets > 0 ? round(($cnt / $totalTickets) * 100, 1) : 0;
+                                    ?>
+                                        <tr>
+                                            <td>
+                                                <span style="font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 6px;">
+                                                    <i class="bi <?php echo $ainf['icono']; ?>"></i> <?php echo $ainf['nombre']; ?>
+                                                </span>
+                                            </td>
+                                            <td class="text-center fw-bold text-white"><?php echo $cnt; ?></td>
+                                            <td style="width: 40%;">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="progress flex-grow-1" style="height: 6px; background: rgba(255,255,255,0.08);">
+                                                        <div class="progress-bar" style="width: <?php echo $pct; ?>%; background: <?php echo $ainf['color']; ?>;"></div>
+                                                    </div>
+                                                    <span class="small font-monospace text-secondary" style="font-size: 0.75rem; width: 45px;"><?php echo $pct; ?>%</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
@@ -2326,8 +2333,8 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Área de Sistemas *</label>
                             <select name="area_sistemas" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
-                                <?php foreach ($AREAS_SISTEMAS_CATALOGO as $kArea => $descArea): ?>
-                                    <option value="<?php echo $kArea; ?>"><?php echo $descArea; ?></option>
+                                <?php foreach ($AREAS_SISTEMAS as $kArea => $ainfo): ?>
+                                    <option value="<?php echo $kArea; ?>"><?php echo htmlspecialchars($ainfo['nombre']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -2793,6 +2800,13 @@ function renderizarGraficasEstadisticas() {
     if (ctxArea) {
         if (chartArea) chartArea.destroy();
         const dataArea = <?php echo json_encode($conteoPorArea); ?>;
+        const colorsArea = <?php 
+            $cList = [];
+            foreach (array_keys($conteoPorArea) as $ak) {
+                $cList[] = $AREAS_SISTEMAS[$ak]['color'] ?? '#6366f1';
+            }
+            echo json_encode($cList);
+        ?>;
         chartArea = new Chart(ctxArea, {
             type: 'bar',
             data: {
@@ -2800,7 +2814,7 @@ function renderizarGraficasEstadisticas() {
                 datasets: [{
                     label: 'Tickets',
                     data: Object.values(dataArea),
-                    backgroundColor: '#6366f1',
+                    backgroundColor: colorsArea.length > 0 ? colorsArea : '#6366f1',
                     borderRadius: 6
                 }]
             },
