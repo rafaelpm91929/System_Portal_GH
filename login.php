@@ -59,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($passwordValida) {
                             $_SESSION['usuario_id'] = $user['id'];
                             $_SESSION['usuario_nombre'] = $user['nombre'];
+                            $_SESSION['usuario_login'] = $user['usuario'] ?? '';
+                            $_SESSION['usuario_email'] = $user['email'] ?? '';
                             $_SESSION['usuario_rol'] = $user['rol'] ?? 'Usuario';
                             $stmtAgReg = $pdo ? $pdo->query("SELECT nombre FROM agencias ORDER BY id ASC LIMIT 1") : null;
                             $nomAgReg = $stmtAgReg ? $stmtAgReg->fetchColumn() : null;

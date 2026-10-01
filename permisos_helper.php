@@ -327,6 +327,7 @@ function asegurarTablaTickets($pdo = null) {
                     prioridad TEXT DEFAULT 'Media',
                     estado TEXT DEFAULT 'Abierto',
                     solicitante_id INTEGER,
+                    solicitante_usuario TEXT,
                     solicitante_nombre TEXT,
                     solicitante_email TEXT,
                     solicitante_agencia TEXT,
@@ -348,6 +349,7 @@ function asegurarTablaTickets($pdo = null) {
                     `prioridad` VARCHAR(50) DEFAULT 'Media',
                     `estado` VARCHAR(50) DEFAULT 'Abierto',
                     `solicitante_id` INT NULL,
+                    `solicitante_usuario` VARCHAR(100) NULL,
                     `solicitante_nombre` VARCHAR(150),
                     `solicitante_email` VARCHAR(150),
                     `solicitante_agencia` VARCHAR(100),
@@ -359,6 +361,11 @@ function asegurarTablaTickets($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Migración automática de columna solicitante_usuario
+        try {
+            $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
+        } catch (Throwable $eAlt) {}
     } catch (Throwable $e) {}
 }
 
@@ -367,6 +374,21 @@ function asegurarTablaTickets($pdo = null) {
  */
 function cargarPermisosSesion($pdo, $usuario_id) {
     if (!$pdo || !$usuario_id) return;
+
+    try {
+        // Cargar datos de perfil, rol y áreas autorizadas de tickets
+        $stmtU = $pdo->prepare("SELECT usuario, nombre, email, rol, agencia, areas_tickets FROM usuarios WHERE id = ?");
+        $stmtU->execute([$usuario_id]);
+        $uInfo = $stmtU->fetch(PDO::FETCH_ASSOC);
+        if ($uInfo) {
+            if (!empty($uInfo['usuario'])) $_SESSION['usuario_login'] = $uInfo['usuario'];
+            if (!empty($uInfo['nombre']))  $_SESSION['usuario_nombre'] = $uInfo['nombre'];
+            if (!empty($uInfo['email']))   $_SESSION['usuario_email']  = $uInfo['email'];
+            if (!empty($uInfo['agencia'])) $_SESSION['agencia']        = $uInfo['agencia'];
+            $_SESSION['usuario_rol'] = $uInfo['rol'] ?? ($_SESSION['usuario_rol'] ?? 'Usuario');
+            $_SESSION['areas_tickets'] = $uInfo['areas_tickets'] ?? 'TODOS';
+        }
+    } catch (Throwable $eU) {}
 
     try {
         $stmt = $pdo->prepare("

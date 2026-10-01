@@ -32,12 +32,32 @@ if (!isset($_SESSION['usuario_id'])) {
 // Cargar permisos y asegurar tablas
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Usuario');
+$loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
+$emailUsuario = $_SESSION['usuario_email'] ?? '';
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
 if ($pdo) {
     asegurarTablaTickets($pdo);
+    // Asegurar carga de login y email si faltan en sesión
+    if (empty($loginUsuario) || empty($emailUsuario)) {
+        try {
+            $stmtUInfo = $pdo->prepare("SELECT usuario, email FROM usuarios WHERE id = ?");
+            $stmtUInfo->execute([$usuarioId]);
+            $rU = $stmtUInfo->fetch(PDO::FETCH_ASSOC);
+            if ($rU) {
+                if (empty($loginUsuario) && !empty($rU['usuario'])) {
+                    $loginUsuario = $rU['usuario'];
+                    $_SESSION['usuario_login'] = $loginUsuario;
+                }
+                if (empty($emailUsuario) && !empty($rU['email'])) {
+                    $emailUsuario = $rU['email'];
+                    $_SESSION['usuario_email'] = $emailUsuario;
+                }
+            }
+        } catch (Throwable $e) {}
+    }
 }
 
 // Catálogo Oficial de Áreas de Sistemas
@@ -62,14 +82,15 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
 
     $payload = [
-        'token'              => $token,
-        'agencia'            => $datosTicket['agencia'] ?? 'Divol La Villa',
-        'area_sistemas'      => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
-        'titulo'             => $datosTicket['titulo'] ?? '',
-        'descripcion'        => $datosTicket['descripcion'] ?? '',
-        'prioridad'          => $datosTicket['prioridad'] ?? 'Media',
-        'solicitante_nombre' => $datosTicket['solicitante_nombre'] ?? 'Usuario',
-        'solicitante_email'  => $datosTicket['solicitante_email'] ?? ''
+        'token'               => $token,
+        'agencia'             => $datosTicket['agencia'] ?? 'Divol La Villa',
+        'area_sistemas'       => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
+        'titulo'              => $datosTicket['titulo'] ?? '',
+        'descripcion'         => $datosTicket['descripcion'] ?? '',
+        'prioridad'           => $datosTicket['prioridad'] ?? 'Media',
+        'solicitante_usuario' => $datosTicket['solicitante_usuario'] ?? '',
+        'solicitante_nombre'  => $datosTicket['solicitante_nombre'] ?? 'Usuario',
+        'solicitante_email'   => $datosTicket['solicitante_email'] ?? ''
     ];
 
     if ($archivoLocal && file_exists(__DIR__ . '/' . $archivoLocal)) {
@@ -155,14 +176,15 @@ function sincronizarTicketsConCentral($pdo) {
                         asignado_a = :asignado, 
                         notas_resolucion = :notas, 
                         prioridad = :prioridad,
+                        solicitante_usuario = COALESCE(NULLIF(solicitante_usuario, ''), :sol_usr),
                         actualizado_en = :act
                     WHERE folio = :folio
                 ");
 
                 $stmtIns = $pdo->prepare("
                     INSERT INTO tickets_soporte 
-                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, solicitante_agencia, creado_en, actualizado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, creado_en, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 foreach ($dec['tickets'] as $tc) {
@@ -178,6 +200,7 @@ function sincronizarTicketsConCentral($pdo) {
                             ':asignado'  => $tc['asignado_a'] ?? '',
                             ':notas'     => $tc['notas_resolucion'] ?? '',
                             ':prioridad' => $tc['prioridad'] ?? 'Media',
+                            ':sol_usr'   => $tc['solicitante_usuario'] ?? '',
                             ':act'       => $tc['actualizado_en'] ?? date('Y-m-d H:i:s'),
                             ':folio'     => $tc['folio']
                         ]);
@@ -191,6 +214,9 @@ function sincronizarTicketsConCentral($pdo) {
                             $tc['estado'] ?? 'Abierto',
                             $tc['asignado_a'] ?? '',
                             $tc['notas_resolucion'] ?? '',
+                            $tc['solicitante_usuario'] ?? '',
+                            $tc['solicitante_nombre'] ?? 'Usuario',
+                            $tc['solicitante_email'] ?? '',
                             $tc['solicitante_agencia'] ?? 'Divol La Villa',
                             $tc['creado_en'] ?? date('Y-m-d H:i:s'),
                             $tc['actualizado_en'] ?? date('Y-m-d H:i:s')
@@ -219,8 +245,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $titulo = trim($_POST['titulo'] ?? '');
         $descripcion = trim($_POST['descripcion'] ?? '');
         $prioridad = trim($_POST['prioridad'] ?? 'Media');
+        $solicitanteUsuario = $loginUsuario;
         $solicitanteNombre = trim($_POST['solicitante_nombre'] ?? $nombreUsuario);
-        $solicitanteEmail = trim($_POST['solicitante_email'] ?? ($_SESSION['usuario_email'] ?? ''));
+        $solicitanteEmail = trim($_POST['solicitante_email'] ?? $emailUsuario);
         $solicitanteAgencia = trim($_POST['solicitante_agencia'] ?? $agenciaUsuario);
 
         if (empty($titulo) || empty($descripcion) || empty($area)) {
@@ -250,13 +277,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             try {
                 // Enviar primero a la Dirección Central de Sistemas (portal.grupohuerta.mx)
                 $resCentral = enviarTicketACentral([
-                    'agencia'            => $solicitanteAgencia,
-                    'area_sistemas'      => $area,
-                    'titulo'             => $titulo,
-                    'descripcion'        => $descripcion,
-                    'prioridad'          => $prioridad,
-                    'solicitante_nombre' => $solicitanteNombre,
-                    'solicitante_email'  => $solicitanteEmail
+                    'agencia'             => $solicitanteAgencia,
+                    'area_sistemas'       => $area,
+                    'titulo'              => $titulo,
+                    'descripcion'         => $descripcion,
+                    'prioridad'           => $prioridad,
+                    'solicitante_usuario' => $solicitanteUsuario,
+                    'solicitante_nombre'  => $solicitanteNombre,
+                    'solicitante_email'   => $solicitanteEmail
                 ], $archivoUrl);
 
                 $folio = null;
@@ -275,8 +303,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 $stmtIns = $pdo->prepare("
                     INSERT INTO tickets_soporte 
-                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, $sqlFecha)
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en)
+                    VALUES (?, ?, ?, ?, ?, 'Abierto', ?, ?, ?, ?, ?, ?, $sqlFecha)
                 ");
 
                 $stmtIns->execute([
@@ -286,6 +314,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $descripcion,
                     $prioridad,
                     $usuarioId,
+                    $solicitanteUsuario,
                     $solicitanteNombre,
                     $solicitanteEmail,
                     $solicitanteAgencia,
@@ -379,7 +408,22 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
     $filasDb = [];
     if ($pdo) {
         try {
-            $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+            if (!$esAdmin) {
+                $stmtExp = $pdo->prepare("
+                    SELECT * FROM tickets_soporte 
+                    WHERE solicitante_id = :uid 
+                       OR (solicitante_usuario IS NOT NULL AND solicitante_usuario != '' AND solicitante_usuario = :ulogin)
+                       OR (solicitante_email IS NOT NULL AND solicitante_email != '' AND solicitante_email = :uemail)
+                    ORDER BY id DESC
+                ");
+                $stmtExp->execute([
+                    ':uid'    => $usuarioId,
+                    ':ulogin' => $loginUsuario,
+                    ':uemail' => $emailUsuario
+                ]);
+            } else {
+                $stmtExp = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+            }
             $filasDb = $stmtExp ? $stmtExp->fetchAll(PDO::FETCH_ASSOC) : [];
         } catch (Throwable $e) {}
     }
@@ -391,6 +435,7 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
         ['label' => 'Prioridad', 'width' => '100px', 'align' => 'center'],
         ['label' => 'Estado', 'width' => '110px', 'align' => 'center'],
         ['label' => 'Solicitante', 'width' => '170px', 'align' => 'left'],
+        ['label' => 'Usuario / Perfil', 'width' => '130px', 'align' => 'left', 'is_text' => true],
         ['label' => 'Correo Solicitante', 'width' => '190px', 'align' => 'left', 'is_text' => true],
         ['label' => 'Agencia / Sucursal', 'width' => '140px', 'align' => 'left'],
         ['label' => 'Asignado a', 'width' => '150px', 'align' => 'left'],
@@ -407,6 +452,7 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
             ['val' => htmlspecialchars($r['prioridad'] ?? 'Media'), 'align' => 'center'],
             ['val' => '<span class="badge-pill ' . (strtolower($r['estado'] ?? '') === 'resuelto' || strtolower($r['estado'] ?? '') === 'cerrado' ? 'badge-status-ok' : 'badge-status-warn') . '">' . htmlspecialchars($r['estado'] ?? 'Abierto') . '</span>', 'align' => 'center'],
             ['val' => htmlspecialchars($r['solicitante_nombre'] ?? '---'), 'align' => 'left'],
+            ['val' => (!empty($r['solicitante_usuario']) ? '@' . htmlspecialchars($r['solicitante_usuario']) : '---'), 'align' => 'left', 'is_text' => true],
             ['val' => htmlspecialchars($r['solicitante_email'] ?? '---'), 'align' => 'left', 'is_text' => true],
             ['val' => htmlspecialchars($r['solicitante_agencia'] ?? '---'), 'align' => 'left'],
             ['val' => htmlspecialchars($r['asignado_a'] ?? 'Sin asignar'), 'align' => 'left'],
@@ -448,8 +494,27 @@ if ($pdo) {
             }
         }
 
-        $stmtAll = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
-        $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
+        // AISLAMIENTO DE TICKETS POR PERFIL DE USUARIO:
+        // Si no es Administrador ni SuperAdmin, solo ve sus propios tickets subidos
+        if (!$esAdmin) {
+            $stmtUser = $pdo->prepare("
+                SELECT * FROM tickets_soporte 
+                WHERE solicitante_id = :uid 
+                   OR (solicitante_usuario IS NOT NULL AND solicitante_usuario != '' AND solicitante_usuario = :ulogin)
+                   OR (solicitante_email IS NOT NULL AND solicitante_email != '' AND solicitante_email = :uemail)
+                ORDER BY id DESC
+            ");
+            $stmtUser->execute([
+                ':uid'    => $usuarioId,
+                ':ulogin' => $loginUsuario,
+                ':uemail' => $emailUsuario
+            ]);
+            $tickets = $stmtUser->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            // Administradores y SuperAdmins ven todos los tickets de la agencia
+            $stmtAll = $pdo->query("SELECT * FROM tickets_soporte ORDER BY id DESC");
+            $tickets = $stmtAll ? $stmtAll->fetchAll(PDO::FETCH_ASSOC) : [];
+        }
 
         $totalTickets = count($tickets);
         foreach ($tickets as $t) {
@@ -740,6 +805,23 @@ if ($pdo) {
         </div>
     <?php endif; ?>
 
+    <!-- Indicador de Contexto de Usuario / Perfil -->
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+        <?php if (!$esAdmin): ?>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-3 py-2" style="font-size: 0.82rem;">
+                    <i class="bi bi-person-fill-lock me-1"></i> Mostrando únicamente tus tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
+                </span>
+            </div>
+        <?php else: ?>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge rounded-pill bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 px-3 py-2" style="font-size: 0.82rem;">
+                    <i class="bi bi-shield-check me-1"></i> Modo Administrador: Visualizando todos los tickets de la agencia
+                </span>
+            </div>
+        <?php endif; ?>
+    </div>
+
     <!-- Tarjetas de Métricas (KPIs) -->
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
@@ -874,7 +956,7 @@ if ($pdo) {
                                 data-folio="<?php echo htmlspecialchars(mb_strtolower($t['folio'] ?? '')); ?>"
                                 data-area="<?php echo htmlspecialchars($areaKey); ?>"
                                 data-titulo="<?php echo htmlspecialchars(mb_strtolower($t['titulo'] ?? '')); ?>"
-                                data-solicitante="<?php echo htmlspecialchars(mb_strtolower($t['solicitante_nombre'] ?? '')); ?>"
+                                data-solicitante="<?php echo htmlspecialchars(mb_strtolower(($t['solicitante_nombre'] ?? '') . ' ' . ($t['solicitante_usuario'] ?? ''))); ?>"
                                 data-estado="<?php echo htmlspecialchars($estLower); ?>">
                                 
                                 <!-- Folio -->
@@ -936,9 +1018,19 @@ if ($pdo) {
 
                                 <!-- Solicitante y Sucursal -->
                                 <td>
-                                    <div class="fw-semibold text-white small"><?php echo htmlspecialchars($t['solicitante_nombre'] ?? '---'); ?></div>
-                                    <div class="text-secondary" style="font-size: 0.75rem;">
+                                    <div class="fw-semibold text-white d-flex align-items-center gap-1.5 flex-wrap">
+                                        <span><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></span>
+                                        <?php if (!empty($t['solicitante_usuario'])): ?>
+                                            <span class="badge bg-dark border text-info font-monospace py-0 px-1" style="font-size: 0.68rem;" title="Usuario del sistema: <?php echo htmlspecialchars($t['solicitante_usuario']); ?>">
+                                                @<?php echo htmlspecialchars($t['solicitante_usuario']); ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="text-secondary" style="font-size: 0.73rem;">
                                         <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($t['solicitante_agencia'] ?? 'General'); ?>
+                                        <?php if (!empty($t['solicitante_email'])): ?>
+                                            &bull; <i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($t['solicitante_email']); ?>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
 
@@ -1037,7 +1129,12 @@ if ($pdo) {
                         <!-- Datos del Solicitante Prellenados -->
                         <div class="col-md-4">
                             <label class="form-label text-secondary small fw-bold text-uppercase">Solicitante</label>
-                            <input type="text" name="solicitante_nombre" value="<?php echo htmlspecialchars($nombreUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                            <div class="input-group">
+                                <input type="text" name="solicitante_nombre" value="<?php echo htmlspecialchars($nombreUsuario); ?>" class="form-control rounded-start-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                                <?php if (!empty($loginUsuario)): ?>
+                                    <span class="input-group-text bg-dark text-info border-secondary border-opacity-25 font-monospace small" title="Usuario de cuenta">@<?php echo htmlspecialchars($loginUsuario); ?></span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label text-secondary small fw-bold text-uppercase">Sucursal / Agencia</label>
@@ -1217,7 +1314,11 @@ if ($pdo) {
         document.getElementById('editTicketId').value = ticket.id;
         document.getElementById('viewFolio').textContent = ticket.folio || ('#TK-' + ticket.id);
         document.getElementById('viewTitulo').textContent = ticket.titulo || 'Sin Título';
-        document.getElementById('viewSolicitante').textContent = ticket.solicitante_nombre || '---';
+        let solicitanteTxt = ticket.solicitante_nombre || '---';
+        if (ticket.solicitante_usuario) {
+            solicitanteTxt += ' (@' + ticket.solicitante_usuario + ')';
+        }
+        document.getElementById('viewSolicitante').textContent = solicitanteTxt;
         document.getElementById('viewAgencia').textContent = ticket.solicitante_agencia || 'General';
         document.getElementById('viewPrioridad').textContent = ticket.prioridad || 'Media';
         document.getElementById('viewFecha').textContent = ticket.creado_en || '---';
