@@ -519,6 +519,7 @@ $totalResueltos = 0;
 $totalSinAsignar = 0;
 $conteoPorAgencia = [];
 $agenciasList = [];
+$ticketsSinVer = [];
 
 // 1. Inicializar agencias del catálogo oficial y personalizadas
 if (!empty($CATALOGO_AGENCIAS)) {
@@ -582,6 +583,7 @@ if ($pdo) {
             $estLower = strtolower(trim($t['estado'] ?? ''));
             if ($estLower === 'abierto') {
                 $totalAbiertos++;
+                $ticketsSinVer[] = $t;
             } elseif ($estLower === 'en proceso') {
                 $totalEnProceso++;
             } elseif ($estLower === 'resuelto' || $estLower === 'cerrado') {
@@ -923,69 +925,128 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             font-weight: 700;
         }
 
-        /* Hub de Agencias (Vista Inicial) */
+        /* Hub de Agencias (Diseño Formal Futurista) */
         .agency-ticket-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-            gap: 22px;
+            grid-template-columns: repeat(auto-fill, minmax(390px, 1fr));
+            gap: 24px;
         }
         .agency-ticket-card {
-            background: #091a32;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            padding: 22px;
+            background: linear-gradient(145deg, rgba(13, 27, 48, 0.94) 0%, rgba(8, 18, 36, 0.98) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 22px;
+            padding: 24px;
             cursor: pointer;
-            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
             position: relative;
             overflow: hidden;
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
             display: flex;
             flex-direction: column;
             justify-content: space-between;
         }
+        .agency-ticket-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8, #a855f7);
+            opacity: 0.6;
+            transition: opacity 0.3s ease;
+        }
         .agency-ticket-card:hover {
-            transform: translateY(-5px);
-            border-color: #38bdf8;
-            background: #0e2444;
-            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), 0 0 20px rgba(56, 189, 248, 0.18);
+            transform: translateY(-6px);
+            border-color: rgba(56, 189, 248, 0.6);
+            background: linear-gradient(145deg, rgba(16, 36, 64, 0.96) 0%, rgba(10, 24, 48, 0.98) 100%);
+            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.65), 0 0 28px rgba(56, 189, 248, 0.22);
+        }
+        .agency-ticket-card:hover::before {
+            opacity: 1;
         }
         .agency-ticket-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 15px;
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.55rem;
             flex-shrink: 0;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(99, 102, 241, 0.2));
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.35);
         }
         .agency-stat-box {
-            background: rgba(4, 13, 26, 0.75);
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(8, 15, 28, 0.95) 100%);
             border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 14px;
-            padding: 10px 8px;
+            padding: 12px 8px;
             text-align: center;
-            transition: all 0.2s ease;
+            transition: all 0.25s ease;
         }
-        .agency-ticket-card:hover .agency-stat-box {
-            background: rgba(4, 13, 26, 0.95);
-            border-color: rgba(56, 189, 248, 0.25);
+        .agency-stat-box.stat-totales {
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .agency-stat-box.stat-sin-atender {
+            background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, rgba(30, 20, 5, 0.85) 100%);
+            border-color: rgba(245, 158, 11, 0.25);
         }
         .agency-stat-box.highlight-open {
-            border-color: rgba(245, 158, 11, 0.45);
-            background: rgba(245, 158, 11, 0.1);
+            border-color: rgba(245, 158, 11, 0.65) !important;
+            background: linear-gradient(180deg, rgba(245, 158, 11, 0.22) 0%, rgba(50, 30, 5, 0.95) 100%) !important;
+            box-shadow: 0 0 16px rgba(245, 158, 11, 0.3);
+            animation: pulseGlow 2.5s infinite;
+        }
+        .agency-stat-box.stat-en-proceso {
+            background: linear-gradient(180deg, rgba(14, 165, 233, 0.12) 0%, rgba(5, 25, 45, 0.85) 100%);
+            border-color: rgba(14, 165, 233, 0.25);
+        }
+        .agency-stat-box.stat-resueltos {
+            background: linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 35, 25, 0.85) 100%);
+            border-color: rgba(16, 185, 129, 0.25);
+        }
+        .agency-ticket-card:hover .agency-stat-box {
+            transform: translateY(-2px);
         }
         .stat-number {
-            font-size: 1.4rem;
+            font-size: 1.45rem;
             font-weight: 800;
             line-height: 1.1;
+            letter-spacing: -0.5px;
         }
         .stat-label {
             font-size: 0.65rem;
             font-weight: 700;
             color: #94a3b8;
-            letter-spacing: 0.6px;
-            margin-top: 4px;
+            letter-spacing: 0.8px;
+            margin-top: 5px;
+            text-transform: uppercase;
+        }
+        .btn-futuristic-view {
+            background: linear-gradient(135deg, rgba(2, 132, 199, 0.9) 0%, rgba(37, 99, 235, 0.95) 100%);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.8rem;
+            padding: 6px 16px;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4);
+            transition: all 0.2s ease;
+            text-decoration: none;
+            border: 1px solid rgba(56, 189, 248, 0.4);
+        }
+        .agency-ticket-card:hover .btn-futuristic-view {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            box-shadow: 0 6px 18px rgba(2, 132, 199, 0.6);
+            transform: scale(1.04);
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 10px rgba(245, 158, 11, 0.25); }
+            50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.55); }
         }
 
         /* KPIs */
@@ -1331,152 +1392,253 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             <!-- ======================================================= -->
             <div id="seccionTab_tickets" class="tab-seccion">
                 <div id="vistaAgencias">
-                    <!-- Encabezado de Vista de Agencias -->
+                    <!-- Encabezado de Vista: Tickets Dirección Sistemas -->
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-            <div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1 fw-bold">
-                        <i class="bi bi-shield-check me-1"></i> Mesa de Ayuda TI
-                    </span>
-                    <span class="text-secondary small">&bull; Dirección Central de Sistemas</span>
-                </div>
-                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
-                    <i class="bi bi-buildings text-info"></i> Agencias y Sucursales Conectadas
-                </h3>
-                <p class="text-secondary mb-0 small">
-                    Monitoreo en tiempo real de tickets. Selecciona una agencia para revisar su historial o atender requerimientos.
-                </p>
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-outline-info rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2" onclick="mostrarHistorialAgencia('TODAS')">
-                    <i class="bi bi-globe2"></i> <span>Ver Historial Consolidado (Todas)</span>
-                </button>
-                <a href="agencias.php" class="btn btn-outline-secondary text-white rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
-                    <i class="bi bi-gear-fill"></i> <span>Administrar cPanels</span>
-                </a>
-                <button class="btn btn-primary rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
-                    <i class="bi bi-plus-circle-fill"></i> <span>+ Registrar Ticket Manual</span>
-                </button>
-            </div>
-        </div>
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1 fw-bold">
+                                    <i class="bi bi-shield-check me-1"></i> Mesa de Ayuda TI
+                                </span>
+                                <span class="text-secondary small">&bull; Dirección Central de Sistemas</span>
+                            </div>
+                            <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                                <i class="bi bi-ticket-perforated-fill text-info"></i> Tickets Dirección Sistemas
+                            </h3>
+                            <p class="text-secondary mb-0 small">
+                                Monitoreo y control central de requerimientos técnicos e infraestructura en todas las sucursales de Grupo Huerta.
+                            </p>
+                        </div>
+                    </div>
 
-        <!-- KPIs Generales Globales del Sistema -->
-        <div class="row g-3 mb-4">
-            <div class="col-6 col-md-3">
-                <div class="kpi-card">
-                    <div class="kpi-icon kpi-cyan"><i class="bi bi-inbox-fill"></i></div>
-                    <div>
-                        <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
-                        <div class="small text-secondary fw-semibold">TOTAL TICKETS SISTEMA</div>
+                    <!-- KPIs Generales Globales del Sistema -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-md-3">
+                            <div class="kpi-card">
+                                <div class="kpi-icon kpi-cyan"><i class="bi bi-inbox-fill"></i></div>
+                                <div>
+                                    <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
+                                    <div class="small text-secondary fw-semibold">TOTAL TICKETS SISTEMA</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi-card">
+                                <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
+                                <div>
+                                    <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
+                                    <div class="small text-secondary fw-semibold">ABIERTOS / SIN ATENDER</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi-card">
+                                <div class="kpi-icon kpi-blue"><i class="bi bi-gear-wide-connected"></i></div>
+                                <div>
+                                    <div class="fs-4 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
+                                    <div class="small text-secondary fw-semibold">EN ATENCIÓN / PROCESO</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi-card">
+                                <div class="kpi-icon kpi-green"><i class="bi bi-check2-circle"></i></div>
+                                <div>
+                                    <div class="fs-4 fw-bold text-success"><?php echo $totalResueltos; ?></div>
+                                    <div class="small text-secondary fw-semibold">RESUELTOS / CERRADOS</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card">
-                    <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
-                    <div>
-                        <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
-                        <div class="small text-secondary fw-semibold">ABIERTOS / SIN ATENDER</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card">
-                    <div class="kpi-icon kpi-blue"><i class="bi bi-gear-wide-connected"></i></div>
-                    <div>
-                        <div class="fs-4 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
-                        <div class="small text-secondary fw-semibold">EN ATENCIÓN / PROCESO</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="kpi-card">
-                    <div class="kpi-icon kpi-green"><i class="bi bi-check2-circle"></i></div>
-                    <div>
-                        <div class="fs-4 fw-bold text-success"><?php echo $totalResueltos; ?></div>
-                        <div class="small text-secondary fw-semibold">RESUELTOS / CERRADOS</div>
-                    </div>
-                </div>
-            </div>
-        </div>
 
-        <!-- Grid de Agencias con sus Recuadros de Métricas -->
-        <div class="agency-ticket-grid mb-5">
-            <?php foreach ($agenciasList as $nomAg => $agInfo): ?>
-                <div class="agency-ticket-card" onclick="mostrarHistorialAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>')">
-                    <!-- Top de la Tarjeta de Agencia -->
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <div class="d-flex align-items-center gap-3">
-                            <div class="agency-ticket-icon" style="background: <?php echo $agInfo['color']; ?>22; color: <?php echo $agInfo['color']; ?>; border: 1px solid <?php echo $agInfo['color']; ?>44;">
-                                <i class="bi <?php echo $agInfo['icono']; ?>"></i>
+                    <!-- ============================================== -->
+                    <!-- SECCIÓN: TICKETS SIN VER / PENDIENTES DE ATENCIÓN -->
+                    <!-- ============================================== -->
+                    <div class="mb-5">
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                            <div>
+                                <h5 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
+                                    <i class="bi bi-bell-fill text-warning"></i> Tickets Sin Ver / Pendientes de Atención
+                                </h5>
+                                <span class="text-secondary small">Requerimientos reportados que esperan ser atendidos por el equipo de sistemas</span>
                             </div>
                             <div>
-                                <h5 class="fw-bold text-white mb-0"><?php echo htmlspecialchars($nomAg); ?></h5>
-                                <span class="text-secondary small font-monospace"><?php echo htmlspecialchars($agInfo['cpanel']); ?></span>
+                                <span class="badge <?php echo count($ticketsSinVer) > 0 ? 'bg-warning text-dark' : 'bg-success bg-opacity-20 text-success border border-success border-opacity-30'; ?> px-3 py-2 rounded-pill fw-bold">
+                                    <i class="bi <?php echo count($ticketsSinVer) > 0 ? 'bi-exclamation-triangle-fill' : 'bi-check-circle-fill'; ?> me-1"></i>
+                                    <?php echo count($ticketsSinVer); ?> <?php echo count($ticketsSinVer) === 1 ? 'Ticket Pendiente' : 'Tickets Pendientes'; ?>
+                                </span>
                             </div>
                         </div>
+
+                        <?php if (empty($ticketsSinVer)): ?>
+                            <div class="p-4 rounded-4 text-center" style="background: linear-gradient(145deg, rgba(16, 185, 129, 0.08) 0%, rgba(9, 26, 50, 0.6) 100%); border: 1px solid rgba(16, 185, 129, 0.25); box-shadow: 0 10px 25px rgba(0,0,0,0.25);">
+                                <div class="d-inline-flex align-items-center justify-content-center mb-2" style="width: 50px; height: 50px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 1.6rem; border: 1px solid rgba(16, 185, 129, 0.4);">
+                                    <i class="bi bi-check2-all"></i>
+                                </div>
+                                <h6 class="text-white fw-bold mb-1">¡Bandeja al día! No hay tickets sin ver ni pendientes de atención</h6>
+                                <p class="text-secondary small mb-0">Todas las incidencias recibidas en tus áreas autorizadas han sido atendidas o están en proceso.</p>
+                            </div>
+                        <?php else: ?>
+                            <div class="p-3 rounded-4" style="background: linear-gradient(145deg, rgba(13, 27, 48, 0.95) 0%, rgba(8, 18, 36, 0.98) 100%); border: 1px solid rgba(245, 158, 11, 0.3); box-shadow: 0 12px 32px rgba(0,0,0,0.45);">
+                                <div class="table-responsive">
+                                    <table class="table align-middle mb-0">
+                                        <thead>
+                                            <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                                                <th class="text-secondary small fw-bold">FOLIO</th>
+                                                <th class="text-secondary small fw-bold">SUCURSAL</th>
+                                                <th class="text-secondary small fw-bold">ÁREA TI</th>
+                                                <th class="text-secondary small fw-bold">ASUNTO / INCIDENCIA</th>
+                                                <th class="text-secondary small fw-bold">SOLICITANTE</th>
+                                                <th class="text-secondary small fw-bold">FECHA</th>
+                                                <th class="text-end text-secondary small fw-bold">ACCIÓN</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($ticketsSinVer as $tsv): 
+                                                $areaK = strtoupper(trim($tsv['area_sistemas'] ?? ''));
+                                                $ainf = $AREAS_SISTEMAS[$areaK] ?? ($AREAS_SISTEMAS_CATALOGO[$areaK] ?? ['nombre' => $areaK, 'color' => '#38bdf8', 'bg' => 'rgba(56,189,248,0.15)', 'border' => 'rgba(56,189,248,0.3)', 'icono' => 'bi-tag']);
+                                                $folioTsv = $tsv['folio'] ?? ('TK-' . $tsv['id']);
+                                            ?>
+                                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                                    <td>
+                                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 px-2 py-1 font-monospace fw-bold">
+                                                            <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: middle;"></i><?php echo htmlspecialchars($folioTsv); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge-agencia">
+                                                            <i class="bi bi-building"></i> <?php echo htmlspecialchars($tsv['solicitante_agencia'] ?? 'Agencia'); ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <span style="font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 4px;">
+                                                            <i class="bi <?php echo $ainf['icono']; ?>"></i> <?php echo $ainf['nombre']; ?>
+                                                        </span>
+                                                    </td>
+                                                    <td>
+                                                        <div class="fw-bold text-white text-truncate" style="max-width: 280px;" title="<?php echo htmlspecialchars($tsv['titulo'] ?? ''); ?>">
+                                                            <?php echo htmlspecialchars($tsv['titulo'] ?? 'Sin título'); ?>
+                                                        </div>
+                                                        <div class="text-secondary small text-truncate" style="max-width: 280px;">
+                                                            <?php echo htmlspecialchars(mb_substr($tsv['descripcion'] ?? '', 0, 60)) . '...'; ?>
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <div class="text-white small fw-semibold"><?php echo htmlspecialchars($tsv['solicitante_nombre'] ?? 'Usuario'); ?></div>
+                                                        <?php if (!empty($tsv['solicitante_usuario'])): ?>
+                                                            <span class="text-secondary font-monospace" style="font-size: 0.75rem;">@<?php echo htmlspecialchars($tsv['solicitante_usuario']); ?></span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td>
+                                                        <span class="text-secondary small font-monospace"><?php echo date('d/m/Y H:i', strtotime($tsv['creado_en'] ?? 'now')); ?></span>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <button type="button" class="btn btn-warning btn-sm fw-bold rounded-pill px-3 shadow-sm text-dark d-inline-flex align-items-center gap-1" onclick='abrirModalAtender(<?php echo json_encode($tsv); ?>)'>
+                                                            <i class="bi bi-headset"></i> Atender
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- ============================================== -->
+                    <!-- SUCURSALES Y AGENCIAS CONECTADAS -->
+                    <!-- ============================================== -->
+                    <div class="d-flex align-items-center justify-content-between mb-3">
                         <div>
-                            <?php if ($agInfo['abiertos'] > 0): ?>
-                                <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 px-3 py-2 rounded-pill">
-                                    <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $agInfo['abiertos']; ?> sin atender
-                                </span>
-                            <?php elseif ($agInfo['total'] > 0): ?>
-                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-3 py-2 rounded-pill">
-                                    <i class="bi bi-check2-all me-1"></i> Al día
-                                </span>
-                            <?php else: ?>
-                                <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50 px-3 py-2 rounded-pill">
-                                    <i class="bi bi-dash-circle me-1"></i> Sin incidencias
-                                </span>
-                            <?php endif; ?>
+                            <h5 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
+                                <i class="bi bi-buildings-fill text-primary"></i> Sucursales y Agencias Conectadas
+                            </h5>
+                            <span class="text-secondary small">Selecciona una sucursal para consultar su consola de soporte e historial completo</span>
                         </div>
+                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold" onclick="mostrarHistorialAgencia('TODAS')">
+                            <i class="bi bi-globe me-1"></i> Ver Todas
+                        </button>
                     </div>
 
-                    <!-- Recuadros de Métricas Solicitados -->
-                    <div class="row g-2 mb-3">
-                        <div class="col-3">
-                            <div class="agency-stat-box">
-                                <div class="stat-number text-white"><?php echo $agInfo['total']; ?></div>
-                                <div class="stat-label">TOTALES</div>
-                            </div>
-                        </div>
-                        <div class="col-3">
-                            <div class="agency-stat-box <?php echo $agInfo['abiertos'] > 0 ? 'highlight-open' : ''; ?>">
-                                <div class="stat-number text-warning"><?php echo $agInfo['abiertos']; ?></div>
-                                <div class="stat-label">SIN ATENDER</div>
-                            </div>
-                        </div>
-                        <div class="col-3">
-                            <div class="agency-stat-box">
-                                <div class="stat-number text-info"><?php echo $agInfo['en_proceso']; ?></div>
-                                <div class="stat-label">EN PROCESO</div>
-                            </div>
-                        </div>
-                        <div class="col-3">
-                            <div class="agency-stat-box">
-                                <div class="stat-number text-success"><?php echo $agInfo['resueltos']; ?></div>
-                                <div class="stat-label">RESUELTOS</div>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Grid de Agencias con Diseño Formal y Futurista -->
+                    <div class="agency-ticket-grid mb-5">
+                        <?php foreach ($agenciasList as $nomAg => $agInfo): ?>
+                            <div class="agency-ticket-card" onclick="mostrarHistorialAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>')">
+                                <!-- Top de la Tarjeta de Agencia -->
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="agency-ticket-icon">
+                                            <i class="bi <?php echo $agInfo['icono']; ?>" style="color: <?php echo $agInfo['color']; ?>;"></i>
+                                        </div>
+                                        <div>
+                                            <h5 class="fw-bold text-white mb-1" style="font-size: 1.15rem; letter-spacing: -0.3px;"><?php echo htmlspecialchars($nomAg); ?></h5>
+                                            <span class="text-info font-monospace small" style="background: rgba(56, 189, 248, 0.08); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.18);">
+                                                <i class="bi bi-link-45deg me-1"></i><?php echo htmlspecialchars($agInfo['cpanel']); ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <?php if ($agInfo['abiertos'] > 0): ?>
+                                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 px-3 py-2 rounded-pill fw-bold">
+                                                <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $agInfo['abiertos']; ?> sin atender
+                                            </span>
+                                        <?php elseif ($agInfo['total'] > 0): ?>
+                                            <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 px-3 py-2 rounded-pill fw-bold">
+                                                <i class="bi bi-check2-all me-1"></i> Al día
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-30 px-3 py-2 rounded-pill">
+                                                <i class="bi bi-dash-circle me-1"></i> Sin incidencias
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
 
-                    <!-- Pie de Tarjeta con botón de acceso -->
-                    <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-15">
-                        <span class="text-secondary small">
-                            <?php if ($agInfo['ultimo_ticket']): ?>
-                                Último: <strong class="text-white"><?php echo htmlspecialchars($agInfo['ultimo_ticket']['folio'] ?? ('TK-'.$agInfo['ultimo_ticket']['id'])); ?></strong> &bull; <?php echo date('d/m/Y', strtotime($agInfo['ultimo_ticket']['creado_en'])); ?>
-                            <?php else: ?>
-                                Sin tickets registrados aún
-                            <?php endif; ?>
-                        </span>
-                        <span class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 fw-bold text-nowrap">
-                            Ver Historial <i class="bi bi-arrow-right ms-1"></i>
-                        </span>
+                                <!-- Recuadros de Métricas con Degradados Futuristas -->
+                                <div class="row g-2 mb-3">
+                                    <div class="col-3">
+                                        <div class="agency-stat-box stat-totales">
+                                            <div class="stat-number text-white"><?php echo $agInfo['total']; ?></div>
+                                            <div class="stat-label">TOTALES</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="agency-stat-box stat-sin-atender <?php echo $agInfo['abiertos'] > 0 ? 'highlight-open' : ''; ?>">
+                                            <div class="stat-number text-warning"><?php echo $agInfo['abiertos']; ?></div>
+                                            <div class="stat-label">SIN ATENDER</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="agency-stat-box stat-en-proceso">
+                                            <div class="stat-number text-info"><?php echo $agInfo['en_proceso']; ?></div>
+                                            <div class="stat-label">EN PROCESO</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-3">
+                                        <div class="agency-stat-box stat-resueltos">
+                                            <div class="stat-number text-success"><?php echo $agInfo['resueltos']; ?></div>
+                                            <div class="stat-label">RESUELTOS</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Pie de Tarjeta con botón futurista de acceso -->
+                                <div class="d-flex align-items-center justify-content-between pt-3 border-top border-secondary border-opacity-15">
+                                    <span class="text-secondary small">
+                                        <?php if ($agInfo['ultimo_ticket']): ?>
+                                            Último: <strong class="text-white"><?php echo htmlspecialchars($agInfo['ultimo_ticket']['folio'] ?? ('TK-'.$agInfo['ultimo_ticket']['id'])); ?></strong> &bull; <?php echo date('d/m/Y', strtotime($agInfo['ultimo_ticket']['creado_en'])); ?>
+                                        <?php else: ?>
+                                            Sin tickets registrados aún
+                                        <?php endif; ?>
+                                    </span>
+                                    <span class="btn-futuristic-view">
+                                        <span>Ver Historial</span> <i class="bi bi-arrow-right"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
 
     <!-- ======================================================= -->
     <!-- VISTA 2: HISTORIAL DE TICKETS DE LA AGENCIA SELECCIONADA -->
