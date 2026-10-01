@@ -56,6 +56,7 @@ $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
 if ($pdo) {
     asegurarTablaTickets($pdo);
+    asegurarTablaCitas($pdo);
 }
 
 // Catálogo Oficial Maestro de Áreas de Sistemas
@@ -326,10 +327,104 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
+    // 6. Agendar Cita de Soporte Técnico
+    if ($accion === 'agendar_cita') {
+        $agenciaCita = trim($_POST['agencia'] ?? '');
+        $areaCita = trim($_POST['area_sistemas'] ?? 'INFRAESTRUCTURA');
+        $tipoCita = trim($_POST['tipo_cita'] ?? 'Presencial');
+        $asuntoCita = trim($_POST['asunto'] ?? '');
+        $descCita = trim($_POST['descripcion'] ?? '');
+        $solNomCita = trim($_POST['solicitante_nombre'] ?? $nombreUsuario);
+        $solEmailCita = trim($_POST['solicitante_email'] ?? '');
+        $tecnicoCita = trim($_POST['tecnico_asignado'] ?? $nombreUsuario);
+        $fechaCita = trim($_POST['fecha_cita'] ?? '');
+        $horaCita = trim($_POST['hora_cita'] ?? '09:00');
+        $notasCita = trim($_POST['notas_atencion'] ?? '');
+
+        if (empty($agenciaCita) || empty($asuntoCita) || empty($fechaCita)) {
+            $error = "Por favor completa la Agencia, Asunto y Fecha de la cita.";
+        } else {
+            try {
+                $stmtCConteo = $pdo->query("SELECT COUNT(*) FROM citas_soporte");
+                $numC = ($stmtCConteo ? (int)$stmtCConteo->fetchColumn() : 0) + 1;
+                $folioCita = 'CTA-' . date('Y') . '-' . str_pad($numC, 4, '0', STR_PAD_LEFT);
+
+                $stmtInsC = $pdo->prepare("
+                    INSERT INTO citas_soporte 
+                    (folio, agencia, area_sistemas, tipo_cita, asunto, descripcion, solicitante_nombre, solicitante_usuario, solicitante_email, tecnico_asignado, fecha_cita, hora_cita, estado, notas_atencion)
+                    VALUES
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Programada', ?)
+                ");
+                $stmtInsC->execute([
+                    $folioCita,
+                    $agenciaCita,
+                    $areaCita,
+                    $tipoCita,
+                    $asuntoCita,
+                    $descCita,
+                    $solNomCita,
+                    $_SESSION['usuario_login'] ?? '',
+                    $solEmailCita,
+                    $tecnicoCita,
+                    $fechaCita,
+                    $horaCita,
+                    $notasCita
+                ]);
+                $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> para <strong>" . htmlspecialchars($agenciaCita) . "</strong>.";
+                $_SESSION['tab_activa'] = 'citas';
+            } catch (Throwable $eCita) {
+                $error = "Error al agendar cita: " . $eCita->getMessage();
+            }
+        }
+    }
+
+    // 7. Actualizar Cita de Soporte
+    if ($accion === 'actualizar_cita') {
+        $citaId = intval($_POST['cita_id'] ?? 0);
+        $estadoCita = trim($_POST['estado'] ?? 'Programada');
+        $tecnicoCita = trim($_POST['tecnico_asignado'] ?? '');
+        $fechaCita = trim($_POST['fecha_cita'] ?? '');
+        $horaCita = trim($_POST['hora_cita'] ?? '');
+        $notasCita = trim($_POST['notas_atencion'] ?? '');
+
+        if ($citaId > 0) {
+            try {
+                $stmtUpC = $pdo->prepare("
+                    UPDATE citas_soporte 
+                    SET estado = ?, tecnico_asignado = ?, fecha_cita = ?, hora_cita = ?, notas_atencion = ?
+                    WHERE id = ?
+                ");
+                $stmtUpC->execute([$estadoCita, $tecnicoCita, $fechaCita, $horaCita, $notasCita, $citaId]);
+                $mensaje = "Cita ID #$citaId actualizada correctamente.";
+                $_SESSION['tab_activa'] = 'citas';
+            } catch (Throwable $eUpC) {
+                $error = "Error al actualizar cita: " . $eUpC->getMessage();
+            }
+        }
+    }
+
+    // 8. Eliminar Cita
+    if ($accion === 'eliminar_cita' && $esAdmin) {
+        $citaId = intval($_POST['cita_id'] ?? 0);
+        if ($citaId > 0) {
+            try {
+                $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE id = ?");
+                $stmtDelC->execute([$citaId]);
+                $mensaje = "Cita ID #$citaId eliminada correctamente.";
+                $_SESSION['tab_activa'] = 'citas';
+            } catch (Throwable $eDelC) {
+                $error = "Error al eliminar cita: " . $eDelC->getMessage();
+            }
+        }
+    }
+
     // Patrón Post/Redirect/Get: Previene duplicados al recargar con F5
     $_SESSION['flash_mensaje'] = $mensaje;
     $_SESSION['flash_error'] = $error;
-    header("Location: tickets.php");
+    $tabRedir = $_SESSION['tab_activa'] ?? '';
+    unset($_SESSION['tab_activa']);
+    $urlDestino = "tickets.php" . (!empty($tabRedir) ? "?tab=" . urlencode($tabRedir) : "");
+    header("Location: $urlDestino");
     exit();
 }
 
@@ -535,6 +630,62 @@ if ($pdo) {
         }
     } catch (Throwable $e) {}
 }
+
+// ====================================================
+// CONSULTA DE CITAS DE SOPORTE TÉCNICO
+// ====================================================
+$citas = [];
+$totalCitas = 0;
+$totalCitasProgramadas = 0;
+$totalCitasEnCurso = 0;
+$totalCitasRealizadas = 0;
+
+if ($pdo) {
+    try {
+        $stmtC = $pdo->query("SELECT * FROM citas_soporte ORDER BY fecha_cita ASC, hora_cita ASC");
+        $citas = $stmtC ? $stmtC->fetchAll(PDO::FETCH_ASSOC) : [];
+        $totalCitas = count($citas);
+        foreach ($citas as $c) {
+            $estC = strtolower(trim($c['estado'] ?? 'programada'));
+            if ($estC === 'programada') $totalCitasProgramadas++;
+            elseif ($estC === 'en curso' || $estC === 'en atencion') $totalCitasEnCurso++;
+            elseif ($estC === 'realizada' || $estC === 'completada') $totalCitasRealizadas++;
+        }
+    } catch (Throwable $eC) {}
+}
+
+// ====================================================
+// CÁLCULO DE MÉTRICAS Y ESTADÍSTICAS DEL SISTEMA
+// ====================================================
+$conteoPorArea = [];
+foreach ($AREAS_SISTEMAS_CATALOGO as $k => $v) {
+    $conteoPorArea[$k] = 0;
+}
+$conteoPorEstado = ['Abierto' => 0, 'En Proceso' => 0, 'Resuelto' => 0, 'Cerrado' => 0];
+$conteoPorPrioridad = ['Baja' => 0, 'Media' => 0, 'Alta' => 0, 'Urgente' => 0];
+
+foreach ($tickets as $t) {
+    $a = strtoupper(trim($t['area_sistemas'] ?? ''));
+    if (isset($conteoPorArea[$a])) {
+        $conteoPorArea[$a]++;
+    } elseif (!empty($a)) {
+        $conteoPorArea[$a] = 1;
+    }
+
+    $e = strtolower(trim($t['estado'] ?? 'abierto'));
+    if ($e === 'abierto') $conteoPorEstado['Abierto']++;
+    elseif ($e === 'en proceso') $conteoPorEstado['En Proceso']++;
+    elseif ($e === 'resuelto') $conteoPorEstado['Resuelto']++;
+    elseif ($e === 'cerrado') $conteoPorEstado['Cerrado']++;
+    else $conteoPorEstado['Abierto']++;
+
+    $p = ucfirst(strtolower(trim($t['prioridad'] ?? 'Media')));
+    if (isset($conteoPorPrioridad[$p])) {
+        $conteoPorPrioridad[$p]++;
+    }
+}
+
+$tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $conteoPorEstado['Cerrado']) / $totalTickets) * 100, 1) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -546,6 +697,8 @@ if ($pdo) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Chart.js para Estadísticas -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             background-color: #061325;
@@ -554,7 +707,145 @@ if ($pdo) {
             color: #ffffff;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Estructura de Layout con Menú Lateral */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+        }
+
+        .app-sidebar {
+            width: 260px;
+            background: #061528;
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            z-index: 1030;
+            transition: all 0.25s ease;
+        }
+
+        .sidebar-brand {
+            padding: 18px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .sidebar-brand-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            background: rgba(14, 165, 233, 0.15);
+            border: 1px solid rgba(14, 165, 233, 0.4);
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+
+        .sidebar-menu {
+            padding: 16px 12px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .sidebar-group-title {
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: #64748b;
+            padding: 12px 14px 6px;
+        }
+
+        .sidebar-btn {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 11px 16px;
+            border-radius: 12px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 0.92rem;
+            font-weight: 600;
+            text-align: left;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            text-decoration: none;
+            margin-bottom: 5px;
+        }
+
+        .sidebar-btn:hover {
+            background: rgba(56, 189, 248, 0.1);
+            color: #38bdf8;
+            border-color: rgba(56, 189, 248, 0.25);
+            transform: translateX(3px);
+        }
+
+        .sidebar-btn.active {
+            background: linear-gradient(135deg, rgba(2, 132, 199, 0.35), rgba(14, 165, 233, 0.18));
+            border-color: rgba(56, 189, 248, 0.5);
+            color: #38bdf8;
+            box-shadow: 0 4px 15px rgba(2, 132, 199, 0.25);
+        }
+
+        .sidebar-btn i {
+            font-size: 1.2rem;
+            line-height: 1;
+        }
+
+        .sidebar-footer {
+            padding: 15px 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(0, 0, 0, 0.25);
+        }
+
+        .app-content {
+            flex-grow: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
             padding-bottom: 60px;
+        }
+
+        .sidebar-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+            z-index: 1025;
+        }
+
+        @media (max-width: 991px) {
+            .app-sidebar {
+                position: fixed;
+                left: -280px;
+                top: 0;
+                bottom: 0;
+                z-index: 1050;
+            }
+            .app-sidebar.show {
+                left: 0;
+            }
+            .sidebar-backdrop.show {
+                display: block;
+            }
         }
 
         .top-navbar {
@@ -571,6 +862,7 @@ if ($pdo) {
             max-width: 1560px;
             margin: 0 auto;
             padding: 25px 35px;
+            width: 100%;
         }
 
         /* Banner de Agente */
@@ -878,79 +1170,171 @@ if ($pdo) {
 </head>
 <body>
 
-<!-- Navbar de Agente -->
-<div class="top-navbar d-flex justify-content-between align-items-center">
-    <div class="d-flex align-items-center gap-3">
-        <a href="menu.php" class="btn btn-outline-light btn-sm rounded-3 px-3 py-1 d-flex align-items-center gap-2">
-            <i class="bi bi-arrow-left"></i> <span>Menú Principal</span>
-        </a>
-        <div class="d-flex align-items-center gap-2 border-start border-secondary ps-3">
-            <i class="bi bi-headset text-info fs-4"></i>
-            <span class="fw-bold tracking-wide">MESA DE AYUDA TI <span class="text-secondary fw-normal">| Panel de Agentes de Sistemas</span></span>
-            <span class="agent-badge ms-2"><i class="bi bi-person-badge-fill"></i> VISTA DE AGENTE</span>
-        </div>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-        <div class="text-end d-none d-md-block">
-            <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
-            <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolActual); ?></span></div>
-        </div>
-        <a href="logout.php" class="btn btn-outline-danger btn-sm rounded-3 px-3">
-            <i class="bi bi-box-arrow-right me-1"></i> Salir
-        </a>
-    </div>
-</div>
+<!-- Backdrop para móviles -->
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 
-<div class="main-container">
-
-    <!-- Notificaciones -->
-    <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success alert-dismissible fade show rounded-3 bg-success bg-opacity-25 text-white border-success mb-3" role="alert">
-            <i class="bi bi-check-circle-fill me-2 fs-5"></i> <?php echo $mensaje; ?>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show rounded-3 bg-danger bg-opacity-25 text-white border-danger mb-3" role="alert">
-            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo $error; ?>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-
-    <?php if (!$accesoTodasAreas): ?>
-        <?php if (empty($areasAutorizadas)): ?>
-            <div class="alert alert-warning border-0 rounded-4 p-4 text-center my-4" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35) !important;" role="alert">
-                <i class="bi bi-shield-lock-fill text-warning fs-1 d-block mb-2"></i>
-                <h5 class="fw-bold text-white mb-2">Sin Áreas de Sistemas Autorizadas</h5>
-                <p class="text-secondary small mb-0" style="max-width: 600px; margin: 0 auto;">
-                    Tu usuario no tiene ninguna área de Sistemas asignada para tickets. Por políticas de seguridad, no puedes consultar ni dar seguimiento a requerimientos de otras áreas. Solicita a un Administrador que configure tus áreas en la Gestión de Usuarios.
-                </p>
+<div class="app-layout">
+    <!-- ============================================== -->
+    <!-- MENÚ LATERAL (SIDEBAR DEL AGENTE DE TICKETS) -->
+    <!-- ============================================== -->
+    <aside class="app-sidebar" id="appSidebar">
+        <!-- Encabezado del Menú Lateral -->
+        <div class="sidebar-brand">
+            <div class="sidebar-brand-icon">
+                <i class="bi bi-headset"></i>
             </div>
-        <?php else: ?>
-            <div class="alert alert-info border-0 rounded-3 py-2 px-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(2, 132, 199, 0.15); border: 1px solid rgba(56, 189, 248, 0.3) !important;">
-                <div class="small text-light d-flex flex-wrap align-items-center gap-2">
-                    <i class="bi bi-shield-lock-fill text-info fs-5"></i>
-                    <span>Áreas de Sistemas autorizadas para tu perfil:</span>
-                    <?php foreach ($areasAutorizadas as $ak): 
-                        $inf = $AREAS_SISTEMAS_CATALOGO[$ak] ?? null;
-                    ?>
-                        <span class="badge" style="background: <?php echo $inf['bg'] ?? '#0284c7'; ?>; color: <?php echo $inf['color'] ?? '#38bdf8'; ?>; border: 1px solid <?php echo $inf['border'] ?? '#38bdf8'; ?>;">
-                            <i class="bi <?php echo $inf['icono'] ?? 'bi-tag'; ?> me-1"></i><?php echo $ak; ?>
-                        </span>
-                    <?php endforeach; ?>
+            <div class="overflow-hidden">
+                <div class="fw-bold text-white text-truncate" style="font-size: 0.95rem;">Mesa de Ayuda TI</div>
+                <div class="text-secondary small text-truncate" style="font-size: 0.72rem;">Dirección Central &bull; Soporte</div>
+            </div>
+        </div>
+
+        <!-- Botones Principales del Menú Lateral -->
+        <div class="sidebar-menu">
+            <div class="sidebar-group-title">MÓDULOS DE SOPORTE</div>
+
+            <!-- Botón 1: Tickets -->
+            <button type="button" class="sidebar-btn active" id="sidebarBtn_tickets" onclick="cambiarTab('tickets')">
+                <i class="bi bi-ticket-detailed-fill text-info"></i>
+                <span class="flex-grow-1">Tickets</span>
+                <?php if ($totalAbiertos > 0): ?>
+                    <span class="badge bg-warning text-dark font-monospace fw-bold" style="font-size: 0.72rem;"><?php echo $totalAbiertos; ?></span>
+                <?php else: ?>
+                    <span class="badge bg-dark border border-secondary text-secondary font-monospace" style="font-size: 0.72rem;"><?php echo $totalTickets; ?></span>
+                <?php endif; ?>
+            </button>
+
+            <!-- Botón 2: Citas -->
+            <button type="button" class="sidebar-btn" id="sidebarBtn_citas" onclick="cambiarTab('citas')">
+                <i class="bi bi-calendar-event-fill text-success"></i>
+                <span class="flex-grow-1">Citas</span>
+                <?php if ($totalCitasProgramadas > 0): ?>
+                    <span class="badge bg-success text-white font-monospace fw-bold" style="font-size: 0.72rem;"><?php echo $totalCitasProgramadas; ?></span>
+                <?php else: ?>
+                    <span class="badge bg-dark border border-secondary text-secondary font-monospace" style="font-size: 0.72rem;"><?php echo $totalCitas; ?></span>
+                <?php endif; ?>
+            </button>
+
+            <!-- Botón 3: Estadísticas -->
+            <button type="button" class="sidebar-btn" id="sidebarBtn_estadisticas" onclick="cambiarTab('estadisticas')">
+                <i class="bi bi-bar-chart-line-fill text-primary"></i>
+                <span class="flex-grow-1">Estadísticas</span>
+                <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25" style="font-size: 0.65rem;">Métricas</span>
+            </button>
+
+            <div class="sidebar-group-title mt-3">NAVEGACIÓN SISTEMA</div>
+            <a href="menu.php" class="sidebar-btn text-secondary">
+                <i class="bi bi-arrow-left-circle"></i>
+                <span>Menú Principal</span>
+            </a>
+            <a href="agencias.php" class="sidebar-btn text-secondary">
+                <i class="bi bi-buildings"></i>
+                <span>cPanels / Agencias</span>
+            </a>
+            <?php if (tienePermiso('usuarios', 'puede_ver')): ?>
+                <a href="usuarios.php" class="sidebar-btn text-secondary">
+                    <i class="bi bi-people"></i>
+                    <span>Usuarios</span>
+                </a>
+            <?php endif; ?>
+        </div>
+
+        <!-- Footer del Perfil en el Sidebar -->
+        <div class="sidebar-footer">
+            <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2 overflow-hidden">
+                    <div class="rounded-circle bg-dark border border-secondary d-flex align-items-center justify-content-center text-info fw-bold" style="width: 36px; height: 36px; flex-shrink: 0; font-size: 0.85rem;">
+                        <?php echo strtoupper(substr($nombreUsuario, 0, 1)); ?>
+                    </div>
+                    <div class="overflow-hidden">
+                        <div class="text-white fw-semibold small text-truncate" style="font-size: 0.82rem;"><?php echo htmlspecialchars($nombreUsuario); ?></div>
+                        <div class="text-secondary small font-monospace text-truncate" style="font-size: 0.72rem;">@<?php echo htmlspecialchars($_SESSION['usuario_login'] ?? 'agente'); ?></div>
+                    </div>
                 </div>
-                <span class="badge bg-secondary bg-opacity-50 text-light small">Filtro de Seguridad Activo</span>
+                <a href="logout.php" class="btn btn-sm btn-outline-danger border-0 p-1" title="Cerrar Sesión">
+                    <i class="bi bi-power fs-5"></i>
+                </a>
             </div>
-        <?php endif; ?>
-    <?php endif; ?>
+        </div>
+    </aside>
 
-    <!-- ======================================================= -->
-    <!-- VISTA 1: CATÁLOGO DE AGENCIAS Y RECUA DROS KPIS (INICIAL) -->
-    <!-- ======================================================= -->
-    <div id="vistaAgencias">
-        <!-- Encabezado de Vista de Agencias -->
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+    <!-- CONTENIDO DE LA APLICACIÓN -->
+    <div class="app-content">
+        <!-- Navbar Superior -->
+        <div class="top-navbar d-flex justify-content-between align-items-center">
+            <div class="d-flex align-items-center gap-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm d-lg-none text-white border-opacity-25" onclick="toggleSidebar()">
+                    <i class="bi bi-list fs-5"></i>
+                </button>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fw-bold tracking-wide" id="topNavTituloSeccion">
+                        <i class="bi bi-ticket-detailed-fill text-info me-1"></i> Tickets de Soporte
+                    </span>
+                    <span class="agent-badge ms-2 d-none d-sm-inline-flex"><i class="bi bi-person-badge-fill"></i> PANEL DE AGENTE TI</span>
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <div class="text-end d-none d-md-block">
+                    <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
+                    <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolActual); ?></span></div>
+                </div>
+                <a href="logout.php" class="btn btn-outline-danger btn-sm rounded-3 px-3">
+                    <i class="bi bi-box-arrow-right me-1"></i> Salir
+                </a>
+            </div>
+        </div>
+
+        <div class="main-container">
+
+            <!-- Notificaciones -->
+            <?php if (!empty($mensaje)): ?>
+                <div class="alert alert-success alert-dismissible fade show rounded-3 bg-success bg-opacity-25 text-white border-success mb-3" role="alert">
+                    <i class="bi bi-check-circle-fill me-2 fs-5"></i> <?php echo $mensaje; ?>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show rounded-3 bg-danger bg-opacity-25 text-white border-danger mb-3" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo $error; ?>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$accesoTodasAreas): ?>
+                <?php if (empty($areasAutorizadas)): ?>
+                    <div class="alert alert-warning border-0 rounded-4 p-4 text-center my-4" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35) !important;" role="alert">
+                        <i class="bi bi-shield-lock-fill text-warning fs-1 d-block mb-2"></i>
+                        <h5 class="fw-bold text-white mb-2">Sin Áreas de Sistemas Autorizadas</h5>
+                        <p class="text-secondary small mb-0" style="max-width: 600px; margin: 0 auto;">
+                            Tu usuario no tiene ninguna área de Sistemas asignada para tickets. Por políticas de seguridad, no puedes consultar ni dar seguimiento a requerimientos de otras áreas. Solicita a un Administrador que configure tus áreas en la Gestión de Usuarios.
+                        </p>
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-info border-0 rounded-3 py-2 px-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(2, 132, 199, 0.15); border: 1px solid rgba(56, 189, 248, 0.3) !important;">
+                        <div class="small text-light d-flex flex-wrap align-items-center gap-2">
+                            <i class="bi bi-shield-lock-fill text-info fs-5"></i>
+                            <span>Áreas de Sistemas autorizadas para tu perfil:</span>
+                            <?php foreach ($areasAutorizadas as $ak): 
+                                $inf = $AREAS_SISTEMAS_CATALOGO[$ak] ?? null;
+                            ?>
+                                <span class="badge" style="background: <?php echo $inf['bg'] ?? '#0284c7'; ?>; color: <?php echo $inf['color'] ?? '#38bdf8'; ?>; border: 1px solid <?php echo $inf['border'] ?? '#38bdf8'; ?>;">
+                                    <i class="bi <?php echo $inf['icono'] ?? 'bi-tag'; ?> me-1"></i><?php echo $ak; ?>
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                        <span class="badge bg-secondary bg-opacity-50 text-light small">Filtro de Seguridad Activo</span>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <!-- ======================================================= -->
+            <!-- SECCIÓN 1: GESTIÓN DE TICKETS Y AGENCIA S -->
+            <!-- ======================================================= -->
+            <div id="seccionTab_tickets" class="tab-seccion">
+                <div id="vistaAgencias">
+                    <!-- Encabezado de Vista de Agencias -->
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
             <div>
                 <div class="d-flex align-items-center gap-2 mb-1">
                     <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1 fw-bold">
@@ -1345,8 +1729,376 @@ if ($pdo) {
         </div>
     </div>
     </div> <!-- /#vistaHistorialTickets -->
+    </div> <!-- /#seccionTab_tickets -->
+
+    <!-- ======================================================= -->
+    <!-- SECCIÓN 2: CITAS Y AGENDA DE SOPORTE TI -->
+    <!-- ======================================================= -->
+    <div id="seccionTab_citas" class="tab-seccion" style="display: none;">
+        <!-- Encabezado de Citas -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30 rounded-pill px-3 py-1 fw-bold">
+                        <i class="bi bi-calendar2-check-fill me-1"></i> Agenda de Soporte
+                    </span>
+                    <span class="text-secondary small">&bull; Visitas Técnicas y Mantenimientos</span>
+                </div>
+                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-calendar-event text-success"></i> Citas y Visitas Programadas
+                </h3>
+                <p class="text-secondary mb-0 small">
+                    Coordinación de visitas presenciales, mantenimientos preventivos y soporte técnico en sucursales.
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-success rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaCita">
+                    <i class="bi bi-calendar-plus-fill"></i> <span>+ Agendar Nueva Cita</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- KPIs de Citas -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-cyan"><i class="bi bi-calendar3"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-white"><?php echo $totalCitas; ?></div>
+                        <div class="small text-secondary fw-semibold">TOTAL DE CITAS</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-green"><i class="bi bi-clock-history"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-success"><?php echo $totalCitasProgramadas; ?></div>
+                        <div class="small text-secondary fw-semibold">PROGRAMADAS</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-yellow"><i class="bi bi-tools"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-warning"><?php echo $totalCitasEnCurso; ?></div>
+                        <div class="small text-secondary fw-semibold">EN ATENCIÓN</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-blue"><i class="bi bi-check-circle-fill"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-info"><?php echo $totalCitasRealizadas; ?></div>
+                        <div class="small text-secondary fw-semibold">REALIZADAS</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra de Filtros y Búsqueda de Citas -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3 p-3 rounded-3" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+            <div class="d-flex align-items-center gap-2 overflow-x-auto" id="filtrosEstadoCitas">
+                <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 active filter-cita-pill" onclick="filtrarCitasPorEstado('TODAS', this)">Todas (<?php echo $totalCitas; ?>)</button>
+                <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 filter-cita-pill" onclick="filtrarCitasPorEstado('Programada', this)">Programadas (<?php echo $totalCitasProgramadas; ?>)</button>
+                <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3 filter-cita-pill" onclick="filtrarCitasPorEstado('En Curso', this)">En Curso (<?php echo $totalCitasEnCurso; ?>)</button>
+                <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 filter-cita-pill" onclick="filtrarCitasPorEstado('Realizada', this)">Realizadas (<?php echo $totalCitasRealizadas; ?>)</button>
+            </div>
+            <div class="search-box-wrapper" style="min-width: 280px;">
+                <i class="bi bi-search text-secondary"></i>
+                <input type="text" id="busquedaCitasInput" class="search-input" placeholder="Buscar cita por sucursal, técnico, asunto..." oninput="filtrarCitasTexto()">
+            </div>
+        </div>
+
+        <!-- Tabla de Citas -->
+        <div class="tickets-table-card mb-4">
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width: 14%;">Folio / Fecha</th>
+                            <th style="width: 16%;">Agencia / Sucursal</th>
+                            <th style="width: 14%;">Tipo / Área</th>
+                            <th style="width: 24%;">Asunto / Objetivo</th>
+                            <th style="width: 14%;">Técnico Asignado</th>
+                            <th style="width: 10%;">Estado</th>
+                            <th style="width: 8%; text-align: right;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyCitas">
+                        <?php if (empty($citas)): ?>
+                            <tr id="filaSinCitas">
+                                <td colspan="7" class="text-center py-5 text-secondary">
+                                    <i class="bi bi-calendar-x fs-1 d-block mb-2 text-muted"></i>
+                                    <div class="fw-semibold">No hay citas de soporte técnico registradas.</div>
+                                    <div class="small text-muted mt-1">Presiona <strong>"+ Agendar Nueva Cita"</strong> para programar una visita técnica a una agencia.</div>
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($citas as $c): 
+                                $estC = ucfirst(strtolower($c['estado'] ?? 'Programada'));
+                                $badgeClassC = 'badge-status-proceso';
+                                if ($estC === 'Programada') $badgeClassC = 'badge-status-abierto';
+                                elseif ($estC === 'En curso' || $estC === 'En Curso') $badgeClassC = 'badge-status-proceso';
+                                elseif ($estC === 'Realizada' || $estC === 'Completada') $badgeClassC = 'badge-status-resuelto';
+                                elseif ($estC === 'Cancelada') $badgeClassC = 'badge-prio-urgente';
+                            ?>
+                                <tr class="cita-row"
+                                    data-id="<?php echo $c['id']; ?>"
+                                    data-estado="<?php echo htmlspecialchars($estC); ?>"
+                                    data-agencia="<?php echo htmlspecialchars($c['agencia'] ?? ''); ?>"
+                                    data-asunto="<?php echo htmlspecialchars($c['asunto'] ?? ''); ?>"
+                                    data-tecnico="<?php echo htmlspecialchars($c['tecnico_asignado'] ?? ''); ?>"
+                                    data-folio="<?php echo htmlspecialchars($c['folio'] ?? ''); ?>">
+                                    <td>
+                                        <span class="badge-folio"><?php echo htmlspecialchars($c['folio'] ?? ('CTA-' . $c['id'])); ?></span>
+                                        <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
+                                            <i class="bi bi-calendar-event me-1"></i><?php echo date('d/m/Y', strtotime($c['fecha_cita'])); ?> &bull; <?php echo htmlspecialchars($c['hora_cita']); ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge-agencia">
+                                            <i class="bi bi-building"></i> <?php echo htmlspecialchars($c['agencia'] ?? 'General'); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="fw-semibold text-white small"><?php echo htmlspecialchars($c['tipo_cita'] ?? 'Presencial'); ?></div>
+                                        <span class="badge bg-dark border text-info" style="font-size: 0.68rem;"><?php echo htmlspecialchars($c['area_sistemas'] ?? 'INFRAESTRUCTURA'); ?></span>
+                                    </td>
+                                    <td>
+                                        <div class="fw-bold text-white mb-1"><?php echo htmlspecialchars($c['asunto']); ?></div>
+                                        <div class="text-secondary small text-truncate" style="max-width: 320px;">
+                                            <?php echo htmlspecialchars($c['descripcion'] ?? 'Sin descripción adicional'); ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="text-white small fw-semibold">
+                                            <i class="bi bi-person-gear text-info me-1"></i><?php echo htmlspecialchars($c['tecnico_asignado'] ?? 'Sin asignar'); ?>
+                                        </div>
+                                        <div class="text-secondary small" style="font-size: 0.72rem;">
+                                            Solicita: <?php echo htmlspecialchars($c['solicitante_nombre'] ?? '---'); ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge rounded-pill <?php echo $badgeClassC; ?> px-2.5 py-1" style="font-size: 0.75rem;">
+                                            <?php echo $estC; ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-end">
+                                        <div class="d-inline-flex gap-1.5">
+                                            <button type="button" class="btn btn-outline-info btn-sm rounded-3 py-1 px-2" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Atender / Modificar Cita">
+                                                <i class="bi bi-pencil-square"></i>
+                                            </button>
+                                            <?php if ($esAdmin): ?>
+                                                <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta cita?');">
+                                                    <input type="hidden" name="accion" value="eliminar_cita">
+                                                    <input type="hidden" name="cita_id" value="<?php echo $c['id']; ?>">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm border-0 py-1 px-2" title="Eliminar Cita">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div> <!-- /#seccionTab_citas -->
+
+    <!-- ======================================================= -->
+    <!-- SECCIÓN 3: ESTADÍSTICAS Y ANALÍTICA TI -->
+    <!-- ======================================================= -->
+    <div id="seccionTab_estadisticas" class="tab-seccion" style="display: none;">
+        <!-- Encabezado de Estadísticas -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-primary bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1 fw-bold">
+                        <i class="bi bi-graph-up-arrow me-1"></i> Inteligencia Operativa
+                    </span>
+                    <span class="text-secondary small">&bull; Rendimiento de Mesa de Ayuda</span>
+                </div>
+                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-bar-chart-line text-primary"></i> Métricas y Estadísticas de Sistemas
+                </h3>
+                <p class="text-secondary mb-0 small">
+                    Análisis consolidado de incidencias por área, volumen por agencia y eficacia en tiempo de atención.
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <a href="tickets.php?export=excel" class="btn btn-outline-success rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-2">
+                    <i class="bi bi-file-earmark-excel-fill"></i> <span>Exportar Datos (Excel)</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- KPIs Ejecutivos de Estadísticas -->
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-cyan"><i class="bi bi-collection-fill"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-white"><?php echo $totalTickets; ?></div>
+                        <div class="small text-secondary fw-semibold">TOTAL INCIDENCIAS</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-green"><i class="bi bi-shield-check"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-success"><?php echo $tasaResolucion; ?>%</div>
+                        <div class="small text-secondary fw-semibold">TASA DE RESOLUCIÓN</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-yellow"><i class="bi bi-hourglass-split"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
+                        <div class="small text-secondary fw-semibold">TICKETS SIN ATENDER</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="kpi-card">
+                    <div class="kpi-icon kpi-blue"><i class="bi bi-calendar2-week"></i></div>
+                    <div>
+                        <div class="fs-4 fw-bold text-info"><?php echo $totalCitas; ?></div>
+                        <div class="small text-secondary fw-semibold">CITAS Y VISITAS TI</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fila de Gráficas de Rendimiento (Chart.js) -->
+        <div class="row g-4 mb-4">
+            <!-- Gráfica 1: Tickets por Estado -->
+            <div class="col-lg-4">
+                <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="fw-bold text-white mb-0"><i class="bi bi-pie-chart-fill text-info me-2"></i> Estado de Requerimientos</h6>
+                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.7rem;">Tiempo Real</span>
+                    </div>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="chartTicketsEstado"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráfica 2: Tickets por Área -->
+            <div class="col-lg-4">
+                <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="fw-bold text-white mb-0"><i class="bi bi-bar-chart-fill text-warning me-2"></i> Carga por Área de Sistemas</h6>
+                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.7rem;">6 Áreas</span>
+                    </div>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="chartTicketsArea"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gráfica 3: Tickets por Agencia -->
+            <div class="col-lg-4">
+                <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h6 class="fw-bold text-white mb-0"><i class="bi bi-buildings-fill text-success me-2"></i> Demanda por Sucursal</h6>
+                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.7rem;">Agencias</span>
+                    </div>
+                    <div style="height: 250px; position: relative;">
+                        <canvas id="chartTicketsAgencia"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla Analítica de Áreas y Agencias -->
+        <div class="row g-4 mb-4">
+            <!-- Desglose por Área -->
+            <div class="col-lg-6">
+                <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-diagram-3-fill text-info me-2"></i> Desglose Detallado por Área TI</h6>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Área</th>
+                                    <th class="text-center">Tickets</th>
+                                    <th>% del Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($AREAS_SISTEMAS_CATALOGO as $ak => $ainf): 
+                                    $cnt = $conteoPorArea[$ak] ?? 0;
+                                    $pct = $totalTickets > 0 ? round(($cnt / $totalTickets) * 100, 1) : 0;
+                                ?>
+                                    <tr>
+                                        <td>
+                                            <span style="font-size: 0.78rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 6px;">
+                                                <i class="bi <?php echo $ainf['icono']; ?>"></i> <?php echo $ainf['nombre']; ?>
+                                            </span>
+                                        </td>
+                                        <td class="text-center fw-bold text-white"><?php echo $cnt; ?></td>
+                                        <td style="width: 40%;">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <div class="progress flex-grow-1" style="height: 6px; background: rgba(255,255,255,0.08);">
+                                                    <div class="progress-bar" style="width: <?php echo $pct; ?>%; background: <?php echo $ainf['color']; ?>;"></div>
+                                                </div>
+                                                <span class="small font-monospace text-secondary" style="font-size: 0.75rem; width: 45px;"><?php echo $pct; ?>%</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Desglose por Agencia -->
+            <div class="col-lg-6">
+                <div class="p-3 rounded-4 h-100" style="background: #091a32; border: 1px solid rgba(255,255,255,0.08);">
+                    <h6 class="fw-bold text-white mb-3"><i class="bi bi-building-check text-success me-2"></i> Desglose por Agencia / Sucursal</h6>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Sucursal</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center text-warning">Sin Atender</th>
+                                    <th class="text-center text-success">Resueltos</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($agenciasList as $agN => $agD): ?>
+                                    <tr>
+                                        <td>
+                                            <span class="badge-agencia"><i class="bi <?php echo $agD['icono']; ?>"></i> <?php echo htmlspecialchars($agN); ?></span>
+                                        </td>
+                                        <td class="text-center fw-bold text-white"><?php echo $agD['total']; ?></td>
+                                        <td class="text-center fw-bold text-warning"><?php echo $agD['abiertos']; ?></td>
+                                        <td class="text-center fw-bold text-success"><?php echo $agD['resueltos']; ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div> <!-- /#seccionTab_estadisticas -->
 
 </div> <!-- /.main-container -->
+</div> <!-- /.app-content -->
+</div> <!-- /.app-layout -->
 
 <!-- ============================================== -->
 <!-- MODAL: REGISTRAR TICKET MANUAL POR EL AGENTE -->
@@ -1528,6 +2280,151 @@ if ($pdo) {
     </div>
 </div>
 
+<!-- Modal Nueva Cita Técnica -->
+<div class="modal fade" id="modalNuevaCita" tabindex="-1" aria-labelledby="modalNuevaCitaLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-0 shadow-lg" style="background: #1e293b; color: #f8fafc; border-radius: 16px;">
+            <div class="modal-header border-bottom border-secondary border-opacity-25 pb-3">
+                <h5 class="modal-title fw-bold text-white" id="modalNuevaCitaLabel">
+                    <i class="bi bi-calendar-plus text-primary me-2"></i> Agendar Nueva Cita Técnica / Soporte
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="tickets.php" method="POST">
+                <input type="hidden" name="accion" value="agendar_cita">
+                <div class="modal-body p-4">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Agencia o Sucursal Destino *</label>
+                            <select name="agencia" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                                <option value="">-- Seleccionar Agencia --</option>
+                                <?php foreach ($agenciasList as $nomAg => $infoAg): ?>
+                                    <option value="<?php echo htmlspecialchars($nomAg); ?>"><?php echo htmlspecialchars($nomAg); ?></option>
+                                <?php endforeach; ?>
+                                <option value="Oficina Central Grupo Huerta">Oficina Central Grupo Huerta</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Tipo de Cita / Visita *</label>
+                            <select name="tipo_cita" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                                <option value="Visita Técnica Presencial">Visita Técnica Presencial</option>
+                                <option value="Mantenimiento Preventivo">Mantenimiento Preventivo</option>
+                                <option value="Revisión de Red / Servidores">Revisión de Red / Servidores</option>
+                                <option value="Reunión de Sistemas">Reunión de Sistemas</option>
+                                <option value="Soporte Remoto Agendado">Soporte Remoto Agendado</option>
+                                <option value="Auditoría Informática">Auditoría Informática</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Fecha de la Cita *</label>
+                            <input type="date" name="fecha_cita" class="form-control bg-dark text-white border-secondary border-opacity-50" required min="<?php echo date('Y-m-d'); ?>" value="<?php echo date('Y-m-d'); ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Hora de la Cita</label>
+                            <input type="time" name="hora_cita" class="form-control bg-dark text-white border-secondary border-opacity-50" value="10:00">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Área de Sistemas *</label>
+                            <select name="area_sistemas" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                                <?php foreach ($AREAS_SISTEMAS_CATALOGO as $kArea => $descArea): ?>
+                                    <option value="<?php echo $kArea; ?>"><?php echo $descArea; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Técnico / Ingeniero Asignado</label>
+                            <input type="text" name="tecnico_asignado" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Ing. Daniel / Soporte Central" value="<?php echo htmlspecialchars($nombreUsuario); ?>">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Asunto de la Cita *</label>
+                            <input type="text" name="asunto" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Mantenimiento general a enlace y switches" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Descripción detallada / Objetivos</label>
+                            <textarea name="descripcion" class="form-control bg-dark text-white border-secondary border-opacity-50" rows="3" placeholder="Detalles de la visita, equipos a revisar o requerimientos..."></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Contacto / Solicitante en Agencia</label>
+                            <input type="text" name="solicitante_nombre" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Nombre de quien recibe">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Correo de Contacto</label>
+                            <input type="email" name="solicitante_email" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="correo@agencia.com">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-top border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary rounded-3 px-4 fw-bold">
+                        <i class="bi bi-calendar-check me-1"></i> Agendar Cita
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Actualizar Cita -->
+<div class="modal fade" id="modalActualizarCita" tabindex="-1" aria-labelledby="modalActualizarCitaLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg" style="background: #1e293b; color: #f8fafc; border-radius: 16px;">
+            <div class="modal-header border-bottom border-secondary border-opacity-25 pb-3">
+                <h5 class="modal-title fw-bold text-white" id="modalActualizarCitaLabel">
+                    <i class="bi bi-pencil-square text-warning me-2"></i> Actualizar Cita <span id="citaActualizarFolio" class="badge bg-secondary ms-2"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="tickets.php" method="POST">
+                <input type="hidden" name="accion" value="actualizar_cita">
+                <input type="hidden" name="cita_id" id="citaActualizarId">
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <div class="text-secondary small fw-bold text-uppercase">Agencia / Sucursal</div>
+                        <div id="citaActualizarAgencia" class="fw-bold fs-6 text-info"></div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="text-secondary small fw-bold text-uppercase">Asunto</div>
+                        <div id="citaActualizarAsunto" class="fw-semibold text-white"></div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Estado de la Cita *</label>
+                            <select name="estado" id="citaActualizarEstado" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                                <option value="Programada">Programada</option>
+                                <option value="En Curso">En Curso</option>
+                                <option value="Realizada">Realizada</option>
+                                <option value="Cancelada">Cancelada</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Fecha</label>
+                            <input type="date" name="fecha_cita" id="citaActualizarFecha" class="form-control bg-dark text-white border-secondary border-opacity-50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-semibold">Hora</label>
+                            <input type="time" name="hora_cita" id="citaActualizarHora" class="form-control bg-dark text-white border-secondary border-opacity-50">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Técnico Asignado</label>
+                            <input type="text" name="tecnico_asignado" id="citaActualizarTecnico" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Nombre del técnico">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-semibold">Notas de Atención / Resultados</label>
+                            <textarea name="notas_atencion" id="citaActualizarNotas" class="form-control bg-dark text-white border-secondary border-opacity-50" rows="3" placeholder="Resultados de la visita, observaciones técnicas o pendientes..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-top border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="submit" class="btn btn-warning rounded-3 px-4 fw-bold text-dark">
+                        <i class="bi bi-save me-1"></i> Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const agenciasData = <?php echo json_encode($agenciasList); ?>;
@@ -1540,6 +2437,75 @@ const totalesGlobales = {
 
 let filtroAgenciaActual = 'TODAS';
 let filtroAreaActual = 'TODAS';
+let filtroCitaEstadoActual = 'TODOS';
+
+// Control de Tabs en Menú Lateral
+function cambiarTab(tabName, updateUrl = true) {
+    const tabsPermitidos = ['tickets', 'citas', 'estadisticas'];
+    if (!tabsPermitidos.includes(tabName)) {
+        tabName = 'tickets';
+    }
+
+    // Actualizar botones de navegación en sidebar
+    tabsPermitidos.forEach(t => {
+        const btn = document.getElementById('navBtn_' + t);
+        const sec = document.getElementById('seccionTab_' + t);
+        if (btn) {
+            if (t === tabName) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+        if (sec) {
+            sec.style.display = (t === tabName) ? 'block' : 'none';
+        }
+    });
+
+    // Actualizar título superior
+    const titleEl = document.getElementById('navbarTabTitle');
+    if (titleEl) {
+        if (tabName === 'tickets') {
+            titleEl.innerText = 'Gestión Central de Tickets';
+        } else if (tabName === 'citas') {
+            titleEl.innerText = 'Agenda de Citas y Visitas Técnicas';
+        } else if (tabName === 'estadisticas') {
+            titleEl.innerText = 'Estadísticas e Inteligencia TI';
+        }
+    }
+
+    // Si entramos a estadísticas, inicializar gráficos Chart.js
+    if (tabName === 'estadisticas') {
+        setTimeout(renderizarGraficasEstadisticas, 80);
+    }
+
+    // Actualizar URL sin recargar
+    if (updateUrl) {
+        const currentUrl = new URL(window.location);
+        currentUrl.searchParams.set('tab', tabName);
+        if (tabName !== 'tickets') {
+            currentUrl.searchParams.delete('agencia');
+        }
+        history.pushState(null, '', currentUrl.toString());
+    }
+
+    // Cerrar sidebar en dispositivos móviles
+    cerrarSidebarMobile();
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (sidebar) sidebar.classList.toggle('show');
+    if (backdrop) backdrop.classList.toggle('show');
+}
+
+function cerrarSidebarMobile() {
+    const sidebar = document.getElementById('appSidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+    if (sidebar) sidebar.classList.remove('show');
+    if (backdrop) backdrop.classList.remove('show');
+}
 
 function mostrarVistaAgencias() {
     const vistaAg = document.getElementById('vistaAgencias');
@@ -1548,7 +2514,7 @@ function mostrarVistaAgencias() {
         vistaAg.style.display = 'block';
         vistaHist.style.display = 'none';
     }
-    history.pushState(null, '', 'tickets.php');
+    history.pushState(null, '', 'tickets.php?tab=tickets');
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1575,13 +2541,13 @@ function mostrarHistorialAgencia(agencia) {
         if (subtituloEl) subtituloEl.textContent = `Listado cronológico de incidencias y requerimientos de ${agencia}`;
         if (btnExcel) btnExcel.href = `tickets.php?export=excel&agencia=${encodeURIComponent(agencia)}`;
         if (selectModalAgencia) selectModalAgencia.value = agencia;
-        history.pushState(null, '', `tickets.php?agencia=${encodeURIComponent(agencia)}`);
+        history.pushState(null, '', `tickets.php?tab=tickets&agencia=${encodeURIComponent(agencia)}`);
     } else {
         filtroAgenciaActual = 'TODAS';
         if (tituloEl) tituloEl.innerHTML = `Todas las Agencias &bull; Historial Consolidado`;
         if (subtituloEl) subtituloEl.textContent = `Mostrando incidencias globales de todas las sucursales conectadas`;
         if (btnExcel) btnExcel.href = `tickets.php?export=excel`;
-        history.pushState(null, '', `tickets.php?agencia=TODAS`);
+        history.pushState(null, '', `tickets.php?tab=tickets&agencia=TODAS`);
     }
 
     // Mini recuadros en la barra de historial
@@ -1716,25 +2682,217 @@ function abrirModalAtender(ticket) {
     modal.show();
 }
 
+// ----------------------------------------------------
+// Gestión de Citas
+// ----------------------------------------------------
+function filtrarCitasPorEstado(estado, btn) {
+    filtroCitaEstadoActual = estado;
+    document.querySelectorAll('.filter-chip-cita').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    filtrarCitas();
+}
+
+function filtrarCitasTexto() {
+    filtrarCitas();
+}
+
+function filtrarCitas() {
+    const input = document.getElementById('busquedaCitasInput');
+    const texto = input ? input.value.toLowerCase().trim() : '';
+    const filas = document.querySelectorAll('#tablaCitasBody tr');
+    let visibles = 0;
+
+    filas.forEach(row => {
+        const estadoRow = (row.getAttribute('data-estado') || '').toLowerCase();
+        const textoRow = row.innerText.toLowerCase();
+
+        const matchEstado = (filtroCitaEstadoActual === 'TODOS' || estadoRow === filtroCitaEstadoActual.toLowerCase());
+        const matchTexto = (texto === '' || textoRow.includes(texto));
+
+        if (matchEstado && matchTexto) {
+            row.style.display = '';
+            visibles++;
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    const filaSin = document.getElementById('filaSinCitas');
+    if (filaSin) {
+        filaSin.style.display = (visibles === 0) ? '' : 'none';
+    }
+}
+
+function abrirModalActualizarCita(cita) {
+    document.getElementById('citaActualizarId').value = cita.id;
+    document.getElementById('citaActualizarFolio').innerText = cita.folio || ('CIT-' + cita.id);
+    document.getElementById('citaActualizarAgencia').innerText = cita.agencia || '';
+    document.getElementById('citaActualizarAsunto').innerText = cita.asunto || '';
+    document.getElementById('citaActualizarEstado').value = cita.estado || 'Programada';
+    document.getElementById('citaActualizarFecha').value = cita.fecha_cita || '';
+    document.getElementById('citaActualizarHora').value = cita.hora_cita || '';
+    document.getElementById('citaActualizarTecnico').value = cita.tecnico_asignado || '';
+    document.getElementById('citaActualizarNotas').value = cita.notas_atencion || '';
+
+    const modal = new bootstrap.Modal(document.getElementById('modalActualizarCita'));
+    modal.show();
+}
+
+// ----------------------------------------------------
+// Gráficas de Estadísticas (Chart.js)
+// ----------------------------------------------------
+let chartEstado = null;
+let chartArea = null;
+let chartAgencia = null;
+
+function renderizarGraficasEstadisticas() {
+    if (typeof Chart === 'undefined') return;
+
+    // Configuración visual dark mode
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.08)';
+    Chart.defaults.font.family = "'Segoe UI', Roboto, system-ui, -apple-system, sans-serif";
+
+    // 1. Gráfica Estado (Doughnut)
+    const ctxEstado = document.getElementById('chartTicketsEstado');
+    if (ctxEstado) {
+        if (chartEstado) chartEstado.destroy();
+        const dataEst = <?php echo json_encode($conteoPorEstado); ?>;
+        chartEstado = new Chart(ctxEstado, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(dataEst),
+                datasets: [{
+                    data: Object.values(dataEst),
+                    backgroundColor: [
+                        '#ef4444', // Abierto
+                        '#f59e0b', // En Proceso
+                        '#10b981', // Resuelto
+                        '#64748b'  // Cerrado
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#1e293b'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12, padding: 15 }
+                    }
+                },
+                cutout: '65%'
+            }
+        });
+    }
+
+    // 2. Gráfica Por Área (Bar)
+    const ctxArea = document.getElementById('chartTicketsArea');
+    if (ctxArea) {
+        if (chartArea) chartArea.destroy();
+        const dataArea = <?php echo json_encode($conteoPorArea); ?>;
+        chartArea = new Chart(ctxArea, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(dataArea),
+                datasets: [{
+                    label: 'Tickets',
+                    data: Object.values(dataArea),
+                    backgroundColor: '#6366f1',
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Gráfica Por Agencia (Horizontal Bar)
+    const ctxAgencia = document.getElementById('chartTicketsAgencia');
+    if (ctxAgencia) {
+        if (chartAgencia) chartAgencia.destroy();
+        const dataAg = <?php 
+            $labelsAg = [];
+            $valsAg = [];
+            foreach ($agenciasList as $nomAg => $infoAg) {
+                $labelsAg[] = $nomAg;
+                $valsAg[] = $infoAg['total'];
+            }
+            echo json_encode(['labels' => $labelsAg, 'values' => $valsAg]);
+        ?>;
+        chartAgencia = new Chart(ctxAgencia, {
+            type: 'bar',
+            data: {
+                labels: dataAg.labels,
+                datasets: [{
+                    label: 'Total Tickets',
+                    data: dataAg.values,
+                    backgroundColor: '#06b6d4',
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// ----------------------------------------------------
 // Router de inicio según URL
+// ----------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const agParam = urlParams.get('agencia');
-    if (agParam) {
-        mostrarHistorialAgencia(agParam);
-    } else {
-        mostrarVistaAgencias();
+    const tabParam = urlParams.get('tab') || 'tickets';
+    cambiarTab(tabParam, false);
+
+    if (tabParam === 'tickets') {
+        const agParam = urlParams.get('agencia');
+        if (agParam) {
+            mostrarHistorialAgencia(agParam);
+        } else {
+            mostrarVistaAgencias();
+        }
     }
 });
 
 // Navegación atrás / adelante del navegador
 window.addEventListener('popstate', () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const agParam = urlParams.get('agencia');
-    if (agParam) {
-        mostrarHistorialAgencia(agParam);
-    } else {
-        mostrarVistaAgencias();
+    const tabParam = urlParams.get('tab') || 'tickets';
+    cambiarTab(tabParam, false);
+
+    if (tabParam === 'tickets') {
+        const agParam = urlParams.get('agencia');
+        if (agParam) {
+            mostrarHistorialAgencia(agParam);
+        } else {
+            mostrarVistaAgencias();
+        }
     }
 });
 </script>

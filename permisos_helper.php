@@ -366,4 +366,66 @@ function asegurarTablaTickets($pdo = null) {
         } catch (Throwable $eAlt) {}
     } catch (Throwable $e) {}
 }
+
+/**
+ * Asegura la existencia de la tabla citas_soporte
+ */
+function asegurarTablaCitas($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS citas_soporte (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    folio TEXT,
+                    agencia TEXT NOT NULL,
+                    area_sistemas TEXT DEFAULT 'INFRAESTRUCTURA',
+                    tipo_cita TEXT DEFAULT 'Presencial',
+                    asunto TEXT NOT NULL,
+                    descripcion TEXT,
+                    solicitante_nombre TEXT,
+                    solicitante_usuario TEXT,
+                    solicitante_email TEXT,
+                    tecnico_asignado TEXT,
+                    fecha_cita DATE NOT NULL,
+                    hora_cita TEXT NOT NULL,
+                    estado TEXT DEFAULT 'Programada',
+                    notas_atencion TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `citas_soporte` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `folio` VARCHAR(50),
+                    `agencia` VARCHAR(100) NOT NULL,
+                    `area_sistemas` VARCHAR(100) DEFAULT 'INFRAESTRUCTURA',
+                    `tipo_cita` VARCHAR(50) DEFAULT 'Presencial',
+                    `asunto` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT,
+                    `solicitante_nombre` VARCHAR(150),
+                    `solicitante_usuario` VARCHAR(100),
+                    `solicitante_email` VARCHAR(150),
+                    `tecnico_asignado` VARCHAR(150),
+                    `fecha_cita` DATE NOT NULL,
+                    `hora_cita` VARCHAR(20) NOT NULL,
+                    `estado` VARCHAR(50) DEFAULT 'Programada',
+                    `notas_atencion` TEXT,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+    } catch (Throwable $e) {}
+}
 ?>
