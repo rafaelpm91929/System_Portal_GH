@@ -1392,11 +1392,231 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             color: #ffffff;
             border-radius: 10px;
         }
-        .form-control:focus, .form-select:focus {
-            background-color: #0a1f3d;
-            border-color: #38bdf8;
+        /* ==================================================== */
+        /* VISTA CALENDARIO MENSUAL Y SELECTOR DE CITAS         */
+        /* ==================================================== */
+        .citas-view-switcher {
+            background: rgba(13, 27, 48, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 4px;
+            border-radius: 30px;
+            display: inline-flex;
+            gap: 4px;
+        }
+        .citas-view-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .citas-view-btn:hover {
             color: #ffffff;
-            box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .citas-view-btn.active {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+        }
+
+        .calendar-card {
+            background: #091a32;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+        }
+        .calendar-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .calendar-nav-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .calendar-nav-btn:hover {
+            background: #0284c7;
+            border-color: #38bdf8;
+            transform: scale(1.05);
+        }
+        .calendar-month-title {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+            text-transform: capitalize;
+            min-width: 200px;
+            text-align: center;
+        }
+        .calendar-weekdays-row {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .calendar-weekday {
+            padding: 8px 4px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+        }
+        .calendar-grid-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+        .calendar-cell {
+            background: rgba(13, 27, 48, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            min-height: 125px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .calendar-cell:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(15, 33, 60, 0.85);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+        .calendar-cell.other-month {
+            opacity: 0.32;
+            background: rgba(6, 15, 28, 0.3);
+        }
+        .calendar-cell.today {
+            border-color: rgba(56, 189, 248, 0.8);
+            background: rgba(14, 165, 233, 0.08);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15) inset;
+        }
+        .calendar-cell-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .calendar-cell-num {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #cbd5e1;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        .calendar-cell.today .calendar-cell-num {
+            background: #0284c7;
+            color: #ffffff;
+            font-weight: 800;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.7);
+        }
+        .calendar-btn-quick-add {
+            opacity: 0;
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #38bdf8;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .calendar-cell:hover .calendar-btn-quick-add {
+            opacity: 1;
+        }
+        .calendar-btn-quick-add:hover {
+            background: #0284c7;
+            color: #ffffff;
+        }
+        .calendar-events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            overflow-y: auto;
+            max-height: 95px;
+            padding-right: 2px;
+        }
+        .calendar-event-item {
+            border-radius: 8px;
+            padding: 5px 7px;
+            font-size: 0.71rem;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            text-decoration: none;
+            display: block;
+            line-height: 1.25;
+            user-select: none;
+        }
+        .calendar-event-item:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.2);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+        }
+        .calendar-event-item.status-programada {
+            background: rgba(14, 165, 233, 0.18);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            color: #e0f2fe;
+        }
+        .calendar-event-item.status-en-curso {
+            background: rgba(245, 158, 11, 0.18);
+            border: 1px solid rgba(245, 158, 11, 0.5);
+            color: #fef3c7;
+        }
+        .calendar-event-item.status-realizada {
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+            color: #d1fae5;
+        }
+        .calendar-event-item.status-cancelada {
+            background: rgba(239, 68, 68, 0.18);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fee2e2;
+        }
+        @media (max-width: 768px) {
+            .calendar-cell {
+                min-height: 90px;
+                padding: 4px;
+            }
+            .calendar-weekday {
+                font-size: 0.68rem;
+            }
+            .calendar-event-item {
+                font-size: 0.65rem;
+                padding: 3px 4px;
+            }
         }
     </style>
 </head>
@@ -2132,8 +2352,18 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                     Coordinación de visitas presenciales, mantenimientos preventivos y soporte técnico en sucursales.
                 </p>
             </div>
-            <div class="d-flex flex-wrap gap-2">
-                <button type="button" class="btn btn-success rounded-3 px-3 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaCita">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <!-- Selector de Vista: Lista vs Calendario -->
+                <div class="citas-view-switcher" role="group" aria-label="Selector de vista de citas">
+                    <button type="button" id="btnVistaCitasLista" class="citas-view-btn active" onclick="cambiarVistaModoCitas('lista')">
+                        <i class="bi bi-list-task"></i> <span>Vista Lista</span>
+                    </button>
+                    <button type="button" id="btnVistaCitasCalendario" class="citas-view-btn" onclick="cambiarVistaModoCitas('calendario')">
+                        <i class="bi bi-calendar3"></i> <span>Vista Calendario</span>
+                    </button>
+                </div>
+
+                <button type="button" class="btn btn-success rounded-pill px-3 py-2 fw-bold d-flex align-items-center gap-2 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalNuevaCita">
                     <i class="bi bi-calendar-plus-fill"></i> <span>+ Agendar Nueva Cita</span>
                 </button>
             </div>
@@ -2193,101 +2423,155 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             </div>
         </div>
 
-        <!-- Tabla de Citas -->
-        <div class="tickets-table-card mb-4">
-            <div class="table-responsive">
-                <table class="table align-middle">
-                    <thead>
-                        <tr>
-                            <th style="width: 14%;">Folio / Fecha</th>
-                            <th style="width: 16%;">Agencia / Sucursal</th>
-                            <th style="width: 14%;">Tipo / Área</th>
-                            <th style="width: 24%;">Asunto / Objetivo</th>
-                            <th style="width: 14%;">Técnico Asignado</th>
-                            <th style="width: 10%;">Estado</th>
-                            <th style="width: 8%; text-align: right;">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbodyCitas">
-                        <?php if (empty($citas)): ?>
-                            <tr id="filaSinCitas">
-                                <td colspan="7" class="text-center py-5 text-secondary">
-                                    <i class="bi bi-calendar-x fs-1 d-block mb-2 text-muted"></i>
-                                    <div class="fw-semibold">No hay citas de soporte técnico registradas.</div>
-                                    <div class="small text-muted mt-1">Presiona <strong>"+ Agendar Nueva Cita"</strong> para programar una visita técnica a una agencia.</div>
-                                </td>
+        <!-- ============================================== -->
+        <!-- VISTA 1: LISTADO TABULAR DE CITAS             -->
+        <!-- ============================================== -->
+        <div id="vistaCitasLista">
+            <div class="tickets-table-card mb-4">
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead>
+                            <tr>
+                                <th style="width: 14%;">Folio / Fecha</th>
+                                <th style="width: 16%;">Agencia / Sucursal</th>
+                                <th style="width: 14%;">Tipo / Área</th>
+                                <th style="width: 24%;">Asunto / Objetivo</th>
+                                <th style="width: 14%;">Técnico Asignado</th>
+                                <th style="width: 10%;">Estado</th>
+                                <th style="width: 8%; text-align: right;">Acciones</th>
                             </tr>
-                        <?php else: ?>
-                            <?php foreach ($citas as $c): 
-                                $estC = ucfirst(strtolower($c['estado'] ?? 'Programada'));
-                                $badgeClassC = 'badge-status-proceso';
-                                if ($estC === 'Programada') $badgeClassC = 'badge-status-abierto';
-                                elseif ($estC === 'En curso' || $estC === 'En Curso') $badgeClassC = 'badge-status-proceso';
-                                elseif ($estC === 'Realizada' || $estC === 'Completada') $badgeClassC = 'badge-status-resuelto';
-                                elseif ($estC === 'Cancelada') $badgeClassC = 'badge-prio-urgente';
-                            ?>
-                                <tr class="cita-row"
-                                    data-id="<?php echo $c['id']; ?>"
-                                    data-estado="<?php echo htmlspecialchars($estC); ?>"
-                                    data-agencia="<?php echo htmlspecialchars($c['agencia'] ?? ''); ?>"
-                                    data-asunto="<?php echo htmlspecialchars($c['asunto'] ?? ''); ?>"
-                                    data-tecnico="<?php echo htmlspecialchars($c['tecnico_asignado'] ?? ''); ?>"
-                                    data-folio="<?php echo htmlspecialchars($c['folio'] ?? ''); ?>">
-                                    <td>
-                                        <span class="badge-folio"><?php echo htmlspecialchars($c['folio'] ?? ('CTA-' . $c['id'])); ?></span>
-                                        <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
-                                            <i class="bi bi-calendar-event me-1"></i><?php echo date('d/m/Y', strtotime($c['fecha_cita'])); ?> &bull; <?php echo htmlspecialchars($c['hora_cita']); ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="badge-agencia">
-                                            <i class="bi bi-building"></i> <?php echo htmlspecialchars($c['agencia'] ?? 'General'); ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div class="fw-semibold text-white small"><?php echo htmlspecialchars($c['tipo_cita'] ?? 'Presencial'); ?></div>
-                                        <span class="badge bg-dark border text-info" style="font-size: 0.68rem;"><?php echo htmlspecialchars($c['area_sistemas'] ?? 'INFRAESTRUCTURA'); ?></span>
-                                    </td>
-                                    <td>
-                                        <div class="fw-bold text-white mb-1"><?php echo htmlspecialchars($c['asunto']); ?></div>
-                                        <div class="text-secondary small text-truncate" style="max-width: 320px;">
-                                            <?php echo htmlspecialchars($c['descripcion'] ?? 'Sin descripción adicional'); ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="text-white small fw-semibold">
-                                            <i class="bi bi-person-gear text-info me-1"></i><?php echo htmlspecialchars($c['tecnico_asignado'] ?? 'Sin asignar'); ?>
-                                        </div>
-                                        <div class="text-secondary small" style="font-size: 0.72rem;">
-                                            Solicita: <?php echo htmlspecialchars($c['solicitante_nombre'] ?? '---'); ?>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <span class="badge rounded-pill <?php echo $badgeClassC; ?> px-2.5 py-1" style="font-size: 0.75rem;">
-                                            <?php echo $estC; ?>
-                                        </span>
-                                    </td>
-                                    <td class="text-end">
-                                        <div class="d-inline-flex gap-1.5">
-                                            <button type="button" class="btn btn-outline-info btn-sm rounded-3 py-1 px-2" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Atender / Modificar Cita">
-                                                <i class="bi bi-pencil-square"></i>
-                                            </button>
-                                            <?php if ($esAdmin): ?>
-                                                <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta cita?');">
-                                                    <input type="hidden" name="accion" value="eliminar_cita">
-                                                    <input type="hidden" name="cita_id" value="<?php echo $c['id']; ?>">
-                                                    <button type="submit" class="btn btn-outline-danger btn-sm border-0 py-1 px-2" title="Eliminar Cita">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </form>
-                                            <?php endif; ?>
-                                        </div>
+                        </thead>
+                        <tbody id="tbodyCitas">
+                            <?php if (empty($citas)): ?>
+                                <tr id="filaSinCitas">
+                                    <td colspan="7" class="text-center py-5 text-secondary">
+                                        <i class="bi bi-calendar-x fs-1 d-block mb-2 text-muted"></i>
+                                        <div class="fw-semibold">No hay citas de soporte técnico registradas.</div>
+                                        <div class="small text-muted mt-1">Presiona <strong>"+ Agendar Nueva Cita"</strong> para programar una visita técnica a una agencia.</div>
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+                            <?php else: ?>
+                                <?php foreach ($citas as $c): 
+                                    $estC = ucfirst(strtolower($c['estado'] ?? 'Programada'));
+                                    $badgeClassC = 'badge-status-proceso';
+                                    if ($estC === 'Programada') $badgeClassC = 'badge-status-abierto';
+                                    elseif ($estC === 'En curso' || $estC === 'En Curso') $badgeClassC = 'badge-status-proceso';
+                                    elseif ($estC === 'Realizada' || $estC === 'Completada') $badgeClassC = 'badge-status-resuelto';
+                                    elseif ($estC === 'Cancelada') $badgeClassC = 'badge-prio-urgente';
+                                ?>
+                                    <tr class="cita-row"
+                                        data-id="<?php echo $c['id']; ?>"
+                                        data-estado="<?php echo htmlspecialchars($estC); ?>"
+                                        data-agencia="<?php echo htmlspecialchars($c['agencia'] ?? ''); ?>"
+                                        data-asunto="<?php echo htmlspecialchars($c['asunto'] ?? ''); ?>"
+                                        data-tecnico="<?php echo htmlspecialchars($c['tecnico_asignado'] ?? ''); ?>"
+                                        data-folio="<?php echo htmlspecialchars($c['folio'] ?? ''); ?>">
+                                        <td>
+                                            <span class="badge-folio"><?php echo htmlspecialchars($c['folio'] ?? ('CTA-' . $c['id'])); ?></span>
+                                            <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
+                                                <i class="bi bi-calendar-event me-1"></i><?php echo date('d/m/Y', strtotime($c['fecha_cita'])); ?> &bull; <?php echo htmlspecialchars($c['hora_cita']); ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge-agencia">
+                                                <i class="bi bi-building"></i> <?php echo htmlspecialchars($c['agencia'] ?? 'General'); ?>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold text-white small"><?php echo htmlspecialchars($c['tipo_cita'] ?? 'Presencial'); ?></div>
+                                            <span class="badge bg-dark border text-info" style="font-size: 0.68rem;"><?php echo htmlspecialchars($c['area_sistemas'] ?? 'INFRAESTRUCTURA'); ?></span>
+                                        </td>
+                                        <td>
+                                            <div class="fw-bold text-white mb-1"><?php echo htmlspecialchars($c['asunto']); ?></div>
+                                            <div class="text-secondary small text-truncate" style="max-width: 320px;">
+                                                <?php echo htmlspecialchars($c['descripcion'] ?? 'Sin descripción adicional'); ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="text-white small fw-semibold">
+                                                <i class="bi bi-person-gear text-info me-1"></i><?php echo htmlspecialchars($c['tecnico_asignado'] ?? 'Sin asignar'); ?>
+                                            </div>
+                                            <div class="text-secondary small" style="font-size: 0.72rem;">
+                                                Solicita: <?php echo htmlspecialchars($c['solicitante_nombre'] ?? '---'); ?>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="badge rounded-pill <?php echo $badgeClassC; ?> px-2.5 py-1" style="font-size: 0.75rem;">
+                                                <?php echo $estC; ?>
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            <div class="d-inline-flex gap-1.5">
+                                                <button type="button" class="btn btn-outline-info btn-sm rounded-3 py-1 px-2" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Atender / Modificar Cita">
+                                                    <i class="bi bi-pencil-square"></i>
+                                                </button>
+                                                <?php if ($esAdmin): ?>
+                                                    <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta cita?');">
+                                                        <input type="hidden" name="accion" value="eliminar_cita">
+                                                        <input type="hidden" name="cita_id" value="<?php echo $c['id']; ?>">
+                                                        <button type="submit" class="btn btn-outline-danger btn-sm border-0 py-1 px-2" title="Eliminar Cita">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- VISTA 2: CALENDARIO MENSUAL DE CITAS           -->
+        <!-- ============================================== -->
+        <div id="vistaCitasCalendario" style="display: none;">
+            <div class="calendar-card mb-4">
+                <!-- Barra Superior de Navegación del Mes -->
+                <div class="calendar-toolbar">
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="calendar-nav-btn" onclick="cambiarMesCalendario(-1)" title="Mes Anterior" aria-label="Mes Anterior">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <div id="calendarMonthTitle" class="calendar-month-title">Mes Año</div>
+                        <button type="button" class="calendar-nav-btn" onclick="cambiarMesCalendario(1)" title="Mes Siguiente" aria-label="Mes Siguiente">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 ms-2 fw-bold" onclick="irAHoyCalendario()">
+                            <i class="bi bi-calendar-check me-1"></i> Hoy
+                        </button>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-3 small text-secondary">
+                            <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #38bdf8; display: inline-block;"></span> Programada</span>
+                            <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span> En Curso</span>
+                            <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Realizada</span>
+                        </div>
+                        <span id="calendarCitasMonthCount" class="badge bg-dark text-info border border-info border-opacity-30 rounded-pill px-3 py-2 font-monospace">
+                            0 Citas este mes
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Fila de Encabezados de Días de la Semana -->
+                <div class="calendar-weekdays-row">
+                    <div class="calendar-weekday">Lunes</div>
+                    <div class="calendar-weekday">Martes</div>
+                    <div class="calendar-weekday">Miércoles</div>
+                    <div class="calendar-weekday">Jueves</div>
+                    <div class="calendar-weekday">Viernes</div>
+                    <div class="calendar-weekday">Sábado</div>
+                    <div class="calendar-weekday">Domingo</div>
+                </div>
+
+                <!-- Cuadrícula Dinámica de Días y Citas del Mes -->
+                <div class="calendar-grid-days" id="calendarGridDays">
+                    <!-- Renderizado dinámicamente con JavaScript -->
+                </div>
             </div>
         </div>
     </div> <!-- /#seccionTab_citas -->
@@ -2707,7 +2991,7 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Fecha de la Cita *</label>
-                            <input type="date" name="fecha_cita" class="form-control bg-dark text-white border-secondary border-opacity-50" required min="<?php echo date('Y-m-d'); ?>" value="<?php echo date('Y-m-d'); ?>">
+                            <input type="date" name="fecha_cita" id="modalNuevaCita_fecha" class="form-control bg-dark text-white border-secondary border-opacity-50" required value="<?php echo date('Y-m-d'); ?>">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Hora de la Cita</label>
@@ -2867,6 +3151,14 @@ function cambiarTab(tabName, updateUrl = true) {
     // Si entramos a estadísticas, inicializar gráficos Chart.js
     if (tabName === 'estadisticas') {
         setTimeout(renderizarGraficasEstadisticas, 80);
+    }
+
+    // Si entramos a citas, restaurar modo de vista (lista o calendario mensual)
+    if (tabName === 'citas') {
+        const modoGuardado = localStorage.getItem('portal_citas_modo_vista') || 'lista';
+        if (typeof cambiarVistaModoCitas === 'function') {
+            cambiarVistaModoCitas(modoGuardado);
+        }
     }
 
     // Actualizar URL sin recargar
@@ -3082,11 +3374,201 @@ function abrirModalAtender(ticket) {
 }
 
 // ----------------------------------------------------
-// Gestión de Citas
+// Gestión de Citas y Calendario Mensual
 // ----------------------------------------------------
+const todasLasCitas = <?php echo json_encode($citas, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
+
+let calAnio = new Date().getFullYear();
+let calMes = new Date().getMonth(); // 0 = Enero, 11 = Diciembre
+
+const NOMBRES_MESES = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+function cambiarVistaModoCitas(modo) {
+    const vistaLista = document.getElementById('vistaCitasLista');
+    const vistaCal = document.getElementById('vistaCitasCalendario');
+    const btnLista = document.getElementById('btnVistaCitasLista');
+    const btnCal = document.getElementById('btnVistaCitasCalendario');
+
+    if (modo === 'calendario') {
+        if (vistaLista) vistaLista.style.display = 'none';
+        if (vistaCal) vistaCal.style.display = 'block';
+        if (btnLista) btnLista.classList.remove('active');
+        if (btnCal) btnCal.classList.add('active');
+        renderizarCalendarioCitas(calAnio, calMes);
+    } else {
+        if (vistaLista) vistaLista.style.display = 'block';
+        if (vistaCal) vistaCal.style.display = 'none';
+        if (btnLista) btnLista.classList.add('active');
+        if (btnCal) btnCal.classList.remove('active');
+    }
+    localStorage.setItem('portal_citas_modo_vista', modo);
+}
+
+function cambiarMesCalendario(delta) {
+    calMes += delta;
+    if (calMes < 0) {
+        calMes = 11;
+        calAnio--;
+    } else if (calMes > 11) {
+        calMes = 0;
+        calAnio++;
+    }
+    renderizarCalendarioCitas(calAnio, calMes);
+}
+
+function irAHoyCalendario() {
+    const hoy = new Date();
+    calAnio = hoy.getFullYear();
+    calMes = hoy.getMonth();
+    renderizarCalendarioCitas(calAnio, calMes);
+}
+
+function agendarCitaEnFecha(fechaStr) {
+    const inputFecha = document.getElementById('modalNuevaCita_fecha');
+    if (inputFecha) {
+        inputFecha.value = fechaStr;
+    }
+    const modalEl = document.getElementById('modalNuevaCita');
+    if (modalEl) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+}
+
+function renderizarCalendarioCitas(anio, mes) {
+    const grid = document.getElementById('calendarGridDays');
+    const titleEl = document.getElementById('calendarMonthTitle');
+    const countEl = document.getElementById('calendarCitasMonthCount');
+    if (!grid) return;
+
+    if (titleEl) {
+        titleEl.innerText = `${NOMBRES_MESES[mes]} ${anio}`;
+    }
+
+    grid.innerHTML = '';
+
+    const hoy = new Date();
+    const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+
+    // Primer día del mes (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
+    const primerDia = new Date(anio, mes, 1);
+    let diaSemanaInicio = primerDia.getDay() - 1; // Lunes = 0, Domingo = 6
+    if (diaSemanaInicio === -1) diaSemanaInicio = 6;
+
+    const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+    const diasEnMesAnterior = new Date(anio, mes, 0).getDate();
+
+    // Filtros activos
+    const inputBusq = document.getElementById('busquedaCitasInput');
+    const textoBusq = inputBusq ? inputBusq.value.toLowerCase().trim() : '';
+
+    let citasEnEsteMes = 0;
+
+    // Días de relleno mes anterior
+    for (let p = diaSemanaInicio - 1; p >= 0; p--) {
+        const diaNum = diasEnMesAnterior - p;
+        const cell = document.createElement('div');
+        cell.className = 'calendar-cell other-month';
+        cell.innerHTML = `
+            <div class="calendar-cell-header">
+                <span class="calendar-cell-num">${diaNum}</span>
+            </div>
+        `;
+        grid.appendChild(cell);
+    }
+
+    // Días del mes actual
+    for (let d = 1; d <= diasEnMes; d++) {
+        const fechaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const esHoy = (fechaStr === hoyStr);
+
+        // Filtrar citas de este día
+        const citasDelDia = todasLasCitas.filter(c => {
+            if (!c.fecha_cita) return false;
+            const fCita = c.fecha_cita.substring(0, 10);
+            if (fCita !== fechaStr) return false;
+
+            // Filtro estado
+            const est = (c.estado || 'Programada').toLowerCase();
+            const matchEst = (filtroCitaEstadoActual === 'TODAS' || filtroCitaEstadoActual === 'TODOS' || est === filtroCitaEstadoActual.toLowerCase());
+            if (!matchEst) return false;
+
+            // Filtro texto
+            if (textoBusq !== '') {
+                const todoTxt = `${c.folio || ''} ${c.agencia || ''} ${c.asunto || ''} ${c.tecnico_asignado || ''} ${c.descripcion || ''}`.toLowerCase();
+                if (!todoTxt.includes(textoBusq)) return false;
+            }
+
+            return true;
+        });
+
+        citasEnEsteMes += citasDelDia.length;
+
+        const cell = document.createElement('div');
+        cell.className = `calendar-cell ${esHoy ? 'today' : ''}`;
+
+        let eventsHtml = '';
+        citasDelDia.forEach(cita => {
+            const est = (cita.estado || 'Programada').toLowerCase();
+            let statusClass = 'status-programada';
+            if (est.includes('curso') || est.includes('atencion')) statusClass = 'status-en-curso';
+            else if (est.includes('realizada') || est.includes('completada')) statusClass = 'status-realizada';
+            else if (est.includes('cancelada')) statusClass = 'status-cancelada';
+
+            const horaDisplay = (cita.hora_cita || '10:00').substring(0, 5);
+            const jsonCita = JSON.stringify(cita).replace(/"/g, '&quot;');
+
+            eventsHtml += `
+                <div class="calendar-event-item ${statusClass}" onclick="event.stopPropagation(); abrirModalActualizarCita(${jsonCita})" title="Folio: ${cita.folio || ('CTA-'+cita.id)} | Asunto: ${cita.asunto || ''} | Sede: ${cita.agencia || ''}">
+                    <div class="d-flex align-items-center justify-content-between gap-1 mb-1">
+                        <span class="fw-bold" style="font-size: 0.68rem;"><i class="bi bi-clock me-1"></i>${horaDisplay}</span>
+                        <span class="badge bg-dark bg-opacity-60 text-white text-truncate" style="font-size: 0.6rem; max-width: 80px;">${cita.agencia || ''}</span>
+                    </div>
+                    <div class="fw-semibold text-truncate" style="font-size: 0.72rem;">${cita.asunto || 'Cita Técnica'}</div>
+                </div>
+            `;
+        });
+
+        cell.innerHTML = `
+            <div class="calendar-cell-header">
+                <span class="calendar-cell-num">${d}</span>
+                <button type="button" class="calendar-btn-quick-add" onclick="agendarCitaEnFecha('${fechaStr}')" title="Agendar cita el ${d} de ${NOMBRES_MESES[mes]}">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+            <div class="calendar-events-list">
+                ${eventsHtml}
+            </div>
+        `;
+
+        grid.appendChild(cell);
+    }
+
+    // Días de relleno siguiente mes
+    const totalCeldasActuales = diaSemanaInicio + diasEnMes;
+    const celdasRestantes = (7 - (totalCeldasActuales % 7)) % 7;
+    for (let n = 1; n <= celdasRestantes; n++) {
+        const cell = document.createElement('div');
+        cell.className = 'calendar-cell other-month';
+        cell.innerHTML = `
+            <div class="calendar-cell-header">
+                <span class="calendar-cell-num">${n}</span>
+            </div>
+        `;
+        grid.appendChild(cell);
+    }
+
+    if (countEl) {
+        countEl.innerText = `${citasEnEsteMes} ${citasEnEsteMes === 1 ? 'Cita en este mes' : 'Citas en este mes'}`;
+    }
+}
+
 function filtrarCitasPorEstado(estado, btn) {
     filtroCitaEstadoActual = estado;
-    document.querySelectorAll('.filter-chip-cita').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.filter-cita-pill').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
     filtrarCitas();
 }
@@ -3098,14 +3580,14 @@ function filtrarCitasTexto() {
 function filtrarCitas() {
     const input = document.getElementById('busquedaCitasInput');
     const texto = input ? input.value.toLowerCase().trim() : '';
-    const filas = document.querySelectorAll('#tablaCitasBody tr');
+    const filas = document.querySelectorAll('#tbodyCitas tr.cita-row');
     let visibles = 0;
 
     filas.forEach(row => {
         const estadoRow = (row.getAttribute('data-estado') || '').toLowerCase();
         const textoRow = row.innerText.toLowerCase();
 
-        const matchEstado = (filtroCitaEstadoActual === 'TODOS' || estadoRow === filtroCitaEstadoActual.toLowerCase());
+        const matchEstado = (filtroCitaEstadoActual === 'TODAS' || filtroCitaEstadoActual === 'TODOS' || estadoRow === filtroCitaEstadoActual.toLowerCase());
         const matchTexto = (texto === '' || textoRow.includes(texto));
 
         if (matchEstado && matchTexto) {
@@ -3120,6 +3602,9 @@ function filtrarCitas() {
     if (filaSin) {
         filaSin.style.display = (visibles === 0) ? '' : 'none';
     }
+
+    // Sincronizar calendario mensual
+    renderizarCalendarioCitas(calAnio, calMes);
 }
 
 function abrirModalActualizarCita(cita) {
