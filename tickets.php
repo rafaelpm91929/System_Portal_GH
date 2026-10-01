@@ -1049,6 +1049,156 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.55); }
         }
 
+        /* Galería Holográfica y Dinámica de Sucursales */
+        .agency-gallery-container {
+            margin-bottom: 40px;
+        }
+        .agency-gallery-deck {
+            position: relative;
+            min-height: 360px;
+        }
+        .agency-gallery-slide {
+            display: none;
+            opacity: 0;
+            transform: scale(0.98) translateY(8px);
+            transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            background: radial-gradient(circle at 15% 20%, rgba(14, 165, 233, 0.14) 0%, transparent 45%),
+                        radial-gradient(circle at 85% 80%, rgba(99, 102, 241, 0.14) 0%, transparent 45%),
+                        linear-gradient(135deg, rgba(8, 20, 40, 0.96) 0%, rgba(13, 30, 58, 0.93) 50%, rgba(6, 15, 30, 0.98) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-radius: 26px;
+            padding: 35px 40px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 35px rgba(2, 132, 199, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .agency-gallery-slide::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
+            background-size: 300% 100%;
+            animation: cyberGradientFlow 6s linear infinite;
+        }
+        .agency-gallery-slide.active {
+            display: block;
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+        @keyframes cyberGradientFlow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .agency-gallery-holo-icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(99, 102, 241, 0.25));
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            box-shadow: 0 0 25px rgba(56, 189, 248, 0.3);
+            position: relative;
+        }
+        .agency-holo-pod {
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.85) 0%, rgba(8, 15, 28, 0.95) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 18px 14px;
+            text-align: center;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .agency-holo-pod.pod-totales {
+            border-color: rgba(56, 189, 248, 0.25);
+            background: linear-gradient(180deg, rgba(14, 165, 233, 0.1) 0%, rgba(8, 20, 38, 0.9) 100%);
+        }
+        .agency-holo-pod.pod-sin-atender {
+            border-color: rgba(245, 158, 11, 0.3);
+            background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, rgba(30, 20, 5, 0.9) 100%);
+        }
+        .agency-holo-pod.pod-sin-atender.pod-alert {
+            border-color: rgba(239, 68, 68, 0.6) !important;
+            background: linear-gradient(180deg, rgba(239, 68, 68, 0.2) 0%, rgba(40, 10, 10, 0.95) 100%) !important;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.35);
+            animation: pulseGlow 2s infinite;
+        }
+        .agency-holo-pod.pod-en-proceso {
+            border-color: rgba(99, 102, 241, 0.3);
+            background: linear-gradient(180deg, rgba(99, 102, 241, 0.12) 0%, rgba(20, 20, 50, 0.9) 100%);
+        }
+        .agency-holo-pod.pod-resueltos {
+            border-color: rgba(16, 185, 129, 0.3);
+            background: linear-gradient(180deg, rgba(16, 185, 129, 0.12) 0%, rgba(5, 30, 20, 0.9) 100%);
+        }
+        .holo-pod-number {
+            font-size: 2.2rem;
+            font-weight: 900;
+            line-height: 1;
+            letter-spacing: -1px;
+        }
+        .holo-pod-label {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            color: #94a3b8;
+            margin-top: 8px;
+            text-transform: uppercase;
+        }
+
+        /* Tira de Miniaturas Selectoras de Galería */
+        .agency-gallery-thumbs {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 10px 4px;
+            margin-top: 20px;
+        }
+        .agency-thumb-card {
+            flex: 1;
+            min-width: 250px;
+            background: rgba(13, 27, 48, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 14px 18px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            user-select: none;
+            position: relative;
+            overflow: hidden;
+        }
+        .agency-thumb-card:hover {
+            background: rgba(16, 36, 64, 0.9);
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-3px);
+        }
+        .agency-thumb-card.active {
+            background: linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(30, 58, 138, 0.35));
+            border-color: #38bdf8;
+            box-shadow: 0 4px 18px rgba(2, 132, 199, 0.3);
+        }
+        .agency-thumb-card.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #38bdf8;
+            box-shadow: 0 0 10px #38bdf8;
+        }
+
         /* KPIs */
         .kpi-card {
             background: #0d1e36;
@@ -1546,97 +1696,157 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                     </div>
 
                     <!-- ============================================== -->
-                    <!-- SUCURSALES Y AGENCIAS CONECTADAS -->
+                    <!-- GALERÍA HOLOGRÁFICA Y DINÁMICA DE SUCURSALES -->
                     <!-- ============================================== -->
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <div>
-                            <h5 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
-                                <i class="bi bi-buildings-fill text-primary"></i> Sucursales y Agencias Conectadas
-                            </h5>
-                            <span class="text-secondary small">Selecciona una sucursal para consultar su consola de soporte e historial completo</span>
+                    <div class="agency-gallery-container mb-5">
+                        <!-- Barra de Control de la Galería -->
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                            <div>
+                                <h5 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
+                                    <i class="bi bi-display text-info"></i> Galería Dinámica de Sucursales
+                                </h5>
+                                <span class="text-secondary small">Monitoreo interactivo y cambio dinámico entre sedes operativas</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <span id="galeriaContadorBadge" class="badge bg-dark text-info border border-info border-opacity-30 rounded-pill px-3 py-2 font-monospace">
+                                    Agencia 1 de <?php echo count($agenciasList); ?>
+                                </span>
+                                <button type="button" class="btn btn-sm btn-dark border border-secondary border-opacity-40 text-light rounded-pill px-3 py-1 fw-bold" onclick="cambiarSlideGaleria(-1)">
+                                    <i class="bi bi-chevron-left me-1"></i> Anterior
+                                </button>
+                                <button type="button" class="btn btn-sm btn-dark border border-secondary border-opacity-40 text-light rounded-pill px-3 py-1 fw-bold" onclick="cambiarSlideGaleria(1)">
+                                    Siguiente <i class="bi bi-chevron-right ms-1"></i>
+                                </button>
+                                <button type="button" id="btnToggleAutoSlide" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-bold" onclick="toggleAutoSlideGaleria()" title="Pausar o reanudar rotación automática">
+                                    <i class="bi bi-pause-fill" id="iconAutoSlide"></i> <span id="txtAutoSlide">Pausar</span>
+                                </button>
+                            </div>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold" onclick="mostrarHistorialAgencia('TODAS')">
-                            <i class="bi bi-globe me-1"></i> Ver Todas
-                        </button>
-                    </div>
 
-                    <!-- Grid de Agencias con Diseño Formal y Futurista -->
-                    <div class="agency-ticket-grid mb-5">
-                        <?php foreach ($agenciasList as $nomAg => $agInfo): ?>
-                            <div class="agency-ticket-card" onclick="mostrarHistorialAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>')">
-                                <!-- Top de la Tarjeta de Agencia -->
-                                <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <div class="d-flex align-items-center gap-3">
-                                        <div class="agency-ticket-icon">
-                                            <i class="bi <?php echo $agInfo['icono']; ?>" style="color: <?php echo $agInfo['color']; ?>;"></i>
+                        <!-- Deck de Slides de la Galería -->
+                        <div class="agency-gallery-deck" id="galeriaAgenciasDeck">
+                            <?php 
+                            $slideIdx = 0;
+                            foreach ($agenciasList as $nomAg => $agInfo): 
+                                $esActive = ($slideIdx === 0) ? 'active' : '';
+                            ?>
+                                <div class="agency-gallery-slide <?php echo $esActive; ?>" id="slideGaleria_<?php echo $slideIdx; ?>" data-slide-index="<?php echo $slideIdx; ?>" data-agencia="<?php echo htmlspecialchars($nomAg); ?>">
+                                    <div class="row align-items-center g-4">
+                                        <!-- Columna Izquierda: Identidad Holográfica y Acceso -->
+                                        <div class="col-lg-6">
+                                            <div class="d-flex align-items-center gap-3 mb-3">
+                                                <div class="agency-gallery-holo-icon">
+                                                    <i class="bi <?php echo $agInfo['icono']; ?>" style="color: <?php echo $agInfo['color']; ?>;"></i>
+                                                </div>
+                                                <div>
+                                                    <div class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 1px;">Sucursal Conectada</div>
+                                                    <h3 class="fw-bold text-white mb-0" style="letter-spacing: -0.5px;"><?php echo htmlspecialchars($nomAg); ?></h3>
+                                                </div>
+                                            </div>
+
+                                            <div class="mb-3 d-flex flex-wrap align-items-center gap-2">
+                                                <span class="text-info font-monospace small px-3 py-1 rounded-pill" style="background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.3);">
+                                                    <i class="bi bi-link-45deg me-1"></i><?php echo htmlspecialchars($agInfo['cpanel']); ?>
+                                                </span>
+                                                <?php if ($agInfo['abiertos'] > 0): ?>
+                                                    <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 px-3 py-2 rounded-pill fw-bold">
+                                                        <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $agInfo['abiertos']; ?> Pendientes de Atención
+                                                    </span>
+                                                <?php elseif ($agInfo['total'] > 0): ?>
+                                                    <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 px-3 py-2 rounded-pill fw-bold">
+                                                        <i class="bi bi-check2-all me-1"></i> Operación Normal &bull; Al Día
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-30 px-3 py-2 rounded-pill">
+                                                        <i class="bi bi-dash-circle me-1"></i> Sin Incidencias Registradas
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+
+                                            <p class="text-secondary mb-3 small" style="line-height: 1.6;">
+                                                <?php if ($agInfo['ultimo_ticket']): ?>
+                                                    Último requerimiento reportado: <strong class="text-white"><?php echo htmlspecialchars($agInfo['ultimo_ticket']['folio'] ?? ('TK-'.$agInfo['ultimo_ticket']['id'])); ?></strong>
+                                                    &bull; <?php echo htmlspecialchars($agInfo['ultimo_ticket']['titulo'] ?? ''); ?>
+                                                    (<?php echo date('d/m/Y H:i', strtotime($agInfo['ultimo_ticket']['creado_en'])); ?>)
+                                                <?php else: ?>
+                                                    Esta sede no cuenta con tickets registrados actualmente en el sistema central.
+                                                <?php endif; ?>
+                                            </p>
+
+                                            <div>
+                                                <button type="button" class="btn btn-lg rounded-pill px-4 py-2 fw-bold text-white d-inline-flex align-items-center gap-2 shadow" style="background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border: 1px solid rgba(56, 189, 248, 0.5); box-shadow: 0 0 20px rgba(2, 132, 199, 0.45);" onclick="mostrarHistorialAgencia('<?php echo htmlspecialchars(addslashes($nomAg)); ?>')">
+                                                    <i class="bi bi-terminal-fill me-1"></i> Abrir Consola de <?php echo htmlspecialchars($nomAg); ?> <i class="bi bi-arrow-right"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <!-- Columna Derecha: 4 Pods Holográficos -->
+                                        <div class="col-lg-6">
+                                            <div class="row g-3">
+                                                <div class="col-6">
+                                                    <div class="agency-holo-pod pod-totales">
+                                                        <div class="holo-pod-number text-white"><?php echo $agInfo['total']; ?></div>
+                                                        <div class="holo-pod-label text-info">TICKETS TOTALES</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="agency-holo-pod pod-sin-atender <?php echo $agInfo['abiertos'] > 0 ? 'pod-alert' : ''; ?>">
+                                                        <div class="holo-pod-number text-warning"><?php echo $agInfo['abiertos']; ?></div>
+                                                        <div class="holo-pod-label text-warning">SIN ATENDER</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="agency-holo-pod pod-en-proceso">
+                                                        <div class="holo-pod-number text-info"><?php echo $agInfo['en_proceso']; ?></div>
+                                                        <div class="holo-pod-label" style="color: #818cf8;">EN PROCESO</div>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="agency-holo-pod pod-resueltos">
+                                                        <div class="holo-pod-number text-success"><?php echo $agInfo['resueltos']; ?></div>
+                                                        <div class="holo-pod-label text-success">RESUELTOS</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php 
+                                $slideIdx++;
+                            endforeach; 
+                            ?>
+                        </div>
+
+                        <!-- Tira Inferior de Miniaturas / Selector Rápido de Galería -->
+                        <div class="agency-gallery-thumbs mt-3">
+                            <?php 
+                            $thumbIdx = 0;
+                            foreach ($agenciasList as $nomAg => $agInfo): 
+                                $esThumbActive = ($thumbIdx === 0) ? 'active' : '';
+                            ?>
+                                <div class="agency-thumb-card <?php echo $esThumbActive; ?>" id="thumbGaleria_<?php echo $thumbIdx; ?>" onclick="irASlideGaleria(<?php echo $thumbIdx; ?>)">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div style="width: 38px; height: 38px; border-radius: 10px; background: <?php echo $agInfo['color']; ?>22; color: <?php echo $agInfo['color']; ?>; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; border: 1px solid <?php echo $agInfo['color']; ?>44;">
+                                            <i class="bi <?php echo $agInfo['icono']; ?>"></i>
                                         </div>
                                         <div>
-                                            <h5 class="fw-bold text-white mb-1" style="font-size: 1.15rem; letter-spacing: -0.3px;"><?php echo htmlspecialchars($nomAg); ?></h5>
-                                            <span class="text-info font-monospace small" style="background: rgba(56, 189, 248, 0.08); padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.18);">
-                                                <i class="bi bi-link-45deg me-1"></i><?php echo htmlspecialchars($agInfo['cpanel']); ?>
-                                            </span>
+                                            <div class="fw-bold text-white small text-truncate" style="max-width: 140px;"><?php echo htmlspecialchars($nomAg); ?></div>
+                                            <span class="text-secondary small" style="font-size: 0.72rem;"><?php echo $agInfo['total']; ?> tickets</span>
                                         </div>
                                     </div>
                                     <div>
                                         <?php if ($agInfo['abiertos'] > 0): ?>
-                                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 px-3 py-2 rounded-pill fw-bold">
-                                                <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $agInfo['abiertos']; ?> sin atender
-                                            </span>
-                                        <?php elseif ($agInfo['total'] > 0): ?>
-                                            <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 px-3 py-2 rounded-pill fw-bold">
-                                                <i class="bi bi-check2-all me-1"></i> Al día
-                                            </span>
+                                            <span class="badge bg-danger rounded-pill px-2 py-1 small"><?php echo $agInfo['abiertos']; ?> alerta</span>
                                         <?php else: ?>
-                                            <span class="badge bg-secondary bg-opacity-20 text-secondary border border-secondary border-opacity-30 px-3 py-2 rounded-pill">
-                                                <i class="bi bi-dash-circle me-1"></i> Sin incidencias
-                                            </span>
+                                            <span class="badge bg-success bg-opacity-25 text-success rounded-pill px-2 py-1 small">Al día</span>
                                         <?php endif; ?>
                                     </div>
                                 </div>
-
-                                <!-- Recuadros de Métricas con Degradados Futuristas -->
-                                <div class="row g-2 mb-3">
-                                    <div class="col-3">
-                                        <div class="agency-stat-box stat-totales">
-                                            <div class="stat-number text-white"><?php echo $agInfo['total']; ?></div>
-                                            <div class="stat-label">TOTALES</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-3">
-                                        <div class="agency-stat-box stat-sin-atender <?php echo $agInfo['abiertos'] > 0 ? 'highlight-open' : ''; ?>">
-                                            <div class="stat-number text-warning"><?php echo $agInfo['abiertos']; ?></div>
-                                            <div class="stat-label">SIN ATENDER</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-3">
-                                        <div class="agency-stat-box stat-en-proceso">
-                                            <div class="stat-number text-info"><?php echo $agInfo['en_proceso']; ?></div>
-                                            <div class="stat-label">EN PROCESO</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-3">
-                                        <div class="agency-stat-box stat-resueltos">
-                                            <div class="stat-number text-success"><?php echo $agInfo['resueltos']; ?></div>
-                                            <div class="stat-label">RESUELTOS</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Pie de Tarjeta con botón futurista de acceso -->
-                                <div class="d-flex align-items-center justify-content-between pt-3 border-top border-secondary border-opacity-15">
-                                    <span class="text-secondary small">
-                                        <?php if ($agInfo['ultimo_ticket']): ?>
-                                            Último: <strong class="text-white"><?php echo htmlspecialchars($agInfo['ultimo_ticket']['folio'] ?? ('TK-'.$agInfo['ultimo_ticket']['id'])); ?></strong> &bull; <?php echo date('d/m/Y', strtotime($agInfo['ultimo_ticket']['creado_en'])); ?>
-                                        <?php else: ?>
-                                            Sin tickets registrados aún
-                                        <?php endif; ?>
-                                    </span>
-                                    <span class="btn-futuristic-view">
-                                        <span>Ver Historial</span> <i class="bi bi-arrow-right"></i>
-                                    </span>
-                                </div>
-                            </div>
-                        <?php endforeach; ?>
+                            <?php 
+                                $thumbIdx++;
+                            endforeach; 
+                            ?>
+                        </div>
                     </div>
                 </div>
 
@@ -3039,6 +3249,85 @@ function renderizarGraficasEstadisticas() {
 }
 
 // ----------------------------------------------------
+// Galería Dinámica y Holográfica de Sucursales
+// ----------------------------------------------------
+let slideGaleriaActual = 0;
+const totalSlidesGaleria = <?php echo count($agenciasList); ?>;
+let autoSlideInterval = null;
+let autoSlideActivo = true;
+
+function mostrarSlideGaleria(index) {
+    if (totalSlidesGaleria === 0) return;
+    if (index >= totalSlidesGaleria) slideGaleriaActual = 0;
+    else if (index < 0) slideGaleriaActual = totalSlidesGaleria - 1;
+    else slideGaleriaActual = index;
+
+    // Actualizar slides con animación
+    document.querySelectorAll('.agency-gallery-slide').forEach((slide, idx) => {
+        if (idx === slideGaleriaActual) {
+            slide.classList.add('active');
+        } else {
+            slide.classList.remove('active');
+        }
+    });
+
+    // Actualizar miniaturas
+    document.querySelectorAll('.agency-thumb-card').forEach((thumb, idx) => {
+        if (idx === slideGaleriaActual) {
+            thumb.classList.add('active');
+            thumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        } else {
+            thumb.classList.remove('active');
+        }
+    });
+
+    // Actualizar badge contador
+    const badge = document.getElementById('galeriaContadorBadge');
+    if (badge) {
+        badge.innerText = `Agencia ${slideGaleriaActual + 1} de ${totalSlidesGaleria}`;
+    }
+}
+
+function cambiarSlideGaleria(delta) {
+    mostrarSlideGaleria(slideGaleriaActual + delta);
+}
+
+function irASlideGaleria(index) {
+    mostrarSlideGaleria(index);
+}
+
+function iniciarAutoSlideGaleria() {
+    detenerAutoSlideGaleria();
+    if (totalSlidesGaleria > 1 && autoSlideActivo) {
+        autoSlideInterval = setInterval(() => {
+            cambiarSlideGaleria(1);
+        }, 5500);
+    }
+}
+
+function detenerAutoSlideGaleria() {
+    if (autoSlideInterval) {
+        clearInterval(autoSlideInterval);
+        autoSlideInterval = null;
+    }
+}
+
+function toggleAutoSlideGaleria() {
+    autoSlideActivo = !autoSlideActivo;
+    const icon = document.getElementById('iconAutoSlide');
+    const txt = document.getElementById('txtAutoSlide');
+    if (autoSlideActivo) {
+        if (icon) icon.className = 'bi bi-pause-fill';
+        if (txt) txt.innerText = 'Pausar';
+        iniciarAutoSlideGaleria();
+    } else {
+        if (icon) icon.className = 'bi bi-play-fill';
+        if (txt) txt.innerText = 'Reanudar';
+        detenerAutoSlideGaleria();
+    }
+}
+
+// ----------------------------------------------------
 // Router de inicio según URL
 // ----------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
@@ -3054,6 +3343,16 @@ window.addEventListener('DOMContentLoaded', () => {
             mostrarVistaAgencias();
         }
     }
+
+    // Inicializar listener de pausa en hover para la galería de agencias
+    const deck = document.getElementById('galeriaAgenciasDeck');
+    if (deck) {
+        deck.addEventListener('mouseenter', detenerAutoSlideGaleria);
+        deck.addEventListener('mouseleave', () => {
+            if (autoSlideActivo) iniciarAutoSlideGaleria();
+        });
+    }
+    iniciarAutoSlideGaleria();
 });
 
 // Navegación atrás / adelante del navegador
