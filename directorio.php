@@ -492,6 +492,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Directorio Telefónico y de Correos - Grupo Huerta</title>
+    <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -1545,5 +1546,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'exportar_excel') {
         modal.show();
     }
 </script>
+<?php include_once 'pwa_body.php'; ?>
 </body>
 </html>

@@ -16,6 +16,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Portal de Sistemas - Grupo Huerta</title>
+    <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -267,5 +268,7 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<?php include_once 'pwa_body.php'; ?>
 </body>
 </html>
