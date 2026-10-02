@@ -729,7 +729,10 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             top: 0;
             height: 100vh;
             z-index: 1030;
-            transition: all 0.25s ease;
+            transition: margin-left 0.3s cubic-bezier(0.2, 0, 0, 1), transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+        }
+        .app-sidebar.collapsed {
+            margin-left: -260px;
         }
 
         .sidebar-brand {
@@ -839,6 +842,7 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                 top: 0;
                 bottom: 0;
                 z-index: 1050;
+                margin-left: 0 !important;
             }
             .app-sidebar.show {
                 left: 0;
@@ -1625,20 +1629,30 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
 <!-- Backdrop para móviles -->
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="toggleSidebar()"></div>
 
+<!-- Pestaña Flotante para Mostrar Menú Lateral cuando esté Oculto -->
+<button type="button" id="btnShowSidebarTab" class="btn btn-primary btn-sm rounded-end-3 shadow-lg" onclick="toggleSidebar()" style="display: none; position: fixed; left: 0; top: 78px; z-index: 1045; padding: 8px 10px; border-left: none;" title="Mostrar Menú Lateral">
+    <i class="bi bi-layout-sidebar-reverse fs-5 text-white"></i>
+</button>
+
 <div class="app-layout">
     <!-- ============================================== -->
     <!-- MENÚ LATERAL (SIDEBAR DEL AGENTE DE TICKETS) -->
     <!-- ============================================== -->
     <aside class="app-sidebar" id="appSidebar">
         <!-- Encabezado del Menú Lateral -->
-        <div class="sidebar-brand">
-            <div class="sidebar-brand-icon">
-                <i class="bi bi-headset"></i>
+        <div class="sidebar-brand d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2 overflow-hidden">
+                <div class="sidebar-brand-icon">
+                    <i class="bi bi-headset"></i>
+                </div>
+                <div class="overflow-hidden">
+                    <div class="fw-bold text-white text-truncate" style="font-size: 0.95rem;">Mesa de Ayuda TI</div>
+                    <div class="text-secondary small text-truncate" style="font-size: 0.72rem;">Dirección Central &bull; Soporte</div>
+                </div>
             </div>
-            <div class="overflow-hidden">
-                <div class="fw-bold text-white text-truncate" style="font-size: 0.95rem;">Mesa de Ayuda TI</div>
-                <div class="text-secondary small text-truncate" style="font-size: 0.72rem;">Dirección Central &bull; Soporte</div>
-            </div>
+            <button type="button" class="btn btn-sm text-secondary p-1 border-0" onclick="toggleSidebar()" title="Ocultar Menú Lateral">
+                <i class="bi bi-chevron-left text-white fs-5" id="iconSidebarChevron"></i>
+            </button>
         </div>
 
         <!-- Botones Principales del Menú Lateral -->
@@ -1715,8 +1729,8 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
         <!-- Navbar Superior -->
         <div class="top-navbar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center gap-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm d-lg-none text-white border-opacity-25" onclick="toggleSidebar()">
-                    <i class="bi bi-list fs-5"></i>
+                <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 me-1 border-opacity-40" onclick="toggleSidebar()" title="Ocultar / Mostrar Menú Lateral">
+                    <i class="bi bi-layout-sidebar-inset me-1"></i> <span class="d-none d-md-inline">Menú</span>
                 </button>
                 <div class="d-flex align-items-center gap-2">
                     <span class="fw-bold tracking-wide" id="topNavTituloSeccion">
@@ -3178,15 +3192,31 @@ function cambiarTab(tabName, updateUrl = true) {
 function toggleSidebar() {
     const sidebar = document.getElementById('appSidebar');
     const backdrop = document.getElementById('sidebarBackdrop');
-    if (sidebar) sidebar.classList.toggle('show');
-    if (backdrop) backdrop.classList.toggle('show');
+    const btnTab = document.getElementById('btnShowSidebarTab');
+    if (!sidebar) return;
+
+    const isMobile = window.innerWidth <= 991;
+
+    if (isMobile) {
+        sidebar.classList.toggle('show');
+        if (backdrop) backdrop.classList.toggle('show');
+    } else {
+        // En escritorio: colapsar / expandir con guardado de preferencia
+        const isCollapsed = sidebar.classList.toggle('collapsed');
+        if (btnTab) {
+            btnTab.style.display = isCollapsed ? 'block' : 'none';
+        }
+        localStorage.setItem('sidebar_tickets_collapsed', isCollapsed ? '1' : '0');
+    }
 }
 
 function cerrarSidebarMobile() {
-    const sidebar = document.getElementById('appSidebar');
-    const backdrop = document.getElementById('sidebarBackdrop');
-    if (sidebar) sidebar.classList.remove('show');
-    if (backdrop) backdrop.classList.remove('show');
+    if (window.innerWidth <= 991) {
+        const sidebar = document.getElementById('appSidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (sidebar) sidebar.classList.remove('show');
+        if (backdrop) backdrop.classList.remove('show');
+    }
 }
 
 function mostrarVistaAgencias() {
@@ -3906,6 +3936,14 @@ window.addEventListener('DOMContentLoaded', () => {
             if (autoCoverflowActivo) iniciarAutoCoverflow();
         });
     }
+    // Restaurar estado de sidebar colapsado en escritorio
+    if (window.innerWidth > 991 && localStorage.getItem('sidebar_tickets_collapsed') === '1') {
+        const sidebar = document.getElementById('appSidebar');
+        const btnTab = document.getElementById('btnShowSidebarTab');
+        if (sidebar) sidebar.classList.add('collapsed');
+        if (btnTab) btnTab.style.display = 'block';
+    }
+
     iniciarAutoCoverflow();
 });
 
