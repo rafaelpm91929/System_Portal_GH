@@ -576,6 +576,38 @@ require_once 'php_helpers/infraestructura_controller.php';
     window.currentRedSubseccion = '<?php echo $subseccion_red ?? 'menu'; ?>';
     window.seccionActiva = '<?php echo $seccion_activa ?? 'diagramas'; ?>';
     window.modoUrl = '<?php echo isset($_GET['modo']) ? htmlspecialchars($_GET['modo'], ENT_QUOTES, 'UTF-8') : 'inicio'; ?>';
+
+    function toggleSidebarNavegacion() {
+        const sidebar = document.getElementById('colSidebarNavegacion');
+        const content = document.getElementById('colContentWrapper');
+        const btnTab = document.getElementById('btnShowSidebarTab');
+        const iconBtn = document.getElementById('iconToggleSidebar');
+
+        if (!sidebar || !content) return;
+
+        const isHidden = (sidebar.style.display === 'none');
+
+        if (isHidden) {
+            sidebar.style.display = 'block';
+            content.classList.remove('col-12');
+            content.classList.add('col-md-9', 'col-lg-10');
+            if (btnTab) btnTab.style.display = 'none';
+            if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white';
+            localStorage.setItem('infra_sidebar_collapsed', '0');
+        } else {
+            sidebar.style.display = 'none';
+            content.classList.remove('col-md-9', 'col-lg-10');
+            content.classList.add('col-12');
+            if (btnTab) btnTab.style.display = 'block';
+            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white';
+            localStorage.setItem('infra_sidebar_collapsed', '1');
+        }
+    }
+    window.toggleSidebarNavegacion = toggleSidebarNavegacion;
+
+    if (localStorage.getItem('infra_sidebar_collapsed') === '1') {
+        toggleSidebarNavegacion();
+    }
 </script>
 <script src="js/infraestructura/diagramas_2d_3d.js?v=<?php echo file_exists('js/infraestructura/diagramas_2d_3d.js') ? filemtime('js/infraestructura/diagramas_2d_3d.js') : '1.0'; ?>"></script>
 <script src="js/infraestructura/red_vlans.js?v=<?php echo file_exists('js/infraestructura/red_vlans.js') ? filemtime('js/infraestructura/red_vlans.js') : '1.0'; ?>"></script>
