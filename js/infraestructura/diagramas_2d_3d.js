@@ -622,42 +622,16 @@ let modoPlanoActual = '2d';
         }
     }
 
-    function toggleSidebarNavegacion() {
-        const sidebar = document.getElementById('mainSidebarWrapper');
-        const content = document.getElementById('mainContentWrapper');
-        const btnTab = document.getElementById('btnShowSidebarTab');
-        const iconBtn = document.getElementById('iconToggleSidebar');
-
-        if (!sidebar || !content) return;
-
-        const isHidden = (sidebar.style.display === 'none');
-
-        if (isHidden) {
-            sidebar.style.display = 'block';
-            content.classList.remove('col-12');
-            content.classList.add('col-md-9', 'col-lg-10');
-            if (btnTab) btnTab.style.display = 'none';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white';
-            localStorage.setItem('sidebar_collapsed', '0');
-        } else {
-            sidebar.style.display = 'none';
-            content.classList.remove('col-md-9', 'col-lg-10');
-            content.classList.add('col-12');
-            if (btnTab) btnTab.style.display = 'block';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white';
-            localStorage.setItem('sidebar_collapsed', '1');
+    // Integración de toggle de navegación lateral con ajuste de lienzo 2D / 3D
+    const originalToggleSidebarInfra = window.toggleSidebarNavegacion;
+    window.toggleSidebarNavegacion = function() {
+        if (typeof originalToggleSidebarInfra === 'function') {
+            originalToggleSidebarInfra();
         }
-
         if (typeof resizeCanvas === 'function') {
-            setTimeout(resizeCanvas, 100);
+            setTimeout(resizeCanvas, 150);
         }
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-        if (localStorage.getItem('sidebar_collapsed') === '1') {
-            toggleSidebarNavegacion();
-        }
-    });
+    };
 
     function alternarSubVistaConfig(subModo) {
         if (modoNavegacionActual === 'configurar') {

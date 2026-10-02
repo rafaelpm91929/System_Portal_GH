@@ -22,6 +22,7 @@ require_once 'php_helpers/infraestructura_controller.php';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Infraestructura SITE / IDF - Portal de Sistemas</title>
+    <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -527,9 +528,78 @@ require_once 'php_helpers/infraestructura_controller.php';
             background: rgba(37, 99, 235, 0.2);
             border-color: #3b82f6;
         }
+
+        /* ESTILOS RESPONSIVOS PARA DISPOSITIVOS MÓVILES (CELULARES Y TABLETS) */
+        @media (max-width: 767.98px) {
+            .top-navbar {
+                padding: 10px 12px !important;
+            }
+            .content-wrapper {
+                padding: 14px 10px !important;
+            }
+            .card-custom {
+                padding: 14px !important;
+                border-radius: 12px !important;
+            }
+            .sidebar-wrapper {
+                position: fixed !important;
+                top: 0 !important;
+                left: 0 !important;
+                bottom: 0 !important;
+                width: 290px !important;
+                max-width: 86vw !important;
+                height: 100vh !important;
+                z-index: 1070 !important;
+                padding: 18px 14px !important;
+                transform: translateX(-100%);
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 12px 0 35px rgba(0, 0, 0, 0.85) !important;
+                display: block !important;
+            }
+            .sidebar-wrapper.mobile-show {
+                transform: translateX(0) !important;
+            }
+            .sidebar-backdrop {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(4, 13, 26, 0.75);
+                backdrop-filter: blur(5px);
+                z-index: 1065;
+                display: none;
+                opacity: 0;
+                transition: opacity 0.25s ease;
+            }
+            .sidebar-backdrop.show {
+                display: block;
+                opacity: 1;
+            }
+            #btnShowSidebarTab {
+                display: none !important;
+            }
+            .btn-hero-diagrama {
+                min-height: 110px !important;
+            }
+            .canvas-container-outer {
+                min-height: 480px !important;
+            }
+            #canvas3DContainer {
+                min-height: 480px !important;
+            }
+            #canvas3DHUD {
+                font-size: 0.65rem !important;
+                padding: 4px 10px !important;
+                max-width: 95% !important;
+                flex-wrap: wrap !important;
+                justify-content: center !important;
+            }
+        }
     </style>
 </head>
 <body>
+<?php include_once 'pwa_body.php'; ?>
 
 <!-- Pestaña Flotante para Mostrar Sidebar Oculto -->
 <button type="button" id="btnShowSidebarTab" class="btn btn-success btn-sm rounded-end-3 shadow-lg" onclick="toggleSidebarNavegacion()" style="display: none; position: fixed; left: 0; top: 78px; z-index: 1050; padding: 8px 10px; border-left: none;" title="Mostrar Menú Lateral (Navegación)">
@@ -578,35 +648,98 @@ require_once 'php_helpers/infraestructura_controller.php';
     window.modoUrl = '<?php echo isset($_GET['modo']) ? htmlspecialchars($_GET['modo'], ENT_QUOTES, 'UTF-8') : 'inicio'; ?>';
 
     function toggleSidebarNavegacion() {
-        const sidebar = document.getElementById('colSidebarNavegacion');
-        const content = document.getElementById('colContentWrapper');
+        const sidebar = document.getElementById('colSidebarNavegacion') || document.getElementById('mainSidebarWrapper');
+        const content = document.getElementById('colContentWrapper') || document.getElementById('mainContentWrapper');
         const btnTab = document.getElementById('btnShowSidebarTab');
         const iconBtn = document.getElementById('iconToggleSidebar');
+        const backdrop = document.getElementById('sidebarBackdrop');
 
-        if (!sidebar || !content) return;
+        if (!sidebar) return;
 
-        const isHidden = (sidebar.style.display === 'none');
+        const isMobile = (window.innerWidth < 768);
 
-        if (isHidden) {
-            sidebar.style.display = 'block';
-            content.classList.remove('col-12');
-            content.classList.add('col-md-9', 'col-lg-10');
-            if (btnTab) btnTab.style.display = 'none';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white';
-            localStorage.setItem('infra_sidebar_collapsed', '0');
+        if (isMobile) {
+            // MODO MÓVIL: Cajón deslizante tipo drawer con fondo blur
+            const isOpen = sidebar.classList.contains('mobile-show');
+            if (isOpen) {
+                sidebar.classList.remove('mobile-show');
+                if (backdrop) backdrop.classList.remove('show');
+                document.body.style.overflow = '';
+            } else {
+                sidebar.classList.add('mobile-show');
+                if (backdrop) backdrop.classList.add('show');
+                document.body.style.overflow = 'hidden';
+            }
         } else {
-            sidebar.style.display = 'none';
-            content.classList.remove('col-md-9', 'col-lg-10');
-            content.classList.add('col-12');
-            if (btnTab) btnTab.style.display = 'block';
-            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white';
-            localStorage.setItem('infra_sidebar_collapsed', '1');
+            // MODO ESCRITORIO: Ocultar o mostrar columna lateral
+            const isHidden = (sidebar.style.display === 'none');
+
+            if (isHidden) {
+                sidebar.style.display = 'block';
+                if (content) {
+                    content.classList.remove('col-12');
+                    content.classList.add('col-md-9', 'col-lg-10');
+                }
+                if (btnTab) btnTab.style.display = 'none';
+                if (iconBtn) iconBtn.className = 'bi bi-chevron-left fs-6 text-white d-none d-md-inline';
+                localStorage.setItem('infra_sidebar_collapsed', '0');
+            } else {
+                sidebar.style.display = 'none';
+                if (content) {
+                    content.classList.remove('col-md-9', 'col-lg-10');
+                    content.classList.add('col-12');
+                }
+                if (btnTab) btnTab.style.display = 'block';
+                if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white d-none d-md-inline';
+                localStorage.setItem('infra_sidebar_collapsed', '1');
+            }
+            if (typeof resizeCanvas === 'function') {
+                setTimeout(resizeCanvas, 150);
+            }
         }
     }
     window.toggleSidebarNavegacion = toggleSidebarNavegacion;
 
-    if (localStorage.getItem('infra_sidebar_collapsed') === '1') {
-        toggleSidebarNavegacion();
+    function cerrarSidebarMobile() {
+        const sidebar = document.getElementById('colSidebarNavegacion') || document.getElementById('mainSidebarWrapper');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (sidebar) sidebar.classList.remove('mobile-show');
+        if (backdrop) backdrop.classList.remove('show');
+        document.body.style.overflow = '';
+    }
+    window.cerrarSidebarMobile = cerrarSidebarMobile;
+
+    // Escuchar redimensionamiento de pantalla para limpiar estados cruzados
+    window.addEventListener('resize', function() {
+        const sidebar = document.getElementById('colSidebarNavegacion') || document.getElementById('mainSidebarWrapper');
+        const backdrop = document.getElementById('sidebarBackdrop');
+        if (window.innerWidth >= 768) {
+            if (sidebar) sidebar.classList.remove('mobile-show');
+            if (backdrop) backdrop.classList.remove('show');
+            document.body.style.overflow = '';
+            if (localStorage.getItem('infra_sidebar_collapsed') === '1') {
+                if (sidebar) sidebar.style.display = 'none';
+            } else {
+                if (sidebar) sidebar.style.display = 'block';
+            }
+        } else {
+            if (sidebar) sidebar.style.display = '';
+        }
+    });
+
+    // Iniciar con el menú oculto en escritorio si el usuario lo guardó así
+    if (window.innerWidth >= 768 && localStorage.getItem('infra_sidebar_collapsed') === '1') {
+        const sidebar = document.getElementById('colSidebarNavegacion') || document.getElementById('mainSidebarWrapper');
+        const content = document.getElementById('colContentWrapper') || document.getElementById('mainContentWrapper');
+        const btnTab = document.getElementById('btnShowSidebarTab');
+        const iconBtn = document.getElementById('iconToggleSidebar');
+        if (sidebar && content) {
+            sidebar.style.display = 'none';
+            content.classList.remove('col-md-9', 'col-lg-10');
+            content.classList.add('col-12');
+            if (btnTab) btnTab.style.display = 'block';
+            if (iconBtn) iconBtn.className = 'bi bi-chevron-right fs-6 text-white d-none d-md-inline';
+        }
     }
 </script>
 <script src="js/infraestructura/diagramas_2d_3d.js?v=<?php echo file_exists('js/infraestructura/diagramas_2d_3d.js') ? filemtime('js/infraestructura/diagramas_2d_3d.js') : '1.0'; ?>"></script>
