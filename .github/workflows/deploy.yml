@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: 🚚 Obtener codigo del repositorio
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: 📁 Sincronizar archivos a cPanel public_html/sistemas
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
