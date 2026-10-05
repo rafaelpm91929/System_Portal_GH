@@ -323,13 +323,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $solicitanteAgencia,
                     $archivoUrl
                 ]);
+
+                $nuevoId = (int)$pdo->lastInsertId();
+                header("Location: tickets.php?ver=" . $nuevoId . "&creado=1");
+                exit;
             } catch (Throwable $t) {
                 $error = "Error al registrar el ticket: " . $t->getMessage();
             }
         }
     }
 
-    // 2. Actualizar Estado / Seguimiento de Ticket
+    // 2. Enviar nuevo mensaje / contestar al ticket
+    elseif ($accion === 'enviar_mensaje') {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        $textoMensaje = trim($_POST['mensaje'] ?? '');
+
+        if ($ticketId > 0 && !empty($textoMensaje)) {
+            // Manejo de archivo adjunto opcional en el mensaje
+            $archivoMensaje = null;
+            if (isset($_FILES['adjunto_mensaje']) && $_FILES['adjunto_mensaje']['error'] === UPLOAD_ERR_OK) {
+                $fileTmp = $_FILES['adjunto_mensaje']['tmp_name'];
+                $fileName = $_FILES['adjunto_mensaje']['name'];
+                $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
+
+                if (in_array($fileExt, $extPermitidas)) {
+                    $dirUpload = __DIR__ . '/uploads/tickets/';
+                    if (!is_dir($dirUpload)) {
+                        @mkdir($dirUpload, 0777, true);
+                    }
+                    $nuevoNombre = 'msg_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
+                    $destino = $dirUpload . $nuevoNombre;
+                    if (move_uploaded_file($fileTmp, $destino)) {
+                        $archivoMensaje = 'uploads/tickets/' . $nuevoNombre;
+                    }
+                }
+            }
+
+            try {
+                $stmtCheckT = $pdo->prepare("SELECT folio FROM tickets_soporte WHERE id = ?");
+                $stmtCheckT->execute([$ticketId]);
+                $folioT = $stmtCheckT->fetchColumn() ?: ('TK-' . $ticketId);
+
+                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+                $sqlFecha = ($driver === 'sqlite') ? "datetime('now', 'localtime')" : "NOW()";
+
+                $stmtMsg = $pdo->prepare("
+                    INSERT INTO tickets_mensajes 
+                    (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, mensaje, archivo_adjunto, creado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, $sqlFecha)
+                ");
+                $rolAutor = $esAdmin ? 'administrador' : 'solicitante';
+                $stmtMsg->execute([
+                    $ticketId,
+                    $folioT,
+                    $usuarioId,
+                    $nombreUsuario,
+                    $loginUsuario,
+                    $rolAutor,
+                    $textoMensaje,
+                    $archivoMensaje
+                ]);
+
+                $stmtUp = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = $sqlFecha WHERE id = ?");
+                $stmtUp->execute([$ticketId]);
+
+                // Notificar a Central de Sistemas en background
+                try {
+                    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+                    $payloadCentral = [
+                        'token'     => $token,
+                        'accion'    => 'nuevo_mensaje',
+                        'folio'     => $folioT,
+                        'autor'     => $nombreUsuario,
+                        'usuario'   => $loginUsuario,
+                        'mensaje'   => $textoMensaje,
+                        'agencia'   => $agenciaUsuario
+                    ];
+                    $ctx = stream_context_create([
+                        'http' => [
+                            'method'  => 'POST',
+                            'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $token\r\n",
+                            'content' => json_encode($payloadCentral),
+                            'timeout' => 3
+                        ]
+                    ]);
+                    @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctx);
+                } catch (Throwable $eNet) {}
+
+                header("Location: tickets.php?ver=" . $ticketId . "&msg_ok=1#conversacion");
+                exit;
+            } catch (Throwable $t) {
+                $error = "Error al guardar el mensaje: " . $t->getMessage();
+            }
+        }
+    }
+
+    // 3. Actualizar Estado / Seguimiento de Ticket
     elseif ($accion === 'actualizar_ticket') {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         $nuevoEstado = trim($_POST['estado'] ?? 'Abierto');
@@ -348,7 +438,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 ");
                 $stmtUp->execute([$nuevoEstado, $asignadoA, $notas, $ticketId]);
 
-                $mensaje = "El ticket ha sido actualizado a estado <strong>" . htmlspecialchars($nuevoEstado) . "</strong>.";
+                header("Location: tickets.php?ver=" . $ticketId . "&estado_ok=1");
+                exit;
             } catch (Throwable $t) {
                 $error = "Error al actualizar ticket: " . $t->getMessage();
             }
@@ -529,6 +620,46 @@ if ($pdo) {
             elseif ($estLower === 'resuelto' || $estLower === 'cerrado') $totalResueltos++;
         }
     } catch (Throwable $e) {}
+}
+
+// Consulta de ticket seleccionado para la pestaña de detalle
+$verTicketId = intval($_GET['ver'] ?? ($_GET['id'] ?? 0));
+$ticketSeleccionado = null;
+$mensajesSeleccionados = [];
+
+if ($verTicketId > 0 && $pdo) {
+    try {
+        $stmtSel = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ?");
+        $stmtSel->execute([$verTicketId]);
+        $ticketSeleccionado = $stmtSel->fetch(PDO::FETCH_ASSOC);
+
+        if ($ticketSeleccionado) {
+            if (!$esAdmin) {
+                $pertenece = false;
+                if (!empty($ticketSeleccionado['solicitante_id']) && (int)$ticketSeleccionado['solicitante_id'] === (int)$usuarioId) $pertenece = true;
+                if (!empty($ticketSeleccionado['solicitante_usuario']) && !empty($loginUsuario) && strtolower($ticketSeleccionado['solicitante_usuario']) === strtolower($loginUsuario)) $pertenece = true;
+                if (!empty($ticketSeleccionado['solicitante_email']) && !empty($emailUsuario) && strtolower($ticketSeleccionado['solicitante_email']) === strtolower($emailUsuario)) $pertenece = true;
+                if (!empty($ticketSeleccionado['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($ticketSeleccionado['solicitante_nombre']) === strtolower($nombreUsuario)) $pertenece = true;
+
+                if (!$pertenece) {
+                    $ticketSeleccionado = null;
+                }
+            }
+
+            if ($ticketSeleccionado) {
+                $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
+                $stmtM->execute([$verTicketId]);
+                $mensajesSeleccionados = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+            }
+        }
+    } catch (Throwable $e) {}
+}
+
+$tabActiva = 'lista';
+if ($ticketSeleccionado) {
+    $tabActiva = 'detalle';
+} elseif (isset($_GET['nuevo'])) {
+    $tabActiva = 'nuevo';
 }
 ?>
 <!DOCTYPE html>
@@ -760,14 +891,87 @@ if ($pdo) {
             transform: translateY(-1px);
         }
 
-        .modal-content {
-            background-color: #0b1a30;
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            color: #ffffff;
-            border-radius: 18px;
+        .custom-nav-tabs {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            padding-bottom: 12px;
         }
-        .modal-header, .modal-footer {
-            border-color: rgba(255, 255, 255, 0.1);
+        .custom-tab-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            color: #94a3b8 !important;
+            border-radius: 12px !important;
+            padding: 10px 20px !important;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+        }
+        .custom-tab-btn:hover {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8 !important;
+            border-color: rgba(56, 189, 248, 0.35) !important;
+        }
+        .custom-tab-btn.active {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%) !important;
+            color: #ffffff !important;
+            border-color: #38bdf8 !important;
+            box-shadow: 0 4px 15px rgba(2, 132, 199, 0.45);
+        }
+        .btn-close-tab {
+            font-size: 1.15rem;
+            line-height: 1;
+            color: rgba(255, 255, 255, 0.6);
+            padding: 2px 6px;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+        .btn-close-tab:hover {
+            color: #ffffff;
+            background: rgba(239, 68, 68, 0.35);
+        }
+
+        .detail-card, .form-card {
+            background: linear-gradient(145deg, #0b1a30 0%, #071322 100%);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+            padding: 30px 35px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 768px) {
+            .detail-card, .form-card {
+                padding: 20px 18px;
+            }
+        }
+
+        .chat-bubble {
+            border-radius: 18px;
+            padding: 18px 22px;
+            margin-bottom: 18px;
+            position: relative;
+        }
+        .chat-bubble-user {
+            background: #0d233f;
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-left: 4px solid #38bdf8;
+        }
+        .chat-bubble-staff {
+            background: #06282d;
+            border: 1px solid rgba(45, 212, 191, 0.35);
+            border-left: 4px solid #14b8a6;
+        }
+        .chat-bubble-admin {
+            background: #1e1b4b;
+            border: 1px solid rgba(167, 139, 250, 0.35);
+            border-left: 4px solid #8b5cf6;
+        }
+        .preview-img {
+            max-height: 380px;
+            max-width: 100%;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            object-fit: contain;
+            background: #000;
         }
     </style>
 </head>
@@ -797,7 +1001,25 @@ if ($pdo) {
 
 <div class="main-container">
 
-    <!-- Mensajes de Notificación -->
+    <!-- Mensajes de Notificación y Alertas de Acción -->
+    <?php if (isset($_GET['creado'])): ?>
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-left: 4px solid #22c55e !important;">
+            <i class="bi bi-check-circle-fill me-2 fs-5"></i> ¡Tu ticket ha sido registrado y enviado exitosamente a la Dirección de Sistemas!
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+    <?php if (isset($_GET['msg_ok'])): ?>
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-left: 4px solid #22c55e !important;">
+            <i class="bi bi-chat-dots-fill me-2 fs-5"></i> Tu mensaje ha sido enviado y registrado en la conversación del ticket.
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
+    <?php if (isset($_GET['estado_ok'])): ?>
+        <div class="alert alert-info alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-left: 4px solid #38bdf8 !important;">
+            <i class="bi bi-check-circle-fill me-2 fs-5"></i> Estado y notas del ticket actualizados correctamente.
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
     <?php if (!empty($mensaje)): ?>
         <div class="alert alert-success alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-left: 4px solid #22c55e !important;">
             <i class="bi bi-check-circle-fill me-2 fs-5"></i> <?php echo $mensaje; ?>
@@ -811,230 +1033,646 @@ if ($pdo) {
         </div>
     <?php endif; ?>
 
-    <!-- Encabezado Principal y Botón Destacado "Levantar Nuevo Ticket" -->
-    <div class="card border-0 rounded-4 shadow-sm mb-4 p-3 p-md-4" style="background: linear-gradient(145deg, #0f2744 0%, #091a30 100%); border: 1px solid rgba(56, 189, 248, 0.25) !important;">
-        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-            <div>
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <?php if (!$esAdmin): ?>
-                        <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
-                            <i class="bi bi-person-fill me-1"></i> Tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
-                        </span>
-                    <?php else: ?>
-                        <span class="badge rounded-pill bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
-                            <i class="bi bi-shield-check me-1"></i> Modo Administrador: <strong class="text-white">Todos los tickets</strong>
-                        </span>
-                    <?php endif; ?>
-                    <span class="badge rounded-pill bg-dark bg-opacity-50 text-secondary border border-secondary border-opacity-25 px-2.5 py-1.5" style="font-size: 0.78rem;">
-                        <i class="bi bi-collection me-1"></i> <?php echo count($tickets); ?> registrados
-                    </span>
-                </div>
-                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
-                    <i class="bi bi-ticket-detailed-fill text-info"></i> Mis Tickets de Soporte
-                </h3>
-                <p class="text-secondary small mb-0">Listado y seguimiento de requerimientos e incidencias para la Dirección de Sistemas.</p>
-            </div>
-            <div class="text-md-end">
-                <a href="ticket_nuevo.php" target="_blank" class="btn btn-primary btn-lg rounded-4 px-4 py-3 fw-bold d-inline-flex align-items-center justify-content-center gap-2.5 shadow-lg w-100 w-md-auto text-decoration-none" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 1.15rem; min-height: 56px; box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45) !important;">
-                    <i class="bi bi-plus-circle-fill fs-4 text-white"></i>
-                    <span>Levantar Nuevo Ticket</span>
-                </a>
-            </div>
-        </div>
-    </div>
-
-    <!-- Barra de Búsqueda, Filtros y Acciones Secundarias -->
-    <div class="row g-3 align-items-center mb-4">
-        <div class="col-12 col-md-7 col-lg-8">
-            <div class="search-box-wrapper">
-                <i class="bi bi-search text-secondary"></i>
-                <input type="text" id="buscadorTickets" class="search-input" placeholder="Buscar por folio, asunto, solicitante..." onkeyup="filtrarTicketsEnVivo()">
-                <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBuscador()" title="Limpiar">
-                    <i class="bi bi-x-circle-fill"></i>
+    <!-- PESTAÑAS DE NAVEGACIÓN INTERNAS (EN LA MISMA VENTANA) -->
+    <ul class="nav nav-pills custom-nav-tabs mb-4 gap-2" id="pestanasTickets" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link custom-tab-btn <?php echo ($tabActiva === 'lista') ? 'active' : ''; ?> d-flex align-items-center gap-2" id="tab-btn-lista" data-bs-toggle="pill" data-bs-target="#tab-pane-lista" type="button" role="tab" onclick="actualizarUrl('lista')">
+                <i class="bi bi-collection-fill"></i>
+                <span>Mis Tickets</span>
+                <span class="badge rounded-pill bg-dark border text-info ms-1"><?php echo count($tickets); ?></span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link custom-tab-btn <?php echo ($tabActiva === 'nuevo') ? 'active' : ''; ?> d-flex align-items-center gap-2" id="tab-btn-nuevo" data-bs-toggle="pill" data-bs-target="#tab-pane-nuevo" type="button" role="tab" onclick="actualizarUrl('nuevo')">
+                <i class="bi bi-plus-circle-fill text-info"></i>
+                <span>Levantar Nuevo Ticket</span>
+            </button>
+        </li>
+        <?php if ($ticketSeleccionado): ?>
+            <li class="nav-item" role="presentation" id="tab-item-detalle">
+                <button class="nav-link custom-tab-btn <?php echo ($tabActiva === 'detalle') ? 'active' : ''; ?> d-flex align-items-center gap-2" id="tab-btn-detalle" data-bs-toggle="pill" data-bs-target="#tab-pane-detalle" type="button" role="tab">
+                    <i class="bi bi-chat-left-dots-fill text-warning"></i>
+                    <span>Ticket <?php echo htmlspecialchars($ticketSeleccionado['folio'] ?? ('#TK-' . $ticketSeleccionado['id'])); ?></span>
+                    <a href="tickets.php" class="btn-close-tab ms-1" title="Cerrar pestaña y volver a la lista">&times;</a>
                 </button>
+            </li>
+        <?php endif; ?>
+    </ul>
+
+    <div class="tab-content" id="pestanasTicketsContent">
+
+        <!-- ==========================================
+             PESTAÑA 1: LISTADO DE MIS TICKETS
+             ========================================== -->
+        <div class="tab-pane fade <?php echo ($tabActiva === 'lista') ? 'show active' : ''; ?>" id="tab-pane-lista" role="tabpanel">
+            <!-- Encabezado Principal y Botón Destacado "Levantar Nuevo Ticket" -->
+            <div class="card border-0 rounded-4 shadow-sm mb-4 p-3 p-md-4" style="background: linear-gradient(145deg, #0f2744 0%, #091a30 100%); border: 1px solid rgba(56, 189, 248, 0.25) !important;">
+                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                            <?php if (!$esAdmin): ?>
+                                <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
+                                    <i class="bi bi-person-fill me-1"></i> Tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
+                                </span>
+                            <?php else: ?>
+                                <span class="badge rounded-pill bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
+                                    <i class="bi bi-shield-check me-1"></i> Modo Administrador: <strong class="text-white">Todos los tickets</strong>
+                                </span>
+                            <?php endif; ?>
+                            <span class="badge rounded-pill bg-dark bg-opacity-50 text-secondary border border-secondary border-opacity-25 px-2.5 py-1.5" style="font-size: 0.78rem;">
+                                <i class="bi bi-collection me-1"></i> <?php echo count($tickets); ?> registrados
+                            </span>
+                        </div>
+                        <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                            <i class="bi bi-ticket-detailed-fill text-info"></i> Mis Tickets de Soporte
+                        </h3>
+                        <p class="text-secondary small mb-0">Listado y seguimiento de requerimientos e incidencias para la Dirección de Sistemas.</p>
+                    </div>
+                    <div class="text-md-end">
+                        <button type="button" onclick="cambiarPestana('nuevo')" class="btn btn-primary btn-lg rounded-4 px-4 py-3 fw-bold d-inline-flex align-items-center justify-content-center gap-2.5 shadow-lg w-100 w-md-auto" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 1.15rem; min-height: 56px; box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45) !important;">
+                            <i class="bi bi-plus-circle-fill fs-4 text-white"></i>
+                            <span>Levantar Nuevo Ticket</span>
+                        </button>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div class="col-12 col-md-5 col-lg-4 d-flex justify-content-md-end gap-2 flex-wrap">
-            <a href="tickets.php?sincronizar=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" title="Consultar avances y respuestas en vivo de la Dirección de Sistemas">
-                <i class="bi bi-arrow-repeat"></i> Sincronizar
-            </a>
-            <?php if ($esAdmin): ?>
-            <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
-                <i class="bi bi-file-earmark-excel-fill"></i> Excel
-            </a>
-            <?php endif; ?>
-        </div>
+            <!-- Barra de Búsqueda, Filtros y Acciones Secundarias -->
+            <div class="row g-3 align-items-center mb-4">
+                <div class="col-12 col-md-7 col-lg-8">
+                    <div class="search-box-wrapper">
+                        <i class="bi bi-search text-secondary"></i>
+                        <input type="text" id="buscadorTickets" class="search-input" placeholder="Buscar por folio, asunto, solicitante..." onkeyup="filtrarTicketsEnVivo()">
+                        <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="limpiarBuscador()" title="Limpiar">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+                </div>
 
-        <!-- Filtros de Áreas de Sistemas -->
-        <div class="col-12 mt-2">
-            <div class="d-flex align-items-center gap-2 overflow-x-auto pb-1" id="pillsAreasSistemas">
-                <span class="filter-pill active" onclick="filtrarPorArea('TODAS', this)">
-                    <i class="bi bi-grid-fill"></i> Todas las Áreas
-                </span>
-                <?php foreach ($AREAS_SISTEMAS as $claveArea => $infoArea): ?>
-                    <span class="filter-pill" onclick="filtrarPorArea('<?php echo $claveArea; ?>', this)">
-                        <i class="bi <?php echo $infoArea['icono']; ?>" style="color: <?php echo $infoArea['color']; ?>;"></i> <?php echo $claveArea; ?>
-                    </span>
-                <?php endforeach; ?>
+                <div class="col-12 col-md-5 col-lg-4 d-flex justify-content-md-end gap-2 flex-wrap">
+                    <a href="tickets.php?sincronizar=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" title="Consultar avances y respuestas en vivo de la Dirección de Sistemas">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizar
+                    </a>
+                    <?php if ($esAdmin): ?>
+                    <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </a>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Filtros de Áreas de Sistemas -->
+                <div class="col-12 mt-2">
+                    <div class="d-flex align-items-center gap-2 overflow-x-auto pb-1" id="pillsAreasSistemas">
+                        <span class="filter-pill active" onclick="filtrarPorArea('TODAS', this)">
+                            <i class="bi bi-grid-fill"></i> Todas las Áreas
+                        </span>
+                        <?php foreach ($AREAS_SISTEMAS as $claveArea => $infoArea): ?>
+                            <span class="filter-pill" onclick="filtrarPorArea('<?php echo $claveArea; ?>', this)">
+                                <i class="bi <?php echo $infoArea['icono']; ?>" style="color: <?php echo $infoArea['color']; ?>;"></i> <?php echo $claveArea; ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
 
-    <!-- Tabla Principal de Tickets -->
-    <div class="tickets-table-container">
-        <div class="table-responsive">
-            <table class="table table-custom align-middle" id="tablaTickets">
-                <thead>
-                    <tr>
-                        <th style="width: 10%;">Folio</th>
-                        <th style="width: 16%;">Área Destino</th>
-                        <th style="width: 28%;">Título / Requerimiento</th>
-                        <th style="width: 11%;">Prioridad</th>
-                        <th style="width: 12%;">Estado</th>
-                        <th style="width: 15%;">Solicitante / Agencia</th>
-                        <th class="text-end" style="width: 8%;">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody id="tbodyTickets">
-                    <?php if (empty($tickets)): ?>
-                        <tr id="filaSinTickets">
-                            <td colspan="7" class="text-center py-5 text-secondary">
-                                <i class="bi bi-ticket-perforated fs-1 d-block mb-2 text-muted"></i>
-                                <div class="fw-semibold">No hay tickets registrados en el sistema.</div>
-                                <div class="small text-muted mt-1">Presiona <strong>"Levantar Nuevo Ticket"</strong> para solicitar soporte a una de las áreas de Sistemas.</div>
-                            </td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($tickets as $t): 
-                            $areaKey = strtoupper(trim($t['area_sistemas'] ?? 'DESARROLLO'));
-                            $areaConf = $AREAS_SISTEMAS[$areaKey] ?? [
-                                'nombre' => $areaKey, 'icono' => 'bi-gear-fill', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.35)'
-                            ];
+            <!-- Tabla Principal de Tickets -->
+            <div class="tickets-table-container">
+                <div class="table-responsive">
+                    <table class="table table-custom align-middle" id="tablaTickets">
+                        <thead>
+                            <tr>
+                                <th style="width: 10%;">Folio</th>
+                                <th style="width: 16%;">Área Destino</th>
+                                <th style="width: 28%;">Título / Requerimiento</th>
+                                <th style="width: 11%;">Prioridad</th>
+                                <th style="width: 12%;">Estado</th>
+                                <th style="width: 15%;">Solicitante / Agencia</th>
+                                <th class="text-end" style="width: 8%;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyTickets">
+                            <?php if (empty($tickets)): ?>
+                                <tr id="filaSinTickets">
+                                    <td colspan="7" class="text-center py-5 text-secondary">
+                                        <i class="bi bi-ticket-perforated fs-1 d-block mb-2 text-muted"></i>
+                                        <div class="fw-semibold">No hay tickets registrados en el sistema.</div>
+                                        <div class="small text-muted mt-1">Presiona <strong>"Levantar Nuevo Ticket"</strong> para solicitar soporte a una de las áreas de Sistemas.</div>
+                                    </td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($tickets as $t): 
+                                    $areaKey = strtoupper(trim($t['area_sistemas'] ?? 'DESARROLLO'));
+                                    $areaConf = $AREAS_SISTEMAS[$areaKey] ?? [
+                                        'nombre' => $areaKey, 'icono' => 'bi-gear-fill', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.35)'
+                                    ];
 
-                            $prioLower = strtolower($t['prioridad'] ?? 'media');
-                            $prioClass = 'prio-media';
-                            if ($prioLower === 'urgente') $prioClass = 'prio-urgente';
-                            elseif ($prioLower === 'alta') $prioClass = 'prio-alta';
-                            elseif ($prioLower === 'baja') $prioClass = 'prio-baja';
+                                    $prioLower = strtolower($t['prioridad'] ?? 'media');
+                                    $prioClass = 'prio-media';
+                                    if ($prioLower === 'urgente') $prioClass = 'prio-urgente';
+                                    elseif ($prioLower === 'alta') $prioClass = 'prio-alta';
+                                    elseif ($prioLower === 'baja') $prioClass = 'prio-baja';
 
-                            $estLower = strtolower($t['estado'] ?? 'abierto');
-                            $estClass = 'status-abierto';
-                            if ($estLower === 'en proceso') $estClass = 'status-proceso';
-                            elseif ($estLower === 'resuelto') $estClass = 'status-resuelto';
-                            elseif ($estLower === 'cerrado') $estClass = 'status-cerrado';
-                        ?>
-                            <tr class="ticket-row" 
-                                data-folio="<?php echo htmlspecialchars(mb_strtolower($t['folio'] ?? '')); ?>"
-                                data-area="<?php echo htmlspecialchars($areaKey); ?>"
-                                data-titulo="<?php echo htmlspecialchars(mb_strtolower($t['titulo'] ?? '')); ?>"
-                                data-solicitante="<?php echo htmlspecialchars(mb_strtolower(($t['solicitante_nombre'] ?? '') . ' ' . ($t['solicitante_usuario'] ?? ''))); ?>"
-                                data-estado="<?php echo htmlspecialchars($estLower); ?>">
-                                
-                                <!-- Folio -->
-                                <td>
-                                    <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="font-monospace fw-bold text-info text-decoration-none d-inline-flex align-items-center gap-1.5" title="Abrir ticket en nueva pestaña">
-                                        <span><?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?></span>
-                                        <i class="bi bi-box-arrow-up-right" style="font-size: 0.7rem;"></i>
-                                    </a>
-                                </td>
+                                    $estLower = strtolower($t['estado'] ?? 'abierto');
+                                    $estClass = 'status-abierto';
+                                    if ($estLower === 'en proceso') $estClass = 'status-proceso';
+                                    elseif ($estLower === 'resuelto') $estClass = 'status-resuelto';
+                                    elseif ($estLower === 'cerrado') $estClass = 'status-cerrado';
+                                ?>
+                                    <tr class="ticket-row" 
+                                        data-folio="<?php echo htmlspecialchars(mb_strtolower($t['folio'] ?? '')); ?>"
+                                        data-area="<?php echo htmlspecialchars($areaKey); ?>"
+                                        data-titulo="<?php echo htmlspecialchars(mb_strtolower($t['titulo'] ?? '')); ?>"
+                                        data-solicitante="<?php echo htmlspecialchars(mb_strtolower(($t['solicitante_nombre'] ?? '') . ' ' . ($t['solicitante_usuario'] ?? ''))); ?>"
+                                        data-estado="<?php echo htmlspecialchars($estLower); ?>">
+                                        
+                                        <!-- Folio -->
+                                        <td>
+                                            <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="font-monospace fw-bold text-info text-decoration-none d-inline-flex align-items-center gap-1.5" title="Ver detalle y responder">
+                                                <span><?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?></span>
+                                                <i class="bi bi-chat-left-dots" style="font-size: 0.72rem;"></i>
+                                            </a>
+                                        </td>
 
-                                <!-- Área Destino -->
-                                <td>
-                                    <span class="area-badge" style="background: <?php echo $areaConf['bg']; ?>; color: <?php echo $areaConf['color']; ?>; border: 1px solid <?php echo $areaConf['border']; ?>;">
-                                        <i class="bi <?php echo $areaConf['icono']; ?>"></i> <?php echo $areaConf['nombre']; ?>
-                                    </span>
-                                </td>
+                                        <!-- Área Destino -->
+                                        <td>
+                                            <span class="area-badge" style="background: <?php echo $areaConf['bg']; ?>; color: <?php echo $areaConf['color']; ?>; border: 1px solid <?php echo $areaConf['border']; ?>;">
+                                                <i class="bi <?php echo $areaConf['icono']; ?>"></i> <?php echo $areaConf['nombre']; ?>
+                                            </span>
+                                        </td>
 
-                                <!-- Título / Asunto -->
-                                <td>
-                                    <div>
-                                        <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="fw-bold text-white fs-6 text-decoration-none" title="Ver requerimiento y responder">
-                                            <?php echo htmlspecialchars($t['titulo']); ?>
-                                            <?php if (!empty($t['archivo_adjunto'])): ?>
-                                                <i class="bi bi-paperclip text-info ms-1" title="Contiene archivo adjunto"></i>
+                                        <!-- Título / Asunto -->
+                                        <td>
+                                            <div>
+                                                <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="fw-bold text-white fs-6 text-decoration-none" title="Ver requerimiento y responder">
+                                                    <?php echo htmlspecialchars($t['titulo']); ?>
+                                                    <?php if (!empty($t['archivo_adjunto'])): ?>
+                                                        <i class="bi bi-paperclip text-info ms-1" title="Contiene archivo adjunto"></i>
+                                                    <?php endif; ?>
+                                                </a>
+                                            </div>
+                                            <div class="text-secondary small text-truncate" style="max-width: 380px;">
+                                                <?php echo htmlspecialchars(mb_substr($t['descripcion'], 0, 90)); ?><?php echo mb_strlen($t['descripcion']) > 90 ? '...' : ''; ?>
+                                            </div>
+                                            <?php if (!empty(trim($t['notas_resolucion'] ?? ''))): ?>
+                                                <div class="mt-2 p-2 rounded-2" style="background: rgba(14, 165, 233, 0.12); border-left: 3px solid #38bdf8; max-width: 440px;">
+                                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                                        <span class="small fw-bold text-info" style="font-size: 0.78rem;">
+                                                            <i class="bi bi-headset me-1"></i> Respuesta TI Central <?php if (!empty($t['asignado_a'])): ?>— <strong><?php echo htmlspecialchars($t['asignado_a']); ?></strong><?php endif; ?>:
+                                                        </span>
+                                                        <?php if (!empty($t['actualizado_en'])): ?>
+                                                            <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['actualizado_en'])); ?></span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div class="text-white small" style="font-size: 0.82rem; white-space: pre-line; line-height: 1.4;">
+                                                        <?php echo htmlspecialchars($t['notas_resolucion']); ?>
+                                                    </div>
+                                                </div>
                                             <?php endif; ?>
-                                        </a>
-                                    </div>
-                                    <div class="text-secondary small text-truncate" style="max-width: 380px;">
-                                        <?php echo htmlspecialchars(mb_substr($t['descripcion'], 0, 90)); ?><?php echo mb_strlen($t['descripcion']) > 90 ? '...' : ''; ?>
-                                    </div>
-                                    <?php if (!empty(trim($t['notas_resolucion'] ?? ''))): ?>
-                                        <div class="mt-2 p-2 rounded-2" style="background: rgba(14, 165, 233, 0.12); border-left: 3px solid #38bdf8; max-width: 440px;">
-                                            <div class="d-flex align-items-center justify-content-between mb-1">
-                                                <span class="small fw-bold text-info" style="font-size: 0.78rem;">
-                                                    <i class="bi bi-headset me-1"></i> Respuesta TI Central <?php if (!empty($t['asignado_a'])): ?>— <strong><?php echo htmlspecialchars($t['asignado_a']); ?></strong><?php endif; ?>:
-                                                </span>
-                                                <?php if (!empty($t['actualizado_en'])): ?>
-                                                    <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['actualizado_en'])); ?></span>
+                                        </td>
+
+                                        <!-- Prioridad -->
+                                        <td>
+                                            <span class="prio-badge <?php echo $prioClass; ?>">
+                                                <?php echo htmlspecialchars($t['prioridad'] ?? 'Media'); ?>
+                                            </span>
+                                        </td>
+
+                                        <!-- Estado -->
+                                        <td>
+                                            <span class="status-badge <?php echo $estClass; ?>">
+                                                <i class="bi bi-circle-fill" style="font-size: 0.45rem;"></i>
+                                                <?php echo htmlspecialchars($t['estado'] ?? 'Abierto'); ?>
+                                            </span>
+                                        </td>
+
+                                        <!-- Solicitante y Sucursal -->
+                                        <td>
+                                            <div class="fw-semibold text-white d-flex align-items-center gap-1.5 flex-wrap">
+                                                <span><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></span>
+                                                <?php if (!empty($t['solicitante_usuario'])): ?>
+                                                    <span class="badge bg-dark border text-info font-monospace py-0 px-1" style="font-size: 0.68rem;" title="Usuario del sistema: <?php echo htmlspecialchars($t['solicitante_usuario']); ?>">
+                                                        @<?php echo htmlspecialchars($t['solicitante_usuario']); ?>
+                                                    </span>
                                                 <?php endif; ?>
                                             </div>
-                                            <div class="text-white small" style="font-size: 0.82rem; white-space: pre-line; line-height: 1.4;">
-                                                <?php echo htmlspecialchars($t['notas_resolucion']); ?>
+                                            <div class="text-secondary" style="font-size: 0.73rem;">
+                                                <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($t['solicitante_agencia'] ?? 'General'); ?>
+                                                <?php if (!empty($t['solicitante_email'])): ?>
+                                                    &bull; <i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($t['solicitante_email']); ?>
+                                                <?php endif; ?>
                                             </div>
+                                        </td>
+
+                                        <!-- Acciones -->
+                                        <td class="text-end">
+                                            <div class="d-inline-flex gap-1.5">
+                                                <!-- Ver Detalle / Contestar en la Misma Pantalla -->
+                                                <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="btn-action-icon text-info" title="Ver Detalle y Contestar Ticket">
+                                                    <i class="bi bi-chat-left-dots-fill"></i>
+                                                </a>
+                                                
+                                                <?php if ($esAdmin): ?>
+                                                    <!-- Eliminar Ticket -->
+                                                    <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar este ticket definitivamente?');">
+                                                        <input type="hidden" name="accion" value="eliminar_ticket">
+                                                        <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
+                                                        <button type="submit" class="btn-action-icon text-danger" title="Eliminar Ticket">
+                                                            <i class="bi bi-trash-fill"></i>
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================================
+             PESTAÑA 2: LEVANTAR NUEVO TICKET
+             ========================================== -->
+        <div class="tab-pane fade <?php echo ($tabActiva === 'nuevo') ? 'show active' : ''; ?>" id="tab-pane-nuevo" role="tabpanel">
+            <div class="form-card mx-auto" style="max-width: 960px;">
+                <div class="d-flex align-items-center justify-content-between mb-4 pb-3 border-bottom border-secondary border-opacity-25 flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="p-3 rounded-4" style="background: rgba(2, 132, 199, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8; font-size: 1.6rem;">
+                            <i class="bi bi-ticket-detailed-fill"></i>
+                        </div>
+                        <div>
+                            <h4 class="fw-bold text-white mb-1">Levantar Nuevo Ticket de Soporte</h4>
+                            <p class="text-secondary small mb-0">Requerimientos, incidencias y asistencia para la Dirección de Sistemas TI.</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="cambiarPestana('lista')" class="btn btn-outline-secondary btn-sm rounded-3 text-white">
+                        <i class="bi bi-arrow-left me-1"></i> Volver a Mis Tickets
+                    </button>
+                </div>
+
+                <form method="POST" action="tickets.php" enctype="multipart/form-data">
+                    <input type="hidden" name="accion" value="crear_ticket">
+
+                    <div class="row g-4">
+                        <!-- Área de Sistemas -->
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                <i class="bi bi-cpu-fill text-info me-1"></i> Área de Sistemas Asignada <span class="text-danger">*</span>
+                            </label>
+                            <select name="area_sistemas" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
+                                <option value="" disabled selected>Selecciona el área de soporte...</option>
+                                <option value="INFRAESTRUCTURA">🖥️ INFRAESTRUCTURA (Redes, Servidores, Impresoras, Equipos)</option>
+                                <option value="DESARROLLO">💻 DESARROLLO (Portales, Sistemas Web, Bases de Datos, Módulos)</option>
+                                <option value="CYBERSEGURIDAD">🛡️ CYBERSEGURIDAD (Accesos, Antivirus, Bloqueos, Cuentas)</option>
+                                <option value="REDES SOCIALES">📱 REDES SOCIALES (Marketing Digital, Publicaciones, Medios)</option>
+                                <option value="AUDITORIA">📋 AUDITORIA (Procesos, Revisiones TI, Cumplimiento)</option>
+                                <option value="CORPORATIVO">🏢 CORPORATIVO (Dirección General y Enlace Central)</option>
+                            </select>
+                        </div>
+
+                        <!-- Prioridad -->
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                <i class="bi bi-reception-3 text-warning me-1"></i> Nivel de Prioridad <span class="text-danger">*</span>
+                            </label>
+                            <select name="prioridad" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
+                                <option value="Baja">🟢 Baja (Requerimiento general, consulta no urgente)</option>
+                                <option value="Media" selected>🟡 Media (Operación regular normal)</option>
+                                <option value="Alta">🟠 Alta (Afecta parcialmente la operación)</option>
+                                <option value="Urgente">🔴 Urgente (Operación completamente detenida / Bloqueo crítico)</option>
+                            </select>
+                        </div>
+
+                        <!-- Título / Asunto -->
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                <i class="bi bi-card-heading text-info me-1"></i> Título / Asunto Breve <span class="text-danger">*</span>
+                            </label>
+                            <input type="text" name="titulo" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Ej. Falla en enlace de Internet / Acceso a base de datos / Falla en impresora..." required>
+                        </div>
+
+                        <!-- Descripción Detallada -->
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                <i class="bi bi-text-paragraph text-info me-1"></i> Descripción Detallada del Requerimiento o Falla <span class="text-danger">*</span>
+                            </label>
+                            <textarea name="descripcion" rows="5" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Describe detalladamente qué necesitas o qué error ocurre..." required></textarea>
+                        </div>
+
+                        <!-- Archivo Adjunto -->
+                        <div class="col-12">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                <i class="bi bi-paperclip text-info me-1"></i> Adjuntar Evidencia o Captura (Opcional)
+                            </label>
+                            <input type="file" name="archivo_adjunto" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.zip">
+                            <div class="text-secondary small mt-1" style="font-size: 0.78rem;">Formatos permitidos: Imágenes (PNG, JPG, WEBP), PDF, Word, Excel, ZIP.</div>
+                        </div>
+
+                        <!-- Datos del Solicitante Prellenados -->
+                        <div class="col-md-4">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">Solicitante</label>
+                            <input type="text" name="solicitante_nombre" value="<?php echo htmlspecialchars($nombreUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">Sucursal / Agencia</label>
+                            <input type="text" name="solicitante_agencia" value="<?php echo htmlspecialchars($agenciaUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label text-secondary small fw-bold text-uppercase">Correo de Contacto</label>
+                            <input type="email" name="solicitante_email" value="<?php echo htmlspecialchars($_SESSION['usuario_email'] ?? ''); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                        </div>
+
+                        <!-- Botones de Acción -->
+                        <div class="col-12 pt-3 border-top border-secondary border-opacity-25 d-flex justify-content-between align-items-center flex-wrap gap-3">
+                            <button type="button" onclick="cambiarPestana('lista')" class="btn btn-outline-secondary px-4 py-2.5 rounded-3 text-white">
+                                <i class="bi bi-arrow-left me-1"></i> Cancelar
+                            </button>
+                            <button type="submit" class="btn btn-primary btn-lg px-5 py-2.5 rounded-3 fw-bold shadow-lg" style="background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border: none;">
+                                <i class="bi bi-send-fill me-1"></i> Registrar y Enviar Ticket
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ==========================================
+             PESTAÑA 3: DETALLE, SEGUIMIENTO Y RESPUESTAS
+             ========================================== -->
+        <?php if ($ticketSeleccionado): 
+            $tSelAreaKey = strtoupper(trim($ticketSeleccionado['area_sistemas'] ?? 'DESARROLLO'));
+            $tSelAreaConf = $AREAS_SISTEMAS[$tSelAreaKey] ?? [
+                'nombre' => $tSelAreaKey, 'icono' => 'bi-gear-fill', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.15)', 'border' => 'rgba(56, 189, 248, 0.35)'
+            ];
+
+            $tSelEstLower = strtolower($ticketSeleccionado['estado'] ?? 'abierto');
+            $tSelEstClass = 'bg-warning text-dark';
+            if ($tSelEstLower === 'en proceso') $tSelEstClass = 'bg-info text-dark';
+            elseif ($tSelEstLower === 'resuelto') $tSelEstClass = 'bg-success text-white';
+            elseif ($tSelEstLower === 'cerrado') $tSelEstClass = 'bg-secondary text-white';
+
+            $tSelPrioLower = strtolower($ticketSeleccionado['prioridad'] ?? 'media');
+            $tSelPrioClass = 'bg-primary text-white';
+            if ($tSelPrioLower === 'urgente') $tSelPrioClass = 'bg-danger text-white';
+            elseif ($tSelPrioLower === 'alta') $tSelPrioClass = 'bg-warning text-dark';
+            elseif ($tSelPrioLower === 'baja') $tSelPrioClass = 'bg-info text-dark';
+        ?>
+            <div class="tab-pane fade <?php echo ($tabActiva === 'detalle') ? 'show active' : ''; ?>" id="tab-pane-detalle" role="tabpanel">
+                
+                <!-- Encabezado del Ticket Seleccionado -->
+                <div class="detail-card">
+                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 pb-3 border-bottom border-secondary border-opacity-25">
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                                <span class="badge rounded-pill" style="background: <?php echo $tSelAreaConf['bg']; ?>; color: <?php echo $tSelAreaConf['color']; ?>; border: 1px solid <?php echo $tSelAreaConf['border']; ?>; font-size: 0.85rem;">
+                                    <i class="bi <?php echo $tSelAreaConf['icono']; ?> me-1"></i> <?php echo $tSelAreaConf['nombre']; ?>
+                                </span>
+                                <span class="badge rounded-pill <?php echo $tSelPrioClass; ?> px-2.5 py-1" style="font-size: 0.82rem;">
+                                    <i class="bi bi-exclamation-circle me-1"></i> Prioridad <?php echo htmlspecialchars($ticketSeleccionado['prioridad'] ?? 'Media'); ?>
+                                </span>
+                                <span class="badge rounded-pill <?php echo $tSelEstClass; ?> px-3 py-1" style="font-size: 0.85rem;">
+                                    <i class="bi bi-clock-history me-1"></i> <?php echo htmlspecialchars($ticketSeleccionado['estado'] ?? 'Abierto'); ?>
+                                </span>
+                            </div>
+                            <h2 class="fw-bold text-white mb-1"><?php echo htmlspecialchars($ticketSeleccionado['titulo']); ?></h2>
+                            <div class="text-secondary small">
+                                <i class="bi bi-calendar3 me-1"></i> Creado el <?php echo !empty($ticketSeleccionado['creado_en']) ? date('d/m/Y \a \l\a\s H:i', strtotime($ticketSeleccionado['creado_en'])) : '---'; ?>
+                                <?php if (!empty($ticketSeleccionado['actualizado_en'])): ?>
+                                    &bull; <i class="bi bi-clock-history me-1"></i> Última actividad: <?php echo date('d/m/Y H:i', strtotime($ticketSeleccionado['actualizado_en'])); ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <div class="p-2.5 rounded-3 text-end" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1);">
+                                <div class="text-secondary small fw-bold" style="font-size: 0.7rem;">FOLIO</div>
+                                <div class="fs-4 font-monospace fw-bold text-info"><?php echo htmlspecialchars($ticketSeleccionado['folio'] ?? ('#TK-' . $ticketSeleccionado['id'])); ?></div>
+                            </div>
+                            <button type="button" onclick="cambiarPestana('lista')" class="btn btn-outline-secondary btn-sm rounded-3 text-white px-3 py-2" title="Volver al listado">
+                                <i class="bi bi-arrow-left me-1"></i> Volver a Mis Tickets
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Metadatos de asignación -->
+                    <div class="row g-3 mt-2">
+                        <div class="col-6 col-md-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07);">
+                                <div class="text-secondary small" style="font-size: 0.72rem;">SOLICITANTE</div>
+                                <div class="fw-semibold text-white"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_nombre'] ?? 'Usuario'); ?></div>
+                                <div class="text-info small" style="font-size: 0.75rem;">@<?php echo htmlspecialchars($ticketSeleccionado['solicitante_usuario'] ?? ''); ?></div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07);">
+                                <div class="text-secondary small" style="font-size: 0.72rem;">SUCURSAL / AGENCIA</div>
+                                <div class="fw-semibold text-white"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_agencia'] ?? 'General'); ?></div>
+                                <div class="text-secondary small text-truncate" style="font-size: 0.75rem;"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_email'] ?? ''); ?></div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07);">
+                                <div class="text-secondary small" style="font-size: 0.72rem;">TÉCNICO ASIGNADO</div>
+                                <div class="fw-semibold text-white"><?php echo !empty($ticketSeleccionado['asignado_a']) ? htmlspecialchars($ticketSeleccionado['asignado_a']) : '<span class="text-secondary fw-normal">Por asignar</span>'; ?></div>
+                                <div class="text-secondary small" style="font-size: 0.75rem;">Sistemas Grupo Huerta</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07);">
+                                <div class="text-secondary small" style="font-size: 0.72rem;">ESTADO ACTUAL</div>
+                                <div class="fw-bold <?php echo strpos($tSelEstClass, 'text-dark') !== false ? 'text-warning' : 'text-success'; ?>"><?php echo htmlspecialchars($ticketSeleccionado['estado'] ?? 'Abierto'); ?></div>
+                                <div class="text-secondary small" style="font-size: 0.75rem;">Atención Central TI</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detalle del Requerimiento Original -->
+                <div class="detail-card">
+                    <h5 class="fw-bold text-info mb-3 d-flex align-items-center gap-2">
+                        <i class="bi bi-card-text"></i> Descripción del Requerimiento Original
+                    </h5>
+                    <div class="p-3.5 rounded-3 text-white" style="background: #061325; border: 1px solid rgba(255, 255, 255, 0.1); font-size: 0.98rem; line-height: 1.6; white-space: pre-line;">
+                        <?php echo htmlspecialchars($ticketSeleccionado['descripcion']); ?>
+                    </div>
+
+                    <?php if (!empty($ticketSeleccionado['archivo_adjunto'])): 
+                        $extT = strtolower(pathinfo($ticketSeleccionado['archivo_adjunto'], PATHINFO_EXTENSION));
+                        $esImgT = in_array($extT, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                    ?>
+                        <div class="mt-4 pt-3 border-top border-secondary border-opacity-25">
+                            <div class="text-secondary small fw-bold text-uppercase mb-2">
+                                <i class="bi bi-paperclip text-info me-1"></i> Evidencia / Archivo Adjunto Original
+                            </div>
+                            <?php if ($esImgT && file_exists(__DIR__ . '/' . $ticketSeleccionado['archivo_adjunto'])): ?>
+                                <div class="mb-2">
+                                    <a href="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" target="_blank" title="Ver imagen completa">
+                                        <img src="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" alt="Evidencia" class="preview-img">
+                                    </a>
+                                </div>
+                            <?php endif; ?>
+                            <div>
+                                <a href="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> Ver / Descargar Archivo (<?php echo strtoupper($extT); ?>)
+                                </a>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Respuesta de Central Sistemas si existe -->
+                <?php if (!empty(trim($ticketSeleccionado['notas_resolucion'] ?? ''))): ?>
+                    <div class="detail-card" style="border-color: rgba(56, 189, 248, 0.45); background: linear-gradient(145deg, #09213d 0%, #06182c 100%);">
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <h5 class="fw-bold text-info mb-0 d-flex align-items-center gap-2">
+                                <i class="bi bi-headset"></i> Respuesta Oficial de la Dirección Central de Sistemas
+                            </h5>
+                            <span class="badge bg-primary rounded-pill px-3 py-1">
+                                <?php echo !empty($ticketSeleccionado['asignado_a']) ? htmlspecialchars($ticketSeleccionado['asignado_a']) : 'Dirección Central TI'; ?>
+                            </span>
+                        </div>
+                        <div class="p-3 rounded-3 text-white mt-3" style="background: rgba(3, 11, 23, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">
+                            <?php echo htmlspecialchars($ticketSeleccionado['notas_resolucion']); ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Hilo de Mensajes y Respuestas -->
+                <div class="detail-card" id="conversacion">
+                    <h5 class="fw-bold text-white mb-3 d-flex align-items-center gap-2">
+                        <i class="bi bi-chat-left-text-fill text-info"></i> Mensajes y Respuestas del Ticket
+                        <span class="badge bg-secondary bg-opacity-50 text-white-50 ms-auto font-monospace" style="font-size: 0.75rem;"><?php echo count($mensajesSeleccionados); ?> mensaje(s)</span>
+                    </h5>
+
+                    <?php if (empty($mensajesSeleccionados)): ?>
+                        <div class="p-4 rounded-3 text-center text-secondary mb-4" style="background: rgba(255, 255, 255, 0.03); border: 1px dashed rgba(255, 255, 255, 0.1);">
+                            <i class="bi bi-chat-square-dots fs-2 text-muted d-block mb-1"></i>
+                            <div class="fw-semibold">No hay mensajes adicionales en este hilo aún.</div>
+                            <div class="small text-muted">Escribe tu respuesta a continuación para comunicarte con el equipo de Sistemas.</div>
+                        </div>
+                    <?php else: ?>
+                        <div class="mb-4">
+                            <?php foreach ($mensajesSeleccionados as $msg): 
+                                $esPropio = (!empty($msg['autor_usuario']) && strtolower($msg['autor_usuario']) === strtolower($loginUsuario))
+                                         || (!empty($msg['autor_id']) && (int)$msg['autor_id'] === (int)$usuarioId);
+                                $bubbleClass = $esPropio ? 'chat-bubble-user' : 'chat-bubble-staff';
+                                $badgeRol = $esPropio ? 'Tú (Solicitante)' : 'Sistemas / Atención';
+                                if (!empty($msg['autor_rol']) && $msg['autor_rol'] === 'administrador') {
+                                    $bubbleClass = 'chat-bubble-admin';
+                                    $badgeRol = 'Administrador TI';
+                                }
+                            ?>
+                                <div class="chat-bubble <?php echo $bubbleClass; ?>">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="fw-bold text-white"><?php echo htmlspecialchars($msg['autor_nombre'] ?? 'Usuario'); ?></span>
+                                            <span class="badge rounded-pill bg-dark border border-secondary text-info" style="font-size: 0.72rem;"><?php echo $badgeRol; ?></span>
+                                        </div>
+                                        <div class="text-secondary small" style="font-size: 0.75rem;">
+                                            <i class="bi bi-clock me-1"></i> <?php echo !empty($msg['creado_en']) ? date('d/m/Y H:i', strtotime($msg['creado_en'])) : ''; ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="text-white" style="font-size: 0.94rem; line-height: 1.55; white-space: pre-line;">
+                                        <?php echo htmlspecialchars($msg['mensaje']); ?>
+                                    </div>
+
+                                    <?php if (!empty($msg['archivo_adjunto'])): 
+                                        $extMsg = strtolower(pathinfo($msg['archivo_adjunto'], PATHINFO_EXTENSION));
+                                        $esImgMsg = in_array($extMsg, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                    ?>
+                                        <div class="mt-2.5 pt-2 border-top border-secondary border-opacity-25">
+                                            <?php if ($esImgMsg && file_exists(__DIR__ . '/' . $msg['archivo_adjunto'])): ?>
+                                                <div class="mb-2">
+                                                    <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank">
+                                                        <img src="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" alt="Captura" style="max-height: 220px; border-radius: 8px;">
+                                                    </a>
+                                                </div>
+                                            <?php endif; ?>
+                                            <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3" style="font-size: 0.78rem;">
+                                                <i class="bi bi-paperclip me-1"></i> Archivo adjunto (<?php echo strtoupper($extMsg); ?>)
+                                            </a>
                                         </div>
                                     <?php endif; ?>
-                                </td>
-
-                                <!-- Prioridad -->
-                                <td>
-                                    <span class="prio-badge <?php echo $prioClass; ?>">
-                                        <?php echo htmlspecialchars($t['prioridad'] ?? 'Media'); ?>
-                                    </span>
-                                </td>
-
-                                <!-- Estado -->
-                                <td>
-                                    <span class="status-badge <?php echo $estClass; ?>">
-                                        <i class="bi bi-circle-fill" style="font-size: 0.45rem;"></i>
-                                        <?php echo htmlspecialchars($t['estado'] ?? 'Abierto'); ?>
-                                    </span>
-                                </td>
-
-                                <!-- Solicitante y Sucursal -->
-                                <td>
-                                    <div class="fw-semibold text-white d-flex align-items-center gap-1.5 flex-wrap">
-                                        <span><?php echo htmlspecialchars($t['solicitante_nombre'] ?? 'Usuario'); ?></span>
-                                        <?php if (!empty($t['solicitante_usuario'])): ?>
-                                            <span class="badge bg-dark border text-info font-monospace py-0 px-1" style="font-size: 0.68rem;" title="Usuario del sistema: <?php echo htmlspecialchars($t['solicitante_usuario']); ?>">
-                                                @<?php echo htmlspecialchars($t['solicitante_usuario']); ?>
-                                            </span>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="text-secondary" style="font-size: 0.73rem;">
-                                        <i class="bi bi-geo-alt me-1"></i><?php echo htmlspecialchars($t['solicitante_agencia'] ?? 'General'); ?>
-                                        <?php if (!empty($t['solicitante_email'])): ?>
-                                            &bull; <i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($t['solicitante_email']); ?>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-
-                                <!-- Acciones -->
-                                <td class="text-end">
-                                    <div class="d-inline-flex gap-1.5">
-                                        <!-- Ver Detalle / Contestar en Nueva Pestaña -->
-                                        <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="btn-action-icon text-info" title="Ver Detalle y Contestar Ticket en Nueva Pestaña">
-                                            <i class="bi bi-chat-left-dots-fill"></i>
-                                        </a>
-                                        
-                                        <?php if ($esAdmin): ?>
-                                            <!-- Eliminar Ticket -->
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar este ticket definitivamente?');">
-                                                <input type="hidden" name="accion" value="eliminar_ticket">
-                                                <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
-                                                <button type="submit" class="btn-action-icon text-danger" title="Eliminar Ticket">
-                                                    <i class="bi bi-trash-fill"></i>
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
                     <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
+
+                    <!-- Formulario: Contestar / Enviar Otro Mensaje -->
+                    <div class="p-3.5 rounded-4 mt-3" style="background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(56, 189, 248, 0.3);">
+                        <h6 class="fw-bold text-info mb-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-reply-fill fs-5"></i> Contestar / Enviar Mensaje a este Ticket
+                        </h6>
+
+                        <form method="POST" action="tickets.php?ver=<?php echo $verTicketId; ?>" enctype="multipart/form-data">
+                            <input type="hidden" name="accion" value="enviar_mensaje">
+                            <input type="hidden" name="ticket_id" value="<?php echo $verTicketId; ?>">
+
+                            <div class="mb-3">
+                                <textarea name="mensaje" rows="4" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" placeholder="Escribe aquí tu respuesta, detalles adicionales, avances o dudas sobre este requerimiento..." required></textarea>
+                            </div>
+
+                            <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                                <div>
+                                    <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
+                                        <i class="bi bi-paperclip me-1"></i> Adjuntar captura o archivo (opcional)
+                                    </label>
+                                    <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15); max-width: 380px;" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+                                </div>
+                                <div class="text-end">
+                                    <button type="submit" class="btn btn-primary px-4 py-2.5 rounded-3 fw-bold d-inline-flex align-items-center gap-2 shadow" style="background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border: none;">
+                                        <i class="bi bi-send-fill"></i>
+                                        <span>Enviar Mensaje</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Panel Admin: Actualizar Estatus -->
+                <?php if ($esAdmin): ?>
+                    <div class="detail-card" style="border-color: rgba(148, 163, 184, 0.3);">
+                        <h5 class="fw-bold text-warning mb-3 d-flex align-items-center gap-2">
+                            <i class="bi bi-shield-lock-fill"></i> Panel de Administración &bull; Actualizar Estatus del Ticket
+                        </h5>
+                        <form method="POST" action="tickets.php?ver=<?php echo $verTicketId; ?>">
+                            <input type="hidden" name="accion" value="actualizar_ticket">
+                            <input type="hidden" name="ticket_id" value="<?php echo $verTicketId; ?>">
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold text-uppercase">Estado del Ticket</label>
+                                    <select name="estado" class="form-select rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);">
+                                        <option value="Abierto" <?php echo $ticketSeleccionado['estado'] === 'Abierto' ? 'selected' : ''; ?>>Abierto (En espera)</option>
+                                        <option value="En Proceso" <?php echo $ticketSeleccionado['estado'] === 'En Proceso' ? 'selected' : ''; ?>>En Proceso (Trabajando)</option>
+                                        <option value="Resuelto" <?php echo $ticketSeleccionado['estado'] === 'Resuelto' ? 'selected' : ''; ?>>Resuelto (Solución entregada)</option>
+                                        <option value="Cerrado" <?php echo $ticketSeleccionado['estado'] === 'Cerrado' ? 'selected' : ''; ?>>Cerrado (Finalizado)</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label text-secondary small fw-bold text-uppercase">Técnico Asignado</label>
+                                    <input type="text" name="asignado_a" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" value="<?php echo htmlspecialchars($ticketSeleccionado['asignado_a'] ?? ''); ?>" placeholder="Ej. Ing. de Sistemas...">
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label text-secondary small fw-bold text-uppercase">Notas de Solución Oficial / Resolución</label>
+                                    <textarea name="notas_resolucion" rows="3" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" placeholder="Escribe la solución técnica o respuesta oficial..."><?php echo htmlspecialchars($ticketSeleccionado['notas_resolucion'] ?? ''); ?></textarea>
+                                </div>
+                                <div class="col-12 text-end">
+                                    <button type="submit" class="btn btn-warning px-4 py-2 rounded-3 fw-bold text-dark">
+                                        <i class="bi bi-check-circle-fill me-1"></i> Guardar Cambios de Estatus
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                <?php endif; ?>
+
+            </div>
+        <?php endif; ?>
+
     </div>
 </div>
 
@@ -1043,6 +1681,41 @@ if ($pdo) {
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    function cambiarPestana(tabName) {
+        const targetBtnId = (tabName === 'nuevo') ? 'tab-btn-nuevo' : ((tabName === 'detalle') ? 'tab-btn-detalle' : 'tab-btn-lista');
+        const triggerEl = document.getElementById(targetBtnId);
+        if (triggerEl) {
+            const tab = bootstrap.Tab.getOrCreateInstance(triggerEl);
+            tab.show();
+            actualizarUrl(tabName);
+        }
+    }
+
+    function actualizarUrl(tabName) {
+        if (window.history && window.history.replaceState) {
+            const url = new URL(window.location.href);
+            if (tabName === 'nuevo') {
+                url.searchParams.set('nuevo', '1');
+                url.searchParams.delete('ver');
+                url.searchParams.delete('id');
+            } else if (tabName === 'lista') {
+                url.searchParams.delete('nuevo');
+                url.searchParams.delete('ver');
+                url.searchParams.delete('id');
+            }
+            window.history.replaceState({}, '', url.toString());
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.location.hash === '#conversacion') {
+            const conv = document.getElementById('conversacion');
+            if (conv) {
+                setTimeout(() => conv.scrollIntoView({ behavior: 'smooth' }), 200);
+            }
+        }
+    });
+
     let areaFiltroActual = 'TODAS';
 
     function filtrarPorArea(area, el) {
