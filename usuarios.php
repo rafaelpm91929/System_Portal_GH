@@ -282,6 +282,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $stmtPerm->execute([$targetUserId, $modClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
                 }
 
+                if ($targetUserId === (int)($_SESSION['usuario_id'] ?? 0)) {
+                    cargarPermisosSesion($pdo, $targetUserId);
+                }
+
                 $mensaje = "Permisos actualizados correctamente para el usuario #$targetUserId.";
             } catch (PDOException $e) {
                 $error = "Error al actualizar permisos: " . $e->getMessage();

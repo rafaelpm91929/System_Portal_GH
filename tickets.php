@@ -29,6 +29,9 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+requerirPermiso('tickets', 'puede_ver');
+
+
 // Cargar permisos y asegurar tablas
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Usuario');

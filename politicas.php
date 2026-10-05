@@ -18,6 +18,9 @@ if ($pdo) {
     asegurarTablasPermisos($pdo);
 }
 
+requerirPermiso('politicas', 'puede_ver');
+
+
 // Datos de sesión del usuario
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador');

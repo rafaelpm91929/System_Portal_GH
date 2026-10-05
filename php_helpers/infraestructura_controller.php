@@ -23,15 +23,15 @@ require_once __DIR__ . '/../permisos_helper.php';
 
 // Asegurar Sesión Activa
 if (!isset($_SESSION['usuario_id'])) {
-    $_SESSION['usuario_id'] = 1;
-    $_SESSION['usuario'] = 'Admin';
-    $_SESSION['nombre'] = 'Administrador Sistemas';
-    $_SESSION['rol'] = 'SuperAdmin';
+    header("Location: login.php");
+    exit();
 }
 
 // Asegurar tablas de permisos e infraestructura
 asegurarTablasPermisos($pdo);
 asegurarTablasInfraestructura($pdo);
+
+requerirPermiso('infraestructura', 'puede_ver');
 
 $seccion_activa = $_GET['sec'] ?? 'diagramas';
 $subseccion_red = $_GET['sub'] ?? 'menu';

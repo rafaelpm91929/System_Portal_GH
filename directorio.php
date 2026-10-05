@@ -30,6 +30,9 @@ if (!isset($_SESSION['usuario_id'])) {
     exit();
 }
 
+requerirPermiso('directorio', 'puede_ver');
+
+
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Usuario');
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');

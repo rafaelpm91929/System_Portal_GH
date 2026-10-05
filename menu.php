@@ -13,6 +13,15 @@ if (file_exists('conexion.php')) {
     include_once 'conexion.php';
 }
 
+if (file_exists('permisos_helper.php')) {
+    require_once 'permisos_helper.php';
+}
+
+// Recargar permisos actualizados desde la base de datos para la sesión activa
+if (isset($pdo) && $pdo && isset($_SESSION['usuario_id'])) {
+    cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
+}
+
 $agenciaInfo = null;
 if (isset($pdo) && $pdo) {
     try {
@@ -190,10 +199,15 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
     <p class="header-desc">Selecciona un módulo para continuar</p>
 </div>
 
+<?php
+$modulosVisibles = 0;
+?>
+
 <!-- Grid de Módulos -->
 <div class="modules-grid">
 
     <!-- Módulo Agencia: Datos de la Agencia -->
+    <?php if (tienePermiso('agencia', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <span class="active-badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: rgba(34, 197, 94, 0.3);"><i class="bi bi-building-fill me-1"></i> FICHA OFICIAL</span>
         <div class="icon-box icon-green">
@@ -205,8 +219,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="agencia.php" class="btn-ingresar" style="background: #16a34a; border-color: #16a34a;">Ingresar</a>
     </div>
+    <?php endif; ?>
 
     <!-- Módulo 0: Gestión de Usuarios y Permisos (RBAC) -->
+    <?php if (tienePermiso('usuarios', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(37, 99, 235, 0.4);">
         <span class="active-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);"><i class="bi bi-shield-check me-1"></i> CONTROL RBAC</span>
         <div class="icon-box icon-blue">
@@ -218,8 +234,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="usuarios.php" class="btn-ingresar" style="background: #2563eb; border-color: #2563eb;">Ingresar</a>
     </div>
+    <?php endif; ?>
 
     <!-- Módulo 2: Inventario de Equipos (Posición 3) -->
+    <?php if (tienePermiso('equipos', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card">
         <span class="active-badge" style="background: rgba(6, 182, 212, 0.15); color: #06b6d4; border-color: rgba(6, 182, 212, 0.3);"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> ACTIVO</span>
         <div class="icon-box icon-cyan">
@@ -231,8 +249,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="equipos.php" class="btn-ingresar">Ingresar</a>
     </div>
+    <?php endif; ?>
 
     <!-- Módulo 5: Infraestructura (SITE / IDF) (Posición 4) -->
+    <?php if (tienePermiso('infraestructura', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(34, 197, 94, 0.4);">
         <span class="active-badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: rgba(34, 197, 94, 0.3);"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> ACTIVO</span>
         <div class="icon-box icon-green">
@@ -244,9 +264,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="infraestructura.php" class="btn-ingresar" style="background: #16a34a; border-color: #16a34a;">Ingresar</a>
     </div>
-
+    <?php endif; ?>
 
     <!-- Módulo: Políticas Corporativas (Protegido GH) -->
+    <?php if (tienePermiso('politicas', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(147, 51, 234, 0.45);">
         <span class="active-badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border-color: rgba(147, 51, 234, 0.3);"><i class="bi bi-shield-lock-fill me-1"></i> CENTRAL GH</span>
         <div class="icon-box icon-purple">
@@ -258,20 +279,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="politicas.php" class="btn-ingresar" style="background: #9333ea; border-color: #9333ea;">Ingresar</a>
     </div>
-
-    <!-- Módulo 6: Respaldos (Próximamente) -->
-    <div class="module-card">
-        <div class="icon-box icon-blue">
-            <i class="bi bi-cloud-check"></i>
-        </div>
-        <div class="module-title">Respaldos</div>
-        <div class="module-desc">
-            Estado de los respaldos por tipo y sucursal: última ejecución, frecuencia y bitácora de restauración.
-        </div>
-        <a href="#" class="btn-ingresar text-secondary" style="pointer-events: none;">Próximamente</a>
-    </div>
+    <?php endif; ?>
 
     <!-- Módulo: Tickets Soporte Dirección Sistemas -->
+    <?php if (tienePermiso('tickets', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(14, 165, 233, 0.45);">
         <span class="active-badge" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; border-color: rgba(14, 165, 233, 0.3);"><i class="bi bi-headset me-1"></i> SOPORTE TI</span>
         <div class="icon-box icon-cyan" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8;">
@@ -283,8 +294,10 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="tickets.php" class="btn-ingresar" style="background: #0284c7; border-color: #0284c7;">Ingresar</a>
     </div>
+    <?php endif; ?>
 
     <!-- Módulo: Directorio Telefónico y Correos -->
+    <?php if (tienePermiso('directorio', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(236, 72, 153, 0.4);">
         <span class="active-badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border-color: rgba(236, 72, 153, 0.3);"><i class="bi bi-telephone-inbound-fill me-1"></i> DIRECTORIO</span>
         <div class="icon-box icon-pink">
@@ -296,6 +309,17 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         </div>
         <a href="directorio.php" class="btn-ingresar" style="background: #db2777; border-color: #db2777;">Ingresar</a>
     </div>
+    <?php endif; ?>
+
+    <?php if ($modulosVisibles === 0): ?>
+    <div class="col-12 py-5" style="grid-column: 1 / -1;">
+        <div class="p-5 rounded-4 border border-secondary border-opacity-25 text-center shadow" style="background: rgba(13, 30, 54, 0.6); max-width: 650px; margin: 0 auto;">
+            <i class="bi bi-shield-lock-fill display-1 text-warning opacity-75 d-block mb-3"></i>
+            <h4 class="fw-bold text-white mb-2">No tienes módulos asignados</h4>
+            <p class="text-secondary small mb-0">Tu usuario no cuenta actualmente con permisos seleccionados para visualizar módulos en el portal. Contacta al administrador del sistema para que configure tus accesos.</p>
+        </div>
+    </div>
+    <?php endif; ?>
 
 </div>
 

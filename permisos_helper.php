@@ -506,24 +506,32 @@ function tienePermiso($modulo_clave, $accion = 'puede_ver') {
         return false;
     }
 
-    // Los roles SuperAdmin y Admin tienen permiso total implícito
-    $rol = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'Usuario';
-    if (in_array(strtolower($rol), ['superadmin', 'admin'])) {
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+
+    // 1. El rol SuperAdmin siempre tiene acceso total sin restricciones
+    if ($rol === 'superadmin') {
         return true;
     }
 
-    // Para el módulo de gestión de usuarios, solo Admin o SuperAdmin pueden ingresar
+    // 2. Si el usuario tiene permisos configurados en la matriz (usuario_permisos)
+    if (isset($_SESSION['permisos']) && is_array($_SESSION['permisos']) && isset($_SESSION['permisos'][$modulo_clave])) {
+        $permisosMod = $_SESSION['permisos'][$modulo_clave];
+        return !empty($permisosMod[$accion]);
+    }
+
+    // 3. Fallbacks si no se han configurado permisos específicos aún:
+    // Para el módulo de gestión de usuarios, solo SuperAdmin o Admin tienen acceso
     if ($modulo_clave === 'usuarios') {
-        return false;
+        return ($rol === 'admin');
     }
 
-    // Verificar en la matriz de permisos de la sesión
-    $permisos = $_SESSION['permisos'][$modulo_clave] ?? null;
-    if (!$permisos) {
-        return false;
+    // Si es Admin y aún no se le han configurado permisos en la matriz, permitir por defecto
+    if ($rol === 'admin') {
+        return true;
     }
 
-    return !empty($permisos[$accion]);
+    // Para rol Usuario general sin permisos configurados, denegar por seguridad
+    return false;
 }
 
 /**
@@ -544,8 +552,8 @@ function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
             <div class="card bg-secondary bg-opacity-25 border-danger p-5 rounded-4 shadow-lg text-white" style="max-width: 500px;">
                 <i class="bi bi-shield-lock-fill text-danger display-1 mb-3"></i>
                 <h3 class="fw-bold text-danger">Acceso restringido</h3>
-                <p class="text-light">No posees los permisos necesarios para acceder o realizar acciones en el módulo <code>'.htmlspecialchars($modulo_clave).'</code>.</p>
-                <a href="modulos.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
+                <p class="text-light">No posees los permisos necesarios para acceder o visualizar el módulo <code>'.htmlspecialchars($modulo_clave).'</code>.</p>
+                <a href="menu.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
             </div>
         </body>
         </html>';
