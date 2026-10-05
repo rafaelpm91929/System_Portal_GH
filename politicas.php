@@ -302,6 +302,33 @@ sort($categorias);
             overflow: hidden;
         }
 
+        /* CAPA DE ENFOQUE DINÁMICO ANTI-FOTO (OPCIÓN 1: LECTURA CONFIDENCIAL) */
+        .page-blur-curtain {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 6;
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.42);
+            transition: opacity 0.2s ease;
+            mask-image: radial-gradient(ellipse 320px 75px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
+            -webkit-mask-image: radial-gradient(ellipse 320px 75px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
+        }
+
+        @media (max-width: 768px) {
+            .page-blur-curtain {
+                mask-image: radial-gradient(ellipse 180px 65px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
+                -webkit-mask-image: radial-gradient(ellipse 180px 65px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
+            }
+        }
+
+        /* Cuando el usuario desactiva el foco con el botón */
+        .modo-foco-desactivado .page-blur-curtain {
+            display: none !important;
+        }
+
         .watermark-stamp {
             transform: rotate(-30deg);
             display: flex;
@@ -537,6 +564,11 @@ sort($categorias);
                 <span>Página <b id="lblPaginaActual" class="text-white">1</b> de <b id="lblTotalPaginas" class="text-white">1</b></span>
             </div>
 
+            <!-- BOTÓN MODO FOCO DINÁMICO (PROTECCIÓN LENTE) -->
+            <button type="button" id="btnToggleModoFoco" class="btn btn-outline-info btn-sm rounded-3 fw-bold px-2.5 ms-1" onclick="toggleModoFoco()" title="Activar/Desactivar Lente de Enfoque Dinámico Anti-Foto">
+                <i class="bi bi-bullseye me-1"></i> <span id="lblBtnFoco">Lente Anti-Foto: ON</span>
+            </button>
+
             <!-- BOTÓN CERRAR VISOR -->
             <button type="button" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3 ms-2" onclick="cerrarVisorBlindado()">
                 <i class="bi bi-x-lg me-1"></i> Cerrar
@@ -642,6 +674,7 @@ sort($categorias);
     let currentZoom = 1.0;
     let totalPdfPages = 0;
     let isViewerActive = false;
+    let modoFocoActivo = true;
 
     // 1. SISTEMA ANTI-CAPTURA / ANTI-RECORTE EN TIEMPO REAL
     const censorShield = document.getElementById('censorSecurityShield');
@@ -756,6 +789,17 @@ sort($categorias);
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
 
+        // Iniciar en modo foco activo
+        modoFocoActivo = true;
+        modal.classList.remove('modo-foco-desactivado');
+        const lblFoco = document.getElementById('lblBtnFoco');
+        const btnFoco = document.getElementById('btnToggleModoFoco');
+        if (lblFoco) lblFoco.textContent = 'Lente Anti-Foto: ON';
+        if (btnFoco) {
+            btnFoco.classList.remove('btn-outline-secondary');
+            btnFoco.classList.add('btn-outline-info');
+        }
+
         // Limpiar visor y mostrar loader
         container.innerHTML = `
             <div id="visorLoader" class="text-center py-5">
@@ -836,6 +880,39 @@ sort($categorias);
                     canvas.style.height = h + 'px';
                     const ctx = canvas.getContext('2d');
 
+                    // Capa de Enfoque Dinámico Anti-Foto (Lente de Lectura)
+                    const blurCurtain = document.createElement('div');
+                    blurCurtain.className = 'page-blur-curtain';
+
+                    // Eventos de movimiento del cursor para posicionar la apertura de lectura
+                    wrapper.addEventListener('mousemove', function(e) {
+                        const rect = wrapper.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        blurCurtain.style.setProperty('--focus-x', x + 'px');
+                        blurCurtain.style.setProperty('--focus-y', y + 'px');
+                    });
+
+                    wrapper.addEventListener('mouseleave', function() {
+                        blurCurtain.style.setProperty('--focus-x', '50%');
+                        blurCurtain.style.setProperty('--focus-y', '-300px');
+                    });
+
+                    wrapper.addEventListener('touchmove', function(e) {
+                        if (e.touches && e.touches[0]) {
+                            const rect = wrapper.getBoundingClientRect();
+                            const x = e.touches[0].clientX - rect.left;
+                            const y = e.touches[0].clientY - rect.top;
+                            blurCurtain.style.setProperty('--focus-x', x + 'px');
+                            blurCurtain.style.setProperty('--focus-y', y + 'px');
+                        }
+                    }, { passive: true });
+
+                    wrapper.addEventListener('touchend', function() {
+                        blurCurtain.style.setProperty('--focus-x', '50%');
+                        blurCurtain.style.setProperty('--focus-y', '-300px');
+                    });
+
                     // Renderizar PDF sobre Canvas
                     page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
                         // Construir marca de agua forense sobre la página
@@ -858,6 +935,7 @@ sort($categorias);
                     });
 
                     wrapper.appendChild(canvas);
+                    wrapper.appendChild(blurCurtain);
                 });
             })(pageNum, wrappers[pageNum]);
         }
@@ -879,6 +957,30 @@ sort($categorias);
         document.body.style.overflow = '';
         isViewerActive = false;
         desactivarCensura();
+    }
+
+    // Control del Modo Foco Dinámico Anti-Foto
+    function toggleModoFoco() {
+        modoFocoActivo = !modoFocoActivo;
+        const modal = document.getElementById('visorModalOverlay');
+        const lbl = document.getElementById('lblBtnFoco');
+        const btn = document.getElementById('btnToggleModoFoco');
+
+        if (modoFocoActivo) {
+            modal.classList.remove('modo-foco-desactivado');
+            if (lbl) lbl.textContent = 'Lente Anti-Foto: ON';
+            if (btn) {
+                btn.classList.remove('btn-outline-secondary');
+                btn.classList.add('btn-outline-info');
+            }
+        } else {
+            modal.classList.add('modo-foco-desactivado');
+            if (lbl) lbl.textContent = 'Lente Anti-Foto: OFF';
+            if (btn) {
+                btn.classList.remove('btn-outline-info');
+                btn.classList.add('btn-outline-secondary');
+            }
+        }
     }
 
     // 5. FILTROS DE POLÍTICAS EN TIEMPO REAL
