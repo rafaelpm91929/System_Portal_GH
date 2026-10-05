@@ -583,19 +583,19 @@ sort($categorias);
     </div>
 
     <!-- CAPA MODO VER UNA VEZ (MANTENER PRESIONADO PARA VER) -->
-    <div id="touchToViewShield" style="display:none; position:fixed; top:65px; left:0; width:100vw; height:calc(100vh - 65px); background:#000000; z-index:999992; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; user-select:none; -webkit-user-select:none; transition: opacity 0.15s ease;">
-        <div style="max-width:380px;">
-            <div class="mb-3" style="width:75px; height:75px; border-radius:50%; background:rgba(234,179,8,0.12); border:2px dashed #eab308; display:inline-flex; align-items:center; justify-content:center;">
-                <i class="bi bi-fingerprint display-4 text-warning"></i>
+    <div id="touchToViewShield" style="display:flex; position:fixed; top:65px; left:0; width:100vw; height:calc(100vh - 65px); background:#000000; z-index:999992; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; user-select:none; -webkit-user-select:none; transition: opacity 0.1s ease; cursor: pointer;">
+        <div style="max-width:420px; background: rgba(10, 15, 25, 0.95);" class="p-4 rounded-4 border border-secondary border-opacity-25 shadow-lg">
+            <div class="mb-3" style="width:85px; height:85px; border-radius:50%; background:rgba(234,179,8,0.15); border:2px dashed #eab308; display:inline-flex; align-items:center; justify-content:center;">
+                <i class="bi bi-fingerprint display-3 text-warning"></i>
             </div>
-            <h5 class="fw-bold text-white mb-2">Modo Blindado "Ver Una Vez"</h5>
+            <h4 class="fw-bold text-white mb-2">Visor Blindado Anti-Captura</h4>
             <p class="text-secondary small mb-3">
-                Mantén presionado tu dedo o clic sobre la pantalla para leer.<br>
-                Si intentas tomar captura de pantalla o sueltas, la pantalla se graba en negro total.
+                Mantén presionado tu dedo (en celular) o el clic (en PC) para leer el documento.<br>
+                <b class="text-warning">Si sueltas o intentas tomar captura, la pantalla se graba 100% en negro.</b>
             </p>
-            <span class="badge bg-dark border border-secondary text-warning px-3 py-1.5 rounded-pill font-monospace small">
-                <i class="bi bi-hand-index-thumb-fill me-1"></i> Toca y mantén presionado
-            </span>
+            <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill bg-warning text-dark fw-bold small shadow">
+                <i class="bi bi-hand-index-thumb-fill fs-5"></i> MANTÉN PRESIONADO PARA LEER
+            </div>
         </div>
     </div>
 </div>
@@ -767,13 +767,18 @@ sort($categorias);
 
     // 1. SISTEMA ANTI-CAPTURA / PANTALLA NEGRA PURA (TIPO WHATSAPP VER UNA VEZ)
     const censorShield = document.getElementById('censorSecurityShield');
-    let modoWhatsAppActivo = false;
+    let modoWhatsAppActivo = true;
 
     function activarCensura() {
         if (isViewerActive) {
             if (censorShield) {
                 censorShield.style.display = 'block';
                 censorShield.style.background = '#000000';
+            }
+            const shield = document.getElementById('touchToViewShield');
+            if (shield) {
+                shield.style.opacity = '1';
+                shield.style.pointerEvents = 'all';
             }
             const container = document.getElementById('visorCanvasContainer');
             if (container) {
@@ -853,10 +858,7 @@ sort($categorias);
 
         if (container) {
             container.addEventListener('mousedown', revelar);
-            container.addEventListener('mouseup', ocultar);
             container.addEventListener('touchstart', revelar, { passive: true });
-            container.addEventListener('touchend', ocultar, { passive: true });
-            container.addEventListener('touchcancel', ocultar, { passive: true });
         }
         if (shield) {
             shield.addEventListener('mousedown', revelar);
@@ -865,10 +867,11 @@ sort($categorias);
         window.addEventListener('mouseup', ocultar);
         window.addEventListener('touchend', ocultar, { passive: true });
         window.addEventListener('touchcancel', ocultar, { passive: true });
+        document.addEventListener('mouseleave', ocultar);
     }
     initTouchToViewListeners();
 
-    // Detectar cuando la ventana pierde el foco (p. ej. PowerPoint grabando, Recortes Win+Shift+S, cambio de app o captura en celular)
+    // Detectar cuando la ventana pierde el foco (PowerPoint grabando, Recortes Win+Shift+S, cambio de app o captura en celular)
     window.addEventListener('blur', function() {
         if (isViewerActive) activarCensura();
     });
@@ -904,7 +907,7 @@ sort($categorias);
     });
 
     document.addEventListener('mouseenter', function() {
-        if (isViewerActive) desactivarCensura();
+        if (isViewerActive && !modoWhatsAppActivo) desactivarCensura();
     });
 
     // Bloquear atajos de teclado para PrintScreen, Guardar, Imprimir e Inspeccionar
@@ -912,13 +915,18 @@ sort($categorias);
         if (!isViewerActive) return;
 
         // PrintScreen, Tecla Windows (Meta), o Alt (Alt+PrtScn)
-        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta') {
+        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta' || (e.shiftKey && (e.key === 's' || e.key === 'S')) || e.altKey) {
             e.preventDefault();
+            const shield = document.getElementById('touchToViewShield');
+            if (shield) {
+                shield.style.opacity = '1';
+                shield.style.pointerEvents = 'all';
+            }
             activarCensura();
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText('');
             }
-            setTimeout(desactivarCensura, 2000);
+            setTimeout(desactivarCensura, 2500);
             return false;
         }
 
@@ -973,10 +981,18 @@ sort($categorias);
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
 
-        // En celulares o tablets, activar por defecto el Modo WhatsApp (Ver Una Vez)
-        const esMovil = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-        if (esMovil && !modoWhatsAppActivo) {
-            toggleModoWhatsApp();
+        // Activar por defecto el Modo WhatsApp "Ver Una Vez" (Pantalla negra, mantener presionado para leer)
+        modoWhatsAppActivo = true;
+        const btn = document.getElementById('btnModoWhatsApp');
+        const shield = document.getElementById('touchToViewShield');
+        if (btn) {
+            btn.classList.remove('btn-outline-warning');
+            btn.classList.add('btn-warning', 'text-dark');
+        }
+        if (shield) {
+            shield.style.display = 'flex';
+            shield.style.opacity = '1';
+            shield.style.pointerEvents = 'all';
         }
 
         // Registrar lectura en bitácora auditable
