@@ -602,6 +602,9 @@ sort($categorias);
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
 
+        // Registrar lectura en bitácora auditable
+        registrarLecturaAuditoria(docId, tituloDoc);
+
         // Limpiar visor y mostrar loader
         container.innerHTML = `
             <div id="visorLoader" class="text-center py-5">
@@ -762,6 +765,25 @@ sort($categorias);
                 item.style.display = 'none';
             }
         });
+    }
+
+    // Registrar lectura y notificar a la bitácora corporativa
+    function registrarLecturaAuditoria(docId, tituloDoc) {
+        try {
+            const formData = new FormData();
+            formData.append('action', 'registrar_lectura');
+            formData.append('politica_id', docId);
+            formData.append('politica_titulo', tituloDoc);
+            formData.append('usuario_nombre', FORENSIC_USER_NAME);
+            formData.append('usuario_login', FORENSIC_USER_LOGIN);
+            formData.append('agencia', FORENSIC_AGENCIA);
+            formData.append('ip', FORENSIC_IP);
+
+            fetch('api_politicas.php', {
+                method: 'POST',
+                body: formData
+            }).catch(e => console.warn('Audit log notice:', e));
+        } catch(err) {}
     }
 </script>
 </body>

@@ -171,3 +171,67 @@ if ($action === 'sincronizar_central') {
     ]);
     exit();
 }
+
+// 4. REGISTRAR LECTURA DE POLÍTICA (LOCAL Y REPORTAR A CENTRAL GH)
+if ($action === 'registrar_lectura') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!isset($_SESSION['usuario_id'])) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso no autorizado']);
+        exit();
+    }
+
+    $politicaId = intval($_POST['politica_id'] ?? 0);
+    $politicaTitulo = trim($_POST['politica_titulo'] ?? '');
+    $usuarioId = intval($_SESSION['usuario_id'] ?? 0);
+    $usuarioNombre = trim($_POST['usuario_nombre'] ?? ($_SESSION['usuario_nombre'] ?? 'Colaborador'));
+    $usuarioLogin = trim($_POST['usuario_login'] ?? ($_SESSION['usuario_login'] ?? 'usuario'));
+    $agencia = trim($_POST['agencia'] ?? ($_SESSION['agencia'] ?? 'Agencia'));
+    $ip = trim($_POST['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
+    $origen = 'Portal ' . $agencia;
+
+    if ($politicaId <= 0) {
+        echo json_encode(['exito' => false, 'error' => 'ID de política requerido']);
+        exit();
+    }
+
+    // A. Guardar en base de datos local de la agencia si está disponible
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO politicas_lecturas (politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ");
+            $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen]);
+        } catch (Throwable $e) {}
+    }
+
+    // B. Reportar de inmediato al Portal Central GH
+    $urlCentralLog = 'https://portal.grupohuerta.mx/api_politicas.php?action=registrar_lectura';
+    $postData = http_build_query([
+        'token' => 'GH_POLITICAS_SEGURA_2026_CORP',
+        'politica_id' => $politicaId,
+        'politica_titulo' => $politicaTitulo,
+        'usuario_id' => $usuarioId,
+        'usuario_nombre' => $usuarioNombre,
+        'usuario_login' => $usuarioLogin,
+        'agencia' => $agencia,
+        'ip' => $ip,
+        'origen' => $origen
+    ]);
+
+    $ctxLog = stream_context_create([
+        'http' => [
+            'method'  => 'POST',
+            'header'  => "Content-type: application/x-www-form-urlencoded\r\nUser-Agent: PortalAgenciaLog/1.0\r\n",
+            'content' => $postData,
+            'timeout' => 4
+        ],
+        'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+    ]);
+
+    @file_get_contents($urlCentralLog, false, $ctxLog);
+
+    echo json_encode(['exito' => true, 'mensaje' => 'Lectura registrada y notificada al corporativo']);
+    exit();
+}
