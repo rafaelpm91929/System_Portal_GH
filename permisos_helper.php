@@ -126,7 +126,8 @@ function asegurarTablasPermisos($pdo) {
         ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 5, 1),
         ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
         ('directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1),
-        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1)
+        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1),
+        ('politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1)
         ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
 
     } catch (Throwable $e) {
@@ -366,6 +367,58 @@ function asegurarTablaTickets($pdo = null) {
         try {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
         } catch (Throwable $eAlt) {}
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Auto-Instala o asegura la existencia de la tabla politicas_corporativas en MySQL o SQLite
+ */
+function asegurarTablaPoliticas($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS politicas_corporativas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT,
+                    categoria TEXT DEFAULT 'General',
+                    archivo_pdf TEXT NOT NULL,
+                    version TEXT DEFAULT '1.0',
+                    fecha_vigencia DATE,
+                    obligatorio_lectura INTEGER DEFAULT 0,
+                    estatus INTEGER DEFAULT 1,
+                    creado_por TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT NULL,
+                    `categoria` VARCHAR(100) DEFAULT 'General',
+                    `archivo_pdf` VARCHAR(255) NOT NULL,
+                    `version` VARCHAR(20) DEFAULT '1.0',
+                    `fecha_vigencia` DATE NULL,
+                    `obligatorio_lectura` TINYINT(1) DEFAULT 0,
+                    `estatus` TINYINT(1) DEFAULT 1,
+                    `creado_por` VARCHAR(100) NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
     } catch (Throwable $e) {}
 }
 

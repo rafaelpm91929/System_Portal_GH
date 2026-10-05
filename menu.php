@@ -246,6 +246,19 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
     </div>
 
 
+    <!-- Módulo: Políticas Corporativas (Protegido GH) -->
+    <div class="module-card" style="border-color: rgba(147, 51, 234, 0.45);">
+        <span class="active-badge" style="background: rgba(147, 51, 234, 0.15); color: #c084fc; border-color: rgba(147, 51, 234, 0.3);"><i class="bi bi-shield-lock-fill me-1"></i> CENTRAL GH</span>
+        <div class="icon-box icon-purple">
+            <i class="bi bi-file-earmark-lock2-fill"></i>
+        </div>
+        <div class="module-title">Políticas Corporativas</div>
+        <div class="module-desc">
+            Consulta oficial y centralizada de políticas y lineamientos con visor blindado anti-captura y sincronización central.
+        </div>
+        <a href="politicas.php" class="btn-ingresar" style="background: #9333ea; border-color: #9333ea;">Ingresar</a>
+    </div>
+
     <!-- Módulo 6: Respaldos (Próximamente) -->
     <div class="module-card">
         <div class="icon-box icon-blue">

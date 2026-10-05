@@ -1588,6 +1588,24 @@ CREATE TABLE `tickets_soporte` (
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+-- 25. Tabla: politicas_corporativas (Módulo de Políticas Protegidas GH)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `titulo` VARCHAR(255) NOT NULL,
+  `descripcion` TEXT NULL,
+  `categoria` VARCHAR(100) DEFAULT 'General',
+  `archivo_pdf` VARCHAR(255) NOT NULL,
+  `version` VARCHAR(20) DEFAULT '1.0',
+  `fecha_vigencia` DATE NULL,
+  `obligatorio_lectura` TINYINT(1) DEFAULT 0,
+  `estatus` TINYINT(1) DEFAULT 1,
+  `creado_por` VARCHAR(100) NULL,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ==========================================================
 -- REGISTROS BASE MÍNIMOS INDISPENSABLES
 -- (Solo catálogo de módulos y 1 usuario administrador inicial)
@@ -1595,12 +1613,16 @@ CREATE TABLE `tickets_soporte` (
 
 -- 1. Catálogo oficial de Módulos del Sistema
 INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES
-(1, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos', 'bi-people-fill', 1, 1, NOW()),
-(2, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos', 'bi-file-earmark-bar-graph', 2, 1, NOW()),
-(3, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1, NOW()),
-(4, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas', 'bi-phone-fill', 4, 1, NOW()),
-(5, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo', 'bi-key-fill', 5, 1, NOW()),
-(6, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks y cableado', 'bi-hdd-rack-fill', 6, 1, NOW());
+(1, 'agencia', 'Datos de la Agencia', 'Ficha oficial de la sucursal: Nombre, Razón Social, RFC, Dirección, Foto y Encargado de Sistemas', 'bi-building-fill', 0, 1, NOW()),
+(2, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos', 'bi-people-fill', 1, 1, NOW()),
+(3, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos', 'bi-file-earmark-bar-graph', 2, 1, NOW()),
+(4, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1, NOW()),
+(5, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas', 'bi-phone-fill', 4, 1, NOW()),
+(6, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo', 'bi-key-fill', 5, 1, NOW()),
+(7, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks y cableado', 'bi-hdd-rack-fill', 6, 1, NOW()),
+(8, 'directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1, NOW()),
+(9, 'tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1, NOW()),
+(10, 'politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1, NOW());
 
 -- 2. Usuario Administrador Inicial para Primer Acceso
 -- Usuario: admin | Contraseña inicial: Admin123!
