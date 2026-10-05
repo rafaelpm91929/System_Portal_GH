@@ -508,25 +508,15 @@ function tienePermiso($modulo_clave, $accion = 'puede_ver') {
 
     $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 
-    // 1. El rol SuperAdmin siempre tiene acceso total sin restricciones
-    if ($rol === 'superadmin') {
-        return true;
-    }
-
-    // 2. Si el usuario tiene permisos configurados en la matriz (usuario_permisos)
+    // 1. Si el usuario tiene permisos configurados en la matriz (usuario_permisos), respetarlos SIEMPRE
     if (isset($_SESSION['permisos']) && is_array($_SESSION['permisos']) && isset($_SESSION['permisos'][$modulo_clave])) {
         $permisosMod = $_SESSION['permisos'][$modulo_clave];
         return !empty($permisosMod[$accion]);
     }
 
-    // 3. Fallbacks si no se han configurado permisos específicos aún:
-    // Para el módulo de gestión de usuarios, solo SuperAdmin o Admin tienen acceso
-    if ($modulo_clave === 'usuarios') {
-        return ($rol === 'admin');
-    }
-
-    // Si es Admin y aún no se le han configurado permisos en la matriz, permitir por defecto
-    if ($rol === 'admin') {
+    // 2. Si no se han configurado permisos específicos en la matriz aún (fallback inicial):
+    // SuperAdmin y Admin tienen acceso total por defecto
+    if (in_array($rol, ['superadmin', 'admin'])) {
         return true;
     }
 

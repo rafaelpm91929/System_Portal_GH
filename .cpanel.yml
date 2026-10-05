@@ -3,12 +3,5 @@ deployment:
   tasks:
     - export DEPLOYPATH=$HOME/public_html/sistemas
     - /bin/mkdir -p $DEPLOYPATH
-    - /bin/cp -R recibir_reporte.php $DEPLOYPATH/
-    - /bin/cp -R reportes.php $DEPLOYPATH/
-    - /bin/cp -R menu.php $DEPLOYPATH/
-    - /bin/cp -R login.php $DEPLOYPATH/
-    - /bin/cp -R logout.php $DEPLOYPATH/
-    - /bin/cp -R conexion.php $DEPLOYPATH/
-    - /bin/cp -R prueba.php $DEPLOYPATH/
-    - /bin/cp -R .htaccess $DEPLOYPATH/
-    - /bin/cp -R index.php $DEPLOYPATH/
+    - /bin/cp -a * $DEPLOYPATH/
+    - /bin/cp -f .htaccess $DEPLOYPATH/ 2>/dev/null || true
