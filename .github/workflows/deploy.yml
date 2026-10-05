@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: deploy-cpanel
+  cancel-in-progress: true
+
 jobs:
   web-deploy:
     name: 🚀 Desplegar en cPanel via FTP
@@ -23,6 +27,8 @@ jobs:
           protocol: ftp
           port: 21
           dangerous-clean-slate: false
+          log-level: verbose
+          timeout: 60000
           exclude: |
             **/.git*
             **/.git*/**
@@ -30,6 +36,9 @@ jobs:
             **/venv/**
             **/backend/**
             **/database/**
+            *.zip
+            *.sql
+            *.docx
             enviar_reporte.py
             desplegar.py
             .env
