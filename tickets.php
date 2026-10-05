@@ -503,14 +503,16 @@ if ($pdo) {
             $stmtUser = $pdo->prepare("
                 SELECT * FROM tickets_soporte 
                 WHERE solicitante_id = :uid 
-                   OR (solicitante_usuario IS NOT NULL AND solicitante_usuario != '' AND solicitante_usuario = :ulogin)
-                   OR (solicitante_email IS NOT NULL AND solicitante_email != '' AND solicitante_email = :uemail)
+                   OR (solicitante_usuario IS NOT NULL AND solicitante_usuario != '' AND LOWER(solicitante_usuario) = LOWER(:ulogin))
+                   OR (solicitante_email IS NOT NULL AND solicitante_email != '' AND LOWER(solicitante_email) = LOWER(:uemail))
+                   OR (solicitante_nombre IS NOT NULL AND solicitante_nombre != '' AND LOWER(solicitante_nombre) = LOWER(:unombre))
                 ORDER BY id DESC
             ");
             $stmtUser->execute([
-                ':uid'    => $usuarioId,
-                ':ulogin' => $loginUsuario,
-                ':uemail' => $emailUsuario
+                ':uid'     => $usuarioId,
+                ':ulogin'  => $loginUsuario,
+                ':uemail'  => $emailUsuario,
+                ':unombre' => $nombreUsuario
             ]);
             $tickets = $stmtUser->fetchAll(PDO::FETCH_ASSOC);
         } else {
@@ -809,74 +811,41 @@ if ($pdo) {
         </div>
     <?php endif; ?>
 
-    <!-- Indicador de Contexto de Usuario / Perfil -->
-    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-        <?php if (!$esAdmin): ?>
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-3 py-2" style="font-size: 0.82rem;">
-                    <i class="bi bi-person-fill-lock me-1"></i> Mostrando únicamente tus tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
-                </span>
+    <!-- Encabezado Principal y Botón Destacado "Levantar Nuevo Ticket" -->
+    <div class="card border-0 rounded-4 shadow-sm mb-4 p-3 p-md-4" style="background: linear-gradient(145deg, #0f2744 0%, #091a30 100%); border: 1px solid rgba(56, 189, 248, 0.25) !important;">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <?php if (!$esAdmin): ?>
+                        <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
+                            <i class="bi bi-person-fill me-1"></i> Tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
+                        </span>
+                    <?php else: ?>
+                        <span class="badge rounded-pill bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 px-3 py-1.5" style="font-size: 0.8rem;">
+                            <i class="bi bi-shield-check me-1"></i> Modo Administrador: <strong class="text-white">Todos los tickets</strong>
+                        </span>
+                    <?php endif; ?>
+                    <span class="badge rounded-pill bg-dark bg-opacity-50 text-secondary border border-secondary border-opacity-25 px-2.5 py-1.5" style="font-size: 0.78rem;">
+                        <i class="bi bi-collection me-1"></i> <?php echo count($tickets); ?> registrados
+                    </span>
+                </div>
+                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-ticket-detailed-fill text-info"></i> Mis Tickets de Soporte
+                </h3>
+                <p class="text-secondary small mb-0">Listado y seguimiento de requerimientos e incidencias para la Dirección de Sistemas.</p>
             </div>
-        <?php else: ?>
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge rounded-pill bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-25 px-3 py-2" style="font-size: 0.82rem;">
-                    <i class="bi bi-shield-check me-1"></i> Modo Administrador: Visualizando todos los tickets de la agencia
-                </span>
-            </div>
-        <?php endif; ?>
-    </div>
-
-    <!-- Tarjetas de Métricas (KPIs) -->
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-cyan">
-                    <i class="bi bi-collection-fill"></i>
-                </div>
-                <div>
-                    <div class="text-secondary small fw-bold">TOTAL TICKETS</div>
-                    <div class="fs-3 fw-bold text-white"><?php echo $totalTickets; ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-yellow">
-                    <i class="bi bi-clock-history"></i>
-                </div>
-                <div>
-                    <div class="text-secondary small fw-bold">EN ESPERA / ABIERTOS</div>
-                    <div class="fs-3 fw-bold text-warning"><?php echo $totalAbiertos; ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-blue">
-                    <i class="bi bi-gear-wide-connected"></i>
-                </div>
-                <div>
-                    <div class="text-secondary small fw-bold">EN PROCESO</div>
-                    <div class="fs-3 fw-bold text-info"><?php echo $totalEnProceso; ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="kpi-card">
-                <div class="kpi-icon kpi-green">
-                    <i class="bi bi-check2-all"></i>
-                </div>
-                <div>
-                    <div class="text-secondary small fw-bold">RESUELTOS / CERRADOS</div>
-                    <div class="fs-3 fw-bold text-success"><?php echo $totalResueltos; ?></div>
-                </div>
+            <div class="text-md-end">
+                <button type="button" class="btn btn-primary btn-lg rounded-4 px-4 py-3 fw-bold d-inline-flex align-items-center justify-content-center gap-2.5 shadow-lg w-100 w-md-auto" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 1.15rem; min-height: 56px; box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45) !important;" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
+                    <i class="bi bi-plus-circle-fill fs-4 text-white"></i>
+                    <span>Levantar Nuevo Ticket</span>
+                </button>
             </div>
         </div>
     </div>
 
-    <!-- Barra de Búsqueda, Filtros y Botones -->
+    <!-- Barra de Búsqueda, Filtros y Acciones Secundarias -->
     <div class="row g-3 align-items-center mb-4">
-        <div class="col-md-5 col-lg-4">
+        <div class="col-12 col-md-7 col-lg-8">
             <div class="search-box-wrapper">
                 <i class="bi bi-search text-secondary"></i>
                 <input type="text" id="buscadorTickets" class="search-input" placeholder="Buscar por folio, asunto, solicitante..." onkeyup="filtrarTicketsEnVivo()">
@@ -886,16 +855,15 @@ if ($pdo) {
             </div>
         </div>
 
-        <div class="col-md-7 col-lg-8 d-flex justify-content-md-end gap-2 flex-wrap">
-            <a href="tickets.php?sincronizar=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" title="Consultar avances y respuestas en vivo de la Dirección de Sistemas">
-                <i class="bi bi-arrow-repeat"></i> Sincronizar con Central
+        <div class="col-12 col-md-5 col-lg-4 d-flex justify-content-md-end gap-2 flex-wrap">
+            <a href="tickets.php?sincronizar=1" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" title="Consultar avances y respuestas en vivo de la Dirección de Sistemas">
+                <i class="bi bi-arrow-repeat"></i> Sincronizar
             </a>
-            <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
-                <i class="bi bi-file-earmark-excel-fill"></i> Exportar a Excel
+            <?php if ($esAdmin): ?>
+            <a href="tickets.php?accion=exportar_excel" class="btn btn-success btn-sm rounded-3 px-3 fw-semibold d-inline-flex align-items-center gap-1.5 shadow-sm" style="background: #16a34a; border-color: #16a34a;" title="Exportar a Microsoft Excel">
+                <i class="bi bi-file-earmark-excel-fill"></i> Excel
             </a>
-            <button type="button" class="btn btn-primary btn-sm rounded-3 px-3 fw-semibold d-flex align-items-center gap-1.5 shadow-sm" style="background: #0284c7; border-color: #0284c7;" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
-                <i class="bi bi-plus-lg"></i> Levantar Nuevo Ticket
-            </button>
+            <?php endif; ?>
         </div>
 
         <!-- Filtros de Áreas de Sistemas -->
