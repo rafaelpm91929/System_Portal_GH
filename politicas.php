@@ -235,65 +235,7 @@ sort($categorias);
             text-shadow: 0 0 1px rgba(0,0,0,0.4);
         }
 
-        /* CAPA 2: MALLA ÓPTICA ANTI-CÁMARA DE CELULAR (EFECTO MOIRÉ) */
-        .anti-camera-moire-mesh {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 6;
-            background: 
-                repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.035) 0px, rgba(0, 0, 0, 0.035) 1px, transparent 1px, transparent 3px),
-                repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 3px);
-        }
-
-        /* CAPA 3: MICROPULSO ESTROBOSCÓPICO ANTI-CÁMARA (ROLLING SHUTTER ATTACK) */
-        .anti-camera-shutter-layer {
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            pointer-events: none;
-            z-index: 7;
-            background: repeating-linear-gradient(
-                0deg,
-                rgba(0, 0, 0, 0.055) 0px,
-                rgba(0, 0, 0, 0.055) 2px,
-                transparent 2px,
-                transparent 5px
-            );
-            animation: shutterFlicker 0.033s steps(2, start) infinite;
-        }
-
-        @keyframes shutterFlicker {
-            0% { transform: translateY(0px); opacity: 0.95; }
-            50% { transform: translateY(2px); opacity: 0.35; }
-            100% { transform: translateY(0px); opacity: 0.95; }
-        }
-
-        /* CAPA 4: BARRIDO ASÍNCRONO DE INTERFERENCIA PARA SENSORES CMOS DE CELULAR */
-        .anti-camera-rolling-band {
-            position: absolute;
-            top: -50%; left: 0;
-            width: 100%; height: 50%;
-            pointer-events: none;
-            z-index: 8;
-            background: linear-gradient(
-                180deg,
-                transparent 0%,
-                rgba(0, 0, 0, 0.08) 25%,
-                rgba(0, 0, 0, 0.18) 50%,
-                rgba(0, 0, 0, 0.08) 75%,
-                transparent 100%
-            );
-            animation: rollingShutterBand 0.075s linear infinite;
-        }
-
-        @keyframes rollingShutterBand {
-            0% { top: -50%; }
-            100% { top: 150%; }
-        }
-
-        /* CAPA 3: CORTINA DE SEGURIDAD NEGRA (SE DISPARA EN BLUR/RECORTE) */
+        /* CAPA 2: CORTINA DE SEGURIDAD NEGRA (SE DISPARA EN BLUR/RECORTE/PÉRDIDA DE FOCO) */
         #censorSecurityShield {
             position: fixed;
             top: 0; left: 0;
@@ -467,10 +409,7 @@ sort($categorias);
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2.5 py-1 rounded-pill small font-monospace">
                 <i class="bi bi-shield-fill-x me-1"></i> LECTURA PROTEGIDA
             </span>
-            <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2.5 py-1 rounded-pill small font-monospace d-none d-md-inline-flex align-items-center gap-1">
-                <i class="bi bi-camera-video-off-fill"></i> ESCUDO ANTI-FOTO
-            </span>
-            <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 40vw;">
+            <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 45vw;">
                 Cargando Documento...
             </h6>
         </div>
@@ -532,14 +471,20 @@ sort($categorias);
     const censorShield = document.getElementById('censorSecurityShield');
 
     function activarCensura() {
-        if (isViewerActive && censorShield) {
-            censorShield.style.display = 'flex';
+        if (isViewerActive) {
+            if (censorShield) censorShield.style.display = 'flex';
+            const container = document.getElementById('visorCanvasContainer');
+            if (container) {
+                container.style.filter = 'blur(40px) brightness(0.1)';
+            }
         }
     }
 
     function desactivarCensura() {
-        if (censorShield) {
-            censorShield.style.display = 'none';
+        if (censorShield) censorShield.style.display = 'none';
+        const container = document.getElementById('visorCanvasContainer');
+        if (container) {
+            container.style.filter = 'none';
         }
     }
 
@@ -551,25 +496,36 @@ sort($categorias);
     document.addEventListener('visibilitychange', function() {
         if (document.hidden && isViewerActive) {
             activarCensura();
+        } else if (!document.hidden && isViewerActive) {
+            desactivarCensura();
         }
     });
 
     window.addEventListener('focus', function() {
-        desactivarCensura();
+        if (isViewerActive) desactivarCensura();
+    });
+
+    // Censurar si el cursor del ratón sale de la ventana del navegador
+    document.addEventListener('mouseleave', function() {
+        if (isViewerActive) activarCensura();
+    });
+
+    document.addEventListener('mouseenter', function() {
+        if (isViewerActive) desactivarCensura();
     });
 
     // Bloquear atajos de teclado para PrintScreen, Guardar, Imprimir e Inspeccionar
     window.addEventListener('keydown', function(e) {
         if (!isViewerActive) return;
 
-        // PrintScreen (tecla 44 o 'PrintScreen')
-        if (e.key === 'PrintScreen' || e.keyCode === 44) {
+        // PrintScreen (tecla 44, 'PrintScreen', o 'Snapshot')
+        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot') {
             e.preventDefault();
             activarCensura();
             if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(''); // Limpiar portapapeles
+                navigator.clipboard.writeText('⚠️ Contenido confidencial protegido de Grupo Huerta. Captura bloqueada.');
             }
-            setTimeout(desactivarCensura, 1500);
+            setTimeout(desactivarCensura, 1800);
             return false;
         }
 
@@ -577,7 +533,7 @@ sort($categorias);
         if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
             e.preventDefault();
             activarCensura();
-            setTimeout(desactivarCensura, 1200);
+            setTimeout(desactivarCensura, 1500);
             return false;
         }
 
@@ -597,6 +553,17 @@ sort($categorias);
         if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
             e.preventDefault();
             return false;
+        }
+    }, true);
+
+    window.addEventListener('keyup', function(e) {
+        if (!isViewerActive) return;
+        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot') {
+            activarCensura();
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText('⚠️ Contenido confidencial protegido de Grupo Huerta. Captura bloqueada.');
+            }
+            setTimeout(desactivarCensura, 1800);
         }
     }, true);
 
@@ -710,22 +677,8 @@ sort($categorias);
                             watermarkLayer.appendChild(stamp);
                         }
 
-                        // Capa de Malla Óptica Moiré
-                        const moireMesh = document.createElement('div');
-                        moireMesh.className = 'anti-camera-moire-mesh';
-
-                        // Capa de Micropulso Anti-Cámara (Rolling Shutter)
-                        const shutterLayer = document.createElement('div');
-                        shutterLayer.className = 'anti-camera-shutter-layer';
-
-                        // Capa de Barrido de Interferencia Asíncrona CMOS
-                        const rollingBand = document.createElement('div');
-                        rollingBand.className = 'anti-camera-rolling-band';
-
+                        // Capa única: Marca de Agua Forense Limpia y Elegante
                         wrapper.appendChild(watermarkLayer);
-                        wrapper.appendChild(moireMesh);
-                        wrapper.appendChild(shutterLayer);
-                        wrapper.appendChild(rollingBand);
                     });
 
                     wrapper.appendChild(canvas);
