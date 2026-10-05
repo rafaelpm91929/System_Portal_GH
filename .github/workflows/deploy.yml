@@ -5,10 +5,6 @@ on:
     branches:
       - main
 
-concurrency:
-  group: deploy-cpanel
-  cancel-in-progress: true
-
 jobs:
   web-deploy:
     name: 🚀 Desplegar en cPanel via FTP
@@ -16,8 +12,6 @@ jobs:
     steps:
       - name: 🚚 Obtener codigo del repositorio
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
 
       - name: 📁 Sincronizar archivos a cPanel public_html/sistemas
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -29,8 +23,6 @@ jobs:
           protocol: ftp
           port: 21
           dangerous-clean-slate: false
-          log-level: verbose
-          timeout: 60000
           exclude: |
             **/.git*
             **/.git*/**
