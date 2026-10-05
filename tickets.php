@@ -811,6 +811,7 @@ if ($ticketSeleccionado) {
         .table-custom tbody tr {
             border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
             transition: all 0.15s ease;
+            cursor: pointer;
         }
         .table-custom tbody tr:nth-child(odd) td {
             background-color: #0b1c34 !important;
@@ -830,6 +831,32 @@ if ($ticketSeleccionado) {
             font-size: 0.92rem;
             box-shadow: none !important;
             border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+        }
+
+        .folio-tag {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.14);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            padding: 7px 15px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            letter-spacing: 0.6px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            text-decoration: none;
+        }
+        .table-custom tbody tr:hover .folio-tag {
+            background: linear-gradient(135deg, rgba(2, 132, 199, 0.4) 0%, rgba(56, 189, 248, 0.3) 100%);
+            border-color: #38bdf8;
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(56, 189, 248, 0.55);
+            transform: scale(1.02);
         }
 
         .area-badge {
@@ -1183,14 +1210,14 @@ if ($ticketSeleccionado) {
                                         data-area="<?php echo htmlspecialchars($areaKey); ?>"
                                         data-titulo="<?php echo htmlspecialchars(mb_strtolower($t['titulo'] ?? '')); ?>"
                                         data-solicitante="<?php echo htmlspecialchars(mb_strtolower(($t['solicitante_nombre'] ?? '') . ' ' . ($t['solicitante_usuario'] ?? ''))); ?>"
-                                        data-estado="<?php echo htmlspecialchars($estLower); ?>">
+                                        data-estado="<?php echo htmlspecialchars($estLower); ?>" onclick="abrirTicket(<?php echo $t['id']; ?>, event)" title="Haz clic en cualquier parte para entrar a este ticket">
                                         
                                         <!-- Folio -->
                                         <td>
-                                            <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="font-monospace fw-bold text-info text-decoration-none d-inline-flex align-items-center gap-1.5" title="Ver detalle y responder">
+                                            <div class="folio-tag" title="Entrar a este ticket">
+                                                <i class="bi bi-ticket-perforated-fill text-info fs-5"></i>
                                                 <span><?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?></span>
-                                                <i class="bi bi-chat-left-dots" style="font-size: 0.72rem;"></i>
-                                            </a>
+                                            </div>
                                         </td>
 
                                         <!-- Área Destino -->
@@ -1681,6 +1708,13 @@ if ($ticketSeleccionado) {
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    function abrirTicket(id, event) {
+        if (event && event.target && event.target.closest('button, form, input, select, textarea, .btn-action-icon.text-danger, a[href*="accion="]')) {
+            return;
+        }
+        window.location.href = 'tickets.php?ver=' + id;
+    }
+
     function cambiarPestana(tabName) {
         const targetBtnId = (tabName === 'nuevo') ? 'tab-btn-nuevo' : ((tabName === 'detalle') ? 'tab-btn-detalle' : 'tab-btn-lista');
         const triggerEl = document.getElementById(targetBtnId);
