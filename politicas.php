@@ -298,35 +298,24 @@ sort($categorias);
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
             grid-auto-rows: 150px;
-            opacity: 0.16;
+            opacity: 0.24;
             overflow: hidden;
         }
 
-        /* CAPA DE ENFOQUE DINÁMICO ANTI-FOTO (OPCIÓN 1: LECTURA CONFIDENCIAL) */
-        .page-blur-curtain {
+        /* CAPA DE SEGURIDAD ÓPTICA TIPO BILLETE BANCARIO (ANTI-SENSOR CÁMARA MOIRÉ) */
+        .banknote-security-pattern {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
             pointer-events: none;
-            z-index: 6;
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            background: rgba(255, 255, 255, 0.42);
-            transition: opacity 0.2s ease;
-            mask-image: radial-gradient(ellipse 320px 75px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
-            -webkit-mask-image: radial-gradient(ellipse 320px 75px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
-        }
-
-        @media (max-width: 768px) {
-            .page-blur-curtain {
-                mask-image: radial-gradient(ellipse 180px 65px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
-                -webkit-mask-image: radial-gradient(ellipse 180px 65px at var(--focus-x, 50%) var(--focus-y, -300px), transparent 0%, transparent 60%, black 100%);
-            }
-        }
-
-        /* Cuando el usuario desactiva el foco con el botón */
-        .modo-foco-desactivado .page-blur-curtain {
-            display: none !important;
+            z-index: 4;
+            opacity: 0.16;
+            background-image: 
+                radial-gradient(#0f172a 1px, transparent 1px),
+                repeating-linear-gradient(45deg, rgba(15,23,42,0.4) 0, rgba(15,23,42,0.4) 1px, transparent 0, transparent 3px),
+                repeating-linear-gradient(-45deg, rgba(15,23,42,0.4) 0, rgba(15,23,42,0.4) 1px, transparent 0, transparent 3px);
+            background-size: 6px 6px, 4px 4px, 4px 4px;
+            mix-blend-mode: multiply;
         }
 
         .watermark-stamp {
@@ -335,14 +324,15 @@ sort($categorias);
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            color: #ef4444;
+            color: #dc2626;
             font-size: 0.72rem;
             font-weight: 800;
             text-align: center;
-            line-height: 1.15;
+            line-height: 1.2;
             user-select: none;
             font-family: monospace;
-            text-shadow: 0 0 1px rgba(0,0,0,0.4);
+            text-shadow: 0 0 1px rgba(0,0,0,0.25);
+            letter-spacing: 0.5px;
         }
 
         /* CAPA 2: CORTINA DE SEGURIDAD NEGRA (SE DISPARA EN BLUR/RECORTE/PÉRDIDA DE FOCO) */
@@ -564,10 +554,10 @@ sort($categorias);
                 <span>Página <b id="lblPaginaActual" class="text-white">1</b> de <b id="lblTotalPaginas" class="text-white">1</b></span>
             </div>
 
-            <!-- BOTÓN MODO FOCO DINÁMICO (PROTECCIÓN LENTE) -->
-            <button type="button" id="btnToggleModoFoco" class="btn btn-outline-info btn-sm rounded-3 fw-bold px-2.5 ms-1" onclick="toggleModoFoco()" title="Activar/Desactivar Lente de Enfoque Dinámico Anti-Foto">
-                <i class="bi bi-bullseye me-1"></i> <span id="lblBtnFoco">Lente Anti-Foto: ON</span>
-            </button>
+            <!-- BADGE DE SEGURIDAD ÓPTICA -->
+            <span class="badge bg-dark border border-secondary text-info rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
+                <i class="bi bi-shield-lock-fill text-warning me-1"></i> Trama Óptica Anti-Cámara
+            </span>
 
             <!-- BOTÓN CERRAR VISOR -->
             <button type="button" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3 ms-2" onclick="cerrarVisorBlindado()">
@@ -674,7 +664,6 @@ sort($categorias);
     let currentZoom = 1.0;
     let totalPdfPages = 0;
     let isViewerActive = false;
-    let modoFocoActivo = true;
 
     // 1. SISTEMA ANTI-CAPTURA / ANTI-RECORTE EN TIEMPO REAL
     const censorShield = document.getElementById('censorSecurityShield');
@@ -789,17 +778,6 @@ sort($categorias);
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
 
-        // Iniciar en modo foco activo
-        modoFocoActivo = true;
-        modal.classList.remove('modo-foco-desactivado');
-        const lblFoco = document.getElementById('lblBtnFoco');
-        const btnFoco = document.getElementById('btnToggleModoFoco');
-        if (lblFoco) lblFoco.textContent = 'Lente Anti-Foto: ON';
-        if (btnFoco) {
-            btnFoco.classList.remove('btn-outline-secondary');
-            btnFoco.classList.add('btn-outline-info');
-        }
-
         // Limpiar visor y mostrar loader
         container.innerHTML = `
             <div id="visorLoader" class="text-center py-5">
@@ -880,47 +858,19 @@ sort($categorias);
                     canvas.style.height = h + 'px';
                     const ctx = canvas.getContext('2d');
 
-                    // Capa de Enfoque Dinámico Anti-Foto (Lente de Lectura)
-                    const blurCurtain = document.createElement('div');
-                    blurCurtain.className = 'page-blur-curtain';
-
-                    // Eventos de movimiento del cursor para posicionar la apertura de lectura
-                    wrapper.addEventListener('mousemove', function(e) {
-                        const rect = wrapper.getBoundingClientRect();
-                        const x = e.clientX - rect.left;
-                        const y = e.clientY - rect.top;
-                        blurCurtain.style.setProperty('--focus-x', x + 'px');
-                        blurCurtain.style.setProperty('--focus-y', y + 'px');
-                    });
-
-                    wrapper.addEventListener('mouseleave', function() {
-                        blurCurtain.style.setProperty('--focus-x', '50%');
-                        blurCurtain.style.setProperty('--focus-y', '-300px');
-                    });
-
-                    wrapper.addEventListener('touchmove', function(e) {
-                        if (e.touches && e.touches[0]) {
-                            const rect = wrapper.getBoundingClientRect();
-                            const x = e.touches[0].clientX - rect.left;
-                            const y = e.touches[0].clientY - rect.top;
-                            blurCurtain.style.setProperty('--focus-x', x + 'px');
-                            blurCurtain.style.setProperty('--focus-y', y + 'px');
-                        }
-                    }, { passive: true });
-
-                    wrapper.addEventListener('touchend', function() {
-                        blurCurtain.style.setProperty('--focus-x', '50%');
-                        blurCurtain.style.setProperty('--focus-y', '-300px');
-                    });
-
                     // Renderizar PDF sobre Canvas
                     page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-                        // Construir marca de agua forense sobre la página
+                        // 1. Trama de Seguridad Óptica Tipo Billete Bancario (Anti-Sensor Moiré)
+                        const securityPattern = document.createElement('div');
+                        securityPattern.className = 'banknote-security-pattern';
+                        wrapper.appendChild(securityPattern);
+
+                        // 2. Marca de Agua Forense Auditable
                         const watermarkLayer = document.createElement('div');
                         watermarkLayer.className = 'forensic-watermark-overlay';
 
                         const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
-                        const textoSello = `${FORENSIC_USER_NAME} (${FORENSIC_USER_LOGIN})<br>${FORENSIC_AGENCIA}<br>IP: ${FORENSIC_IP}<br>${ahora}`;
+                        const textoSello = `<span style="font-size:0.62rem; color:#dc2626; font-weight:900; letter-spacing:1px;">DOCUMENTO PROTEGIDO</span><br><b style="color:#0f172a;">${FORENSIC_USER_NAME}</b><br>${FORENSIC_AGENCIA}<br>IP: ${FORENSIC_IP}<br>${ahora}`;
 
                         const numSellos = Math.max(8, Math.floor((w * h) / 40000));
                         for (let s = 0; s < numSellos; s++) {
@@ -930,12 +880,10 @@ sort($categorias);
                             watermarkLayer.appendChild(stamp);
                         }
 
-                        // Capa única: Marca de Agua Forense Limpia y Elegante
                         wrapper.appendChild(watermarkLayer);
                     });
 
                     wrapper.appendChild(canvas);
-                    wrapper.appendChild(blurCurtain);
                 });
             })(pageNum, wrappers[pageNum]);
         }
@@ -957,30 +905,6 @@ sort($categorias);
         document.body.style.overflow = '';
         isViewerActive = false;
         desactivarCensura();
-    }
-
-    // Control del Modo Foco Dinámico Anti-Foto
-    function toggleModoFoco() {
-        modoFocoActivo = !modoFocoActivo;
-        const modal = document.getElementById('visorModalOverlay');
-        const lbl = document.getElementById('lblBtnFoco');
-        const btn = document.getElementById('btnToggleModoFoco');
-
-        if (modoFocoActivo) {
-            modal.classList.remove('modo-foco-desactivado');
-            if (lbl) lbl.textContent = 'Lente Anti-Foto: ON';
-            if (btn) {
-                btn.classList.remove('btn-outline-secondary');
-                btn.classList.add('btn-outline-info');
-            }
-        } else {
-            modal.classList.add('modo-foco-desactivado');
-            if (lbl) lbl.textContent = 'Lente Anti-Foto: OFF';
-            if (btn) {
-                btn.classList.remove('btn-outline-info');
-                btn.classList.add('btn-outline-secondary');
-            }
-        }
     }
 
     // 5. FILTROS DE POLÍTICAS EN TIEMPO REAL
