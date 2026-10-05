@@ -9,6 +9,18 @@ if (file_exists('conexion.php')) {
     $pdo = null;
 }
 
+// Cargar información de la agencia registrada en la BD
+$agenciaInfo = null;
+if ($pdo) {
+    try {
+        $stmtAg = $pdo->query("SELECT nombre, razon_social, logo_url FROM agencias ORDER BY id ASC LIMIT 1");
+        $agenciaInfo = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
+    } catch (Throwable $e) {}
+}
+
+$nombreAgencia = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : 'AGENCIA';
+$logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . $agenciaInfo['logo_url'])) ? $agenciaInfo['logo_url'] : '';
+
 // Si el usuario ya está autenticado, redirigir al menú
 if (isset($_SESSION['usuario_id'])) {
     header("Location: menu.php");
@@ -109,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión - Portal de Sistemas Grupo Huerta</title>
+    <title>Iniciar Sesión - PORTAL <?php echo htmlspecialchars($nombreAgencia); ?></title>
     <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -228,10 +240,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Hero Informativo -->
     <div class="hero-section d-none d-md-block">
-        <div class="brand-subtitle">GRUPO HUERTA</div>
-        <h1 class="hero-title">Portal de Sistemas<br>Corporativo</h1>
+        <?php if (!empty($logoAgencia)): ?>
+            <div class="mb-3">
+                <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="<?php echo htmlspecialchars($nombreAgencia); ?>" class="img-fluid" style="max-height: 85px; max-width: 260px; object-fit: contain; filter: drop-shadow(0 4px 14px rgba(0,0,0,0.5));">
+            </div>
+        <?php endif; ?>
+        <h1 class="hero-title">PORTAL<br><span class="text-primary"><?php echo htmlspecialchars($nombreAgencia); ?></span></h1>
         <p class="hero-desc">
-            Acceso seguro al sistema de gestión corporativo. Gestiona usuarios, monitorea órdenes de servicio y supervisa el inventario de la agencia.
+            Acceso seguro al sistema de gestión de TI, control de infraestructura e inventario de la agencia.
         </p>
         <div class="feature-badge">
             <i class="bi bi-shield-check"></i> Acceso Cifrado & Control de Roles
@@ -241,11 +257,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Tarjeta de Login -->
     <div class="login-card">
         <div class="text-center mb-4">
-            <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-circle p-3 mb-2" style="width: 60px; height: 60px;">
-                <i class="bi bi-building fs-3"></i>
-            </div>
+            <?php if (!empty($logoAgencia)): ?>
+                <div class="mb-3 text-center">
+                    <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo" class="img-fluid" style="max-height: 65px; max-width: 190px; object-fit: contain; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));">
+                </div>
+            <?php else: ?>
+                <div class="d-inline-flex align-items-center justify-content-center bg-primary bg-opacity-10 text-primary rounded-circle p-3 mb-2" style="width: 60px; height: 60px;">
+                    <i class="bi bi-building fs-3"></i>
+                </div>
+            <?php endif; ?>
             <h3 class="fw-bold mb-1">Iniciar Sesión</h3>
-            <p class="text-secondary small">Ingresa tus credenciales para acceder</p>
+            <p class="text-secondary small">PORTAL <?php echo htmlspecialchars($nombreAgencia); ?></p>
         </div>
 
         <?php if (!empty($error)): ?>

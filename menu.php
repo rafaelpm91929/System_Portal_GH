@@ -8,14 +8,28 @@ if (!isset($_SESSION['usuario_id'])) {
 }
 
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? 'Usuario';
-$agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
+
+if (file_exists('conexion.php')) {
+    include_once 'conexion.php';
+}
+
+$agenciaInfo = null;
+if (isset($pdo) && $pdo) {
+    try {
+        $stmtAg = $pdo->query("SELECT nombre, logo_url FROM agencias ORDER BY id ASC LIMIT 1");
+        $agenciaInfo = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
+    } catch (Throwable $e) {}
+}
+
+$agenciaUsuario = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : ($_SESSION['agencia'] ?? 'Agencia');
+$logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . $agenciaInfo['logo_url'])) ? $agenciaInfo['logo_url'] : '';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Sistemas - Grupo Huerta</title>
+    <title>PORTAL <?php echo htmlspecialchars($agenciaUsuario); ?></title>
     <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -151,8 +165,12 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 <!-- Navbar -->
 <div class="top-navbar d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-2">
-        <i class="bi bi-shield-check text-primary fs-4"></i>
-        <span class="fw-bold tracking-wide">GRUPO HUERTA <span class="text-secondary fw-normal">| Portal de Sistemas</span></span>
+        <?php if (!empty($logoAgencia)): ?>
+            <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo" style="max-height: 32px; max-width: 120px; object-fit: contain;">
+        <?php else: ?>
+            <i class="bi bi-shield-check text-primary fs-4"></i>
+        <?php endif; ?>
+        <span class="fw-bold tracking-wide">PORTAL <span class="text-primary"><?php echo htmlspecialchars($agenciaUsuario); ?></span></span>
     </div>
     <div class="d-flex align-items-center gap-3">
         <div class="text-end d-none d-md-block">
@@ -167,8 +185,8 @@ $agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 
 <!-- Header -->
 <div class="header-section">
-    <div class="brand-subtitle">GRUPO HUERTA</div>
-    <h1 class="header-title">Portal de Sistemas</h1>
+    <div class="brand-subtitle">PORTAL <?php echo htmlspecialchars($agenciaUsuario); ?></div>
+    <h1 class="header-title">Panel de Control</h1>
     <p class="header-desc">Selecciona un módulo para continuar</p>
 </div>
 
