@@ -45,121 +45,38 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
 $mensaje = '';
 $error = '';
 
-// 2. Procesamiento de Acciones Administrativas (Subida y Gestión de Políticas)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
-    $accion = $_POST['accion'] ?? '';
+// 2. Consulta Automática de Políticas desde el Portal Central GH (portal.grupohuerta.mx)
+$politicasLista = [];
+$urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
+$ctx = stream_context_create([
+    'http' => [
+        'timeout' => 6,
+        'header'  => "User-Agent: PortalAgencia/1.0\r\n"
+    ],
+    'ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false
+    ]
+]);
 
-    // ACCIÓN: SUBIR NUEVA POLÍTICA CORPORATIVA (ADMIN)
-    if ($accion === 'subir_politica' && $esAdmin) {
-        $titulo = trim($_POST['titulo'] ?? '');
-        $descripcion = trim($_POST['descripcion'] ?? '');
-        $categoria = trim($_POST['categoria'] ?? 'General');
-        $version = trim($_POST['version'] ?? '1.0');
-        $fechaVigencia = !empty($_POST['fecha_vigencia']) ? $_POST['fecha_vigencia'] : null;
-        $obligatorio = isset($_POST['obligatorio_lectura']) ? 1 : 0;
-
-        if (empty($titulo)) {
-            $error = "El título de la política es obligatorio.";
-        } elseif (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
-            $error = "Debes seleccionar un archivo PDF válido.";
-        } else {
-            $ext = strtolower(pathinfo($_FILES['archivo_pdf']['name'], PATHINFO_EXTENSION));
-            if ($ext !== 'pdf') {
-                $error = "Únicamente se permiten archivos en formato PDF.";
-            } else {
-                $dirDestino = __DIR__ . '/uploads/politicas/';
-                if (!file_exists($dirDestino)) {
-                    @mkdir($dirDestino, 0755, true);
-                }
-
-                $nombreLimpio = 'politica_' . time() . '_' . rand(100, 999) . '.pdf';
-                $rutaFisica = $dirDestino . $nombreLimpio;
-                $rutaRelativa = 'uploads/politicas/' . $nombreLimpio;
-
-                if (move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $rutaFisica)) {
-                    try {
-                        $stmtIns = $pdo->prepare("
-                            INSERT INTO politicas_corporativas 
-                            (titulo, descripcion, categoria, archivo_pdf, version, fecha_vigencia, obligatorio_lectura, estatus, creado_por) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-                        ");
-                        $stmtIns->execute([
-                            $titulo, 
-                            $descripcion, 
-                            $categoria, 
-                            $rutaRelativa, 
-                            $version, 
-                            $fechaVigencia, 
-                            $obligatorio, 
-                            $nombreUsuario
-                        ]);
-                        $mensaje = "✅ Política <strong>" . htmlspecialchars($titulo) . "</strong> publicada y protegida exitosamente.";
-                    } catch (Throwable $e) {
-                        $error = "Error al registrar en la base de datos: " . $e->getMessage();
-                    }
-                } else {
-                    $error = "No se pudo guardar el archivo en el servidor. Verifica permisos de la carpeta uploads/politicas.";
-                }
-            }
-        }
-    }
-
-    // ACCIÓN: ELIMINAR POLÍTICA (ADMIN)
-    if ($accion === 'eliminar_politica' && $esAdmin) {
-        $idPol = intval($_POST['politica_id'] ?? 0);
-        if ($idPol > 0) {
-            try {
-                $stmtArchivo = $pdo->prepare("SELECT archivo_pdf FROM politicas_corporativas WHERE id = ?");
-                $stmtArchivo->execute([$idPol]);
-                $archivoBorrar = $stmtArchivo->fetchColumn();
-
-                if ($archivoBorrar && file_exists(__DIR__ . '/' . $archivoBorrar)) {
-                    @unlink(__DIR__ . '/' . $archivoBorrar);
-                }
-
-                $stmtDel = $pdo->prepare("DELETE FROM politicas_corporativas WHERE id = ?");
-                $stmtDel->execute([$idPol]);
-                $mensaje = "🗑️ Política eliminada del sistema.";
-            } catch (Throwable $e) {
-                $error = "Error al eliminar política: " . $e->getMessage();
-            }
-        }
-    }
-
-    // ACCIÓN: SINCRONIZAR POLÍTICAS DESDE EL PORTAL CENTRAL GH
-    if ($accion === 'sincronizar_gh') {
-        $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
-        $ctx = stream_context_create([
-            'http' => ['timeout' => 8, 'header' => "User-Agent: PortalAgencia/1.0\r\n"],
-            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
-        ]);
-        $resp = @file_get_contents($urlCentral, false, $ctx);
-        if ($resp) {
-            $dataJson = json_decode($resp, true);
-            if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
-                $mensaje = "🔄 Sincronización exitosa con la Dirección Central de Grupo Huerta (" . count($dataJson['politicas']) . " políticas verificadas).";
-            } else {
-                $error = "Respuesta vacía o no válida del Portal Central GH.";
-            }
-        } else {
-            $error = "No se pudo conectar al Portal Central GH (portal.grupohuerta.mx). Mostrando políticas registradas en esta agencia.";
-        }
+$resp = @file_get_contents($urlCentral, false, $ctx);
+if ($resp) {
+    $dataJson = json_decode($resp, true);
+    if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
+        $politicasLista = $dataJson['politicas'];
     }
 }
 
-// 3. Consultar Políticas Activas
-$politicasLista = [];
-if ($pdo) {
+// Fallback: si no hay conexión con Central GH, consultar base de datos local
+if (empty($politicasLista) && $pdo) {
     try {
         $stmtList = $pdo->query("
             SELECT * FROM politicas_corporativas 
             WHERE estatus = 1 
             ORDER BY categoria ASC, titulo ASC
         ");
-        $politicasLista = $stmtList->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        $error = "Error al cargar políticas: " . $e->getMessage();
-    }
+        $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $e) {}
 }
 
 // Extraer categorías únicas para filtro
@@ -375,21 +292,15 @@ sort($categorias);
     </div>
 
     <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-1">
+        <span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-30 px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-1.5">
+            <i class="bi bi-cloud-check-fill text-info"></i> Sincronizado con Central GH
+        </span>
+        <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1.5 rounded-pill small d-none d-md-inline-flex align-items-center gap-1">
             <i class="bi bi-shield-lock-fill"></i> Visor Blindado Anti-Captura
         </span>
-
-        <?php if ($esAdmin): ?>
-            <button type="button" class="btn btn-primary btn-sm rounded-3 fw-bold px-3 py-1.5 shadow" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
-                <i class="bi bi-plus-lg me-1"></i> Subir Política (PDF)
-            </button>
-            <form method="POST" class="d-inline">
-                <input type="hidden" name="accion" value="sincronizar_gh">
-                <button type="submit" class="btn btn-outline-info btn-sm rounded-3 py-1.5 px-2" title="Sincronizar Políticas con Dirección Central GH">
-                    <i class="bi bi-arrow-repeat"></i> <span class="d-none d-lg-inline">Sincronizar GH</span>
-                </button>
-            </form>
-        <?php endif; ?>
+        <a href="politicas.php" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-2.5 text-light" title="Actualizar políticas">
+            <i class="bi bi-arrow-clockwise"></i>
+        </a>
     </div>
 </div>
 
@@ -448,15 +359,10 @@ sort($categorias);
     <?php if (empty($politicasLista)): ?>
         <div class="text-center py-5 rounded-4 border border-secondary border-opacity-25 p-5" style="background: rgba(13, 30, 54, 0.4);">
             <i class="bi bi-shield-shaded display-1 text-secondary opacity-50 d-block mb-3"></i>
-            <h4 class="fw-bold text-white">No hay políticas registradas actualmente</h4>
-            <p class="text-secondary small mb-3">
-                Cuando el corporativo publique una nueva política, aparecerá de forma inmediata en este módulo.
+            <h4 class="fw-bold text-white">No hay políticas disponibles actualmente</h4>
+            <p class="text-secondary small mb-0">
+                Las políticas y normativas institucionales publicadas por la Dirección Central de Grupo Huerta aparecerán aquí automáticamente.
             </p>
-            <?php if ($esAdmin): ?>
-                <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
-                    <i class="bi bi-plus-lg me-1"></i> Publicar Primer Documento
-                </button>
-            <?php endif; ?>
         </div>
     <?php else: ?>
         <div class="row g-4" id="contenedorTarjetasPoliticas">
@@ -490,20 +396,10 @@ sort($categorias);
                                 <span><i class="bi bi-file-earmark-pdf text-danger me-1"></i> PDF Protegido</span>
                             </div>
 
-                            <div class="d-flex gap-2">
+                            <div>
                                 <button type="button" class="btn btn-primary btn-sm w-100 rounded-3 fw-bold py-2 d-flex align-items-center justify-content-center gap-1.5 shadow" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>')">
                                     <i class="bi bi-eye-fill"></i> Leer Documento Seguro
                                 </button>
-
-                                <?php if ($esAdmin): ?>
-                                    <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta política corporativa?');">
-                                        <input type="hidden" name="accion" value="eliminar_politica">
-                                        <input type="hidden" name="politica_id" value="<?php echo $pol['id']; ?>">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 py-2 px-2.5" title="Eliminar política">
-                                            <i class="bi bi-trash3-fill"></i>
-                                        </button>
-                                    </form>
-                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -563,79 +459,7 @@ sort($categorias);
     </div>
 </div>
 
-<!-- MODAL: SUBIR NUEVA POLÍTICA (SOLO ADMINISTRADORES) -->
-<?php if ($esAdmin): ?>
-<div class="modal fade" id="modalSubirPolitica" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content text-white" style="background: #0d1e36; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 16px;">
-            <div class="modal-header border-secondary border-opacity-25">
-                <h5 class="modal-title fw-bold text-primary d-flex align-items-center gap-2">
-                    <i class="bi bi-cloud-arrow-up-fill"></i> Publicar Nueva Política Corporativa
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="accion" value="subir_politica">
-                <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Título Oficial de la Política *</label>
-                        <input type="text" name="titulo" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Política de Uso Aceptable de Equipo de Cómputo" required>
-                    </div>
 
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label text-light small fw-bold">Categoría Institucional *</label>
-                            <input list="listaCategorias" name="categoria" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Seguridad de la Información" required>
-                            <datalist id="listaCategorias">
-                                <option value="Seguridad de la Información">
-                                <option value="Uso de Equipos y TI">
-                                <option value="Código de Conducta">
-                                <option value="Recursos Humanos">
-                                <option value="Protección de Datos Personales">
-                                <option value="Operaciones de Agencia">
-                            </datalist>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-light small fw-bold">Versión</label>
-                            <input type="text" name="version" class="form-control bg-dark text-white border-secondary" value="1.0" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-light small fw-bold">Vigencia (Opcional)</label>
-                            <input type="date" name="fecha_vigencia" class="form-control bg-dark text-white border-secondary">
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Descripción Corta / Resumen</label>
-                        <textarea name="descripcion" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="Describe brevemente de qué trata este documento..."></textarea>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Seleccionar Archivo PDF *</label>
-                        <input type="file" name="archivo_pdf" accept="application/pdf" class="form-control bg-dark text-white border-secondary" required>
-                        <div class="form-text text-secondary small">
-                            <i class="bi bi-info-circle text-info"></i> El PDF se blindará automáticamente contra descargas, capturas de pantalla y fotos.
-                        </div>
-                    </div>
-
-                    <div class="form-check form-switch mt-3">
-                        <input class="form-check-input" type="checkbox" name="obligatorio_lectura" id="chkObligatorio" value="1">
-                        <label class="form-check-label text-light small" for="chkObligatorio">
-                            Marcar como <strong>Lectura Obligatoria</strong> para todo el personal
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary border-opacity-25">
-                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary rounded-3 fw-bold px-4">
-                        <i class="bi bi-shield-check me-1"></i> Publicar Documento Seguro
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 

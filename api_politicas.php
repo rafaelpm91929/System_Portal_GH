@@ -18,39 +18,43 @@ $action = $_GET['action'] ?? ($_POST['action'] ?? 'listar');
 
 // 1. STREAM SEGURO DE ARCHIVO PDF (PARA PDF.JS)
 if ($action === 'stream_pdf') {
-    if (!isset($_SESSION['usuario_id'])) {
+    $token = $_GET['token'] ?? ($_SERVER['HTTP_X_GH_TOKEN'] ?? '');
+    $esPeticionAgenciaAutorizada = ($token === 'GH_POLITICAS_SEGURA_2026_CORP');
+
+    if (!isset($_SESSION['usuario_id']) && !$esPeticionAgenciaAutorizada) {
         http_response_code(403);
         die("Acceso no autorizado.");
     }
 
     $id = intval($_GET['id'] ?? 0);
-    if ($id <= 0 || !$pdo) {
+    if ($id <= 0) {
         http_response_code(404);
         die("Documento no encontrado.");
     }
 
-    try {
-        $stmt = $pdo->prepare("SELECT archivo_pdf, titulo FROM politicas_corporativas WHERE id = ? AND estatus = 1 LIMIT 1");
-        $stmt->execute([$id]);
-        $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+    $filePath = null;
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("SELECT archivo_pdf, titulo FROM politicas_corporativas WHERE id = ? AND estatus = 1 LIMIT 1");
+            $stmt->execute([$id]);
+            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$doc) {
-            http_response_code(404);
-            die("Política no disponible o inactiva.");
-        }
+            if ($doc) {
+                $possiblePath = __DIR__ . '/' . $doc['archivo_pdf'];
+                if (file_exists($possiblePath)) {
+                    $filePath = $possiblePath;
+                } else {
+                    $altPath = __DIR__ . '/uploads/politicas/' . basename($doc['archivo_pdf']);
+                    if (file_exists($altPath)) {
+                        $filePath = $altPath;
+                    }
+                }
+            }
+        } catch (Throwable $e) {}
+    }
 
-        $filePath = __DIR__ . '/' . $doc['archivo_pdf'];
-        if (!file_exists($filePath)) {
-            // Intentar buscar relativo en uploads/politicas
-            $filePath = __DIR__ . '/uploads/politicas/' . basename($doc['archivo_pdf']);
-        }
-
-        if (!file_exists($filePath)) {
-            http_response_code(404);
-            die("Archivo físico no encontrado en el servidor.");
-        }
-
-        // Enviar encabezados anti-descarga y anti-caché
+    // A. Si el archivo físico se encuentra en el servidor local
+    if ($filePath && file_exists($filePath)) {
         header('Content-Type: application/pdf');
         header('Content-Length: ' . filesize($filePath));
         header('Content-Disposition: inline; filename="politica_protegida_' . $id . '.pdf"');
@@ -60,11 +64,36 @@ if ($action === 'stream_pdf') {
 
         readfile($filePath);
         exit();
-
-    } catch (Throwable $e) {
-        http_response_code(500);
-        die("Error al procesar el documento: " . $e->getMessage());
     }
+
+    // B. Si NO está en el servidor local (portal de agencia), solicitar stream seguro desde Portal Central GH
+    $urlCentralPdf = 'https://portal.grupohuerta.mx/api_politicas.php?action=stream_pdf&id=' . $id . '&token=GH_POLITICAS_SEGURA_2026_CORP';
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => 20,
+            'header'  => "User-Agent: PortalAgenciaStream/1.0\r\n"
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false
+        ]
+    ]);
+
+    $pdfBytes = @file_get_contents($urlCentralPdf, false, $ctx);
+    if ($pdfBytes !== false && strlen($pdfBytes) > 100) {
+        header('Content-Type: application/pdf');
+        header('Content-Length: ' . strlen($pdfBytes));
+        header('Content-Disposition: inline; filename="politica_protegida_' . $id . '.pdf"');
+        header('Cache-Control: private, no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo $pdfBytes;
+        exit();
+    }
+
+    http_response_code(404);
+    die("Archivo de política no disponible en el servidor ni en Central GH.");
 }
 
 // 2. LISTADO JSON DE POLÍTICAS ACTIVAS
