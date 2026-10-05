@@ -952,7 +952,7 @@ sort($categorias);
                         watermarkLayer.className = 'forensic-watermark-overlay';
 
                         const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
-                        const textoSello = `<span style="font-size:0.62rem; color:#dc2626; font-weight:900; letter-spacing:1px;">DOCUMENTO PROTEGIDO</span><br><b style="color:#0f172a;">${FORENSIC_USER_NAME}</b><br>${FORENSIC_AGENCIA}<br>IP: ${FORENSIC_IP}<br>${ahora}`;
+                        const textoSello = `<span style="font-size:0.62rem; color:#dc2626; font-weight:900; letter-spacing:1px;">DOCUMENTO PROTEGIDO</span><br><b style="color:#0f172a;">${FORENSIC_USER_NAME}</b><br>${FORENSIC_AGENCIA}<br>${ahora}`;
 
                         const numSellos = Math.max(8, Math.floor((w * h) / 40000));
                         for (let s = 0; s < numSellos; s++) {
