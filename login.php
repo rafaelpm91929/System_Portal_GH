@@ -246,12 +246,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         <?php endif; ?>
         <h1 class="hero-title">PORTAL<br><span class="text-primary"><?php echo htmlspecialchars($nombreAgencia); ?></span></h1>
-        <p class="hero-desc">
-            Acceso seguro al sistema de gestión de TI, control de infraestructura e inventario de la agencia.
-        </p>
-        <div class="feature-badge">
-            <i class="bi bi-shield-check"></i> Acceso Cifrado & Control de Roles
-        </div>
     </div>
 
     <!-- Tarjeta de Login -->
