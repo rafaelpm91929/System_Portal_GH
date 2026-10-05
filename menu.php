@@ -23,8 +23,9 @@ $rolUsuario = $_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'SuperAdmin';
 $puedeVerUsuarios = tienePermiso('usuarios', 'puede_ver');
 $puedeVerAgencias = tienePermiso('agencias', 'puede_ver');
 $puedeVerTickets  = tienePermiso('tickets', 'puede_ver');
+$puedeVerPoliticas = tienePermiso('politicas', 'puede_ver');
 
-$totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0);
+$totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0) + ($puedeVerPoliticas ? 1 : 0);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -123,6 +124,10 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
         .card-tickets:hover {
             border-color: #0ea5e9;
             background: #0b263e;
+        }
+        .card-politicas:hover {
+            border-color: #a855f7;
+            background: #190e2b;
         }
 
         .module-icon-box {
@@ -286,6 +291,28 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 
                     <a href="tickets.php" class="btn-module" style="background: #0284c7; box-shadow: 0 4px 15px rgba(14, 165, 233, 0.35);">
                         Ingresar a Tickets <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+
+            <!-- 4. POLÍTICAS CORPORATIVAS -->
+            <?php if ($puedeVerPoliticas): ?>
+                <div class="main-module-card card-politicas" style="border-color: rgba(168, 85, 247, 0.35);">
+                    <span class="module-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
+                        <i class="bi bi-shield-lock-fill"></i> BLINDADO GH
+                    </span>
+
+                    <div class="module-icon-box" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">
+                        <i class="bi bi-file-earmark-lock2-fill"></i>
+                    </div>
+
+                    <div class="module-title">Políticas Corporativas</div>
+                    <div class="module-desc">
+                        Gestión, publicación y distribución de políticas y lineamientos para todas las agencias con visor blindado anti-captura.
+                    </div>
+
+                    <a href="politicas.php" class="btn-module" style="background: #9333ea; box-shadow: 0 4px 15px rgba(147, 51, 234, 0.35);">
+                        Ingresar a Políticas <i class="bi bi-arrow-right ms-1"></i>
                     </a>
                 </div>
             <?php endif; ?>

@@ -102,16 +102,17 @@ function asegurarTablasPermisos($pdo) {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN areas_tickets VARCHAR(255) DEFAULT 'TODOS'");
         } catch (Throwable $eAlter) {}
 
-        // 4. Sembrado Inicial de Módulos (Solo los 3 activos en esta fase)
+        // 4. Sembrado Inicial de Módulos (Módulos activos en esta fase)
         $modulosBase = [
             ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 1, 1],
             ['agencias',         'Agencias (Catálogo cPanel)',         'Monitoreo y administración de sucursales cPanel',            'bi-buildings-fill',       2, 1],
             ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',   'bi-people-fill',          3, 1],
-            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 4, 0],
-            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',          'bi-display-fill',            5, 0],
-            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',          'bi-phone-fill',              6, 0],
-            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',        'bi-key-fill',                7, 0],
-            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',        'bi-hdd-rack-fill',           8, 0]
+            ['politicas',        'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado', 'bi-shield-shaded', 4, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 5, 0],
+            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',          'bi-display-fill',            6, 0],
+            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',          'bi-phone-fill',              7, 0],
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',        'bi-key-fill',                8, 0],
+            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',        'bi-hdd-rack-fill',           9, 0]
         ];
 
         foreach ($modulosBase as $m) {
@@ -126,10 +127,10 @@ function asegurarTablasPermisos($pdo) {
             }
         }
 
-        // Mantener activos únicamente los 3 módulos vigentes
+        // Mantener activos los 4 módulos vigentes
         try {
-            $pdo->exec("UPDATE modulos SET estatus = 1 WHERE clave IN ('tickets', 'agencias', 'usuarios');");
-            $pdo->exec("UPDATE modulos SET estatus = 0 WHERE clave NOT IN ('tickets', 'agencias', 'usuarios');");
+            $pdo->exec("UPDATE modulos SET estatus = 1 WHERE clave IN ('tickets', 'agencias', 'usuarios', 'politicas');");
+            $pdo->exec("UPDATE modulos SET estatus = 0 WHERE clave NOT IN ('tickets', 'agencias', 'usuarios', 'politicas');");
         } catch (Throwable $eUpd) {}
 
     } catch (Throwable $e) {
@@ -144,7 +145,8 @@ function obtenerCatalogoModulos($pdo = null) {
     $modulosDefault = [
         ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'icono' => 'bi-ticket-detailed-fill', 'orden' => 1],
         ['clave' => 'agencias',         'nombre' => 'Agencias (Catálogo cPanel)',         'descripcion' => 'Monitoreo y administración de sucursales cPanel',            'icono' => 'bi-buildings-fill',       'orden' => 2],
-        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',   'icono' => 'bi-people-fill',          'orden' => 3, 'estatus' => 1]
+        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',   'icono' => 'bi-people-fill',          'orden' => 3, 'estatus' => 1],
+        ['clave' => 'politicas',        'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado', 'icono' => 'bi-shield-shaded', 'orden' => 4, 'estatus' => 1]
     ];
 
     if ($pdo) {
@@ -421,6 +423,58 @@ function asegurarTablaCitas($pdo = null) {
                     `hora_cita` VARCHAR(20) NOT NULL,
                     `estado` VARCHAR(50) DEFAULT 'Programada',
                     `notas_atencion` TEXT,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Auto-Instala o asegura la existencia de la tabla politicas_corporativas en MySQL o SQLite
+ */
+function asegurarTablaPoliticas($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS politicas_corporativas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT,
+                    categoria TEXT DEFAULT 'General',
+                    archivo_pdf TEXT NOT NULL,
+                    version TEXT DEFAULT '1.0',
+                    fecha_vigencia DATE,
+                    obligatorio_lectura INTEGER DEFAULT 0,
+                    estatus INTEGER DEFAULT 1,
+                    creado_por TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT NULL,
+                    `categoria` VARCHAR(100) DEFAULT 'General',
+                    `archivo_pdf` VARCHAR(255) NOT NULL,
+                    `version` VARCHAR(20) DEFAULT '1.0',
+                    `fecha_vigencia` DATE NULL,
+                    `obligatorio_lectura` TINYINT(1) DEFAULT 0,
+                    `estatus` TINYINT(1) DEFAULT 1,
+                    `creado_por` VARCHAR(100) NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

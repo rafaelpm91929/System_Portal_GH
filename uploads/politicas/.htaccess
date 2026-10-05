@@ -1,0 +1,5 @@
+# Bloquear descarga directa de PDFs desde la barra de direcciones del navegador
+<FilesMatch "\.(pdf|PDF)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
