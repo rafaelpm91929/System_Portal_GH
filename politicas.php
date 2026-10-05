@@ -247,6 +247,52 @@ sort($categorias);
                 repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 0px, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 3px);
         }
 
+        /* CAPA 3: MICROPULSO ESTROBOSCÓPICO ANTI-CÁMARA (ROLLING SHUTTER ATTACK) */
+        .anti-camera-shutter-layer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 7;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.055) 0px,
+                rgba(0, 0, 0, 0.055) 2px,
+                transparent 2px,
+                transparent 5px
+            );
+            animation: shutterFlicker 0.033s steps(2, start) infinite;
+        }
+
+        @keyframes shutterFlicker {
+            0% { transform: translateY(0px); opacity: 0.95; }
+            50% { transform: translateY(2px); opacity: 0.35; }
+            100% { transform: translateY(0px); opacity: 0.95; }
+        }
+
+        /* CAPA 4: BARRIDO ASÍNCRONO DE INTERFERENCIA PARA SENSORES CMOS DE CELULAR */
+        .anti-camera-rolling-band {
+            position: absolute;
+            top: -50%; left: 0;
+            width: 100%; height: 50%;
+            pointer-events: none;
+            z-index: 8;
+            background: linear-gradient(
+                180deg,
+                transparent 0%,
+                rgba(0, 0, 0, 0.08) 25%,
+                rgba(0, 0, 0, 0.18) 50%,
+                rgba(0, 0, 0, 0.08) 75%,
+                transparent 100%
+            );
+            animation: rollingShutterBand 0.075s linear infinite;
+        }
+
+        @keyframes rollingShutterBand {
+            0% { top: -50%; }
+            100% { top: 150%; }
+        }
+
         /* CAPA 3: CORTINA DE SEGURIDAD NEGRA (SE DISPARA EN BLUR/RECORTE) */
         #censorSecurityShield {
             position: fixed;
@@ -421,7 +467,10 @@ sort($categorias);
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2.5 py-1 rounded-pill small font-monospace">
                 <i class="bi bi-shield-fill-x me-1"></i> LECTURA PROTEGIDA
             </span>
-            <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 45vw;">
+            <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2.5 py-1 rounded-pill small font-monospace d-none d-md-inline-flex align-items-center gap-1">
+                <i class="bi bi-camera-video-off-fill"></i> ESCUDO ANTI-FOTO
+            </span>
+            <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 40vw;">
                 Cargando Documento...
             </h6>
         </div>
@@ -665,8 +714,18 @@ sort($categorias);
                         const moireMesh = document.createElement('div');
                         moireMesh.className = 'anti-camera-moire-mesh';
 
+                        // Capa de Micropulso Anti-Cámara (Rolling Shutter)
+                        const shutterLayer = document.createElement('div');
+                        shutterLayer.className = 'anti-camera-shutter-layer';
+
+                        // Capa de Barrido de Interferencia Asíncrona CMOS
+                        const rollingBand = document.createElement('div');
+                        rollingBand.className = 'anti-camera-rolling-band';
+
                         wrapper.appendChild(watermarkLayer);
                         wrapper.appendChild(moireMesh);
+                        wrapper.appendChild(shutterLayer);
+                        wrapper.appendChild(rollingBand);
                     });
 
                     wrapper.appendChild(canvas);
