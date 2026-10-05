@@ -258,13 +258,14 @@ sort($categorias);
 
         #visorCanvasContainer {
             flex-grow: 1;
+            height: calc(100vh - 65px);
             overflow-y: auto;
             overflow-x: auto;
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 20px;
-            gap: 24px;
+            padding: 30px 20px;
+            gap: 30px;
             position: relative;
             background: #050e1c;
         }
@@ -272,17 +273,19 @@ sort($categorias);
         /* CONTENEDOR DE CADA PÁGINA CON CAPAS DE SEGURIDAD */
         .pdf-page-wrapper {
             position: relative;
-            display: inline-block;
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.8);
-            border-radius: 4px;
+            flex-shrink: 0 !important;
+            display: block;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.85);
+            border-radius: 6px;
             overflow: hidden;
             background: #ffffff;
+            margin: 0 auto;
         }
 
         .pdf-page-canvas {
             display: block;
-            max-width: 100%;
-            height: auto;
+            width: 100%;
+            height: 100%;
         }
 
         /* CAPA 1: MARCA DE AGUA FORENSE DINÁMICA REPETIDA EN MOSAICO */
@@ -294,8 +297,8 @@ sort($categorias);
             z-index: 5;
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-            grid-auto-rows: 140px;
-            opacity: 0.22;
+            grid-auto-rows: 150px;
+            opacity: 0.16;
             overflow: hidden;
         }
 
@@ -749,7 +752,7 @@ sort($categorias);
         // URL segura del stream (sin exponer el archivo directo)
         const pdfUrl = 'api_politicas.php?action=stream_pdf&id=' + encodeURIComponent(docId);
 
-        currentZoom = (window.innerWidth < 768) ? 0.75 : 1.15;
+        currentZoom = (window.innerWidth < 768) ? 0.9 : 1.25;
         document.getElementById('visorZoomBadge').textContent = Math.round(currentZoom * 100) + '%';
 
         pdfjsLib.getDocument({ url: pdfUrl, withCredentials: true }).promise.then(function(pdf) {
@@ -771,24 +774,50 @@ sort($categorias);
         });
     }
 
-    // 3. RENDERIZAR CADA PÁGINA EN CANVAS CON CAPAS DE SEGURIDAD
+    // 3. RENDERIZAR CADA PÁGINA EN CANVAS CON CAPAS DE SEGURIDAD (EN ORDEN SECUENCIAL)
     function renderizarTodasLasPaginas(pdf, container) {
+        container.innerHTML = '';
+        const wrappers = [];
+
+        // 1. Crear los contenedores individuales en orden secuencial estricto
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-            (function(num) {
+            const pageWrapper = document.createElement('div');
+            pageWrapper.className = 'pdf-page-wrapper';
+            pageWrapper.id = 'page-slot-' + pageNum;
+            pageWrapper.style.flexShrink = '0';
+            pageWrapper.innerHTML = `
+                <div class="text-center py-5 text-secondary" style="min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                    <span style="font-size: 0.8rem;">Cargando página ${pageNum} de ${pdf.numPages}...</span>
+                </div>
+            `;
+            container.appendChild(pageWrapper);
+            wrappers[pageNum] = pageWrapper;
+        }
+
+        // 2. Renderizar cada página en su respectivo contenedor
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            (function(num, wrapper) {
                 pdf.getPage(num).then(function(page) {
                     const viewport = page.getViewport({ scale: currentZoom });
+                    const w = Math.round(viewport.width);
+                    const h = Math.round(viewport.height);
 
-                    // Contenedor de la página
-                    const pageWrapper = document.createElement('div');
-                    pageWrapper.className = 'pdf-page-wrapper';
-                    pageWrapper.style.width = viewport.width + 'px';
-                    pageWrapper.style.height = viewport.height + 'px';
+                    // Dimensiones fijas inalterables contra aplastamiento de flexbox
+                    wrapper.style.width = w + 'px';
+                    wrapper.style.height = h + 'px';
+                    wrapper.style.minHeight = h + 'px';
+                    wrapper.style.maxHeight = h + 'px';
+                    wrapper.style.flexShrink = '0';
+                    wrapper.innerHTML = ''; // Limpiar loader de página
 
-                    // Lienzo Canvas
+                    // Canvas para dibujo del PDF
                     const canvas = document.createElement('canvas');
                     canvas.className = 'pdf-page-canvas';
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
+                    canvas.width = w;
+                    canvas.height = h;
+                    canvas.style.width = w + 'px';
+                    canvas.style.height = h + 'px';
                     const ctx = canvas.getContext('2d');
 
                     // Renderizar PDF sobre Canvas
@@ -800,8 +829,7 @@ sort($categorias);
                         const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
                         const textoSello = `${FORENSIC_USER_NAME} (${FORENSIC_USER_LOGIN})<br>${FORENSIC_AGENCIA}<br>IP: ${FORENSIC_IP}<br>${ahora}`;
 
-                        // Generar múltiples sellos repetitivos en cuadrícula
-                        const numSellos = Math.max(12, Math.floor((viewport.width * viewport.height) / 35000));
+                        const numSellos = Math.max(8, Math.floor((w * h) / 40000));
                         for (let s = 0; s < numSellos; s++) {
                             const stamp = document.createElement('div');
                             stamp.className = 'watermark-stamp';
@@ -813,14 +841,13 @@ sort($categorias);
                         const moireMesh = document.createElement('div');
                         moireMesh.className = 'anti-camera-moire-mesh';
 
-                        pageWrapper.appendChild(watermarkLayer);
-                        pageWrapper.appendChild(moireMesh);
+                        wrapper.appendChild(watermarkLayer);
+                        wrapper.appendChild(moireMesh);
                     });
 
-                    pageWrapper.appendChild(canvas);
-                    container.appendChild(pageWrapper);
+                    wrapper.appendChild(canvas);
                 });
-            })(pageNum);
+            })(pageNum, wrappers[pageNum]);
         }
     }
 
