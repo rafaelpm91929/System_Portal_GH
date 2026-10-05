@@ -461,6 +461,18 @@ function asegurarTablaPoliticas($pdo = null) {
                     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
                     actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS politicas_lecturas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    politica_id INTEGER NOT NULL,
+                    politica_titulo TEXT NOT NULL,
+                    usuario_id INTEGER,
+                    usuario_nombre TEXT NOT NULL,
+                    usuario_login TEXT NOT NULL,
+                    agencia TEXT NOT NULL,
+                    ip TEXT NOT NULL,
+                    origen TEXT DEFAULT 'Portal GH',
+                    fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             $pdo->exec("
@@ -477,6 +489,22 @@ function asegurarTablaPoliticas($pdo = null) {
                     `creado_por` VARCHAR(100) NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `politicas_lecturas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `politica_id` INT NOT NULL,
+                    `politica_titulo` VARCHAR(255) NOT NULL,
+                    `usuario_id` INT NULL,
+                    `usuario_nombre` VARCHAR(150) NOT NULL,
+                    `usuario_login` VARCHAR(100) NOT NULL,
+                    `agencia` VARCHAR(100) NOT NULL,
+                    `ip` VARCHAR(50) NOT NULL,
+                    `origen` VARCHAR(50) DEFAULT 'Portal GH',
+                    `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_politica` (`politica_id`),
+                    INDEX `idx_usuario` (`usuario_login`),
+                    INDEX `idx_fecha` (`fecha_lectura`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }

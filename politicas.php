@@ -388,6 +388,9 @@ sort($categorias);
         </span>
 
         <?php if ($esAdmin): ?>
+            <button type="button" class="btn btn-warning btn-sm rounded-3 fw-bold px-3 py-1.5 shadow d-flex align-items-center gap-1.5" onclick="abrirModalAuditoriaLecturas()">
+                <i class="bi bi-clock-history"></i> <span class="d-none d-md-inline">Bitácora de</span> Lecturas
+            </button>
             <button type="button" class="btn btn-primary btn-sm rounded-3 fw-bold px-3 py-1.5 shadow" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
                 <i class="bi bi-plus-lg me-1"></i> Subir Política (PDF)
             </button>
@@ -648,6 +651,82 @@ sort($categorias);
         </div>
     </div>
 </div>
+
+<!-- MODAL: AUDITORÍA Y BITÁCORA DE LECTURAS DE POLÍTICAS -->
+<div class="modal fade" id="modalAuditoriaLecturas" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background: #0b1a2f; border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 16px;">
+            <div class="modal-header border-secondary border-opacity-25 pb-3">
+                <div>
+                    <h5 class="modal-title fw-bold text-warning d-flex align-items-center gap-2 mb-1">
+                        <i class="bi bi-shield-check"></i> Bitácora de Lecturas y Auditoría de Acceso
+                    </h5>
+                    <p class="text-secondary small mb-0">Registro en tiempo real de qué colaboradores y agencias han consultado las políticas corporativas.</p>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- KPI STATS -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                            <span class="text-secondary small d-block">Total de Lecturas Realizadas</span>
+                            <h3 class="fw-bold text-white mb-0" id="kpiTotalLecturas">0</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                            <span class="text-secondary small d-block">Colaboradores Únicos</span>
+                            <h3 class="fw-bold text-info mb-0" id="kpiUsuariosUnicos">0</h3>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
+                            <span class="text-secondary small d-block">Agencias / Portales Activos</span>
+                            <h3 class="fw-bold text-success mb-0" id="kpiAgenciasActivas">0</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTROS Y BÚSQUEDA -->
+                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+                    <div class="input-group input-group-sm" style="max-width: 340px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" id="filtroTablaAuditoria" class="form-control bg-dark text-white border-secondary" placeholder="Buscar por empleado, agencia, política..." oninput="filtrarTablaAuditoria()">
+                    </div>
+                    <button type="button" class="btn btn-outline-warning btn-sm rounded-3" onclick="cargarBitacoraLecturas()">
+                        <i class="bi bi-arrow-repeat me-1"></i> Actualizar Bitácora
+                    </button>
+                </div>
+
+                <!-- TABLA DE AUDITORÍA -->
+                <div class="table-responsive rounded-3 border border-secondary border-opacity-25">
+                    <table class="table table-dark table-hover mb-0 align-middle small" id="tablaAuditoriaLecturas">
+                        <thead class="table-dark text-secondary font-monospace" style="border-bottom: 2px solid rgba(255,255,255,0.1);">
+                            <tr>
+                                <th>FECHA Y HORA</th>
+                                <th>COLABORADOR</th>
+                                <th>AGENCIA / PORTAL</th>
+                                <th>POLÍTICA CONSULTADA</th>
+                                <th>DIRECCIÓN IP</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyAuditoriaLecturas">
+                            <tr>
+                                <td colspan="5" class="text-center py-4 text-secondary">
+                                    <div class="spinner-border spinner-border-sm text-warning me-2"></div> Cargando bitácora de lecturas...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-secondary btn-sm rounded-3 px-3" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -777,6 +856,9 @@ sort($categorias);
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
+
+        // Registrar lectura en bitácora auditable
+        registrarLecturaAuditoria(docId, tituloDoc);
 
         // Limpiar visor y mostrar loader
         container.innerHTML = `
@@ -938,6 +1020,127 @@ sort($categorias);
                 item.style.display = 'none';
             }
         });
+    }
+
+    // 6. SISTEMA DE BITÁCORA Y AUDITORÍA DE LECTURAS
+    let bitacoraLecturasData = [];
+
+    function registrarLecturaAuditoria(docId, tituloDoc) {
+        try {
+            const formData = new FormData();
+            formData.append('action', 'registrar_lectura');
+            formData.append('politica_id', docId);
+            formData.append('politica_titulo', tituloDoc);
+            formData.append('usuario_nombre', FORENSIC_USER_NAME);
+            formData.append('usuario_login', FORENSIC_USER_LOGIN);
+            formData.append('agencia', FORENSIC_AGENCIA);
+            formData.append('ip', FORENSIC_IP);
+            formData.append('origen', 'Portal Central GH');
+
+            fetch('api_politicas.php', {
+                method: 'POST',
+                body: formData
+            }).catch(e => console.warn('Audit err:', e));
+        } catch(err) {}
+    }
+
+    function abrirModalAuditoriaLecturas() {
+        const modalEl = document.getElementById('modalAuditoriaLecturas');
+        if (!modalEl) return;
+        const bsModal = new bootstrap.Modal(modalEl);
+        bsModal.show();
+        cargarBitacoraLecturas();
+    }
+
+    function cargarBitacoraLecturas() {
+        const tbody = document.getElementById('tbodyAuditoriaLecturas');
+        if (!tbody) return;
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center py-4 text-secondary">
+                    <div class="spinner-border spinner-border-sm text-warning me-2"></div> Actualizando bitácora de lecturas...
+                </td>
+            </tr>
+        `;
+
+        fetch('api_politicas.php?action=obtener_lecturas')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.exito) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">${data.error || 'Error al cargar la bitácora.'}</td></tr>`;
+                    return;
+                }
+
+                // Actualizar KPIs
+                if (data.stats) {
+                    document.getElementById('kpiTotalLecturas').textContent = data.stats.total_lecturas || 0;
+                    document.getElementById('kpiUsuariosUnicos').textContent = data.stats.usuarios_unicos || 0;
+                    document.getElementById('kpiAgenciasActivas').textContent = data.stats.agencias_activas || 0;
+                }
+
+                bitacoraLecturasData = data.lecturas || [];
+                renderizarFilasBitacora(bitacoraLecturasData);
+            })
+            .catch(err => {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error de conexión al cargar auditoría: ${err.message}</td></tr>`;
+            });
+    }
+
+    function renderizarFilasBitacora(filas) {
+        const tbody = document.getElementById('tbodyAuditoriaLecturas');
+        if (!tbody) return;
+
+        if (filas.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center py-4 text-secondary">
+                        <i class="bi bi-inbox fs-3 d-block mb-2 opacity-50"></i>
+                        No hay lecturas registradas aún en la bitácora.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        filas.forEach(row => {
+            const fechaStr = row.fecha_lectura ? new Date(row.fecha_lectura.replace(' ', 'T')).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'Reciente';
+            const esCentral = (row.origen || '').toLowerCase().includes('central') || (row.agencia || '').toLowerCase().includes('corporativo') || (row.agencia || '').toLowerCase().includes('huerta');
+            const badgeAgencia = esCentral 
+                ? `<span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-30 rounded-pill"><i class="bi bi-building me-1"></i>${row.agencia}</span>`
+                : `<span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30 rounded-pill"><i class="bi bi-shop me-1"></i>${row.agencia}</span>`;
+
+            html += `
+                <tr>
+                    <td class="font-monospace text-secondary">${fechaStr}</td>
+                    <td>
+                        <span class="fw-bold text-white">${row.usuario_nombre}</span>
+                        <span class="text-secondary small d-block font-monospace">@${row.usuario_login}</span>
+                    </td>
+                    <td>${badgeAgencia}</td>
+                    <td>
+                        <span class="text-light fw-semibold">${row.politica_titulo}</span>
+                        <span class="text-secondary small d-block font-monospace">ID: #${row.politica_id}</span>
+                    </td>
+                    <td class="font-monospace text-info small">${row.ip || '127.0.0.1'}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+    }
+
+    function filtrarTablaAuditoria() {
+        const q = (document.getElementById('filtroTablaAuditoria').value || '').toLowerCase().trim();
+        if (!q) {
+            renderizarFilasBitacora(bitacoraLecturasData);
+            return;
+        }
+
+        const filtradas = bitacoraLecturasData.filter(r => {
+            const txt = `${r.usuario_nombre} ${r.usuario_login} ${r.agencia} ${r.politica_titulo} ${r.ip}`.toLowerCase();
+            return txt.includes(q);
+        });
+        renderizarFilasBitacora(filtradas);
     }
 </script>
 </body>
