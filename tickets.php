@@ -835,10 +835,10 @@ if ($pdo) {
                 <p class="text-secondary small mb-0">Listado y seguimiento de requerimientos e incidencias para la Dirección de Sistemas.</p>
             </div>
             <div class="text-md-end">
-                <button type="button" class="btn btn-primary btn-lg rounded-4 px-4 py-3 fw-bold d-inline-flex align-items-center justify-content-center gap-2.5 shadow-lg w-100 w-md-auto" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 1.15rem; min-height: 56px; box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45) !important;" data-bs-toggle="modal" data-bs-target="#modalNuevoTicket">
+                <a href="ticket_nuevo.php" target="_blank" class="btn btn-primary btn-lg rounded-4 px-4 py-3 fw-bold d-inline-flex align-items-center justify-content-center gap-2.5 shadow-lg w-100 w-md-auto text-decoration-none" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); border: 1px solid rgba(56, 189, 248, 0.4); font-size: 1.15rem; min-height: 56px; box-shadow: 0 6px 20px rgba(2, 132, 199, 0.45) !important;">
                     <i class="bi bi-plus-circle-fill fs-4 text-white"></i>
                     <span>Levantar Nuevo Ticket</span>
-                </button>
+                </a>
             </div>
         </div>
     </div>
@@ -933,9 +933,10 @@ if ($pdo) {
                                 
                                 <!-- Folio -->
                                 <td>
-                                    <span class="font-monospace fw-bold text-info">
-                                        <?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?>
-                                    </span>
+                                    <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="font-monospace fw-bold text-info text-decoration-none d-inline-flex align-items-center gap-1.5" title="Abrir ticket en nueva pestaña">
+                                        <span><?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?></span>
+                                        <i class="bi bi-box-arrow-up-right" style="font-size: 0.7rem;"></i>
+                                    </a>
                                 </td>
 
                                 <!-- Área Destino -->
@@ -947,11 +948,13 @@ if ($pdo) {
 
                                 <!-- Título / Asunto -->
                                 <td>
-                                    <div class="fw-bold text-white fs-6">
-                                        <?php echo htmlspecialchars($t['titulo']); ?>
-                                        <?php if (!empty($t['archivo_adjunto'])): ?>
-                                            <i class="bi bi-paperclip text-info ms-1" title="Contiene archivo adjunto"></i>
-                                        <?php endif; ?>
+                                    <div>
+                                        <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="fw-bold text-white fs-6 text-decoration-none" title="Ver requerimiento y responder">
+                                            <?php echo htmlspecialchars($t['titulo']); ?>
+                                            <?php if (!empty($t['archivo_adjunto'])): ?>
+                                                <i class="bi bi-paperclip text-info ms-1" title="Contiene archivo adjunto"></i>
+                                            <?php endif; ?>
+                                        </a>
                                     </div>
                                     <div class="text-secondary small text-truncate" style="max-width: 380px;">
                                         <?php echo htmlspecialchars(mb_substr($t['descripcion'], 0, 90)); ?><?php echo mb_strlen($t['descripcion']) > 90 ? '...' : ''; ?>
@@ -1009,10 +1012,10 @@ if ($pdo) {
                                 <!-- Acciones -->
                                 <td class="text-end">
                                     <div class="d-inline-flex gap-1.5">
-                                        <!-- Ver Detalle / Seguimiento -->
-                                        <button type="button" class="btn-action-icon text-info" onclick="abrirModalDetalleTicket(<?php echo htmlspecialchars(json_encode($t), ENT_QUOTES, 'UTF-8'); ?>)" title="Ver Detalle y Dar Seguimiento">
-                                            <i class="bi bi-eye-fill"></i>
-                                        </button>
+                                        <!-- Ver Detalle / Contestar en Nueva Pestaña -->
+                                        <a href="ticket_detalle.php?id=<?php echo $t['id']; ?>" target="_blank" class="btn-action-icon text-info" title="Ver Detalle y Contestar Ticket en Nueva Pestaña">
+                                            <i class="bi bi-chat-left-dots-fill"></i>
+                                        </a>
                                         
                                         <?php if ($esAdmin): ?>
                                             <!-- Eliminar Ticket -->
@@ -1035,205 +1038,7 @@ if ($pdo) {
     </div>
 </div>
 
-<!-- ====================================================
-     MODAL: LEVANTAR NUEVO TICKET
-     ==================================================== -->
-<div class="modal fade" id="modalNuevoTicket" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg">
-            <div class="modal-header py-3">
-                <div class="d-flex align-items-center gap-2">
-                    <div class="kpi-icon kpi-cyan" style="width: 40px; height: 40px; font-size: 1.2rem;">
-                        <i class="bi bi-ticket-detailed-fill"></i>
-                    </div>
-                    <div>
-                        <h5 class="modal-title fw-bold mb-0">Levantar Nuevo Ticket de Soporte</h5>
-                        <small class="text-secondary">Dirección de Sistemas - Requerimientos e Incidencias</small>
-                    </div>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <form method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="accion" value="crear_ticket">
-                <div class="modal-body p-4">
-                    <div class="row g-3">
-                        <!-- Área de Sistemas Destinataria -->
-                        <div class="col-md-7">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Área de Sistemas Asignada <span class="text-danger">*</span></label>
-                            <select name="area_sistemas" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
-                                <option value="" disabled selected>Selecciona el área de soporte...</option>
-                                <?php foreach ($AREAS_SISTEMAS as $k => $info): ?>
-                                    <option value="<?php echo $k; ?>"><?php echo $k; ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
 
-                        <!-- Prioridad -->
-                        <div class="col-md-5">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Nivel de Prioridad <span class="text-danger">*</span></label>
-                            <select name="prioridad" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" required>
-                                <option value="Baja">Baja (Requerimiento general)</option>
-                                <option value="Media" selected>Media (Operación normal)</option>
-                                <option value="Alta">Alta (Afecta operación parcial)</option>
-                                <option value="Urgente">Urgente (Bloqueo crítico)</option>
-                            </select>
-                        </div>
-
-                        <!-- Título / Asunto -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Título / Asunto Breve <span class="text-danger">*</span></label>
-                            <input type="text" name="titulo" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Ej. Falla en enlace de Internet / Acceso a base de datos / Publicación en Redes..." required>
-                        </div>
-
-                        <!-- Descripción Detallada -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Descripción Detallada del Requerimiento o Falla <span class="text-danger">*</span></label>
-                            <textarea name="descripcion" rows="4" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Describe detalladamente qué necesitas o qué error ocurre..." required></textarea>
-                        </div>
-
-                        <!-- Archivo Adjunto -->
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Adjuntar Archivo o Captura (Opcional)</label>
-                            <input type="file" name="archivo_adjunto" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.zip">
-                            <div class="form-text text-secondary small">Formatos permitidos: Imágenes (PNG, JPG), PDF, Documentos Word/Excel.</div>
-                        </div>
-
-                        <!-- Datos del Solicitante Prellenados -->
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Solicitante</label>
-                            <div class="input-group">
-                                <input type="text" name="solicitante_nombre" value="<?php echo htmlspecialchars($nombreUsuario); ?>" class="form-control rounded-start-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
-                                <?php if (!empty($loginUsuario)): ?>
-                                    <span class="input-group-text bg-dark text-info border-secondary border-opacity-25 font-monospace small" title="Usuario de cuenta">@<?php echo htmlspecialchars($loginUsuario); ?></span>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Sucursal / Agencia</label>
-                            <input type="text" name="solicitante_agencia" value="<?php echo htmlspecialchars($agenciaUsuario); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Correo de Contacto</label>
-                            <input type="email" name="solicitante_email" value="<?php echo htmlspecialchars($_SESSION['usuario_email'] ?? ''); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" placeholder="correo@empresa.com">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer py-3">
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 px-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-4 fw-bold shadow-sm" style="background: #0284c7; border-color: #0284c7;">
-                        <i class="bi bi-send-fill me-1"></i> Registrar Ticket
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- ====================================================
-     MODAL: DETALLE Y SEGUIMIENTO DE TICKET
-     ==================================================== -->
-<div class="modal fade" id="modalDetalleTicket" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg">
-            <div class="modal-header py-3">
-                <div class="d-flex align-items-center gap-2">
-                    <span class="font-monospace fs-5 fw-bold text-info" id="viewFolio">TK-0000</span>
-                    <span id="viewAreaBadge" class="area-badge">ÁREA</span>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-            </div>
-            <form method="POST">
-                <input type="hidden" name="accion" value="actualizar_ticket">
-                <input type="hidden" name="ticket_id" id="editTicketId" value="0">
-
-                <div class="modal-body p-4">
-                    <!-- Título -->
-                    <h5 class="fw-bold text-white mb-2" id="viewTitulo">Título del Ticket</h5>
-
-                    <!-- Metadatos -->
-                    <div class="p-3 rounded-3 mb-3" style="background: rgba(6, 19, 37, 0.7); border: 1px solid rgba(255, 255, 255, 0.08);">
-                        <div class="row g-2">
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Solicitante</div>
-                                <div class="text-white small fw-semibold" id="viewSolicitante">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Agencia / Sucursal</div>
-                                <div class="text-white small fw-semibold" id="viewAgencia">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Prioridad</div>
-                                <div class="small fw-bold" id="viewPrioridad">--</div>
-                            </div>
-                            <div class="col-6 col-md-3">
-                                <div class="text-secondary small fw-bold text-uppercase" style="font-size: 0.7rem;">Fecha Creación</div>
-                                <div class="text-secondary small font-monospace" id="viewFecha">--</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Descripción -->
-                    <div class="mb-3">
-                        <label class="form-label text-secondary small fw-bold text-uppercase mb-1">Descripción del Requerimiento</label>
-                        <div class="p-3 rounded-3 text-white small" id="viewDescripcion" style="background: #061325; border: 1px solid rgba(255, 255, 255, 0.08); white-space: pre-line; min-height: 80px;">
-                            --
-                        </div>
-                    </div>
-
-                    <!-- Archivo Adjunto -->
-                    <div class="mb-3" id="viewContenedorAdjunto" style="display: none;">
-                        <label class="form-label text-secondary small fw-bold text-uppercase mb-1">Evidencia / Archivo Adjunto</label>
-                        <div>
-                            <a href="#" id="viewArchivoLink" target="_blank" class="btn btn-outline-info btn-sm rounded-3">
-                                <i class="bi bi-paperclip me-1"></i> Visualizar Archivo Adjunto
-                            </a>
-                        </div>
-                    </div>
-
-                    <!-- Respuesta y Seguimiento de la Dirección Central de TI -->
-                    <div id="viewRespuestaCentral" class="p-3 rounded-3 mb-3" style="background: rgba(14, 165, 233, 0.14); border: 1px solid rgba(56, 189, 248, 0.4); display: none;">
-                        <div class="d-flex align-items-center justify-content-between mb-1">
-                            <h6 class="fw-bold text-info mb-0"><i class="bi bi-headset me-2"></i> Respuesta de la Dirección Central de Sistemas</h6>
-                            <span class="badge bg-primary rounded-pill px-2.5 py-1" id="viewRespuestaAgente">Central TI</span>
-                        </div>
-                        <div class="text-secondary small mb-2" id="viewRespuestaFecha" style="font-size: 0.72rem;"></div>
-                        <div class="text-white small p-2.5 rounded-2" id="viewRespuestaTexto" style="background: rgba(4, 13, 26, 0.6); white-space: pre-line; line-height: 1.5;"></div>
-                    </div>
-
-                    <hr class="border-secondary border-opacity-25 my-3">
-
-                    <!-- SECCIÓN DE SEGUIMIENTO Y RESOLUCIÓN -->
-                    <h6 class="fw-bold text-info mb-3"><i class="bi bi-arrow-repeat me-1"></i> Actualizar Estatus y Seguimiento</h6>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Estado del Ticket</label>
-                            <select name="estado" id="editEstado" class="form-select rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;">
-                                <option value="Abierto">Abierto (En espera)</option>
-                                <option value="En Proceso">En Proceso (Trabajando)</option>
-                                <option value="Resuelto">Resuelto (Solución entregada)</option>
-                                <option value="Cerrado">Cerrado (Finalizado)</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Técnico / Responsable Asignado</label>
-                            <input type="text" name="asignado_a" id="editAsignadoA" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Ej. Ing. de Desarrollo / Soporte TI...">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label text-secondary small fw-bold text-uppercase">Notas de Seguimiento / Solución Aplicada</label>
-                            <textarea name="notas_resolucion" id="editNotas" rows="3" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #ffffff;" placeholder="Escribe aquí los avances, respuesta o solución dada al ticket..."></textarea>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer py-3">
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 px-3" data-bs-dismiss="modal">Cerrar</button>
-                    <button type="submit" class="btn btn-success btn-sm rounded-3 px-4 fw-bold shadow-sm" style="background: #16a34a; border-color: #16a34a;">
-                        <i class="bi bi-check2-circle me-1"></i> Guardar Cambios
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -1278,59 +1083,6 @@ if ($pdo) {
     function limpiarBuscador() {
         document.getElementById('buscadorTickets').value = '';
         filtrarTicketsEnVivo();
-    }
-
-    function abrirModalDetalleTicket(ticket) {
-        if (!ticket) return;
-
-        document.getElementById('editTicketId').value = ticket.id;
-        document.getElementById('viewFolio').textContent = ticket.folio || ('#TK-' + ticket.id);
-        document.getElementById('viewTitulo').textContent = ticket.titulo || 'Sin Título';
-        let solicitanteTxt = ticket.solicitante_nombre || '---';
-        if (ticket.solicitante_usuario) {
-            solicitanteTxt += ' (@' + ticket.solicitante_usuario + ')';
-        }
-        document.getElementById('viewSolicitante').textContent = solicitanteTxt;
-        document.getElementById('viewAgencia').textContent = ticket.solicitante_agencia || 'General';
-        document.getElementById('viewPrioridad').textContent = ticket.prioridad || 'Media';
-        document.getElementById('viewFecha').textContent = ticket.creado_en || '---';
-        document.getElementById('viewDescripcion').textContent = ticket.descripcion || 'Sin descripción';
-        
-        document.getElementById('editEstado').value = ticket.estado || 'Abierto';
-        document.getElementById('editAsignadoA').value = ticket.asignado_a || '';
-        document.getElementById('editNotas').value = ticket.notas_resolucion || '';
-
-        // Desplegar respuesta de la Dirección Central de TI si ya fue atendido
-        const boxResp = document.getElementById('viewRespuestaCentral');
-        const txtResp = document.getElementById('viewRespuestaTexto');
-        const agResp = document.getElementById('viewRespuestaAgente');
-        const fResp = document.getElementById('viewRespuestaFecha');
-
-        if (ticket.notas_resolucion && ticket.notas_resolucion.trim() !== '') {
-            if (boxResp) boxResp.style.display = 'block';
-            if (txtResp) txtResp.textContent = ticket.notas_resolucion;
-            if (agResp) agResp.textContent = ticket.asignado_a ? ('Atendido por: ' + ticket.asignado_a) : 'Dirección Central TI';
-            if (fResp && ticket.actualizado_en) fResp.textContent = 'Actualizado el ' + ticket.actualizado_en;
-        } else {
-            if (boxResp) boxResp.style.display = 'none';
-        }
-
-        const badgeEl = document.getElementById('viewAreaBadge');
-        if (badgeEl) {
-            badgeEl.textContent = ticket.area_sistemas || 'GENERAL';
-        }
-
-        const contenedorAdjunto = document.getElementById('viewContenedorAdjunto');
-        const linkAdjunto = document.getElementById('viewArchivoLink');
-        if (ticket.archivo_adjunto && ticket.archivo_adjunto.trim() !== '') {
-            contenedorAdjunto.style.display = 'block';
-            linkAdjunto.href = ticket.archivo_adjunto;
-        } else {
-            contenedorAdjunto.style.display = 'none';
-        }
-
-        const modal = new bootstrap.Modal(document.getElementById('modalDetalleTicket'));
-        modal.show();
     }
 </script>
 <?php include_once 'pwa_body.php'; ?>

@@ -367,6 +367,58 @@ function asegurarTablaTickets($pdo = null) {
         try {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
         } catch (Throwable $eAlt) {}
+
+        asegurarTablaTicketsMensajes($pdo);
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Asegura la existencia de la tabla tickets_mensajes para el hilo de conversación y respuestas
+ */
+function asegurarTablaTicketsMensajes($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS tickets_mensajes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id INTEGER NOT NULL,
+                    folio TEXT,
+                    autor_id INTEGER,
+                    autor_nombre TEXT,
+                    autor_usuario TEXT,
+                    autor_rol TEXT DEFAULT 'usuario',
+                    mensaje TEXT NOT NULL,
+                    archivo_adjunto TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tickets_mensajes` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `ticket_id` INT NOT NULL,
+                    `folio` VARCHAR(50) NULL,
+                    `autor_id` INT NULL,
+                    `autor_nombre` VARCHAR(150),
+                    `autor_usuario` VARCHAR(100),
+                    `autor_rol` VARCHAR(50) DEFAULT 'usuario',
+                    `mensaje` TEXT NOT NULL,
+                    `archivo_adjunto` VARCHAR(255) NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX (`ticket_id`),
+                    INDEX (`folio`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
     } catch (Throwable $e) {}
 }
 
