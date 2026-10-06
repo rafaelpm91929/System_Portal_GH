@@ -15,6 +15,83 @@ if (!function_exists('str_ends_with')) {
         return $needle === '' || $needle === substr($haystack, -strlen($needle));
     }
 }
+
+if (!function_exists('parsearSwitchYPuerto')) {
+    function parsearSwitchYPuerto($puertoSwStr, $switchNombreCol = '') {
+        $puertoSwStr = trim((string)($puertoSwStr ?? ''));
+        $swDetectado = trim((string)($switchNombreCol ?? ''));
+        $puertoNum = 0;
+
+        if ($puertoSwStr === '' && $swDetectado === '') {
+            return ['switch' => '', 'puerto' => 0];
+        }
+
+        // Caso 1: Delimitador '/' o '|' o '-' o ':' separando switch y puerto
+        // Ej: "sw 2 / Puerto 41", "sw core / Port 18", "Switch Principal - Puerto 5"
+        if (preg_match('/^(.*?)\s*[\/|\-:]\s*(?:puerto|port|p)?\s*(\d+)\s*$/i', $puertoSwStr, $m)) {
+            if (empty($swDetectado)) {
+                $swDetectado = trim($m[1]);
+            }
+            $puertoNum = intval($m[2]);
+        } elseif (preg_match('/(?:puerto|port|p\b)\s*[:#\-]?\s*(\d+)/i', $puertoSwStr, $m)) {
+            $puertoNum = intval($m[1]);
+        } elseif (preg_match('/(?:gi\d*[\/0-9]*\/|fa\d*[\/0-9]*\/|eth\d*\/)(\d+)/i', $puertoSwStr, $m)) {
+            $puertoNum = intval($m[1]);
+        } elseif (preg_match('/^\D*?(\d+)\s*$/i', $puertoSwStr, $m)) {
+            $puertoNum = intval($m[1]);
+        }
+
+        return [
+            'switch' => $swDetectado,
+            'puerto' => $puertoNum
+        ];
+    }
+}
+
+if (!function_exists('switchCoincide')) {
+    function switchCoincide($swDeseado, $swKeyDeseado, $swCandidato) {
+        $swDeseado = trim((string)$swDeseado);
+        $swKeyDeseado = trim((string)$swKeyDeseado);
+        $swCandidato = trim((string)$swCandidato);
+
+        if ($swCandidato === '') {
+            return false;
+        }
+
+        $norm = function($s) {
+            $s = mb_strtolower(trim($s), 'UTF-8');
+            $s = preg_replace('/\bswitch\b/u', 'sw', $s);
+            return preg_replace('/[^a-z0-9]/u', '', $s);
+        };
+
+        $nDes = $norm($swDeseado);
+        $nKey = $norm($swKeyDeseado);
+        $nCand = $norm($swCandidato);
+
+        if ($nCand === '') return false;
+
+        if ($nDes !== '' && ($nCand === $nDes || $nCand === $norm('SW-' . $swDeseado))) return true;
+        if ($nKey !== '' && ($nCand === $nKey || $nCand === $norm('SW-' . $swKeyDeseado))) return true;
+
+        if (strlen($nCand) >= 3 && strlen($nDes) >= 3) {
+            preg_match_all('/\d+/', $nCand, $digitsCand);
+            preg_match_all('/\d+/', $nDes, $digitsDes);
+            $dc = implode('', $digitsCand[0] ?? []);
+            $dd = implode('', $digitsDes[0] ?? []);
+            if ($dc !== '' || $dd !== '') {
+                if ($dc !== $dd) {
+                    return false;
+                }
+            }
+            if (strpos($nCand, $nDes) !== false || strpos($nDes, $nCand) !== false) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -306,14 +383,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $swNombre = '';
             $puertoNum = 0;
             if (!empty($switch_puerto)) {
-                if (strpos($switch_puerto, '/') !== false) {
-                    $pParts = explode('/', $switch_puerto);
-                    $swNombre = trim($pParts[0]);
-                    $puertoNum = intval(preg_replace('/[^0-9]/', '', $pParts[1] ?? ''));
-                } else {
-                    $puertoNum = intval(preg_replace('/[^0-9]/', '', $switch_puerto));
-                    $swNombre = trim(preg_replace('/puerto\s*[0-9]+/i', '', $switch_puerto));
-                }
+                $pNd = parsearSwitchYPuerto($switch_puerto);
+                $swNombre = $pNd['switch'];
+                $puertoNum = $pNd['puerto'];
             }
 
             // 1. Limpiar este nodo de otros puertos de switch si cambió
@@ -458,7 +530,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             // Obtener asignación actual si existe
-            $stmtCur = $pdo->prepare("SELECT * FROM infra_switch_puertos WHERE (switch_nombre = ? OR switch_key = ?) AND puerto_numero = ?");
+            $stmtCur = $pdo->prepare("SELECT * FROM infra_switch_puertos WHERE (LOWER(switch_nombre) = LOWER(?) OR LOWER(switch_key) = LOWER(?)) AND puerto_numero = ?");
             $stmtCur->execute([$switchNombre, $switchKey, $puertoNum]);
             $currentAssigned = $stmtCur->fetch(PDO::FETCH_ASSOC);
 
@@ -484,6 +556,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $pdo->prepare("UPDATE `$tbl` SET puerto_sw = '', switch_nombre = '' WHERE id = ?")->execute([$eqId]);
                         } catch (Throwable $t) {}
                     }
+                } elseif (strpos($oldKey, 'CORP-') === 0) {
+                    $corpId = intval(substr($oldKey, 5));
+                    try {
+                        $pdo->prepare("UPDATE inv_equipos_corp SET puerto_sw = '', switch_nombre = '' WHERE id = ?")->execute([$corpId]);
+                    } catch (Throwable $t) {}
                 } elseif (strpos($oldKey, 'PRN-') === 0) {
                     $prnId = intval(substr($oldKey, 4));
                     try {
@@ -502,13 +579,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            if ($tipoOperacion === 'liberar' && !empty($oldNodo)) {
+            if ($tipoOperacion === 'liberar') {
+                // Barrido profundo: Desvincular cualquier equipo de inventario que apunte a este switch y puerto
+                $tablasLimpiar = ['inv_equipos_vw', 'inv_equipos_corp', 'inv_monitores', 'inv_site_vw', 'inv_telefonos_poe'];
+                foreach ($tablasLimpiar as $tbl) {
+                    try {
+                        $stAll = $pdo->query("SELECT id, puerto_sw, switch_nombre FROM `$tbl` WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                        if ($stAll) {
+                            foreach ($stAll->fetchAll(PDO::FETCH_ASSOC) as $rowL) {
+                                $parsedL = parsearSwitchYPuerto($rowL['puerto_sw'], $rowL['switch_nombre'] ?? '');
+                                if ($parsedL['puerto'] === $puertoNum && switchCoincide($switchNombre, $switchKey, $parsedL['switch'])) {
+                                    $pdo->prepare("UPDATE `$tbl` SET puerto_sw = '', switch_nombre = '' WHERE id = ?")->execute([$rowL['id']]);
+                                }
+                            }
+                        }
+                    } catch (Throwable $t) {}
+                }
+
                 try {
-                    $pdo->prepare("UPDATE infra_nodos SET switch_puerto = '', estatus = 'Disponible' WHERE codigo_nodo = ?")->execute([$oldNodo]);
+                    $stNods = $pdo->query("SELECT id, switch_puerto FROM infra_nodos WHERE (switch_puerto IS NOT NULL AND switch_puerto != '')");
+                    if ($stNods) {
+                        foreach ($stNods->fetchAll(PDO::FETCH_ASSOC) as $rNd) {
+                            $parsedNd = parsearSwitchYPuerto($rNd['switch_puerto'], '');
+                            if ($parsedNd['puerto'] === $puertoNum && switchCoincide($switchNombre, $switchKey, $parsedNd['switch'])) {
+                                $pdo->prepare("UPDATE infra_nodos SET switch_puerto = '', estatus = 'Disponible' WHERE id = ?")->execute([$rNd['id']]);
+                            }
+                        }
+                    }
                 } catch (Throwable $t) {}
+
+                if (!empty($oldNodo)) {
+                    try {
+                        $pdo->prepare("UPDATE infra_nodos SET switch_puerto = '', estatus = 'Disponible' WHERE codigo_nodo = ?")->execute([$oldNodo]);
+                    } catch (Throwable $t) {}
+                }
             }
 
-            $pdo->prepare("DELETE FROM infra_switch_puertos WHERE (switch_nombre = ? OR switch_key = ?) AND puerto_numero = ?")
+            $pdo->prepare("DELETE FROM infra_switch_puertos WHERE (LOWER(switch_nombre) = LOWER(?) OR LOWER(switch_key) = LOWER(?)) AND puerto_numero = ?")
                 ->execute([$switchNombre, $switchKey, $puertoNum]);
 
             if ($tipoOperacion === 'asignar') {
@@ -552,6 +659,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if (!empty($fIp)) { $equipoIp = $fIp; break; }
                             } catch (Throwable $t) {}
                         }
+                    } elseif (strpos($equipoKey, 'CORP-') === 0) {
+                        $corpId = intval(substr($equipoKey, 5));
+                        try {
+                            $sIp = $pdo->prepare("SELECT ip FROM inv_equipos_corp WHERE id = ?");
+                            $sIp->execute([$corpId]);
+                            $fIp = $sIp->fetchColumn();
+                            if (!empty($fIp)) $equipoIp = $fIp;
+                        } catch (Throwable $t) {}
                     } elseif (strpos($equipoKey, 'SITE-') === 0) {
                         $siteId = intval(substr($equipoKey, 5));
                         try {
@@ -569,22 +684,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $fIp = $sIp->fetchColumn();
                             if (!empty($fIp)) $equipoIp = $fIp;
                         } catch (Throwable $t) {}
+                    } elseif (strpos($equipoKey, 'TEL-') === 0) {
+                        $telId = intval(substr($equipoKey, 4));
+                        try {
+                            $sIp = $pdo->prepare("SELECT ip FROM inv_telefonos_poe WHERE id = ?");
+                            $sIp->execute([$telId]);
+                            $fIp = $sIp->fetchColumn();
+                            if (!empty($fIp)) $equipoIp = $fIp;
+                        } catch (Throwable $t) {}
                     }
                 }
 
                 // 2. Garantizar exclusividad: Desvincular este equipo de cualquier OTRO puerto
                 if (!empty($equipoKey)) {
-                    $stmtPrevPorts = $pdo->prepare("SELECT switch_nombre, puerto_numero FROM infra_switch_puertos WHERE equipo_key = ? AND (switch_nombre != ? OR puerto_numero != ?)");
+                    $stmtPrevPorts = $pdo->prepare("SELECT switch_nombre, puerto_numero FROM infra_switch_puertos WHERE equipo_key = ? AND (LOWER(switch_nombre) != LOWER(?) OR puerto_numero != ?)");
                     $stmtPrevPorts->execute([$equipoKey, $switchNombre, $puertoNum]);
                     $prevPorts = $stmtPrevPorts->fetchAll(PDO::FETCH_ASSOC);
                     foreach ($prevPorts as $pp) {
-                        $pdo->prepare("DELETE FROM infra_switch_puertos WHERE switch_nombre = ? AND puerto_numero = ?")->execute([$pp['switch_nombre'], $pp['puerto_numero']]);
+                        $pdo->prepare("DELETE FROM infra_switch_puertos WHERE LOWER(switch_nombre) = LOWER(?) AND puerto_numero = ?")->execute([$pp['switch_nombre'], $pp['puerto_numero']]);
                     }
                 }
 
                 // 3. Garantizar exclusividad: Desvincular este nodo de cualquier OTRO puerto
                 if (!empty($nodoCodigo)) {
-                    $pdo->prepare("UPDATE infra_switch_puertos SET nodo_codigo = '' WHERE nodo_codigo = ? AND (switch_nombre != ? OR puerto_numero != ?)")
+                    $pdo->prepare("UPDATE infra_switch_puertos SET nodo_codigo = '' WHERE nodo_codigo = ? AND (LOWER(switch_nombre) != LOWER(?) OR puerto_numero != ?)")
                         ->execute([$nodoCodigo, $switchNombre, $puertoNum]);
                 }
 
@@ -649,6 +772,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $pdo->prepare($sqlUp)->execute($paramsUp);
                             } catch (Throwable $t) {}
                         }
+                    } elseif (strpos($equipoKey, 'CORP-') === 0) {
+                        $corpId = intval(substr($equipoKey, 5));
+                        try {
+                            $sqlUp = "UPDATE inv_equipos_corp SET puerto_sw = ?, switch_nombre = ?";
+                            $paramsUp = [$puertoFormatted, $switchNombre];
+                            if (!empty($nodoCodigo)) {
+                                $sqlUp .= ", numero_nodo = ?";
+                                $paramsUp[] = $nodoCodigo;
+                            }
+                            if (!empty($equipoIp)) {
+                                $sqlUp .= ", ip = ?";
+                                $paramsUp[] = $equipoIp;
+                            }
+                            $sqlUp .= " WHERE id = ?";
+                            $paramsUp[] = $corpId;
+                            $pdo->prepare($sqlUp)->execute($paramsUp);
+                        } catch (Throwable $t) {}
                     } elseif (strpos($equipoKey, 'PRN-') === 0) {
                         $prnId = intval(substr($equipoKey, 4));
                         try {
@@ -735,57 +875,287 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $switchNombre = trim($_POST['switch_nombre'] ?? '');
             $switchKey = trim($_POST['switch_key'] ?? '');
 
-            $pdo->exec("CREATE TABLE IF NOT EXISTS infra_switch_puertos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                switch_key TEXT NOT NULL,
-                switch_nombre TEXT NOT NULL,
-                puerto_numero INTEGER NOT NULL,
-                equipo_key TEXT,
-                equipo_nombre TEXT,
-                equipo_tipo TEXT,
-                equipo_ip TEXT,
-                nodo_codigo TEXT,
-                vlan TEXT,
-                estatus TEXT DEFAULT 'activo',
-                notas TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )");
+            $driverSw = '';
+            try { $driverSw = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)); } catch (Throwable $td) {}
 
-            $stmtP = $pdo->prepare("SELECT * FROM infra_switch_puertos WHERE switch_nombre = ? OR switch_key = ? ORDER BY puerto_numero ASC");
-            $stmtP->execute([$switchNombre, $switchKey]);
+            if ($driverSw === 'sqlite') {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS infra_switch_puertos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    switch_key TEXT NOT NULL,
+                    switch_nombre TEXT NOT NULL,
+                    puerto_numero INTEGER NOT NULL,
+                    equipo_key TEXT,
+                    equipo_nombre TEXT,
+                    equipo_tipo TEXT,
+                    equipo_ip TEXT,
+                    nodo_codigo TEXT,
+                    vlan TEXT,
+                    estatus TEXT DEFAULT 'activo',
+                    notas TEXT,
+                    tiene_telefono_poe INTEGER DEFAULT 0,
+                    telefono_poe_key TEXT,
+                    telefono_poe_nombre TEXT,
+                    telefono_poe_ip TEXT,
+                    telefono_poe_ext TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )");
+            } else {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS `infra_switch_puertos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `switch_key` VARCHAR(100) NOT NULL,
+                    `switch_nombre` VARCHAR(100) NOT NULL,
+                    `puerto_numero` INT NOT NULL,
+                    `equipo_key` VARCHAR(50),
+                    `equipo_nombre` VARCHAR(255),
+                    `equipo_tipo` VARCHAR(100),
+                    `equipo_ip` VARCHAR(50),
+                    `nodo_codigo` VARCHAR(50),
+                    `vlan` VARCHAR(100),
+                    `estatus` VARCHAR(50) DEFAULT 'activo',
+                    `notas` TEXT,
+                    `tiene_telefono_poe` TINYINT(1) DEFAULT 0,
+                    `telefono_poe_key` VARCHAR(50),
+                    `telefono_poe_nombre` VARCHAR(255),
+                    `telefono_poe_ip` VARCHAR(50),
+                    `telefono_poe_ext` VARCHAR(50),
+                    `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+            }
+
+            // 1. Obtener registros persistidos en infra_switch_puertos
+            $stmtP = $pdo->prepare("SELECT * FROM infra_switch_puertos 
+                WHERE LOWER(switch_nombre) = LOWER(?) 
+                   OR LOWER(switch_key) = LOWER(?) 
+                   OR LOWER(switch_key) = LOWER(?)
+                ORDER BY puerto_numero ASC");
+            $stmtP->execute([$switchNombre, $switchKey, 'SW-' . $switchNombre]);
             $puertos = $stmtP->fetchAll(PDO::FETCH_ASSOC);
 
             $indexed = [];
             foreach ($puertos as $p) {
-                $indexed[intval($p['puerto_numero'])] = $p;
+                $pNum = intval($p['puerto_numero']);
+                if ($pNum > 0) {
+                    $indexed[$pNum] = $p;
+                }
             }
 
-            // Mapeo sincronizado desde inv_equipos_vw
+            // 2. Mapeo sincronizado desde inv_equipos_vw
             try {
-                $stmtEq = $pdo->query("SELECT id, nombre_equipo, tipo_equipo, ip, puerto_sw, switch_nombre FROM inv_equipos_vw WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                $stmtEq = $pdo->query("SELECT id, nombre_equipo, tipo_equipo, ip, puerto_sw, switch_nombre, numero_nodo FROM inv_equipos_vw WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
                 if ($stmtEq) {
                     foreach ($stmtEq->fetchAll(PDO::FETCH_ASSOC) as $eqRow) {
-                        $swMatch = empty($eqRow['switch_nombre']) || stripos($eqRow['switch_nombre'], $switchNombre) !== false || stripos($switchNombre, $eqRow['switch_nombre']) !== false;
-                        if ($swMatch && preg_match('/(?:puerto\s*)?(\d+)/i', $eqRow['puerto_sw'], $m)) {
-                            $pNum = intval($m[1]);
-                            if (!isset($indexed[$pNum])) {
-                                $indexed[$pNum] = [
-                                    'puerto_numero' => $pNum,
-                                    'equipo_key' => 'EQ-' . $eqRow['id'],
-                                    'equipo_nombre' => $eqRow['nombre_equipo'] ?: ('Equipo #' . $eqRow['id']),
-                                    'equipo_tipo' => $eqRow['tipo_equipo'] ?: 'Workstation',
-                                    'equipo_ip' => $eqRow['ip'] ?: '',
-                                    'nodo_codigo' => '',
-                                    'vlan' => '',
-                                    'estatus' => 'activo',
-                                    'notas' => 'Vía inventario de equipos'
-                                ];
+                        $parsedEq = parsearSwitchYPuerto($eqRow['puerto_sw'], $eqRow['switch_nombre'] ?? '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedEq['switch'])) {
+                            $pNum = $parsedEq['puerto'];
+                            if ($pNum > 0) {
+                                if (!isset($indexed[$pNum])) {
+                                    $indexed[$pNum] = [
+                                        'puerto_numero' => $pNum,
+                                        'equipo_key' => 'EQ-' . $eqRow['id'],
+                                        'equipo_nombre' => $eqRow['nombre_equipo'] ?: ('Equipo #' . $eqRow['id']),
+                                        'equipo_tipo' => $eqRow['tipo_equipo'] ?: 'Workstation',
+                                        'equipo_ip' => $eqRow['ip'] ?: '',
+                                        'nodo_codigo' => $eqRow['numero_nodo'] ?: '',
+                                        'vlan' => '',
+                                        'estatus' => 'activo',
+                                        'notas' => 'Vía inventario de equipos'
+                                    ];
+                                } else {
+                                    if (empty($indexed[$pNum]['nodo_codigo']) && !empty($eqRow['numero_nodo'])) {
+                                        $indexed[$pNum]['nodo_codigo'] = $eqRow['numero_nodo'];
+                                    }
+                                    if (empty($indexed[$pNum]['equipo_ip']) && !empty($eqRow['ip'])) {
+                                        $indexed[$pNum]['equipo_ip'] = $eqRow['ip'];
+                                    }
+                                }
                             }
                         }
                     }
                 }
             } catch (Throwable $tEqSync) {}
+
+            // 3. Mapeo sincronizado desde inv_equipos_corp
+            try {
+                $stmtCorp = $pdo->query("SELECT id, nombre_equipo, tipo_equipo, ip, puerto_sw, switch_nombre, numero_nodo FROM inv_equipos_corp WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                if ($stmtCorp) {
+                    foreach ($stmtCorp->fetchAll(PDO::FETCH_ASSOC) as $corpRow) {
+                        $parsedCorp = parsearSwitchYPuerto($corpRow['puerto_sw'], $corpRow['switch_nombre'] ?? '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedCorp['switch'])) {
+                            $pNum = $parsedCorp['puerto'];
+                            if ($pNum > 0) {
+                                if (!isset($indexed[$pNum])) {
+                                    $indexed[$pNum] = [
+                                        'puerto_numero' => $pNum,
+                                        'equipo_key' => 'CORP-' . $corpRow['id'],
+                                        'equipo_nombre' => $corpRow['nombre_equipo'] ?: ('Equipo #' . $corpRow['id']),
+                                        'equipo_tipo' => $corpRow['tipo_equipo'] ?: 'Workstation Corp',
+                                        'equipo_ip' => $corpRow['ip'] ?: '',
+                                        'nodo_codigo' => $corpRow['numero_nodo'] ?: '',
+                                        'vlan' => '',
+                                        'estatus' => 'activo',
+                                        'notas' => 'Vía inventario corporativo'
+                                    ];
+                                } else {
+                                    if (empty($indexed[$pNum]['nodo_codigo']) && !empty($corpRow['numero_nodo'])) {
+                                        $indexed[$pNum]['nodo_codigo'] = $corpRow['numero_nodo'];
+                                    }
+                                    if (empty($indexed[$pNum]['equipo_ip']) && !empty($corpRow['ip'])) {
+                                        $indexed[$pNum]['equipo_ip'] = $corpRow['ip'];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $tCorpSync) {}
+
+            // 4. Mapeo sincronizado desde inv_site_vw
+            try {
+                $stmtSite = $pdo->query("SELECT id, nombre_equipo, tipo_registro, equipo, ip, ip_local, puerto_sw, switch_nombre, numero_nodo FROM inv_site_vw WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                if ($stmtSite) {
+                    foreach ($stmtSite->fetchAll(PDO::FETCH_ASSOC) as $siteRow) {
+                        if ('SITE-' . $siteRow['id'] === $switchKey) continue;
+                        $parsedSite = parsearSwitchYPuerto($siteRow['puerto_sw'], $siteRow['switch_nombre'] ?? '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedSite['switch'])) {
+                            $pNum = $parsedSite['puerto'];
+                            if ($pNum > 0) {
+                                $siteNom = !empty($siteRow['nombre_equipo']) ? $siteRow['nombre_equipo'] : (!empty($siteRow['tipo_registro']) ? ($siteRow['tipo_registro'] . ' #' . $siteRow['id']) : 'Equipo SITE #' . $siteRow['id']);
+                                $siteIp = !empty($siteRow['ip']) ? $siteRow['ip'] : ($siteRow['ip_local'] ?? '');
+                                if (!isset($indexed[$pNum])) {
+                                    $indexed[$pNum] = [
+                                        'puerto_numero' => $pNum,
+                                        'equipo_key' => 'SITE-' . $siteRow['id'],
+                                        'equipo_nombre' => $siteNom,
+                                        'equipo_tipo' => $siteRow['tipo_registro'] ?: 'Infraestructura SITE',
+                                        'equipo_ip' => $siteIp,
+                                        'nodo_codigo' => $siteRow['numero_nodo'] ?: '',
+                                        'vlan' => '',
+                                        'estatus' => 'activo',
+                                        'notas' => 'Vía inventario de SITE'
+                                    ];
+                                } else {
+                                    if (empty($indexed[$pNum]['nodo_codigo']) && !empty($siteRow['numero_nodo'])) {
+                                        $indexed[$pNum]['nodo_codigo'] = $siteRow['numero_nodo'];
+                                    }
+                                    if (empty($indexed[$pNum]['equipo_ip']) && !empty($siteIp)) {
+                                        $indexed[$pNum]['equipo_ip'] = $siteIp;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $tSiteSync) {}
+
+            // 5. Mapeo sincronizado desde inv_telefonos_poe
+            try {
+                $stmtTel = $pdo->query("SELECT id, extension, usuario, modelo, ip, puerto_sw, switch_nombre, numero_nodo FROM inv_telefonos_poe WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                if ($stmtTel) {
+                    foreach ($stmtTel->fetchAll(PDO::FETCH_ASSOC) as $telRow) {
+                        $parsedTel = parsearSwitchYPuerto($telRow['puerto_sw'], $telRow['switch_nombre'] ?? '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedTel['switch'])) {
+                            $pNum = $parsedTel['puerto'];
+                            if ($pNum > 0) {
+                                $telNom = 'Ext. ' . ($telRow['extension'] ?: 'S/E') . ' (' . ($telRow['usuario'] ?: ($telRow['modelo'] ?: 'Teléfono')) . ')';
+                                if (isset($indexed[$pNum])) {
+                                    $indexed[$pNum]['tiene_telefono_poe'] = 1;
+                                    $indexed[$pNum]['telefono_poe_key'] = 'TEL-' . $telRow['id'];
+                                    $indexed[$pNum]['telefono_poe_nombre'] = $telNom;
+                                    $indexed[$pNum]['telefono_poe_ip'] = $telRow['ip'] ?: '';
+                                    $indexed[$pNum]['telefono_poe_ext'] = $telRow['extension'] ?: '';
+                                    if (empty($indexed[$pNum]['nodo_codigo']) && !empty($telRow['numero_nodo'])) {
+                                        $indexed[$pNum]['nodo_codigo'] = $telRow['numero_nodo'];
+                                    }
+                                } else {
+                                    $indexed[$pNum] = [
+                                        'puerto_numero' => $pNum,
+                                        'equipo_key' => 'TEL-' . $telRow['id'],
+                                        'equipo_nombre' => $telNom,
+                                        'equipo_tipo' => 'Teléfono PoE',
+                                        'equipo_ip' => $telRow['ip'] ?: '',
+                                        'nodo_codigo' => $telRow['numero_nodo'] ?: '',
+                                        'vlan' => '',
+                                        'estatus' => 'activo',
+                                        'notas' => 'Vía inventario de telefonía',
+                                        'tiene_telefono_poe' => 1,
+                                        'telefono_poe_key' => 'TEL-' . $telRow['id'],
+                                        'telefono_poe_nombre' => $telNom,
+                                        'telefono_poe_ip' => $telRow['ip'] ?: '',
+                                        'telefono_poe_ext' => $telRow['extension'] ?: ''
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $tTelSync) {}
+
+            // 6. Mapeo sincronizado desde inv_monitores (Impresoras)
+            try {
+                $stmtMon = $pdo->query("SELECT id, marca, modelo_exacto, ip, puerto_sw, switch_nombre, numero_nodo FROM inv_monitores WHERE (puerto_sw IS NOT NULL AND puerto_sw != '')");
+                if ($stmtMon) {
+                    foreach ($stmtMon->fetchAll(PDO::FETCH_ASSOC) as $monRow) {
+                        $parsedMon = parsearSwitchYPuerto($monRow['puerto_sw'], $monRow['switch_nombre'] ?? '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedMon['switch'])) {
+                            $pNum = $parsedMon['puerto'];
+                            if ($pNum > 0 && !isset($indexed[$pNum])) {
+                                $prnNom = trim(($monRow['marca'] ?? '') . ' ' . ($monRow['modelo_exacto'] ?? ''));
+                                if (empty($prnNom)) $prnNom = 'Impresora #' . $monRow['id'];
+                                $indexed[$pNum] = [
+                                    'puerto_numero' => $pNum,
+                                    'equipo_key' => 'PRN-' . $monRow['id'],
+                                    'equipo_nombre' => $prnNom,
+                                    'equipo_tipo' => 'Impresora de Red',
+                                    'equipo_ip' => $monRow['ip'] ?: '',
+                                    'nodo_codigo' => $monRow['numero_nodo'] ?: '',
+                                    'vlan' => '',
+                                    'estatus' => 'activo',
+                                    'notas' => 'Vía inventario de impresoras'
+                                ];
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $tMonSync) {}
+
+            // 7. Mapeo sincronizado desde infra_nodos (Roseta física conectada al switch)
+            try {
+                $stmtNod = $pdo->query("SELECT id, codigo_nodo, switch_puerto, vlan FROM infra_nodos WHERE (switch_puerto IS NOT NULL AND switch_puerto != '')");
+                if ($stmtNod) {
+                    foreach ($stmtNod->fetchAll(PDO::FETCH_ASSOC) as $nodRow) {
+                        $parsedNod = parsearSwitchYPuerto($nodRow['switch_puerto'], '');
+                        if (switchCoincide($switchNombre, $switchKey, $parsedNod['switch'])) {
+                            $pNum = $parsedNod['puerto'];
+                            if ($pNum > 0) {
+                                if (isset($indexed[$pNum])) {
+                                    if (empty($indexed[$pNum]['nodo_codigo'])) {
+                                        $indexed[$pNum]['nodo_codigo'] = $nodRow['codigo_nodo'];
+                                    }
+                                    if (empty($indexed[$pNum]['vlan']) && !empty($nodRow['vlan'])) {
+                                        $indexed[$pNum]['vlan'] = $nodRow['vlan'];
+                                    }
+                                } else {
+                                    $indexed[$pNum] = [
+                                        'puerto_numero' => $pNum,
+                                        'equipo_key' => '',
+                                        'equipo_nombre' => 'Roseta / Nodo ' . $nodRow['codigo_nodo'],
+                                        'equipo_tipo' => 'Nodo de Red',
+                                        'equipo_ip' => '',
+                                        'nodo_codigo' => $nodRow['codigo_nodo'],
+                                        'vlan' => $nodRow['vlan'] ?: '',
+                                        'estatus' => 'activo',
+                                        'notas' => 'Vía cableado estructurado (Nodo ' . $nodRow['codigo_nodo'] . ')'
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable $tNodSync) {}
+
+            ksort($indexed);
 
             echo json_encode([
                 'status' => 'success',
