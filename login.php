@@ -811,42 +811,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <!-- Hero Informativo Lateral Izquierdo -->
     <div class="hero-section">
-        <div class="hero-badge-live">
-            <span class="pulse-dot"></span>
-            <span>Sistema Institucional Activo</span>
-        </div>
-
         <?php if (!empty($logoAgencia)): ?>
-            <div class="hero-logo-box">
-                <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="<?php echo htmlspecialchars($nombreAgencia); ?>" class="img-fluid" style="max-height: 95px; max-width: 280px; object-fit: contain;">
+            <div class="hero-logo-box mb-3">
+                <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="<?php echo htmlspecialchars($nombreAgencia); ?>" class="img-fluid rounded-3" style="max-height: 100px; max-width: 290px; object-fit: contain;">
             </div>
         <?php endif; ?>
 
-        <h1 class="hero-title">
+        <h1 class="hero-title mb-0">
             PORTAL<br>
             <span style="color: #38bdf8;"><?php echo htmlspecialchars($nombreAgencia); ?></span>
         </h1>
-
-        <p class="hero-desc">
-            Plataforma centralizada de gestión tecnológica, infraestructura, soporte y directorio institucional.
-        </p>
-
-        <div class="hero-stats-row">
-            <div class="hero-stat-card">
-                <i class="bi bi-shield-lock-fill"></i>
-                <div>
-                    <div class="fw-bold text-white small">Acceso Seguro</div>
-                    <div class="text-secondary" style="font-size: 0.75rem;">Cifrado institucional</div>
-                </div>
-            </div>
-            <div class="hero-stat-card">
-                <i class="bi bi-hdd-network-fill"></i>
-                <div>
-                    <div class="fw-bold text-white small">Red & Nodos</div>
-                    <div class="text-secondary" style="font-size: 0.75rem;">Monitoreo en línea</div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Tarjeta de Login con Efecto 3D Tilt -->
