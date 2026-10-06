@@ -255,19 +255,7 @@ sort($categorias);
             letter-spacing: 0.5px;
         }
 
-        /* CAPA 2: PANTALLA NEGRA PURA ANTI-CAPTURA (TIPO WHATSAPP / TELEGRAM VER UNA VEZ) */
-        #censorSecurityShield {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: #000000 !important;
-            z-index: 2147483647 !important;
-            display: none;
-            user-select: none;
-            -webkit-user-select: none;
-            pointer-events: all;
-        }
-
+        
         @media print {
             * {
                 display: none !important;
@@ -285,8 +273,6 @@ sort($categorias);
 
 <?php include_once 'pwa_body.php'; ?>
 
-<!-- CORTINA ANTI-RECORTE / PANTALLA NEGRA PURA ANTI-CAPTURA (TIPO WHATSAPP VER UNA VEZ) -->
-<div id="censorSecurityShield"></div>
 
 
 <!-- NAVBAR -->
@@ -457,11 +443,7 @@ sort($categorias);
                 <i class="bi bi-shield-lock-fill text-warning me-1"></i> Trama Óptica Anti-Cámara
             </span>
 
-            <!-- BOTÓN MODO VER UNA VEZ (ANTI-CAPTURA CELULAR TIPO WHATSAPP) -->
-            <button type="button" id="btnModoWhatsApp" class="btn btn-outline-warning btn-sm rounded-3 fw-semibold px-2.5 d-flex align-items-center gap-1 ms-1" onclick="toggleModoWhatsApp()" title="Pantalla negra estilo WhatsApp Ver Una Vez (Tocar para ver)">
-                <i class="bi bi-eye-slash-fill"></i> <span class="d-none d-sm-inline">Modo Ver Una Vez</span>
-            </button>
-
+            
             <!-- BOTÓN CERRAR VISOR -->
             <button type="button" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3 ms-2" onclick="cerrarVisorBlindado()">
                 <i class="bi bi-x-lg me-1"></i> Cerrar
@@ -478,22 +460,7 @@ sort($categorias);
         </div>
     </div>
 
-    <!-- CAPA MODO VER UNA VEZ (MANTENER PRESIONADO PARA VER) -->
-    <div id="touchToViewShield" style="display:flex; position:fixed; top:65px; left:0; width:100vw; height:calc(100vh - 65px); background:#000000; z-index:999992; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; user-select:none; -webkit-user-select:none; transition: opacity 0.1s ease; cursor: pointer;">
-        <div style="max-width:420px; background: rgba(10, 15, 25, 0.95);" class="p-4 rounded-4 border border-secondary border-opacity-25 shadow-lg">
-            <div class="mb-3" style="width:85px; height:85px; border-radius:50%; background:rgba(234,179,8,0.15); border:2px dashed #eab308; display:inline-flex; align-items:center; justify-content:center;">
-                <i class="bi bi-fingerprint display-3 text-warning"></i>
-            </div>
-            <h4 class="fw-bold text-white mb-2">Visor Blindado Anti-Captura</h4>
-            <p class="text-secondary small mb-3">
-                Mantén presionado tu dedo (en celular) o el clic (en PC) para leer el documento.<br>
-                <b class="text-warning">Si sueltas o intentas tomar captura, la pantalla se graba 100% en negro.</b>
-            </p>
-            <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill bg-warning text-dark fw-bold small shadow">
-                <i class="bi bi-hand-index-thumb-fill fs-5"></i> MANTÉN PRESIONADO PARA LEER
-            </div>
         </div>
-    </div>
 </div>
 
 
@@ -513,176 +480,22 @@ sort($categorias);
     let totalPdfPages = 0;
     let isViewerActive = false;
 
-    // 1. SISTEMA ANTI-CAPTURA / PANTALLA NEGRA PURA (TIPO WHATSAPP VER UNA VEZ)
-    const censorShield = document.getElementById('censorSecurityShield');
-    let modoWhatsAppActivo = true;
-
-    function activarCensura() {
-        if (isViewerActive) {
-            if (censorShield) {
-                censorShield.style.display = 'block';
-                censorShield.style.background = '#000000';
-            }
-            const shield = document.getElementById('touchToViewShield');
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-            const container = document.getElementById('visorCanvasContainer');
-            if (container) {
-                container.style.opacity = '0';
-                container.style.visibility = 'hidden';
-            }
-            document.querySelectorAll('.pdf-page-canvas').forEach(cv => {
-                cv.style.opacity = '0';
-                cv.style.visibility = 'hidden';
-            });
-        }
-    }
-
-    function desactivarCensura() {
-        if (censorShield) {
-            censorShield.style.display = 'none';
-        }
-        const container = document.getElementById('visorCanvasContainer');
-        if (container) {
-            container.style.opacity = '1';
-            container.style.visibility = 'visible';
-            container.style.filter = 'none';
-        }
-        document.querySelectorAll('.pdf-page-canvas').forEach(cv => {
-            cv.style.opacity = '1';
-            cv.style.visibility = 'visible';
-        });
-    }
-
-    // MODO WHATSAPP: "VER UNA VEZ" (TOUCH & HOLD TO VIEW)
-    function toggleModoWhatsApp() {
-        modoWhatsAppActivo = !modoWhatsAppActivo;
-        const btn = document.getElementById('btnModoWhatsApp');
-        const shield = document.getElementById('touchToViewShield');
-
-        if (modoWhatsAppActivo) {
-            if (btn) {
-                btn.classList.remove('btn-outline-warning');
-                btn.classList.add('btn-warning', 'text-dark');
-            }
-            if (shield) {
-                shield.style.display = 'flex';
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-        } else {
-            if (btn) {
-                btn.classList.remove('btn-warning', 'text-dark');
-                btn.classList.add('btn-outline-warning');
-            }
-            if (shield) {
-                shield.style.display = 'none';
-            }
-        }
-    }
-
-    // Listeners para revelar el documento mientras se mantenga presionado el dedo / clic
-    function initTouchToViewListeners() {
-        const shield = document.getElementById('touchToViewShield');
-        const container = document.getElementById('visorCanvasContainer');
-
-        const revelar = function() {
-            if (!modoWhatsAppActivo) return;
-            if (shield) {
-                shield.style.opacity = '0';
-                shield.style.pointerEvents = 'none';
-            }
-        };
-
-        const ocultar = function() {
-            if (!modoWhatsAppActivo) return;
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-        };
-
-        if (container) {
-            container.addEventListener('mousedown', revelar);
-            container.addEventListener('touchstart', revelar, { passive: true });
-        }
-        if (shield) {
-            shield.addEventListener('mousedown', revelar);
-            shield.addEventListener('touchstart', revelar, { passive: true });
-        }
-        window.addEventListener('mouseup', ocultar);
-        window.addEventListener('touchend', ocultar, { passive: true });
-        window.addEventListener('touchcancel', ocultar, { passive: true });
-        document.addEventListener('mouseleave', ocultar);
-    }
-    initTouchToViewListeners();
-
-    // Detectar cuando la ventana pierde el foco (PowerPoint grabando, Recortes Win+Shift+S, cambio de app o captura en celular)
-    window.addEventListener('blur', function() {
-        if (isViewerActive) activarCensura();
-    });
-
-    document.addEventListener('visibilitychange', function() {
-        if (document.hidden && isViewerActive) {
-            activarCensura();
-        } else if (!document.hidden && isViewerActive) {
-            setTimeout(desactivarCensura, 300);
-        }
-    });
-
-    window.addEventListener('focus', function() {
-        if (isViewerActive) {
-            setTimeout(desactivarCensura, 200);
-        }
-    });
-
-    // Detección móvil específica para capturas en celulares Android / iOS
-    window.addEventListener('pagehide', function() {
-        if (isViewerActive) activarCensura();
-    });
-    window.addEventListener('resize', function() {
-        if (isViewerActive && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-            activarCensura();
-            setTimeout(desactivarCensura, 1500);
-        }
-    });
-
-    // Censurar si el cursor del ratón sale de la ventana del navegador en PC
-    document.addEventListener('mouseleave', function() {
-        if (isViewerActive) activarCensura();
-    });
-
-    document.addEventListener('mouseenter', function() {
-        if (isViewerActive && !modoWhatsAppActivo) desactivarCensura();
-    });
-
-    // Bloquear atajos de teclado para PrintScreen, Guardar, Imprimir e Inspeccionar
+    // 1. PROTECCIÓN DE ATAJOS DE TECLADO (IMPRESIÓN, GUARDADO E INSPECCIÓN)
     window.addEventListener('keydown', function(e) {
         if (!isViewerActive) return;
 
-        // PrintScreen, Tecla Windows (Meta), o Alt (Alt+PrtScn)
-        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta' || (e.shiftKey && (e.key === 's' || e.key === 'S')) || e.altKey) {
+        // PrintScreen / Recortes
+        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || (e.shiftKey && (e.key === 's' || e.key === 'S'))) {
             e.preventDefault();
-            const shield = document.getElementById('touchToViewShield');
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-            activarCensura();
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText('');
             }
-            setTimeout(desactivarCensura, 2500);
             return false;
         }
 
         // Ctrl+P (Imprimir)
         if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
             e.preventDefault();
-            activarCensura();
-            setTimeout(desactivarCensura, 1500);
             return false;
         }
 
@@ -705,17 +518,6 @@ sort($categorias);
         }
     }, true);
 
-    window.addEventListener('keyup', function(e) {
-        if (!isViewerActive) return;
-        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta') {
-            activarCensura();
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText('');
-            }
-            setTimeout(desactivarCensura, 2000);
-        }
-    }, true);
-
     // 2. FUNCIÓN PARA ABRIR Y RENDERIZAR EL VISOR BLINDADO
     function abrirVisorBlindado(docId, tituloDoc) {
         const modal = document.getElementById('visorModalOverlay');
@@ -729,19 +531,7 @@ sort($categorias);
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
 
-        // Activar por defecto el Modo WhatsApp "Ver Una Vez" (Pantalla negra, mantener presionado para leer)
-        modoWhatsAppActivo = true;
-        const btn = document.getElementById('btnModoWhatsApp');
-        const shield = document.getElementById('touchToViewShield');
-        if (btn) {
-            btn.classList.remove('btn-outline-warning');
-            btn.classList.add('btn-warning', 'text-dark');
-        }
-        if (shield) {
-            shield.style.display = 'flex';
-            shield.style.opacity = '1';
-            shield.style.pointerEvents = 'all';
-        }
+
 
         // Registrar lectura en bitácora auditable
         registrarLecturaAuditoria(docId, tituloDoc);
@@ -872,10 +662,7 @@ sort($categorias);
         if (modal) modal.style.display = 'none';
         document.body.style.overflow = '';
         isViewerActive = false;
-        desactivarCensura();
-        if (modoWhatsAppActivo) {
-            toggleModoWhatsApp();
-        }
+        currentPdfDoc = null;
     }
 
     // 5. FILTROS DE POLÍTICAS EN TIEMPO REAL
