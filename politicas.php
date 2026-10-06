@@ -255,6 +255,67 @@ sort($categorias);
             letter-spacing: 0.5px;
         }
 
+        /* OVERLAY DE BLOQUEO POR CURSOR FUERA DEL PDF */
+        #pdfLockOverlay {
+            position: absolute;
+            top: 56px;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 56px);
+            background: rgba(3, 10, 20, 0.94);
+            backdrop-filter: blur(25px);
+            -webkit-backdrop-filter: blur(25px);
+            z-index: 999998;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        #pdfLockOverlay.activo {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .pdf-lock-icon-wrap {
+            width: 76px;
+            height: 76px;
+            margin: 0 auto;
+            border-radius: 50%;
+            background: rgba(220, 38, 38, 0.15);
+            border: 2px solid rgba(220, 38, 38, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            box-shadow: 0 0 25px rgba(220, 38, 38, 0.35);
+            animation: pulseSecurityLock 1.8s infinite ease-in-out;
+        }
+
+        @keyframes pulseSecurityLock {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 20px rgba(220, 38, 38, 0.3);
+            }
+            50% {
+                transform: scale(1.06);
+                box-shadow: 0 0 35px rgba(220, 38, 38, 0.6);
+            }
+        }
+
+        /* EFECTO BLUR SOBRE LAS PÁGINAS PDF CUANDO ESTÁ BLOQUEADO */
+        .pdf-page-wrapper {
+            transition: filter 0.18s ease, opacity 0.18s ease;
+        }
+
+        .visor-bloqueado .pdf-page-wrapper {
+            filter: blur(25px) grayscale(90%) !important;
+            opacity: 0.12 !important;
+        }
         
         @media print {
             * {
@@ -443,11 +504,32 @@ sort($categorias);
                 <i class="bi bi-shield-lock-fill text-warning me-1"></i> Trama Óptica Anti-Cámara
             </span>
 
+            <!-- BADGE DE BLOQUEO POR CURSOR -->
+            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
+                <i class="bi bi-cursor-fill text-danger me-1"></i> Bloqueo de Cursor Activo
+            </span>
             
             <!-- BOTÓN CERRAR VISOR -->
             <button type="button" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3 ms-2" onclick="cerrarVisorBlindado()">
                 <i class="bi bi-x-lg me-1"></i> Cerrar
             </button>
+        </div>
+    </div>
+
+    <!-- OVERLAY DE BLOQUEO POR CURSOR FUERA DEL PDF -->
+    <div id="pdfLockOverlay">
+        <div class="text-center px-4" style="max-width: 520px;">
+            <div class="pdf-lock-icon-wrap mb-3">
+                <i class="bi bi-shield-slash-fill text-danger"></i>
+            </div>
+            <h4 class="fw-bold text-white mb-2" style="letter-spacing: 0.5px;">LECTURA BLOQUEADA POR SEGURIDAD</h4>
+            <p class="text-secondary mb-3 small" style="line-height: 1.5;">
+                El cursor ha salido del área del documento. Por políticas de confidencialidad institucional, el contenido se protege automáticamente para prevenir capturas no autorizadas.
+            </p>
+            <div class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-40 px-3.5 py-2 rounded-pill font-monospace small d-inline-flex align-items-center gap-2 shadow-lg">
+                <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                Coloca el cursor sobre el documento PDF para continuar la lectura
+            </div>
         </div>
     </div>
 
@@ -459,8 +541,6 @@ sort($categorias);
             <p class="text-secondary small">Aplicando marcas de agua forenses y filtros ópticos anti-captura.</p>
         </div>
     </div>
-
-        </div>
 </div>
 
 
@@ -479,6 +559,109 @@ sort($categorias);
     let currentZoom = 1.0;
     let totalPdfPages = 0;
     let isViewerActive = false;
+    let isPdfRenderCompleted = false;
+    let isCursorOverDocument = false;
+    let ultimoMouseX = null;
+    let ultimoMouseY = null;
+
+    // =========================================================================
+    // SEGURIDAD DLP: BLOQUEO AUTOMÁTICO CUANDO EL CURSOR SALE DEL PDF
+    // =========================================================================
+    function actualizarEstadoBloqueoPdf(bloquear) {
+        if (!isViewerActive || !isPdfRenderCompleted) return;
+
+        const overlay = document.getElementById('pdfLockOverlay');
+        const container = document.getElementById('visorCanvasContainer');
+        if (!overlay || !container) return;
+
+        if (bloquear) {
+            overlay.classList.add('activo');
+            container.classList.add('visor-bloqueado');
+        } else {
+            overlay.classList.remove('activo');
+            container.classList.remove('visor-bloqueado');
+        }
+    }
+
+    function verificarCursorSobrePdf(clientX, clientY) {
+        ultimoMouseX = clientX;
+        ultimoMouseY = clientY;
+
+        if (!isViewerActive || !isPdfRenderCompleted) return;
+
+        const wrappers = document.querySelectorAll('.pdf-page-wrapper');
+        if (!wrappers || wrappers.length === 0) return;
+
+        // 1. Detección directa del elemento bajo el cursor
+        const elUnderCursor = document.elementFromPoint(clientX, clientY);
+        if (elUnderCursor && (elUnderCursor.classList.contains('pdf-page-wrapper') || elUnderCursor.closest('.pdf-page-wrapper'))) {
+            isCursorOverDocument = true;
+            actualizarEstadoBloqueoPdf(false);
+            return;
+        }
+
+        // 2. Detección de la columna vertical del documento PDF (tolerancia de lectura continua)
+        let dentroDeColumna = false;
+        for (let i = 0; i < wrappers.length; i++) {
+            const rect = wrappers[i].getBoundingClientRect();
+            // Comprobar si el cursor está dentro del ancho de la página con tolerancia de 20px
+            if (clientX >= (rect.left - 20) && clientX <= (rect.right + 20)) {
+                if (clientY >= (rect.top - 25) && clientY <= (rect.bottom + 25)) {
+                    dentroDeColumna = true;
+                    break;
+                }
+            }
+        }
+
+        if (dentroDeColumna) {
+            isCursorOverDocument = true;
+            actualizarEstadoBloqueoPdf(false);
+        } else {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
+    }
+
+    // Escuchadores de eventos para rastrear el cursor y pérdida de foco
+    window.addEventListener('mousemove', function(e) {
+        if (!isViewerActive) return;
+        verificarCursorSobrePdf(e.clientX, e.clientY);
+    }, { passive: true });
+
+    document.addEventListener('mouseleave', function() {
+        if (isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
+    });
+
+    window.addEventListener('blur', function() {
+        if (isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
+    });
+
+    document.addEventListener('visibilitychange', function() {
+        if (document.hidden && isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
+    });
+
+    window.addEventListener('touchmove', function(e) {
+        if (!isViewerActive) return;
+        if (e.touches && e.touches.length > 0) {
+            verificarCursorSobrePdf(e.touches[0].clientX, e.touches[0].clientY);
+        }
+    }, { passive: true });
+
+    window.addEventListener('touchstart', function(e) {
+        if (!isViewerActive) return;
+        if (e.touches && e.touches.length > 0) {
+            verificarCursorSobrePdf(e.touches[0].clientX, e.touches[0].clientY);
+        }
+    }, { passive: true });
 
     // 1. PROTECCIÓN DE ATAJOS DE TECLADO (IMPRESIÓN, GUARDADO E INSPECCIÓN)
     window.addEventListener('keydown', function(e) {
@@ -530,8 +713,11 @@ sort($categorias);
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
-
-
+        isPdfRenderCompleted = false;
+        isCursorOverDocument = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        container.classList.remove('visor-bloqueado');
 
         // Registrar lectura en bitácora auditable
         registrarLecturaAuditoria(docId, tituloDoc);
@@ -574,6 +760,7 @@ sort($categorias);
     function renderizarTodasLasPaginas(pdf, container) {
         container.innerHTML = '';
         const wrappers = [];
+        let paginasRenderizadas = 0;
 
         // 1. Crear los contenedores individuales en orden secuencial estricto
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
@@ -639,6 +826,18 @@ sort($categorias);
                         }
 
                         wrapper.appendChild(watermarkLayer);
+
+                        paginasRenderizadas++;
+                        if (paginasRenderizadas === pdf.numPages) {
+                            isPdfRenderCompleted = true;
+                            setTimeout(function() {
+                                if (ultimoMouseX !== null && ultimoMouseY !== null) {
+                                    verificarCursorSobrePdf(ultimoMouseX, ultimoMouseY);
+                                } else {
+                                    actualizarEstadoBloqueoPdf(true);
+                                }
+                            }, 120);
+                        }
                     });
 
                     wrapper.appendChild(canvas);
@@ -654,6 +853,10 @@ sort($categorias);
         document.getElementById('visorZoomBadge').textContent = Math.round(currentZoom * 100) + '%';
         const container = document.getElementById('visorCanvasContainer');
         container.innerHTML = '';
+        isPdfRenderCompleted = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        container.classList.remove('visor-bloqueado');
         renderizarTodasLasPaginas(currentPdfDoc, container);
     }
 
@@ -662,7 +865,23 @@ sort($categorias);
         if (modal) modal.style.display = 'none';
         document.body.style.overflow = '';
         isViewerActive = false;
+        isPdfRenderCompleted = false;
+        isCursorOverDocument = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        const container = document.getElementById('visorCanvasContainer');
+        if (container) container.classList.remove('visor-bloqueado');
         currentPdfDoc = null;
+    }
+
+    // Re-verificar posición en caso de desplazamiento con rueda del ratón
+    const containerCanvasEl = document.getElementById('visorCanvasContainer');
+    if (containerCanvasEl) {
+        containerCanvasEl.addEventListener('scroll', function() {
+            if (isViewerActive && isPdfRenderCompleted && ultimoMouseX !== null && ultimoMouseY !== null) {
+                verificarCursorSobrePdf(ultimoMouseX, ultimoMouseY);
+            }
+        }, { passive: true });
     }
 
     // 5. FILTROS DE POLÍTICAS EN TIEMPO REAL
