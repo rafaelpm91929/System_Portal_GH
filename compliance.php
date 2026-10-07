@@ -946,13 +946,13 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </p>
 
                 <div class="d-flex flex-wrap gap-3">
-                    <button class="btn-gold-primary" onclick="cambiarSeccion('formatos')">
+                    <button type="button" class="btn-gold-primary" onclick="cambiarSeccion('formatos')">
                         <i class="bi bi-file-earmark-text-fill"></i> Explorar Formatos
                     </button>
-                    <button class="btn-gold-outline" onclick="cambiarSeccion('manuales')">
+                    <button type="button" class="btn-gold-outline" onclick="cambiarSeccion('manuales')">
                         <i class="bi bi-book-half"></i> Consultar Manuales
                     </button>
-                    <button class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
+                    <button type="button" class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
                         <i class="bi bi-megaphone-fill"></i> Ver Avisos
                     </button>
                 </div>
@@ -1021,7 +1021,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
                                 <i class="bi bi-file-earmark-text text-warning"></i> Formatos Más Solicitados
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('formatos')">
+                            <button type="button" class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('formatos')">
                                 Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
@@ -1041,7 +1041,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                             </div>
                                         </div>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($mf)); ?>)">
+                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($mf)); ?>)">
                                         <i class="bi bi-eye"></i>
                                     </button>
                                 </div>
@@ -1057,7 +1057,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                                 <span class="badge bg-warning text-dark fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.7rem;"><?php echo count($avisos); ?></span>
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
+                            <button type="button" class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
                                 Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
@@ -1065,10 +1065,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <?php if (!empty($avisos)): ?>
                             <div class="dash-carousel-container" id="dashAvisosCarousel" onmouseenter="pausarDashCarousel()" onmouseleave="reanudarDashCarousel()">
                                 <div class="dash-carousel-indicator" id="dashCarouselCounter">1 / <?php echo count($avisos); ?></div>
-                                <button class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
+                                <button type="button" class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
                                     <i class="bi bi-chevron-left"></i>
                                 </button>
-                                <button class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
+                                <button type="button" class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
                                     <i class="bi bi-chevron-right"></i>
                                 </button>
 
