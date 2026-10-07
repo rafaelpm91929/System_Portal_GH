@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#040d1a" />
+      <stop offset="50%" stop-color="#081a33" />
+      <stop offset="100%" stop-color="#020812" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d4af37" />
+      <stop offset="50%" stop-color="#f5df9e" />
+      <stop offset="100%" stop-color="#a6841e" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="675" fill="url(#bgGrad)" />
+  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="rgba(212, 175, 55, 0.45)" stroke-width="2" />
+  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(212, 175, 55, 0.15)" stroke-width="1" />
+  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="#d4af37" stroke-width="4" />
+  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="#d4af37" stroke-width="4" />
+  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="#d4af37" stroke-width="4" />
+  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="#d4af37" stroke-width="4" />
+  <g transform="translate(60, 65)">
+    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(212, 175, 55, 0.2)" stroke="#d4af37" stroke-width="2" />
+    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="#f5df9e" stroke-width="2.5" stroke-linecap="round" />
+    <text x="65" y="24" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="2">GRUPO HUERTA</text>
+    <text x="65" y="46" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="600" fill="#94a3b8" letter-spacing="1">GOBIERNO CORPORATIVO &amp; COMPLIANCE INSTITUCIONAL</text>
+  </g>
+  <g transform="translate(860, 65)">
+    <rect x="0" y="0" width="280" height="42" rx="10" fill="#ef4444" />
+    <text x="140" y="26" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="1">PRIORIDAD ALTA</text>
+  </g>
+  <line x1="60" y1="140" x2="1140" y2="140" stroke="url(#goldGrad)" stroke-width="2" />
+  <g transform="translate(60, 180)">
+    <rect x="0" y="0" width="120" height="30" rx="6" fill="rgba(212, 175, 55, 0.15)" stroke="#d4af37" stroke-width="1" />
+    <text x="60" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#f5df9e" text-anchor="middle">AV-01</text>
+    <text x="145" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="600" fill="#38bdf8">&bull; Legal &amp; Cumplimiento</text>
+    <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: 2026-10-08</text>
+  </g>
+  <text x="60" y="250" font-family="Plus Jakarta Sans, sans-serif" font-size="34" font-weight="800" fill="#ffffff" letter-spacing="0.5">
+    <tspan x="60" dy="0">Aviso de Privacidad Integral Institucional</tspan>
+    <tspan x="60" dy="42">para Colaboradores y Clientes</tspan>
+  </text>
+  <text x="60" y="359" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="400" fill="#cbd5e1" letter-spacing="0.2">
+    <tspan x="60" dy="0">Lineamiento maestro del tratamiento, confidencialidad, resguardo y</tspan>
+    <tspan x="60" dy="34">transferencia legítima de datos personales y sensibles dentro de las</tspan>
+    <tspan x="60" dy="34">entidades de Grupo Huerta.</tspan>
+  </text>
+  <line x1="60" y1="580" x2="1140" y2="580" stroke="rgba(212, 175, 55, 0.3)" stroke-width="1" />
+  <g transform="translate(60, 615)">
+    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="#d4af37">EMISOR: Comité de Cumplimiento</text>
+    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>
+  </g>
+</svg>
