@@ -892,7 +892,7 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '  <g transform="translate(60, 160)">' . "\n";
     $svg .= '    <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(255, 255, 255, 0.1)" stroke="' . $goldColor . '" stroke-width="1" />' . "\n";
     $svg .= '    <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="' . $goldLight . '" text-anchor="middle">' . $xmlEsc($codigo) . '</text>' . "\n";
-    $svg .= '    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&bull; ' . $xmlEsc($categoria) . '</text>' . "\n";
+    $svg .= '    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&#8226; ' . $xmlEsc($categoria) . '</text>' . "\n";
     $svg .= '    <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: ' . $xmlEsc($fecha) . '</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
@@ -925,7 +925,7 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '  <line x1="60" y1="595" x2="1140" y2="595" stroke="' . $strokeBorder . '" stroke-width="1" />' . "\n";
     $svg .= '  <g transform="translate(60, 625)">' . "\n";
     $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="' . $goldColor . '">EMISOR: ' . $xmlEsc($emisor) . '</text>' . "\n";
-    $svg .= '    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>' . "\n";
+    $svg .= '    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &#8226; GRUPO HUERTA</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
     $svg .= '</svg>' . "\n";

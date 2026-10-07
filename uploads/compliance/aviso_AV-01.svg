@@ -36,7 +36,7 @@
   <g transform="translate(60, 160)">
     <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(212, 175, 55, 0.18)" stroke="#d4af37" stroke-width="1" />
     <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="#f5df9e" text-anchor="middle">AV-01</text>
-    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&bull; Legal &amp; Cumplimiento</text>
+    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&#8226; Legal &amp; Cumplimiento</text>
     <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: 2026-01-01</text>
   </g>
   <rect x="55" y="205" width="1090" height="375" rx="14" fill="url(#cardGrad)" stroke="rgba(212, 175, 55, 0.25)" stroke-width="1" />
@@ -53,6 +53,6 @@
   <line x1="60" y1="595" x2="1140" y2="595" stroke="rgba(212, 175, 55, 0.3)" stroke-width="1" />
   <g transform="translate(60, 625)">
     <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="#d4af37">EMISOR: Comité de Cumplimiento</text>
-    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>
+    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &#8226; GRUPO HUERTA</text>
   </g>
 </svg>
