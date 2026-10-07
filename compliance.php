@@ -1199,13 +1199,13 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </p>
 
                 <div class="d-flex flex-wrap gap-3">
-                    <button class="btn-gold-primary" onclick="cambiarSeccion('formatos')">
+                    <button type="button" class="btn-gold-primary" onclick="cambiarSeccion('formatos')">
                         <i class="bi bi-file-earmark-text-fill"></i> Explorar Formatos
                     </button>
-                    <button class="btn-gold-outline" onclick="cambiarSeccion('manuales')">
+                    <button type="button" class="btn-gold-outline" onclick="cambiarSeccion('manuales')">
                         <i class="bi bi-book-half"></i> Consultar Manuales
                     </button>
-                    <button class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
+                    <button type="button" class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
                         <i class="bi bi-megaphone-fill"></i> Ver Avisos
                     </button>
                 </div>
@@ -1274,7 +1274,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
                                 <i class="bi bi-file-earmark-text text-warning"></i> Formatos Más Solicitados
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('formatos')">
+                            <button type="button" class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('formatos')">
                                 Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
@@ -1294,7 +1294,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                             </div>
                                         </div>
                                     </div>
-                                    <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($mf)); ?>)">
+                                    <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($mf)); ?>)">
                                         <i class="bi bi-eye"></i>
                                     </button>
                                 </div>
@@ -1310,7 +1310,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                                 <span class="badge bg-warning text-dark fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.7rem;"><?php echo count($avisos); ?></span>
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
+                            <button type="button" class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
                                 Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
@@ -1318,10 +1318,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <?php if (!empty($avisos)): ?>
                             <div class="dash-carousel-container" id="dashAvisosCarousel" onmouseenter="pausarDashCarousel()" onmouseleave="reanudarDashCarousel()">
                                 <div class="dash-carousel-indicator" id="dashCarouselCounter">1 / <?php echo count($avisos); ?></div>
-                                <button class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
+                                <button type="button" class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
                                     <i class="bi bi-chevron-left"></i>
                                 </button>
-                                <button class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
+                                <button type="button" class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
                                     <i class="bi bi-chevron-right"></i>
                                 </button>
 
@@ -1404,7 +1404,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                     </div>
 
                                     <div class="d-flex align-items-center gap-2">
-                                        <button class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($fmt)); ?>)">
+                                        <button type="button" class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($fmt)); ?>)">
                                             <i class="bi bi-eye"></i> Visualizar
                                         </button>
                                         <?php if (!empty($fmt['archivo_url'])): ?>
@@ -1479,7 +1479,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                     </div>
 
                                     <div class="d-flex align-items-center gap-2">
-                                        <button class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($man)); ?>)">
+                                        <button type="button" class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($man)); ?>)">
                                             <i class="bi bi-book"></i> Consultar Manual
                                         </button>
                                         <?php if (!empty($man['archivo_url'])): ?>
@@ -1494,6 +1494,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                             <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3 d-inline-flex align-items-center gap-1" title="Eliminar Manual">
                                                 <i class="bi bi-trash3-fill"></i> Borrar
                                             </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -1517,7 +1518,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <p class="text-secondary small mb-0">Comunicados oficiales, avisos de privacidad y alertas institucionales de Grupo Huerta.</p>
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="btnToggleVistaAvisos" onclick="toggleVistaAvisos()">
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="btnToggleVistaAvisos" onclick="toggleVistaAvisos()">
                         <i class="bi bi-grid-fill me-1"></i> <span id="txtToggleVista">Ver Cuadrícula</span>
                     </button>
                     <input type="text" id="filtroAvisos" class="search-control-box" placeholder="Buscar aviso..." style="min-width: 220px;">
@@ -1541,7 +1542,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <span class="text-secondary small" id="indicadorGaleriaTexto">Aviso 1 de <?php echo count($avisos); ?></span>
                         </div>
                         <div class="d-flex align-items-center gap-2">
-                            <button class="btn btn-sm btn-outline-secondary rounded-circle" id="btnPausaGaleria" onclick="togglePlayGaleria()" title="Pausar / Reanudar Rotación" style="width: 34px; height: 34px; padding: 0;">
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-circle" id="btnPausaGaleria" onclick="togglePlayGaleria()" title="Pausar / Reanudar Rotación" style="width: 34px; height: 34px; padding: 0;">
                                 <i class="bi bi-pause-fill" id="iconoPausa"></i>
                             </button>
                         </div>
@@ -1551,10 +1552,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div class="gallery-autoplay-bar" id="galleryProgressBar"></div>
 
                         <!-- Botones de Navegación -->
-                        <button class="gallery-controls-btn gallery-btn-prev" onclick="cambiarSlideGaleria(-1)" aria-label="Aviso Anterior">
+                        <button type="button" class="gallery-controls-btn gallery-btn-prev" onclick="cambiarSlideGaleria(-1)" aria-label="Aviso Anterior">
                             <i class="bi bi-chevron-left"></i>
                         </button>
-                        <button class="gallery-controls-btn gallery-btn-next" onclick="cambiarSlideGaleria(1)" aria-label="Aviso Siguiente">
+                        <button type="button" class="gallery-controls-btn gallery-btn-next" onclick="cambiarSlideGaleria(1)" aria-label="Aviso Siguiente">
                             <i class="bi bi-chevron-right"></i>
                         </button>
 
@@ -1583,7 +1584,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                     </div>
 
                                     <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                        <button class="btn btn-sm btn-gold-primary rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <button type="button" class="btn btn-sm btn-gold-primary rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
                                             <i class="bi bi-arrows-fullscreen me-1"></i> Pantalla Completa
                                         </button>
                                         <?php if (!empty($av['archivo_url'])): ?>
@@ -1645,7 +1646,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-10">
                                     <span class="text-secondary" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
                                     <div class="d-flex align-items-center gap-2">
-                                        <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
                                             <i class="bi bi-arrows-fullscreen"></i>
                                         </button>
                                         <?php if (!empty($av['archivo_url'])): ?>
