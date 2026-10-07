@@ -496,8 +496,9 @@ function asegurarTablaPoliticas($pdo = null) {
                     INDEX `idx_politica` (`politica_id`),
                     INDEX `idx_usuario` (`usuario_login`),
                     INDEX `idx_fecha` (`fecha_lectura`)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+            try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+            try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL"); } catch (Throwable $t) {}
         }
     } catch (Throwable $e) {}
 }

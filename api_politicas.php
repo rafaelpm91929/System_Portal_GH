@@ -107,10 +107,10 @@ if ($action === 'listar') {
 
     try {
         $stmt = $pdo->query("
-            SELECT id, titulo, descripcion, categoria, version, fecha_vigencia, obligatorio_lectura, estatus, creado_en 
+            SELECT * 
             FROM politicas_corporativas 
             WHERE estatus = 1 
-            ORDER BY categoria ASC, titulo ASC
+            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
         ");
         $politicas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
