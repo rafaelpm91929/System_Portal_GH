@@ -706,11 +706,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         .dash-carousel-container {
             position: relative;
             width: 100%;
-            height: 240px;
+            height: 270px;
             background: #030812;
-            border-radius: 14px;
+            border-radius: 16px;
             overflow: hidden;
-            border: 1px solid rgba(212, 175, 55, 0.25);
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         }
         .dash-carousel-slide {
             display: none;
@@ -739,6 +740,53 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             display: flex;
             flex-direction: column;
             gap: 2px;
+        }
+        .dash-fb-card {
+            width: 100%;
+            height: 100%;
+            border-radius: 14px;
+            padding: 16px 20px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: stretch;
+            cursor: pointer;
+            box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.35);
+            position: relative;
+            overflow: hidden;
+        }
+        .dash-fb-body {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            overflow: hidden;
+            padding: 8px 10px;
+        }
+        .dash-fb-title {
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 1.15rem;
+            line-height: 1.35;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .dash-fb-text {
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 0.88rem;
+            line-height: 1.45;
+            margin-bottom: 0;
+            text-shadow: 0 1px 5px rgba(0, 0, 0, 0.85);
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
         .dash-carousel-nav {
             position: absolute;
@@ -1132,20 +1180,88 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 </button>
 
                                 <?php foreach ($avisos as $dIdx => $dAv): 
-                                    $dImg = !empty($dAv['imagen_url_completa']) ? $dAv['imagen_url_completa'] : (!empty($dAv['imagen_url']) ? $dAv['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
-                                    $dPrio = $dAv['prioridad'];
-                                    $dBadge = ($dPrio === 'Alta' || $dPrio === 'Urgente') ? 'bg-danger' : (($dPrio === 'Media') ? 'bg-warning text-dark' : 'bg-primary');
+                                    $dImg = !empty($dAv['imagen_url_completa']) ? $dAv['imagen_url_completa'] : (!empty($dAv['imagen_url']) ? $dAv['imagen_url'] : '');
+                                    $dExt = strtolower(pathinfo($dImg, PATHINFO_EXTENSION));
+                                    $dEsFisica = !empty($dImg) && in_array($dExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($dImg, 'aviso_card_') === false);
+                                    
+                                    $dPrio = $dAv['prioridad'] ?? 'Normal';
+                                    $dBadge = ($dPrio === 'Alta' || $dPrio === 'Urgente') ? 'bg-danger text-white' : (($dPrio === 'Media') ? 'bg-warning text-dark' : 'bg-primary text-white');
+                                    
+                                    $dFondoCls = 'swatch-negro';
+                                    if ($dPrio === 'Alta' || $dPrio === 'Urgente') {
+                                        $dFondoCls = 'swatch-rojo';
+                                    } elseif ($dPrio === 'Media') {
+                                        $dFondoCls = 'swatch-azul';
+                                    } elseif (stripos($dAv['categoria'] ?? '', 'ciber') !== false) {
+                                        $dFondoCls = 'swatch-azul';
+                                    } elseif (stripos($dAv['categoria'] ?? '', 'legal') !== false || stripos($dAv['categoria'] ?? '', 'alta') !== false) {
+                                        $dFondoCls = 'swatch-rojo';
+                                    }
+
+                                    if (!empty($dImg) && strpos($dImg, '.svg') !== false && file_exists(__DIR__ . '/' . $dImg)) {
+                                        $svgRaw = @file_get_contents(__DIR__ . '/' . $dImg);
+                                        if ($svgRaw) {
+                                            if (strpos($svgRaw, '#400b11') !== false || strpos($svgRaw, '#70131e') !== false) $dFondoCls = 'swatch-rojo';
+                                            elseif (strpos($svgRaw, '#0a1e3f') !== false || strpos($svgRaw, '#0d3b66') !== false) $dFondoCls = 'swatch-azul';
+                                            elseif (strpos($svgRaw, '#092b1a') !== false || strpos($svgRaw, '#0f5132') !== false) $dFondoCls = 'swatch-verde';
+                                            elseif (strpos($svgRaw, '#230c33') !== false || strpos($svgRaw, '#4a154b') !== false) $dFondoCls = 'swatch-purpura';
+                                            elseif (strpos($svgRaw, '#050b14') !== false || strpos($svgRaw, '#101c30') !== false) $dFondoCls = 'swatch-negro';
+                                        }
+                                    }
                                 ?>
                                     <div class="dash-carousel-slide <?php echo $dIdx === 0 ? 'active' : ''; ?>" data-dash-index="<?php echo $dIdx; ?>" onclick="cambiarSeccion('avisos')">
-                                        <img src="<?php echo htmlspecialchars($dImg); ?>" alt="<?php echo htmlspecialchars($dAv['titulo']); ?>" class="dash-carousel-img">
-                                        <div class="dash-carousel-overlay">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <span class="badge <?php echo $dBadge; ?> px-2 py-0.5" style="font-size: 0.68rem; font-weight: 700;"><?php echo htmlspecialchars($dAv['codigo']); ?></span>
-                                                <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></span>
+                                        <?php if ($dEsFisica): ?>
+                                            <img src="<?php echo htmlspecialchars($dImg); ?>" alt="<?php echo htmlspecialchars($dAv['titulo']); ?>" class="dash-carousel-img" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('d-none');">
+                                            <div class="dash-fb-card <?php echo $dFondoCls; ?> d-none">
+                                                <div class="d-flex align-items-center justify-content-between w-100 mb-2 pe-5">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <div class="fb-card-logo" style="width: 28px; height: 28px; font-size: 0.7rem;">GH</div>
+                                                        <div class="text-start">
+                                                            <div class="text-white fw-bold" style="font-size: 0.72rem; letter-spacing: 0.5px;">GRUPO HUERTA &bull; COMUNICADO</div>
+                                                            <div class="text-white text-opacity-75" style="font-size: 0.65rem;"><i class="bi bi-calendar3 me-1"></i><?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <span class="badge <?php echo $dBadge; ?> fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.68rem;"><?php echo htmlspecialchars(strtoupper($dPrio)); ?></span>
+                                                </div>
+                                                <div class="dash-fb-body text-center my-auto py-2 px-2">
+                                                    <h4 class="dash-fb-title"><?php echo htmlspecialchars($dAv['titulo']); ?></h4>
+                                                    <p class="dash-fb-text"><?php echo nl2br(htmlspecialchars($dAv['descripcion'])); ?></p>
+                                                </div>
+                                                <div class="d-flex align-items-center justify-content-between w-100 pt-2 border-top border-white border-opacity-15" style="font-size: 0.7rem;">
+                                                    <span class="text-white text-opacity-80 fw-semibold"><i class="bi bi-shield-check text-warning me-1"></i> <?php echo htmlspecialchars($dAv['codigo']); ?> &bull; <?php echo htmlspecialchars($dAv['categoria']); ?></span>
+                                                    <span class="text-warning fw-bold">Ver aviso <i class="bi bi-arrow-right"></i></span>
+                                                </div>
                                             </div>
-                                            <div class="fw-bold text-white text-truncate mt-1" style="font-size: 0.95rem;"><?php echo htmlspecialchars($dAv['titulo']); ?></div>
-                                            <div class="text-light text-opacity-75 text-truncate" style="font-size: 0.78rem;"><?php echo htmlspecialchars($dAv['descripcion']); ?></div>
-                                        </div>
+                                            <div class="dash-carousel-overlay">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="badge <?php echo $dBadge; ?> px-2 py-0.5" style="font-size: 0.68rem; font-weight: 700;"><?php echo htmlspecialchars($dAv['codigo']); ?></span>
+                                                    <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></span>
+                                                </div>
+                                                <div class="fw-bold text-white text-truncate mt-1" style="font-size: 0.95rem;"><?php echo htmlspecialchars($dAv['titulo']); ?></div>
+                                                <div class="text-light text-opacity-75 text-truncate" style="font-size: 0.78rem;"><?php echo htmlspecialchars($dAv['descripcion']); ?></div>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="dash-fb-card <?php echo $dFondoCls; ?>">
+                                                <div class="d-flex align-items-center justify-content-between w-100 mb-2 pe-5">
+                                                    <div class="d-flex align-items-center gap-2">
+                                                        <div class="fb-card-logo" style="width: 28px; height: 28px; font-size: 0.7rem;">GH</div>
+                                                        <div class="text-start">
+                                                            <div class="text-white fw-bold" style="font-size: 0.72rem; letter-spacing: 0.5px;">GRUPO HUERTA &bull; COMUNICADO</div>
+                                                            <div class="text-white text-opacity-75" style="font-size: 0.65rem;"><i class="bi bi-calendar3 me-1"></i><?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <span class="badge <?php echo $dBadge; ?> fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.68rem;"><?php echo htmlspecialchars(strtoupper($dPrio)); ?></span>
+                                                </div>
+                                                <div class="dash-fb-body text-center my-auto py-2 px-2">
+                                                    <h4 class="dash-fb-title"><?php echo htmlspecialchars($dAv['titulo']); ?></h4>
+                                                    <p class="dash-fb-text"><?php echo nl2br(htmlspecialchars($dAv['descripcion'])); ?></p>
+                                                </div>
+                                                <div class="d-flex align-items-center justify-content-between w-100 pt-2 border-top border-white border-opacity-15" style="font-size: 0.7rem;">
+                                                    <span class="text-white text-opacity-80 fw-semibold"><i class="bi bi-shield-check text-warning me-1"></i> <?php echo htmlspecialchars($dAv['codigo']); ?> &bull; <?php echo htmlspecialchars($dAv['categoria']); ?></span>
+                                                    <span class="text-warning fw-bold">Ver aviso <i class="bi bi-arrow-right"></i></span>
+                                                </div>
+                                            </div>
+                                        <?php endif; ?>
                                     </div>
                                 <?php endforeach; ?>
                             </div>
@@ -1426,10 +1542,23 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <!-- Tira de Miniaturas Inferior -->
                     <div class="gallery-thumbs-strip" id="galleryThumbsStrip">
                         <?php foreach ($avisos as $idx => $av): 
-                            $thumbImg = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                            $thumbImg = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : '');
+                            $tExt = strtolower(pathinfo($thumbImg, PATHINFO_EXTENSION));
+                            $tEsFisica = !empty($thumbImg) && in_array($tExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($thumbImg, 'aviso_card_') === false);
+                            $tFondoCls = ($av['prioridad'] === 'Alta' || $av['prioridad'] === 'Urgente') ? 'swatch-rojo' : (($av['prioridad'] === 'Media') ? 'swatch-azul' : 'swatch-negro');
                         ?>
                             <div class="gallery-thumb-card <?php echo $idx === 0 ? 'active' : ''; ?>" data-thumb-index="<?php echo $idx; ?>" onclick="irASlideGaleria(<?php echo $idx; ?>)" title="<?php echo htmlspecialchars($av['titulo']); ?>">
-                                <img src="<?php echo htmlspecialchars($thumbImg); ?>" alt="Miniatura <?php echo htmlspecialchars($av['codigo']); ?>">
+                                <?php if ($tEsFisica): ?>
+                                    <img src="<?php echo htmlspecialchars($thumbImg); ?>" alt="Miniatura <?php echo htmlspecialchars($av['codigo']); ?>" onerror="this.style.display='none'; this.nextElementSibling.classList.remove('d-none');">
+                                    <div class="w-100 h-100 d-none d-flex flex-column align-items-center justify-content-center <?php echo $tFondoCls; ?>" style="padding: 4px;">
+                                        <span class="fw-bold text-white" style="font-size: 0.7rem;">GH</span>
+                                    </div>
+                                <?php else: ?>
+                                    <div class="w-100 h-100 d-flex flex-column align-items-center justify-content-center <?php echo $tFondoCls; ?>" style="padding: 4px;">
+                                        <div class="fb-card-logo" style="width: 20px; height: 20px; font-size: 0.55rem; margin-bottom: 2px;">GH</div>
+                                        <div class="text-white text-truncate w-100 text-center" style="font-size: 0.55rem; font-weight: 700;"><?php echo htmlspecialchars($av['codigo']); ?></div>
+                                    </div>
+                                <?php endif; ?>
                                 <div class="position-absolute bottom-0 start-0 end-0 p-1 text-center small text-white fw-bold" style="background: rgba(0,0,0,0.7); font-size: 0.65rem;">
                                     <?php echo htmlspecialchars($av['codigo']); ?>
                                 </div>
@@ -1441,7 +1570,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 <!-- 2. VISTA CUADRÍCULA ALTERNA (OCULTA POR DEFECTO) -->
                 <div class="row g-3 d-none" id="vistaCuadriculaAvisos">
                     <?php foreach ($avisos as $av): 
-                        $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                        $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : '');
+                        $avExt = strtolower(pathinfo($imgSrc, PATHINFO_EXTENSION));
+                        $avEsFisica = !empty($imgSrc) && in_array($avExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false);
+                        $avFondoCls = ($av['prioridad'] === 'Alta' || $av['prioridad'] === 'Urgente') ? 'swatch-rojo' : (($av['prioridad'] === 'Media') ? 'swatch-azul' : 'swatch-negro');
+                        if (stripos($av['categoria'], 'ciber') !== false) $avFondoCls = 'swatch-azul';
+                        elseif (stripos($av['categoria'], 'legal') !== false) $avFondoCls = 'swatch-rojo';
                         $anexoUrl = !empty($av['archivo_url_completo']) ? $av['archivo_url_completo'] : ($av['archivo_url'] ?? '');
                         $pClass = 'priority-normal';
                         if ($av['prioridad'] === 'Alta') $pClass = 'priority-alta';
@@ -1450,9 +1584,17 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div class="col-12 col-md-6 item-tarjeta-aviso" data-search="<?php echo htmlspecialchars(strtolower($av['codigo'] . ' ' . $av['titulo'] . ' ' . $av['descripcion'] . ' ' . $av['prioridad'])); ?>">
                             <div class="doc-item-card h-100 d-flex flex-column justify-content-between p-3">
                                 <div>
-                                    <div class="rounded-3 overflow-hidden mb-3 border border-secondary border-opacity-25" style="background: #030812; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
-                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="w-100" style="max-height: 220px; object-fit: contain;">
-                                    </div>
+                                    <?php if ($avEsFisica): ?>
+                                        <div class="rounded-3 overflow-hidden mb-3 border border-secondary border-opacity-25" style="background: #030812; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                            <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="w-100" style="max-height: 220px; object-fit: contain;">
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="rounded-3 overflow-hidden mb-3 p-3 <?php echo $avFondoCls; ?> border border-secondary border-opacity-25 d-flex flex-column justify-content-center text-center" style="min-height: 140px; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                            <div class="fb-card-logo mx-auto mb-2" style="width: 32px; height: 32px; font-size: 0.75rem;">GH</div>
+                                            <div class="fw-bold text-white small mb-1"><?php echo htmlspecialchars($av['titulo']); ?></div>
+                                            <div class="text-white text-opacity-75" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['codigo']); ?> &bull; <?php echo htmlspecialchars($av['fecha_publicacion']); ?></div>
+                                        </div>
+                                    <?php endif; ?>
                                     <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
                                         <span class="doc-code-badge"><?php echo htmlspecialchars($av['codigo']); ?></span>
                                         <span class="doc-priority-badge <?php echo $pClass; ?>">Prioridad <?php echo htmlspecialchars($av['prioridad']); ?></span>
