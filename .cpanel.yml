@@ -12,3 +12,4 @@ deployment:
     - /bin/cp -R prueba.php $DEPLOYPATH/
     - /bin/cp -R .htaccess $DEPLOYPATH/
     - /bin/cp -R index.php $DEPLOYPATH/
+    - /bin/cp -R img $DEPLOYPATH/
