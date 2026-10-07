@@ -867,7 +867,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <i class="bi bi-book-half"></i> Consultar Manuales
                     </button>
                     <button class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
-                        <i class="bi bi-megaphone-fill"></i> Ver Galería de Avisos
+                        <i class="bi bi-megaphone-fill"></i> Ver Avisos
                     </button>
                 </div>
             </div>
@@ -905,7 +905,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number"><?php echo $totalAvisos; ?></div>
                             <div class="kpi-metric-label">Avisos y Circulares</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Galería visual continua</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Comunicados y circulares</div>
                         </div>
                         <div class="kpi-icon-box">
                             <i class="bi bi-megaphone-fill"></i>
@@ -968,10 +968,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <div class="p-4 rounded-4" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                                <i class="bi bi-images text-warning"></i> Galería de Avisos
+                                <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                             </h3>
                             <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('avisos')">
-                                Ver galería <i class="bi bi-arrow-right"></i>
+                                Ver avisos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
 
@@ -1139,7 +1139,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
                 <div>
                     <h2 class="h3 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                        <i class="bi bi-images text-warning"></i> Galería de Avisos & Circulares
+                        <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                     </h2>
                     <p class="text-secondary small mb-0">Avisos de privacidad, alertas de ciberseguridad y circulares oficiales de Grupo Huerta.</p>
                 </div>
@@ -1158,12 +1158,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </div>
             <?php else: ?>
 
-                <!-- 1. VISTA GALERÍA (CARRUSEL AUTOMÁTICO CONTINUO) -->
+                <!-- 1. VISTA CARRUSEL CONTINUO DE AVISOS -->
                 <div class="avisos-gallery-wrapper" id="vistaGaleriaAvisos">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-warning text-dark fw-bold px-3 py-1.5 rounded-pill">
-                                <i class="bi bi-play-circle-fill me-1"></i> GALERÍA ACTIVA
+                                <i class="bi bi-megaphone-fill me-1"></i> AVISOS
                             </span>
                             <span class="text-secondary small" id="indicadorGaleriaTexto">Aviso 1 de <?php echo count($avisos); ?></span>
                         </div>
@@ -1498,7 +1498,7 @@ function toggleVistaAvisos() {
         if (esGal) {
             gal.classList.add('d-none');
             cuad.classList.remove('d-none');
-            if (txt) txt.innerText = 'Ver Galería';
+            if (txt) txt.innerText = 'Ver Carrusel de Avisos';
             pausarAutoPlay();
         } else {
             gal.classList.remove('d-none');
