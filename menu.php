@@ -281,6 +281,21 @@ $modulosVisibles = 0;
     </div>
     <?php endif; ?>
 
+    <!-- Módulo: Compliance Institucional -->
+    <?php if (tienePermiso('compliance', 'puede_ver')): $modulosVisibles++; ?>
+    <div class="module-card" style="border-color: rgba(212, 175, 55, 0.45); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35), 0 0 15px rgba(212, 175, 55, 0.12);">
+        <span class="active-badge" style="background: rgba(212, 175, 55, 0.15); color: #f5df9e; border-color: rgba(212, 175, 55, 0.35);"><i class="bi bi-shield-check me-1"></i> GOBIERNO & CONTROL</span>
+        <div class="icon-box" style="background: rgba(212, 175, 55, 0.15); color: #d4af37; border: 1px solid rgba(212, 175, 55, 0.3);">
+            <i class="bi bi-journal-check"></i>
+        </div>
+        <div class="module-title">Compliance</div>
+        <div class="module-desc">
+            Formatos oficiales, manuales de procedimientos y avisos institucionales de cumplimiento con menú lateral interactivo.
+        </div>
+        <a href="compliance.php" class="btn-ingresar" style="background: linear-gradient(135deg, #b8972e 0%, #8c711e 100%); border-color: rgba(245, 223, 158, 0.4); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);">Ingresar</a>
+    </div>
+    <?php endif; ?>
+
     <!-- Módulo: Tickets Soporte Dirección Sistemas -->
     <?php if (tienePermiso('tickets', 'puede_ver')): $modulosVisibles++; ?>
     <div class="module-card" style="border-color: rgba(14, 165, 233, 0.45);">

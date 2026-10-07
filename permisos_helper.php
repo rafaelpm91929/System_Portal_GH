@@ -130,8 +130,9 @@ function asegurarTablasPermisos($pdo) {
         ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
         ('directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1),
         ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1),
-        ('politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1)
-        ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`);");
+        ('politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1),
+        ('compliance', 'Compliance', 'Formatos oficiales, manuales de procedimientos y avisos institucionales', 'bi-shield-check', 10, 1)
+        ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`), `estatus`=VALUES(`estatus`);");
 
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
@@ -509,6 +510,190 @@ function asegurarTablaPoliticas($pdo = null) {
             ");
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+        }
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Auto-Instala o asegura la existencia de las tablas de compliance en MySQL o SQLite
+ */
+function asegurarTablaCompliance($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS compliance_documentos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo TEXT NOT NULL,
+                    codigo TEXT,
+                    titulo TEXT NOT NULL,
+                    descripcion TEXT,
+                    categoria TEXT DEFAULT 'General',
+                    archivo_url TEXT,
+                    archivo_tipo TEXT DEFAULT 'pdf',
+                    archivo_tamano TEXT,
+                    version TEXT DEFAULT '1.0',
+                    fecha_publicacion DATE,
+                    fecha_vigencia DATE,
+                    prioridad TEXT DEFAULT 'Normal',
+                    obligatorio_lectura INTEGER DEFAULT 0,
+                    estatus INTEGER DEFAULT 1,
+                    creado_por TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS compliance_lecturas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    documento_id INTEGER NOT NULL,
+                    documento_titulo TEXT NOT NULL,
+                    usuario_id INTEGER,
+                    usuario_nombre TEXT NOT NULL,
+                    usuario_login TEXT NOT NULL,
+                    agencia TEXT NOT NULL,
+                    ip TEXT NOT NULL,
+                    origen TEXT DEFAULT 'Portal Agencia',
+                    fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `compliance_documentos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `tipo` VARCHAR(50) NOT NULL,
+                    `codigo` VARCHAR(50) NULL,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT NULL,
+                    `categoria` VARCHAR(100) DEFAULT 'General',
+                    `archivo_url` VARCHAR(255) NULL,
+                    `archivo_tipo` VARCHAR(20) DEFAULT 'pdf',
+                    `archivo_tamano` VARCHAR(50) NULL,
+                    `version` VARCHAR(20) DEFAULT '1.0',
+                    `fecha_publicacion` DATE NULL,
+                    `fecha_vigencia` DATE NULL,
+                    `prioridad` VARCHAR(20) DEFAULT 'Normal',
+                    `obligatorio_lectura` TINYINT(1) DEFAULT 0,
+                    `estatus` TINYINT(1) DEFAULT 1,
+                    `creado_por` VARCHAR(100) NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX `idx_comp_tipo` (`tipo`),
+                    INDEX `idx_comp_cat` (`categoria`),
+                    INDEX `idx_comp_est` (`estatus`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `compliance_lecturas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `documento_id` INT NOT NULL,
+                    `documento_titulo` VARCHAR(255) NOT NULL,
+                    `usuario_id` INT NULL,
+                    `usuario_nombre` VARCHAR(150) NOT NULL,
+                    `usuario_login` VARCHAR(100) NOT NULL,
+                    `agencia` VARCHAR(100) NOT NULL,
+                    `ip` VARCHAR(50) NOT NULL,
+                    `origen` VARCHAR(50) DEFAULT 'Portal Agencia',
+                    `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_comp_doc` (`documento_id`),
+                    INDEX `idx_comp_usr` (`usuario_login`),
+                    INDEX `idx_comp_fec` (`fecha_lectura`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+
+        // Sembrado inicial de documentos oficiales de compliance si la tabla está vacía
+        $stmtCount = $pdo->query("SELECT COUNT(*) FROM compliance_documentos");
+        $totalDocs = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
+        if ($totalDocs === 0) {
+            $semillas = [
+                // FORMATOS
+                [
+                    'formato', 'FR-TI-01', 'Carta Responsiva de Asignación de Equipo de Cómputo y Telefonía',
+                    'Documento legal y administrativo para la entrega formal de equipos de cómputo, laptops, periféricos y líneas móviles a colaboradores con compromiso de resguardo y buen uso.',
+                    'Tecnologías de la Información', 'uploads/compliance/FR-TI-01_Responsiva_Equipos.pdf', 'pdf', '480 KB', '2.1', date('Y-01-15'), '2027-12-31', 'Alta', 1, 'Dirección de Sistemas'
+                ],
+                [
+                    'formato', 'FR-TI-02', 'Solicitud de Cuentas, Permisos y Accesos a Sistemas',
+                    'Formato oficial para requerir altas de correos institucionales, accesos a ERP/DMS, carpetas compartidas y plataformas operativas con autorización del titular de área.',
+                    'Tecnologías de la Información', 'uploads/compliance/FR-TI-02_Solicitud_Cuentas.pdf', 'pdf', '320 KB', '1.5', date('Y-02-01'), '2027-12-31', 'Normal', 0, 'Seguridad TI'
+                ],
+                [
+                    'formato', 'FR-RH-01', 'Notificación Oficial de Altas, Bajas y Movimientos de Personal',
+                    'Control y formalización de altas y bajas laborales para sincronización inmediata de nómina, entrega de credenciales y cancelación de credenciales lógicas y físicas.',
+                    'Recursos Humanos', 'uploads/compliance/FR-RH-01_Altas_Bajas_Personal.pdf', 'pdf', '395 KB', '2.0', date('Y-01-10'), '2027-12-31', 'Alta', 1, 'Dirección de Capital Humano'
+                ],
+                [
+                    'formato', 'FR-LEG-01', 'Solicitud para Ejercicio de Derechos ARCO (Datos Personales)',
+                    'Formato regulatorio para la atención de solicitudes de Acceso, Rectificación, Cancelación u Oposición conforme a la legislación de protección de datos personales.',
+                    'Legal & Cumplimiento', 'uploads/compliance/FR-LEG-01_Derechos_ARCO.pdf', 'pdf', '285 KB', '1.2', date('Y-03-01'), '2027-12-31', 'Alta', 0, 'Comité de Cumplimiento'
+                ],
+                [
+                    'formato', 'FR-SG-01', 'Bitácora y Pase de Salida Temporal de Activos y Equipamiento',
+                    'Autorización formal para la salida temporal de activos de la agencia con fines de mantenimiento, eventos externos o trabajo remoto supervisado.',
+                    'Seguridad Patrimonial', 'uploads/compliance/FR-SG-01_Pase_Salida_Activos.pdf', 'pdf', '210 KB', '1.1', date('Y-02-20'), '2027-12-31', 'Normal', 0, 'Seguridad Patrimonial'
+                ],
+
+                // MANUALES
+                [
+                    'manual', 'MN-TI-01', 'Manual Institucional de Uso del Portal de Sistemas Grupo Huerta',
+                    'Guía integral para usuarios y administradores sobre navegación, gestión de inventarios, reportes de infraestructura, catálogo de sucursales y permisos RBAC.',
+                    'Tecnologías de la Información', 'uploads/compliance/MN-TI-01_Manual_Portal_Sistemas.pdf', 'pdf', '1.4 MB', '2.0', date('Y-01-20'), '2027-12-31', 'Normal', 0, 'Dirección de Sistemas'
+                ],
+                [
+                    'manual', 'MN-CY-01', 'Manual y Buenas Prácticas de Ciberseguridad y Manejo de Contraseñas',
+                    'Manual corporativo para la prevención de intrusiones, creación de contraseñas robustas, doble factor de autenticación (2FA) y detección de correos maliciosos.',
+                    'Ciberseguridad', 'uploads/compliance/MN-CY-01_Manual_Ciberseguridad.pdf', 'pdf', '2.1 MB', '3.0', date('Y-01-05'), '2027-12-31', 'Alta', 1, 'Oficina de Ciberseguridad'
+                ],
+                [
+                    'manual', 'MN-OP-01', 'Manual Operativo del Sistema de Tickets y Mesa de Ayuda',
+                    'Procedimiento institucional para el levantamiento de tickets, priorización de incidentes, niveles de servicio (SLA) y flujo de resolución en sucursales.',
+                    'Operaciones & Soporte', 'uploads/compliance/MN-OP-01_Manual_Tickets_MesaAyuda.pdf', 'pdf', '980 KB', '1.8', date('Y-02-15'), '2027-12-31', 'Normal', 0, 'Mesa de Ayuda Central'
+                ],
+                [
+                    'manual', 'MN-BC-01', 'Protocolo de Continuidad de Negocio y Respaldo de Información Crítica',
+                    'Manual de contingencia operativa y esquemas de respaldo local y remoto de bases de datos, configuraciones de red y expedientes digitales.',
+                    'Infraestructura', 'uploads/compliance/MN-BC-01_Continuidad_Negocio_Respaldos.pdf', 'pdf', '1.8 MB', '1.3', date('Y-03-10'), '2027-12-31', 'Alta', 0, 'Dirección de Sistemas'
+                ],
+
+                // AVISOS
+                [
+                    'aviso', 'AV-01', 'Aviso de Privacidad Integral Institucional para Colaboradores y Clientes',
+                    'Lineamiento maestro del tratamiento, confidencialidad, resguardo y transferencia legítima de datos personales y sensibles dentro de las entidades de Grupo Huerta.',
+                    'Legal & Cumplimiento', 'uploads/compliance/AV-01_Aviso_Privacidad_Integral.pdf', 'pdf', '540 KB', '2026.1', date('Y-01-01'), '2027-12-31', 'Alta', 1, 'Comité de Cumplimiento'
+                ],
+                [
+                    'aviso', 'AV-02', 'Alerta de Ciberseguridad: Protocolo Preventivo Anti-Phishing y Suplantación',
+                    'Comunicado oficial sobre vectores de ataque recientes por correo electrónico, SMS y WhatsApp. Se recuerda la prohibición de compartir claves por cualquier medio.',
+                    'Ciberseguridad', 'uploads/compliance/AV-02_Alerta_AntiPhishing.pdf', 'pdf', '410 KB', '2026.2', date('Y-03-15'), '2027-12-31', 'Alta', 1, 'Oficina de Ciberseguridad'
+                ],
+                [
+                    'aviso', 'AV-03', 'Lineamientos Institucionales para Uso de Redes WiFi e Internet Corporativo',
+                    'Disposiciones de navegación segura, prohibición de descargas no autorizadas, uso de ancho de banda y monitoreo preventivo de la red de datos.',
+                    'Auditoría TI', 'uploads/compliance/AV-03_Lineamientos_Uso_Internet.pdf', 'pdf', '365 KB', '1.4', date('Y-02-01'), '2027-12-31', 'Media', 0, 'Dirección de Sistemas'
+                ],
+                [
+                    'aviso', 'AV-04', 'Circular de Alta Dirección: Resguardo de Información Confidencial del Negocio',
+                    'Disposición de confidencialidad estricta respecto a cifras comerciales, bases de clientes, costos y estrategias operativas del consorcio.',
+                    'Dirección General', 'uploads/compliance/AV-04_Circular_Confidencialidad.pdf', 'pdf', '290 KB', '1.0', date('Y-01-02'), '2027-12-31', 'Alta', 1, 'Presidencia & Dirección General'
+                ]
+            ];
+
+            $stmtIns = $pdo->prepare("
+                INSERT INTO compliance_documentos 
+                (tipo, codigo, titulo, descripcion, categoria, archivo_url, archivo_tipo, archivo_tamano, version, fecha_publicacion, fecha_vigencia, prioridad, obligatorio_lectura, estatus, creado_por)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+            ");
+
+            foreach ($semillas as $s) {
+                $stmtIns->execute($s);
+            }
         }
     } catch (Throwable $e) {}
 }
