@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $rutaRelativa = 'uploads/politicas/' . $nombreLimpio;
 
                 if (move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $rutaFisica)) {
+                    $insertExitoso = false;
                     try {
                         $stmtIns = $pdo->prepare("
                             INSERT INTO politicas_corporativas 
@@ -102,9 +103,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $obligatorio,
                             $loginUsuario
                         ]);
+                        $insertExitoso = true;
                         $mensaje = "La política se ha registrado y publicado con éxito en el Área: " . htmlspecialchars($area) . ".";
                     } catch (Throwable $e) {
-                        $error = "Error al guardar en la base de datos: " . $e->getMessage();
+                        // Respaldo de auto-reparación: si falta la columna en SQLite/MySQL, migrar dinámicamente y reintentar
+                        try {
+                            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: '');
+                            if ($driver === 'sqlite') {
+                                @$pdo->exec("ALTER TABLE politicas_corporativas ADD COLUMN area TEXT");
+                                @$pdo->exec("ALTER TABLE politicas_corporativas ADD COLUMN subarea TEXT");
+                                @$pdo->exec("ALTER TABLE politicas_corporativas ADD COLUMN categoria TEXT DEFAULT 'General'");
+                            } else {
+                                @$pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL");
+                                @$pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL");
+                            }
+                            $stmtRetry = $pdo->prepare("
+                                INSERT INTO politicas_corporativas 
+                                (titulo, descripcion, categoria, area, subarea, archivo_pdf, version, fecha_vigencia, obligatorio_lectura, estatus, creado_por) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                            ");
+                            $stmtRetry->execute([
+                                $titulo,
+                                $descripcion,
+                                $area,
+                                $area,
+                                $subarea,
+                                $rutaRelativa,
+                                $version,
+                                $fechaVigencia,
+                                $obligatorio,
+                                $loginUsuario
+                            ]);
+                            $insertExitoso = true;
+                            $mensaje = "La política se ha registrado y publicado con éxito en el Área: " . htmlspecialchars($area) . ".";
+                        } catch (Throwable $eRetry) {
+                            $error = "Error al guardar en la base de datos: " . $eRetry->getMessage();
+                        }
                     }
                 } else {
                     $error = "No se pudo guardar el archivo en el servidor. Verifica permisos de la carpeta uploads/politicas.";
