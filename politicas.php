@@ -41,36 +41,111 @@ if ($pdo) {
         $agenciaInfo = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
     } catch (Throwable $e) {}
 }
-$agenciaNombre = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : ($_SESSION['agencia'] ?? 'Agencia');
+$agenciaNombre = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : ($_SESSION['agencia'] ?? 'Grupo Huerta');
 $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . $agenciaInfo['logo_url'])) ? $agenciaInfo['logo_url'] : '';
 
 $mensaje = '';
 $error = '';
 
-// 2. Consulta Automática de Políticas desde el Portal Central GH (portal.grupohuerta.mx)
-$politicasLista = [];
-$urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
-$ctx = stream_context_create([
-    'http' => [
-        'timeout' => 6,
-        'header'  => "User-Agent: PortalAgencia/1.0\r\n"
-    ],
-    'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false
-    ]
-]);
+// =============================================================================
+// 2. ACCIONES ADMINISTRATIVAS: SUBIR POLÍTICA / ALTA DE ÁREAS Y ELIMINAR
+// =============================================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
+    $accion = $_POST['accion'] ?? '';
 
-$resp = @file_get_contents($urlCentral, false, $ctx);
-if ($resp) {
-    $dataJson = json_decode($resp, true);
-    if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
-        $politicasLista = $dataJson['politicas'];
+    // ACCIÓN: SUBIR NUEVA POLÍTICA CORPORATIVA (ADMIN)
+    if ($accion === 'subir_politica' && $esAdmin) {
+        $titulo = trim($_POST['titulo'] ?? '');
+        $descripcion = trim($_POST['descripcion'] ?? '');
+        $area = trim($_POST['area'] ?? ($_POST['categoria'] ?? 'General'));
+        $subarea = trim($_POST['subarea'] ?? 'Políticas Generales');
+        $version = trim($_POST['version'] ?? '1.0');
+        $fechaVigencia = !empty($_POST['fecha_vigencia']) ? $_POST['fecha_vigencia'] : null;
+        $obligatorio = isset($_POST['obligatorio_lectura']) ? 1 : 0;
+
+        if (empty($titulo)) {
+            $error = "El título de la política o normativa es obligatorio.";
+        } elseif (empty($area)) {
+            $error = "Debes indicar el Área Institucional para clasificar la política.";
+        } elseif (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+            $error = "Debes seleccionar un archivo PDF válido.";
+        } else {
+            $ext = strtolower(pathinfo($_FILES['archivo_pdf']['name'], PATHINFO_EXTENSION));
+            if ($ext !== 'pdf') {
+                $error = "Únicamente se permiten archivos en formato PDF oficial.";
+            } else {
+                $dirDestino = __DIR__ . '/uploads/politicas/';
+                if (!file_exists($dirDestino)) {
+                    @mkdir($dirDestino, 0755, true);
+                }
+
+                $nombreLimpio = 'politica_' . time() . '_' . rand(100, 999) . '.pdf';
+                $rutaFisica = $dirDestino . $nombreLimpio;
+                $rutaRelativa = 'uploads/politicas/' . $nombreLimpio;
+
+                if (move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $rutaFisica)) {
+                    try {
+                        $stmtIns = $pdo->prepare("
+                            INSERT INTO politicas_corporativas 
+                            (titulo, descripcion, categoria, area, subarea, archivo_pdf, version, fecha_vigencia, obligatorio_lectura, estatus, creado_por) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                        ");
+                        $stmtIns->execute([
+                            $titulo,
+                            $descripcion,
+                            $area, // categoria como fallback
+                            $area,
+                            $subarea,
+                            $rutaRelativa,
+                            $version,
+                            $fechaVigencia,
+                            $obligatorio,
+                            $loginUsuario
+                        ]);
+                        $mensaje = "La política se ha registrado y publicado con éxito en el Área: " . htmlspecialchars($area) . ".";
+                    } catch (Throwable $e) {
+                        $error = "Error al guardar en la base de datos: " . $e->getMessage();
+                    }
+                } else {
+                    $error = "No se pudo guardar el archivo en el servidor. Verifica permisos de la carpeta uploads/politicas.";
+                }
+            }
+        }
+    }
+
+    // ACCIÓN: ELIMINAR POLÍTICA (ADMIN)
+    if ($accion === 'eliminar_politica' && $esAdmin) {
+        $politicaId = intval($_POST['politica_id'] ?? 0);
+        if ($politicaId > 0) {
+            try {
+                $stmtGet = $pdo->prepare("SELECT archivo_pdf FROM politicas_corporativas WHERE id = ?");
+                $stmtGet->execute([$politicaId]);
+                $polData = $stmtGet->fetch(PDO::FETCH_ASSOC);
+
+                if ($polData && !empty($polData['archivo_pdf'])) {
+                    $archivoFisico = __DIR__ . '/' . $polData['archivo_pdf'];
+                    if (file_exists($archivoFisico)) {
+                        @unlink($archivoFisico);
+                    }
+                }
+
+                $stmtDel = $pdo->prepare("DELETE FROM politicas_corporativas WHERE id = ?");
+                $stmtDel->execute([$politicaId]);
+                $mensaje = "La política ha sido eliminada del repositorio corporativo.";
+            } catch (Throwable $e) {
+                $error = "Error al eliminar política: " . $e->getMessage();
+            }
+        }
     }
 }
 
-// Fallback: si no hay conexión con Central GH, consultar base de datos local
-if (empty($politicasLista) && $pdo) {
+// =============================================================================
+// 3. CONSULTA DE POLÍTICAS VIGENTES
+// =============================================================================
+$politicasLista = [];
+
+// En Portal Central GH consultamos directamente la base de datos local
+if ($pdo) {
     try {
         $stmtList = $pdo->query("
             SELECT * FROM politicas_corporativas 
@@ -81,8 +156,28 @@ if (empty($politicasLista) && $pdo) {
     } catch (Throwable $e) {}
 }
 
-// 3. Estructuración Jerárquica: Áreas -> Subáreas -> Políticas
+// Fallback adicional vía API en caso de ser necesario
+if (empty($politicasLista)) {
+    $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
+    $ctx = stream_context_create([
+        'http' => ['timeout' => 5],
+        'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+    ]);
+    $resp = @file_get_contents($urlCentral, false, $ctx);
+    if ($resp) {
+        $dataJson = json_decode($resp, true);
+        if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
+            $politicasLista = $dataJson['politicas'];
+        }
+    }
+}
+
+// =============================================================================
+// 4. ESTRUCTURACIÓN JERÁRQUICA: ÁREAS -> SUBÁREAS -> POLÍTICAS
+// =============================================================================
 $areasEstructuradas = [];
+$todasSubareasExistentes = [];
+
 foreach ($politicasLista as $pol) {
     // Resolver Área
     $area = !empty($pol['area']) ? trim($pol['area']) : (!empty($pol['categoria']) ? trim($pol['categoria']) : 'General');
@@ -90,7 +185,7 @@ foreach ($politicasLista as $pol) {
     // Resolver Subárea
     $subarea = !empty($pol['subarea']) ? trim($pol['subarea']) : (!empty($pol['sub_area']) ? trim($pol['sub_area']) : '');
 
-    // Si viene en formato combinado "Área / Subárea" o "Área - Subárea"
+    // Formato compuesto "Área / Subárea" o "Área - Subárea"
     if (empty($subarea) && strpos($area, '/') !== false) {
         $partes = explode('/', $area, 2);
         $area = trim($partes[0]);
@@ -125,6 +220,8 @@ foreach ($politicasLista as $pol) {
     if (!empty($pol['obligatorio_lectura'])) {
         $areasEstructuradas[$area]['total_obligatorias']++;
     }
+
+    $todasSubareasExistentes[$subarea] = true;
 }
 ksort($areasEstructuradas);
 
@@ -425,6 +522,28 @@ function obtenerIconoArea($nombreArea) {
             box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2) !important;
         }
 
+        /* BOTONES DE ADMINISTRACIÓN */
+        .btn-gold-action {
+            background: linear-gradient(135deg, var(--gold-accent) 0%, #b8972e 100%);
+            color: #050d1a !important;
+            border: 1px solid var(--gold-accent-light);
+            font-weight: 700;
+            font-size: 0.84rem;
+            padding: 8px 18px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+        }
+
+        .btn-gold-action:hover {
+            filter: brightness(1.15);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.45);
+        }
+
         /* ESTILOS DEL VISOR BLINDADO FULLSCREEN */
         #visorModalOverlay {
             position: fixed;
@@ -610,12 +729,21 @@ function obtenerIconoArea($nombreArea) {
         </div>
     </div>
 
-    <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-dark border text-light px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-2 font-monospace" style="border-color: var(--gold-border) !important;">
-            <span class="pulsing-dot"></span> Central GH Sincronizado
-        </span>
-        <span class="badge bg-dark border px-3 py-1.5 rounded-pill small d-none d-md-inline-flex align-items-center gap-1.5 font-monospace" style="color: var(--gold-accent-light); border-color: var(--gold-border) !important;">
-            <i class="bi bi-shield-lock-fill" style="color: var(--gold-accent);"></i> DLP Protegido
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <?php if ($esAdmin): ?>
+            <!-- BOTÓN ALTA DE POLÍTICA Y ÁREAS (SOLO ADMINISTRADOR CENTRAL GH) -->
+            <button type="button" class="btn-gold-action" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
+                <i class="bi bi-cloud-arrow-up-fill"></i> <span>Publicar Normativa / Área</span>
+            </button>
+
+            <!-- BOTÓN BITÁCORA DE AUDITORÍA -->
+            <button type="button" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-3 text-light d-flex align-items-center gap-1.5" style="border-color: var(--gold-border);" onclick="abrirModalAuditoriaLecturas()">
+                <i class="bi bi-journal-check" style="color: var(--gold-accent);"></i> <span class="d-none d-md-inline">Bitácora</span>
+            </button>
+        <?php endif; ?>
+
+        <span class="badge bg-dark border text-light px-3 py-1.5 rounded-pill small d-none d-lg-inline-flex align-items-center gap-2 font-monospace" style="border-color: var(--gold-border) !important;">
+            <span class="pulsing-dot"></span> Central GH Maestro
         </span>
         <a href="politicas.php" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-2.5 text-light" style="border-color: var(--gold-border);" title="Actualizar políticas">
             <i class="bi bi-arrow-clockwise"></i>
@@ -627,15 +755,15 @@ function obtenerIconoArea($nombreArea) {
 
     <!-- MENSAJES -->
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(6, 78, 59, 0.85); color: #a7f3d0;">
-            <i class="bi bi-check-circle-fill me-2"></i> <?php echo $mensaje; ?>
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(6, 78, 59, 0.85); color: #a7f3d0; border: 1px solid rgba(16, 185, 129, 0.4) !important;">
+            <i class="bi bi-check-circle-fill me-2 fs-5"></i> <?php echo $mensaje; ?>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(127, 29, 29, 0.85); color: #fecaca;">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i> <?php echo $error; ?>
+        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(127, 29, 29, 0.85); color: #fecaca; border: 1px solid rgba(239, 68, 68, 0.4) !important;">
+            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i> <?php echo $error; ?>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
@@ -647,7 +775,7 @@ function obtenerIconoArea($nombreArea) {
                 <i class="bi bi-file-earmark-lock2-fill" style="color: var(--gold-accent);"></i> Políticas y Normativas Institucionales
             </h2>
             <p class="text-secondary small mb-0">
-                Documentación oficial y directrices corporativas organizadas por áreas de Grupo Huerta.
+                Directrices corporativas y normativas oficiales organizadas por áreas de Grupo Huerta.
             </p>
         </div>
 
@@ -683,11 +811,16 @@ function obtenerIconoArea($nombreArea) {
         <div class="tab-pane fade show active" id="vista-areas" role="tabpanel">
             <?php if (empty($areasEstructuradas)): ?>
                 <div class="text-center py-5 rounded-4 p-5" style="background: rgba(10, 27, 50, 0.4); border: 1px solid var(--gold-border);">
-                    <i class="bi bi-folder-x display-2 opacity-50 d-block mb-3" style="color: var(--gold-accent);"></i>
-                    <h4 class="fw-bold text-white">No hay áreas de políticas disponibles</h4>
-                    <p class="text-secondary small mb-0">
-                        Las áreas y directrices dadas de alta en el Portal Central de Grupo Huerta aparecerán aquí automáticamente.
+                    <i class="bi bi-folder-plus display-2 opacity-50 d-block mb-3" style="color: var(--gold-accent);"></i>
+                    <h4 class="fw-bold text-white mb-2">Aún no hay áreas de políticas dadas de alta</h4>
+                    <p class="text-secondary small mb-4" style="max-width: 520px; margin: 0 auto;">
+                        Como administrador de Grupo Huerta, puedes dar de alta la primera área y subir el archivo PDF oficial.
                     </p>
+                    <?php if ($esAdmin): ?>
+                        <button type="button" class="btn-gold-action" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
+                            <i class="bi bi-plus-lg"></i> Dar de Alta Nueva Área y Subir Política
+                        </button>
+                    <?php endif; ?>
                 </div>
             <?php else: ?>
                 <div class="row g-4">
@@ -751,6 +884,11 @@ function obtenerIconoArea($nombreArea) {
                     <span class="subarea-badge-count" id="lblBadgeConteoDetalle">
                         <?php echo count($politicasLista); ?> Políticas
                     </span>
+                    <?php if ($esAdmin): ?>
+                        <button type="button" class="btn btn-outline-warning btn-sm rounded-3 px-3 fw-bold" style="border-color: var(--gold-border); color: var(--gold-accent-light);" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
+                            <i class="bi bi-plus-lg me-1"></i> Agregar a esta Área
+                        </button>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -812,15 +950,26 @@ function obtenerIconoArea($nombreArea) {
                                                     </div>
                                                 </div>
 
-                                                <div class="d-flex align-items-center gap-3">
-                                                    <div class="text-end text-secondary small d-none d-md-block" style="font-size: 0.72rem;">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="text-end text-secondary small d-none d-md-block me-2" style="font-size: 0.72rem;">
                                                         <span class="d-block"><i class="bi bi-calendar3 me-1" style="color: var(--gold-accent);"></i> Vigencia: <?php echo !empty($pol['fecha_vigencia']) ? date('d/m/Y', strtotime($pol['fecha_vigencia'])) : 'Permanente'; ?></span>
                                                         <span style="color: var(--gold-accent-light);"><i class="bi bi-shield-check me-1"></i> Protegido</span>
                                                     </div>
 
                                                     <button type="button" class="btn-view-doc" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>', '<?php echo $folioCode; ?>')">
-                                                        <i class="bi bi-eye-fill"></i> Leer Documento Seguro
+                                                        <i class="bi bi-eye-fill"></i> Leer
                                                     </button>
+
+                                                    <?php if ($esAdmin): ?>
+                                                        <!-- BOTÓN ELIMINAR (ADMIN) -->
+                                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar la política \'<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>\' de forma permanente?');">
+                                                            <input type="hidden" name="accion" value="eliminar_politica">
+                                                            <input type="hidden" name="politica_id" value="<?php echo $pol['id']; ?>">
+                                                            <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 py-1.5 px-2" title="Eliminar política">
+                                                                <i class="bi bi-trash3-fill"></i>
+                                                            </button>
+                                                        </form>
+                                                    <?php endif; ?>
                                                 </div>
                                             </div>
                                         <?php endforeach; ?>
@@ -839,7 +988,193 @@ function obtenerIconoArea($nombreArea) {
 
 </div>
 
+<!-- ========================================================================= -->
+<!-- MODAL: DAR DE ALTA ÁREA, SUBÁREA Y SUBIR POLÍTICA PDF (ADMINISTRADOR) -->
+<!-- ========================================================================= -->
+<?php if ($esAdmin): ?>
+<div class="modal fade" id="modalSubirPolitica" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content text-white" style="background: #09172c; border: 2px solid var(--gold-border); border-radius: 18px; box-shadow: 0 25px 60px rgba(0,0,0,0.8);">
+            <div class="modal-header border-secondary border-opacity-25" style="border-bottom: 1px solid var(--gold-border);">
+                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" style="color: var(--gold-accent-light);">
+                    <i class="bi bi-cloud-arrow-up-fill" style="color: var(--gold-accent);"></i> Dar de Alta Política Corporativa (PDF)
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="accion" value="subir_politica">
+                <div class="modal-body p-4">
+                    
+                    <!-- TÍTULO -->
+                    <div class="mb-3">
+                        <label class="form-label text-light small fw-bold">Título Oficial de la Política o Normativa *</label>
+                        <input type="text" name="titulo" class="form-control gold-search-input" placeholder="Ej. Política de Uso de Equipo de Cómputo y TI" required>
+                    </div>
+
+                    <!-- ÁREA Y SUBÁREA -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-bold">Área Institucional *</label>
+                            <input list="listaAreasDatalist" name="area" id="inputModalArea" class="form-control gold-search-input" placeholder="Ej. Dirección Sistemas, Finanzas, etc." required>
+                            <datalist id="listaAreasDatalist">
+                                <?php foreach (array_keys($areasEstructuradas) as $aNom): ?>
+                                    <option value="<?php echo htmlspecialchars($aNom); ?>">
+                                <?php endforeach; ?>
+                                <option value="Dirección Sistemas">
+                                <option value="Seguridad de la Información">
+                                <option value="Uso de Equipos y TI">
+                                <option value="Código de Ética y Conducta">
+                                <option value="Recursos Humanos">
+                                <option value="Operaciones y Servicios">
+                                <option value="Finanzas y Administración">
+                            </datalist>
+                            <div class="form-text text-secondary" style="font-size: 0.72rem;">
+                                Puedes elegir una existente o escribir una <b>nueva área</b> para darla de alta.
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-bold">Subárea *</label>
+                            <input list="listaSubareasDatalist" name="subarea" id="inputModalSubarea" class="form-control gold-search-input" placeholder="Ej. Infraestructura, Ciberseguridad, etc." required>
+                            <datalist id="listaSubareasDatalist">
+                                <?php foreach (array_keys($todasSubareasExistentes) as $sNom): ?>
+                                    <option value="<?php echo htmlspecialchars($sNom); ?>">
+                                <?php endforeach; ?>
+                                <option value="Políticas Generales">
+                                <option value="Infraestructura">
+                                <option value="Ciberseguridad">
+                                <option value="Soporte y Telecomunicaciones">
+                                <option value="Desarrollo e Innovación">
+                                <option value="Control Interno">
+                            </datalist>
+                            <div class="form-text text-secondary" style="font-size: 0.72rem;">
+                                Subárea para clasificar y agrupar el documento.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- VERSIÓN Y VIGENCIA -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-bold">Versión del Documento</label>
+                            <input type="text" name="version" class="form-control gold-search-input font-monospace" value="1.0" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-light small fw-bold">Fecha de Vigencia (Opcional)</label>
+                            <input type="date" name="fecha_vigencia" class="form-control gold-search-input">
+                        </div>
+                    </div>
+
+                    <!-- DESCRIPCIÓN -->
+                    <div class="mb-3">
+                        <label class="form-label text-light small fw-bold">Resumen / Descripción Ejecutiva</label>
+                        <textarea name="descripcion" rows="2" class="form-control gold-search-input" placeholder="Describe brevemente el alcance de esta normativa institucional..."></textarea>
+                    </div>
+
+                    <!-- ARCHIVO PDF OFICIAL -->
+                    <div class="mb-3">
+                        <label class="form-label text-light small fw-bold">Archivo PDF Oficial *</label>
+                        <input type="file" name="archivo_pdf" accept="application/pdf,.pdf" class="form-control gold-search-input" required>
+                        <div class="form-text text-secondary" style="font-size: 0.72rem;">
+                            El PDF será renderizado en modo blindado (Canvas sin descarga) y protegido contra capturas.
+                        </div>
+                    </div>
+
+                    <!-- OBLIGATORIO -->
+                    <div class="form-check form-switch p-3 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <input class="form-check-input" type="checkbox" name="obligatorio_lectura" id="checkObligatorioModal" value="1">
+                        <label class="form-check-label text-light fw-bold small ms-2" for="checkObligatorioModal">
+                            Marcar como lectura obligatoria para el personal
+                        </label>
+                        <div class="text-secondary small ms-2" style="font-size: 0.75rem;">
+                            Se mostrará un distintivo de cumplimiento institucional en las agencias.
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer border-secondary border-opacity-25" style="border-top: 1px solid var(--gold-border);">
+                    <button type="button" class="btn btn-outline-secondary rounded-3 px-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-gold-action px-4">
+                        <i class="bi bi-check2-circle"></i> Publicar y Sincronizar en Portal
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- MODAL: BITÁCORA AUDITABLE DE LECTURAS (SOLO ADMINISTRADORES) -->
+<!-- ========================================================================= -->
+<div class="modal fade" id="modalAuditoriaLecturas" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content text-white" style="background: #09172c; border: 2px solid var(--gold-border); border-radius: 18px;">
+            <div class="modal-header border-secondary border-opacity-25" style="border-bottom: 1px solid var(--gold-border);">
+                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" style="color: var(--gold-accent-light);">
+                    <i class="bi bi-shield-check" style="color: var(--gold-accent);"></i> Bitácora de Lecturas y Auditoría Forense
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-4">
+                
+                <!-- STATS DE AUDITORÍA -->
+                <div class="row g-3 mb-4" id="statsAuditoriaContainer">
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                            <div class="text-secondary small text-uppercase">Total Lecturas Registradas</div>
+                            <div class="fs-3 fw-bold text-white" id="statTotalLecturas">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                            <div class="text-secondary small text-uppercase">Colaboradores Únicos</div>
+                            <div class="fs-3 fw-bold" style="color: var(--gold-accent-light);" id="statUsuariosUnicos">0</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                            <div class="text-secondary small text-uppercase">Agencias Activas</div>
+                            <div class="fs-3 fw-bold text-info" id="statAgenciasActivas">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TABLA DE LECTURAS -->
+                <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                    <table class="table table-dark table-hover align-middle mb-0" style="font-size: 0.82rem; background: transparent;">
+                        <thead>
+                            <tr class="text-secondary border-secondary">
+                                <th>Fecha / Hora</th>
+                                <th>Política</th>
+                                <th>Colaborador</th>
+                                <th>Agencia</th>
+                                <th>Terminal / IP</th>
+                                <th>Origen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyAuditoriaLecturas">
+                            <tr>
+                                <td colspan="6" class="text-center py-4 text-secondary">
+                                    <div class="spinner-border spinner-border-sm me-2" style="color: var(--gold-accent);"></div>
+                                    Cargando bitácora de auditoría...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25" style="border-top: 1px solid var(--gold-border);">
+                <button type="button" class="btn btn-outline-secondary rounded-3 px-4" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- ========================================================================= -->
 <!-- VISOR BLINDADO FULLSCREEN (MODAL CONTAINER) -->
+<!-- ========================================================================= -->
 <div id="visorModalOverlay">
     <!-- BARRA SUPERIOR DEL VISOR -->
     <div class="visor-header">
@@ -922,7 +1257,7 @@ function obtenerIconoArea($nombreArea) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- CONTROL DE PESTAÑAS Y VISOR BLINDADO -->
+<!-- CONTROL DE PESTAÑAS, VISOR BLINDADO Y AUDITORÍA -->
 <script>
     // Datos forenses del usuario actual para la marca de agua
     const FORENSIC_USER_NAME = "<?php echo addslashes($nombreUsuario); ?>";
@@ -939,6 +1274,12 @@ function obtenerIconoArea($nombreArea) {
         // Actualizar etiqueta del encabezado
         document.getElementById('lblAreaNombreActiva').textContent = 'Área: ' + nombreArea;
         document.getElementById('lblTituloPestanaDetalle').textContent = 'Políticas: ' + nombreArea;
+
+        // Si existe el campo del modal de subida, preseleccionar este área
+        const inputAreaModal = document.getElementById('inputModalArea');
+        if (inputAreaModal) {
+            inputAreaModal.value = nombreArea;
+        }
 
         // Filtrar bloques de áreas visibles
         const bloquesArea = document.querySelectorAll('.bloque-area-contenedor');
@@ -988,7 +1329,6 @@ function obtenerIconoArea($nombreArea) {
     function filtrarPoliticasGlobal() {
         const query = (document.getElementById('filtroTextoPolitica').value || '').toLowerCase().trim();
         
-        // Si hay una búsqueda activa, cambiamos a la pestaña de políticas para ver resultados
         if (query.length > 0) {
             const tabDetalleBtn = document.getElementById('pill-detalle-tab');
             const tab = bootstrap.Tab.getOrCreateInstance(tabDetalleBtn);
@@ -1016,13 +1356,75 @@ function obtenerIconoArea($nombreArea) {
 
             document.getElementById('lblBadgeConteoDetalle').textContent = encontrados + ' Encontradas';
         } else {
-            // Si limpió la búsqueda, restaurar de acuerdo al área seleccionada
             if (currentAreaSeleccionada === 'todas') {
                 volverACatalogoAreas();
             } else {
                 seleccionarArea(currentAreaSeleccionada);
             }
         }
+    }
+
+    // 3. CONSULTAR BITÁCORA AUDITABLE DE LECTURAS (ADMIN)
+    function abrirModalAuditoriaLecturas() {
+        const modalEl = document.getElementById('modalAuditoriaLecturas');
+        if (!modalEl) return;
+
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+
+        const tbody = document.getElementById('tbodyAuditoriaLecturas');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4 text-secondary">
+                    <div class="spinner-border spinner-border-sm me-2" style="color: var(--gold-accent);"></div>
+                    Cargando bitácora de auditoría en tiempo real...
+                </td>
+            </tr>
+        `;
+
+        fetch('api_politicas.php?action=obtener_lecturas')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.exito) {
+                    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">${data.error || 'No se pudo cargar la auditoría'}</td></tr>`;
+                    return;
+                }
+
+                if (data.stats) {
+                    document.getElementById('statTotalLecturas').textContent = data.stats.total_lecturas || 0;
+                    document.getElementById('statUsuariosUnicos').textContent = data.stats.usuarios_unicos || 0;
+                    document.getElementById('statAgenciasActivas').textContent = data.stats.agencias_activas || 0;
+                }
+
+                if (!data.lecturas || data.lecturas.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-secondary">No hay lecturas registradas aún.</td></tr>`;
+                    return;
+                }
+
+                let html = '';
+                data.lecturas.forEach(l => {
+                    html += `
+                        <tr>
+                            <td class="font-monospace text-secondary">${l.fecha_lectura}</td>
+                            <td class="fw-bold text-white">${escapeHtml(l.politica_titulo)}</td>
+                            <td><i class="bi bi-person-fill text-info me-1"></i>${escapeHtml(l.usuario_nombre)} <span class="text-secondary small">(${escapeHtml(l.usuario_login)})</span></td>
+                            <td><span class="badge bg-dark border" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">${escapeHtml(l.agencia)}</span></td>
+                            <td class="font-monospace small text-secondary">${escapeHtml(l.ip)}</td>
+                            <td><span class="badge bg-secondary bg-opacity-25 text-light">${escapeHtml(l.origen)}</span></td>
+                        </tr>
+                    `;
+                });
+                tbody.innerHTML = html;
+            })
+            .catch(err => {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error de conexión al obtener bitácora.</td></tr>`;
+            });
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.toString().replace(/[&<>"']/g, m => map[m]);
     }
 
     // =========================================================================
@@ -1062,7 +1464,6 @@ function obtenerIconoArea($nombreArea) {
         const wrappers = document.querySelectorAll('.pdf-page-wrapper');
         if (!wrappers || wrappers.length === 0) return;
 
-        // 1. Detección directa del elemento bajo el cursor
         const elUnderCursor = document.elementFromPoint(clientX, clientY);
         if (elUnderCursor && (elUnderCursor.classList.contains('pdf-page-wrapper') || elUnderCursor.closest('.pdf-page-wrapper'))) {
             isCursorOverDocument = true;
@@ -1070,7 +1471,6 @@ function obtenerIconoArea($nombreArea) {
             return;
         }
 
-        // 2. Detección de la columna vertical del documento PDF (tolerancia de lectura continua)
         let dentroDeColumna = false;
         for (let i = 0; i < wrappers.length; i++) {
             const rect = wrappers[i].getBoundingClientRect();
