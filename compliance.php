@@ -555,21 +555,29 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         .gallery-main-stage {
             position: relative;
             width: 100%;
+            height: 520px;
+            min-height: 480px;
             background: #030812;
             border: 1px solid rgba(212, 175, 55, 0.3);
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .gallery-slide-item {
             display: none;
             position: relative;
             width: 100%;
+            height: 100%;
             animation: slideFade 0.45s ease forwards;
         }
         .gallery-slide-item.active {
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         @keyframes slideFade {
@@ -579,7 +587,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
         .gallery-slide-img {
             width: 100%;
-            height: auto;
+            height: 100%;
             max-height: 520px;
             object-fit: contain;
             background: #030812;
@@ -603,6 +611,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             align-items: flex-end;
             justify-content: space-between;
             gap: 20px;
+            z-index: 15;
         }
 
         .gallery-controls-btn {
@@ -612,27 +621,104 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             width: 48px;
             height: 48px;
             border-radius: 50%;
-            background: rgba(4, 13, 26, 0.75);
+            background: rgba(4, 13, 26, 0.85);
             backdrop-filter: blur(8px);
+            border: 2px solid var(--gold-border-bright);
+            color: var(--gold-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 25;
+        }
+        .gallery-controls-btn:hover {
+            background: rgba(212, 175, 55, 0.35);
+            border-color: #ffd700;
+            color: #ffffff;
+            box-shadow: 0 0 20px var(--gold-glow);
+            transform: translateY(-50%) scale(1.1);
+        }
+        .gallery-btn-prev { left: 20px; }
+        .gallery-btn-next { right: 20px; }
+
+        /* Dashboard Principal Avisos Carousel */
+        .dash-carousel-container {
+            position: relative;
+            width: 100%;
+            height: 240px;
+            background: #030812;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(212, 175, 55, 0.25);
+        }
+        .dash-carousel-slide {
+            display: none;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            cursor: pointer;
+            animation: slideFade 0.4s ease;
+        }
+        .dash-carousel-slide.active {
+            display: block;
+        }
+        .dash-carousel-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+        }
+        .dash-carousel-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, transparent 0%, rgba(4, 13, 26, 0.8) 35%, rgba(4, 13, 26, 0.98) 100%);
+            padding: 14px 18px 10px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .dash-carousel-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(4, 13, 26, 0.85);
             border: 1px solid var(--gold-border);
             color: var(--gold-accent-light);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.3rem;
+            font-size: 1rem;
             cursor: pointer;
+            z-index: 10;
             transition: all 0.2s ease;
+        }
+        .dash-carousel-nav:hover {
+            background: var(--gold-accent);
+            color: #030812;
+        }
+        .dash-carousel-prev { left: 8px; }
+        .dash-carousel-next { right: 8px; }
+        .dash-carousel-indicator {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(212,175,55,0.4);
+            border-radius: 20px;
+            padding: 2px 10px;
+            font-size: 0.7rem;
+            color: var(--gold-accent-light);
+            font-weight: 700;
             z-index: 10;
         }
-        .gallery-controls-btn:hover {
-            background: rgba(212, 175, 55, 0.25);
-            border-color: var(--gold-border-bright);
-            color: #ffffff;
-            box-shadow: 0 0 15px var(--gold-glow);
-            transform: translateY(-50%) scale(1.1);
-        }
-        .gallery-btn-prev { left: 16px; }
-        .gallery-btn-next { right: 16px; }
 
         .gallery-thumbs-strip {
             display: flex;
@@ -965,26 +1051,49 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </div>
 
                 <div class="col-12 col-lg-5">
-                    <div class="p-4 rounded-4" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
+                    <div class="p-4 rounded-4 d-flex flex-column justify-content-between" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
                                 <i class="bi bi-megaphone-fill text-warning"></i> Avisos
+                                <span class="badge bg-warning text-dark fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.7rem;"><?php echo count($avisos); ?></span>
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('avisos')">
-                                Ver avisos <i class="bi bi-arrow-right"></i>
+                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
+                                Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
 
-                        <?php if (!empty($avisos)): 
-                            $primerAviso = $avisos[0];
-                            $imgThumb = !empty($primerAviso['imagen_url_completa']) ? $primerAviso['imagen_url_completa'] : 'uploads/compliance/aviso_AV-01.svg';
-                        ?>
-                            <div class="position-relative rounded-3 overflow-hidden border border-secondary border-opacity-25" style="cursor: pointer;" onclick="cambiarSeccion('avisos')">
-                                <img src="<?php echo htmlspecialchars($imgThumb); ?>" alt="Aviso Destacado" class="w-100" style="max-height: 190px; object-fit: cover;">
-                                <div class="position-absolute bottom-0 start-0 end-0 p-2 text-white" style="background: rgba(4, 13, 26, 0.88); backdrop-filter: blur(4px);">
-                                    <div class="small fw-bold text-truncate"><?php echo htmlspecialchars($primerAviso['titulo']); ?></div>
-                                    <div class="text-secondary" style="font-size: 0.7rem;"><?php echo htmlspecialchars($primerAviso['codigo']); ?> &bull; Prioridad <?php echo htmlspecialchars($primerAviso['prioridad']); ?></div>
-                                </div>
+                        <?php if (!empty($avisos)): ?>
+                            <div class="dash-carousel-container" id="dashAvisosCarousel" onmouseenter="pausarDashCarousel()" onmouseleave="reanudarDashCarousel()">
+                                <div class="dash-carousel-indicator" id="dashCarouselCounter">1 / <?php echo count($avisos); ?></div>
+                                <button class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                                <button class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+
+                                <?php foreach ($avisos as $dIdx => $dAv): 
+                                    $dImg = !empty($dAv['imagen_url_completa']) ? $dAv['imagen_url_completa'] : (!empty($dAv['imagen_url']) ? $dAv['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                                    $dPrio = $dAv['prioridad'];
+                                    $dBadge = ($dPrio === 'Alta' || $dPrio === 'Urgente') ? 'bg-danger' : (($dPrio === 'Media') ? 'bg-warning text-dark' : 'bg-primary');
+                                ?>
+                                    <div class="dash-carousel-slide <?php echo $dIdx === 0 ? 'active' : ''; ?>" data-dash-index="<?php echo $dIdx; ?>" onclick="cambiarSeccion('avisos')">
+                                        <img src="<?php echo htmlspecialchars($dImg); ?>" alt="<?php echo htmlspecialchars($dAv['titulo']); ?>" class="dash-carousel-img">
+                                        <div class="dash-carousel-overlay">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge <?php echo $dBadge; ?> px-2 py-0.5" style="font-size: 0.68rem; font-weight: 700;"><?php echo htmlspecialchars($dAv['codigo']); ?></span>
+                                                <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></span>
+                                            </div>
+                                            <div class="fw-bold text-white text-truncate mt-1" style="font-size: 0.95rem;"><?php echo htmlspecialchars($dAv['titulo']); ?></div>
+                                            <div class="text-light text-opacity-75 text-truncate" style="font-size: 0.78rem;"><?php echo htmlspecialchars($dAv['descripcion']); ?></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="p-4 text-center text-secondary rounded-3" style="background: rgba(0,0,0,0.2);">
+                                <i class="bi bi-megaphone opacity-50 display-6 d-block mb-2"></i>
+                                No hay avisos activos registrados.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -1554,6 +1663,55 @@ function verDocumento(doc) {
 
     const modal = new bootstrap.Modal(document.getElementById('modalVisorDocumento'));
     modal.show();
+}
+
+// --- Control de Carrusel en Dashboard Principal ---
+let dashCurrentSlide = 0;
+const dashSlides = document.querySelectorAll('.dash-carousel-slide');
+const totalDashSlides = dashSlides.length;
+let dashInterval = null;
+let dashPausado = false;
+
+function mostrarDashSlide(idx) {
+    if (totalDashSlides === 0) return;
+    if (idx >= totalDashSlides) dashCurrentSlide = 0;
+    else if (idx < 0) dashCurrentSlide = totalDashSlides - 1;
+    else dashCurrentSlide = idx;
+
+    dashSlides.forEach((sl, i) => {
+        sl.classList.toggle('active', i === dashCurrentSlide);
+    });
+
+    const counter = document.getElementById('dashCarouselCounter');
+    if (counter) {
+        counter.innerText = `${dashCurrentSlide + 1} / ${totalDashSlides}`;
+    }
+}
+
+function cambiarDashSlide(delta) {
+    mostrarDashSlide(dashCurrentSlide + delta);
+}
+
+function pausarDashCarousel() {
+    dashPausado = true;
+}
+
+function reanudarDashCarousel() {
+    dashPausado = false;
+}
+
+function iniciarDashCarousel() {
+    if (totalDashSlides <= 1) return;
+    if (dashInterval) clearInterval(dashInterval);
+    dashInterval = setInterval(() => {
+        if (!dashPausado) {
+            cambiarDashSlide(1);
+        }
+    }, 4500);
+}
+
+if (totalDashSlides > 0) {
+    iniciarDashCarousel();
 }
 </script>
 <?php include_once 'pwa_body.php'; ?>

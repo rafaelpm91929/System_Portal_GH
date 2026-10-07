@@ -11,128 +11,128 @@ function asegurarTablasPermisos($pdo) {
     if (!$pdo) return;
 
     try {
-        // 1. Tabla usuarios
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `usuarios` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `usuario` VARCHAR(50) NOT NULL UNIQUE,
-          `nombre` VARCHAR(100) NOT NULL,
-          `email` VARCHAR(100) NOT NULL UNIQUE,
-          `password` VARCHAR(255) NOT NULL,
-          `agencia` VARCHAR(100) DEFAULT 'Agencia Grupo Huerta',
-          `area` VARCHAR(100),
-          `puesto` VARCHAR(100),
-          `telefono` VARCHAR(50),
-          `foto_url` VARCHAR(255),
-          `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
-          `activo` TINYINT(1) DEFAULT 1,
-          `acceso_portal` TINYINT(1) DEFAULT 1,
-          `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        $driver = '';
+        try {
+            $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        } catch (Throwable $ed) {}
 
-        // Migración automática para agregar nuevas columnas si no existen
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN acceso_portal TINYINT(1) DEFAULT 1;");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN area VARCHAR(100);");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN puesto VARCHAR(100);");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(50);");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN foto_url VARCHAR(255);");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN contrasena_correo VARCHAR(255);");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE usuarios ADD COLUMN extension VARCHAR(50);");
-        } catch (Throwable $e) {}
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS usuarios (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              usuario VARCHAR(50) NOT NULL UNIQUE,
+              nombre VARCHAR(100) NOT NULL,
+              email VARCHAR(100) NOT NULL UNIQUE,
+              password VARCHAR(255) NOT NULL,
+              agencia VARCHAR(100) DEFAULT 'VW Divol La Villa',
+              rol VARCHAR(20) DEFAULT 'Admin',
+              activo INTEGER DEFAULT 1,
+              areas_tickets VARCHAR(255) DEFAULT 'TODOS',
+              creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS modulos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              clave VARCHAR(50) NOT NULL UNIQUE,
+              nombre VARCHAR(100) NOT NULL,
+              descripcion TEXT,
+              icono VARCHAR(50) DEFAULT 'bi-app-indicator',
+              orden INTEGER DEFAULT 0,
+              estatus INTEGER DEFAULT 1,
+              creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS usuario_permisos (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              usuario_id INTEGER NOT NULL,
+              modulo_clave VARCHAR(50) NOT NULL,
+              puede_ver INTEGER DEFAULT 0,
+              puede_crear INTEGER DEFAULT 0,
+              puede_editar INTEGER DEFAULT 0,
+              puede_eliminar INTEGER DEFAULT 0,
+              puede_exportar INTEGER DEFAULT 0,
+              actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+              UNIQUE (usuario_id, modulo_clave)
+            );");
+        } else {
+            // 1. Tabla usuarios MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `usuarios` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `usuario` VARCHAR(50) NOT NULL UNIQUE,
+              `nombre` VARCHAR(100) NOT NULL,
+              `email` VARCHAR(100) NOT NULL UNIQUE,
+              `password` VARCHAR(255) NOT NULL,
+              `agencia` VARCHAR(100) DEFAULT 'VW Divol La Villa',
+              `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
+              `activo` TINYINT(1) DEFAULT 1,
+              `areas_tickets` VARCHAR(255) DEFAULT 'TODOS',
+              `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 2. Tabla modulos
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `modulos` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `clave` VARCHAR(50) NOT NULL UNIQUE,
-          `nombre` VARCHAR(100) NOT NULL,
-          `descripcion` TEXT,
-          `icono` VARCHAR(50) DEFAULT 'bi-app-indicator',
-          `orden` INT DEFAULT 0,
-          `estatus` TINYINT(1) DEFAULT 1,
-          `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+            // 2. Tabla modulos MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `modulos` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `clave` VARCHAR(50) NOT NULL UNIQUE,
+              `nombre` VARCHAR(100) NOT NULL,
+              `descripcion` TEXT,
+              `icono` VARCHAR(50) DEFAULT 'bi-app-indicator',
+              `orden` INT DEFAULT 0,
+              `estatus` TINYINT(1) DEFAULT 1,
+              `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 3. Tabla usuario_permisos
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `usuario_permisos` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `usuario_id` INT NOT NULL,
-          `modulo_clave` VARCHAR(50) NOT NULL,
-          `puede_ver` TINYINT(1) DEFAULT 0,
-          `puede_crear` TINYINT(1) DEFAULT 0,
-          `puede_editar` TINYINT(1) DEFAULT 0,
-          `puede_eliminar` TINYINT(1) DEFAULT 0,
-          `puede_exportar` TINYINT(1) DEFAULT 0,
-          `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          FOREIGN KEY (`usuario_id`) REFERENCES `usuarios`(`id`) ON DELETE CASCADE,
-          FOREIGN KEY (`modulo_clave`) REFERENCES `modulos`(`clave`) ON DELETE CASCADE ON UPDATE CASCADE,
-          UNIQUE KEY `uq_usuario_modulo` (`usuario_id`, `modulo_clave`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+            // 3. Tabla usuario_permisos MySQL
+            $pdo->exec("
+            CREATE TABLE IF NOT EXISTS `usuario_permisos` (
+              `id` INT AUTO_INCREMENT PRIMARY KEY,
+              `usuario_id` INT NOT NULL,
+              `modulo_clave` VARCHAR(50) NOT NULL,
+              `puede_ver` TINYINT(1) DEFAULT 0,
+              `puede_crear` TINYINT(1) DEFAULT 0,
+              `puede_editar` TINYINT(1) DEFAULT 0,
+              `puede_eliminar` TINYINT(1) DEFAULT 0,
+              `puede_exportar` TINYINT(1) DEFAULT 0,
+              `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              UNIQUE KEY `uq_usuario_modulo` (`usuario_id`, `modulo_clave`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+        }
 
-        // 4. Tabla agencias
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `agencias` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `nombre` VARCHAR(100) NOT NULL UNIQUE,
-          `razon_social` VARCHAR(150),
-          `rfc` VARCHAR(20),
-          `direccion` TEXT,
-          `encargado_sistemas` VARCHAR(100),
-          `telefono_sistemas` VARCHAR(50),
-          `correo_sistemas` VARCHAR(100),
-          `logo_url` VARCHAR(255),
-          `foto_url` VARCHAR(255),
-          `maps_url` TEXT,
-          `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
-
+        // Asegurar columna areas_tickets en usuarios existentes
         try {
-            $pdo->exec("ALTER TABLE agencias ADD COLUMN maps_url TEXT;");
-        } catch (Throwable $e) {}
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN areas_tickets VARCHAR(255) DEFAULT 'TODOS'");
+        } catch (Throwable $eAlter) {}
+
+        // 4. Sembrado Inicial de Módulos (Módulos activos en esta fase)
+        $modulosBase = [
+            ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 1, 1],
+            ['agencias',         'Agencias (Catálogo cPanel)',         'Monitoreo y administración de sucursales cPanel',            'bi-buildings-fill',       2, 1],
+            ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',   'bi-people-fill',          3, 1],
+            ['politicas',        'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado', 'bi-shield-shaded', 4, 1],
+            ['compliance',       'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales', 'bi-shield-check', 5, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 6, 0],
+            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',          'bi-display-fill',            7, 0],
+            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',          'bi-phone-fill',              8, 0],
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',        'bi-key-fill',                9, 0],
+            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',        'bi-hdd-rack-fill',           10, 0]
+        ];
+
+        foreach ($modulosBase as $m) {
+            $stmtCheck = $pdo->prepare("SELECT id FROM modulos WHERE clave = ?");
+            $stmtCheck->execute([$m[0]]);
+            if ($stmtCheck->fetch()) {
+                $stmtUpd = $pdo->prepare("UPDATE modulos SET nombre=?, descripcion=?, icono=?, orden=?, estatus=? WHERE clave=?");
+                $stmtUpd->execute([$m[1], $m[2], $m[3], $m[4], $m[5], $m[0]]);
+            } else {
+                $stmtIns = $pdo->prepare("INSERT INTO modulos (clave, nombre, descripcion, icono, orden, estatus) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmtIns->execute([$m[0], $m[1], $m[2], $m[3], $m[4], $m[5]]);
+            }
+        }
+
+        // Mantener activos los 5 módulos vigentes
         try {
-            $pdo->exec("ALTER TABLE agencias ADD COLUMN color_tema VARCHAR(50) DEFAULT 'azul';");
-        } catch (Throwable $e) {}
-
-        // 5. Tabla agencia_areas
-        $pdo->exec("
-        CREATE TABLE IF NOT EXISTS `agencia_areas` (
-          `id` INT AUTO_INCREMENT PRIMARY KEY,
-          `agencia_id` INT NOT NULL,
-          `nombre` VARCHAR(100) NOT NULL,
-          `estatus` TINYINT(1) DEFAULT 1,
-          `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE KEY `uq_agencia_area` (`agencia_id`, `nombre`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
-
-        // 5. Sembrado Inicial
-        $pdo->exec("
-        INSERT INTO `modulos` (`clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`) VALUES
-        ('agencia', 'Datos de la Agencia', 'Ficha oficial de la sucursal: Nombre, Razón Social, RFC, Dirección, Foto y Encargado de Sistemas', 'bi-building-fill', 0, 1),
-        ('usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos del portal', 'bi-people-fill', 1, 1),
-        ('ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 2, 1),
-        ('equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1),
-        ('celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas corporativas', 'bi-phone-fill', 4, 1),
-        ('licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 5, 1),
-        ('infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, switches y cableado estructurado', 'bi-hdd-rack-fill', 6, 1),
-        ('directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1),
-        ('tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1),
-        ('politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1),
-        ('compliance', 'Compliance', 'Formatos oficiales, manuales de procedimientos y avisos institucionales', 'bi-shield-check', 10, 1)
-        ON DUPLICATE KEY UPDATE `nombre`=VALUES(`nombre`), `icono`=VALUES(`icono`), `orden`=VALUES(`orden`), `estatus`=VALUES(`estatus`);");
+            $pdo->exec("UPDATE modulos SET estatus = 1 WHERE clave IN ('tickets', 'agencias', 'usuarios', 'politicas', 'compliance');");
+            $pdo->exec("UPDATE modulos SET estatus = 0 WHERE clave NOT IN ('tickets', 'agencias', 'usuarios', 'politicas', 'compliance');");
+        } catch (Throwable $eUpd) {}
 
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
@@ -140,170 +140,167 @@ function asegurarTablasPermisos($pdo) {
 }
 
 /**
- * Auto-Instala o asegura la existencia de las 10 tablas de inventario en MySQL (cPanel) o SQLite (Local)
+ * Obtiene el catálogo oficial de módulos del sistema, garantizando datos siempre.
  */
-function asegurarTablasEquipos($pdo = null) {
-    if (!$pdo) {
-        global $pdo;
-    }
-    if (!$pdo) return;
-    try {
-        $driver = '';
+function obtenerCatalogoModulos($pdo = null) {
+    $modulosDefault = [
+        ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'icono' => 'bi-ticket-detailed-fill', 'orden' => 1],
+        ['clave' => 'agencias',         'nombre' => 'Agencias (Catálogo cPanel)',         'descripcion' => 'Monitoreo y administración de sucursales cPanel',            'icono' => 'bi-buildings-fill',       'orden' => 2],
+        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',   'icono' => 'bi-people-fill',          'orden' => 3, 'estatus' => 1],
+        ['clave' => 'politicas',        'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado', 'icono' => 'bi-shield-shaded', 'orden' => 4, 'estatus' => 1],
+        ['clave' => 'compliance',       'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales', 'icono' => 'bi-shield-check', 'orden' => 5, 'estatus' => 1]
+    ];
+
+    if ($pdo) {
         try {
-            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
-        } catch (Throwable $drvErr) {}
-
-        if ($driver === 'sqlite') {
-            // Tablas SQLite Directas para Entorno Local
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS inv_equipos_vw (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Activo', tipo_equipo TEXT DEFAULT 'Desktop', expediente_completo TEXT, dominio TEXT,
-                    logmein TEXT, serie TEXT, dd TEXT, procesador TEXT, ghz TEXT, ram TEXT, direccion_mac TEXT, mac_wifi TEXT,
-                    mac_ethernet TEXT, sistema_op TEXT, fecha_compra DATE, folio_factura TEXT, inicio_garantia DATE,
-                    fin_garantia DATE, garantia2 TEXT, renovacion_equipo TEXT, usuario_equipo_dominio TEXT, contrasena TEXT,
-                    office TEXT, serie_office TEXT, clave_candado TEXT, gds TEXT, por_usuario TEXT, equipo TEXT, remoto TEXT,
-                    usuario_gds TEXT, correo TEXT, correo_oficial_vw TEXT, correo_oficial_seat TEXT, extension TEXT,
-                    power_pb TEXT, contrasena_pb TEXT, poc TEXT, contrasena_poc TEXT, msqp TEXT, contrasena_msqp TEXT,
-                    grp TEXT, contrasena_grp TEXT, etka TEXT, contrasena_etka TEXT, facebook TEXT, contrasena_facebook TEXT,
-                    instagram TEXT, contrasena_instagram TEXT, wish TEXT, contrasena_wish TEXT, marketing_cloud TEXT,
-                    contrasena_marketing_cloud TEXT, sales_cloud_force TEXT, contrasena_sales_cloud_force TEXT,
-                    pagina_la_villa TEXT, contrasena_pagina_la_villa TEXT, urban_science TEXT, contrasena_urban_science TEXT,
-                    canva TEXT, contrasena_canva TEXT, cuenta_integral TEXT, contrasena_cuenta_integral TEXT, compra TEXT,
-                    proveedor TEXT, antivirus TEXT, dia_respaldo TEXT, hora_respaldo TEXT, no_break TEXT, modelo_nobreak TEXT,
-                    serie_nobreak TEXT, columna1 TEXT, columna2 TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_equipos_baja (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Baja', tipo_equipo TEXT, dominio TEXT, logmein TEXT, serie TEXT, dd TEXT,
-                    procesador TEXT, ghz TEXT, ram TEXT, direccion_mac TEXT, mac_wifi TEXT, mac_ethernet TEXT,
-                    sistema_op TEXT, fecha_compra DATE, folio_factura TEXT, inicio_garantia DATE, fin_garantia DATE,
-                    garantia TEXT, renovacion_equipo TEXT, usuario_equipo TEXT, contrasena TEXT, office TEXT,
-                    serie_office TEXT, clave_candado TEXT, gds TEXT, correo TEXT, correo_oficial_vw TEXT,
-                    correo_oficial_seat TEXT, extension TEXT, compra TEXT, proveedor TEXT, antivirus TEXT,
-                    dia_respaldo TEXT, hora_respaldo TEXT, no_break TEXT, modelo_nobreak TEXT, serie_nobreak TEXT,
-                    expediente_completo TEXT, columna1 TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_nobreak_baja (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Baja', modelo TEXT, serie_equipo TEXT, modelo_nobreak TEXT, serie_nobreak TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_equipos_corp (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Activo', tipo_equipo TEXT, dominio TEXT, logmein TEXT, serie TEXT, dd TEXT,
-                    procesador TEXT, ghz TEXT, ram TEXT, direccion_mac TEXT, mac_wifi TEXT, mac_ethernet TEXT,
-                    sistema_op TEXT, fecha_compra DATE, folio_factura TEXT, inicio_garantia DATE, fin_garantia DATE,
-                    garantia TEXT, renovacion_equipo TEXT, usuario_equipo TEXT, contrasena TEXT, office TEXT,
-                    serie_office TEXT, clave_candado TEXT, gds TEXT, correo TEXT, correo_oficial_vw TEXT,
-                    correo_oficial_seat TEXT, extension TEXT, compra TEXT, proveedor TEXT, antivirus TEXT,
-                    dia_respaldo TEXT, hora_respaldo TEXT, no_break TEXT, modelo_nobreak TEXT, serie_nobreak TEXT,
-                    expediente_completo TEXT, columna1 TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_dispositivos_moviles (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, nombre TEXT, tablet TEXT,
-                    celular TEXT, pantalla TEXT, contrasena TEXT, serie TEXT, rom TEXT, ram TEXT, android TEXT,
-                    mail TEXT, mac TEXT, plan TEXT, factura TEXT, fecha_compra DATE, proveedor TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_archivo (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, nombre TEXT, monitor TEXT,
-                    pulgadas TEXT, serie TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_monitores (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, nombre TEXT, monitor TEXT,
-                    pulgadas TEXT, serie TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_dvr_camaras (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, camaras TEXT, dvr TEXT, ip TEXT, numero_serie TEXT,
-                    almacenamiento TEXT, contrasena_dvr TEXT, contrasena_camara TEXT, cam_totales_ip INTEGER DEFAULT 0,
-                    disponibles_ip INTEGER DEFAULT 0, cam_totales_analogicas INTEGER DEFAULT 0, disponibles INTEGER DEFAULT 0,
-                    modelo TEXT, nombre TEXT, capacidad_actual TEXT, cotizar TEXT, maximo_por_disco TEXT,
-                    capacidad_discos TEXT, tiene_actual TEXT, numero_discos TEXT, usuario_dvr TEXT, dias_grabacion TEXT,
-                    tipo_registro TEXT, dvr_vinculado TEXT, costo TEXT, foto_equipo TEXT, columna1 TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_site_vw (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Activo', equipo TEXT, modelo TEXT, serie TEXT, fecha_compra DATE,
-                    folio_factura TEXT, actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_licencias_office (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT, licencia TEXT, area TEXT, puesto TEXT, nombre TEXT,
-                    serie_equipo TEXT, nombre_equipo TEXT, serie_licencia TEXT, factura TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS inv_telefonos_poe (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    usuario TEXT, area TEXT, modelo TEXT, serie TEXT, mac TEXT, ip TEXT,
-                    numero_telefonico TEXT, extension TEXT, tipo_licencia TEXT, correo TEXT, portabilidad TEXT,
-                    folio_factura TEXT, numero_nodo TEXT, puerto_sw TEXT, switch_nombre TEXT,
-                    foto TEXT, factura_pdf TEXT, estado TEXT DEFAULT 'Activo',
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            ");
-        } else {
-            // MySQL cPanel execution
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS `inv_telefonos_poe` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `usuario` VARCHAR(150),
-                  `area` VARCHAR(100),
-                  `modelo` VARCHAR(100),
-                  `serie` VARCHAR(100),
-                  `mac` VARCHAR(50),
-                  `ip` VARCHAR(50),
-                  `numero_telefonico` VARCHAR(50),
-                  `extension` VARCHAR(20),
-                  `tipo_licencia` VARCHAR(100),
-                  `correo` VARCHAR(150),
-                  `portabilidad` VARCHAR(50),
-                  `folio_factura` VARCHAR(100),
-                  `numero_nodo` VARCHAR(50),
-                  `puerto_sw` VARCHAR(50),
-                  `switch_nombre` VARCHAR(100),
-                  `foto` VARCHAR(255),
-                  `factura_pdf` VARCHAR(255),
-                  `estado` VARCHAR(50) DEFAULT 'Activo',
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-            ");
-
-            $sqlPath = __DIR__ . '/database/schema_equipos.sql';
-            if (file_exists($sqlPath)) {
-                $sql = file_get_contents($sqlPath);
-                $queries = array_filter(array_map('trim', explode(';', $sql)));
-                foreach ($queries as $q) {
-                    if (!empty($q)) {
-                        try {
-                            $pdo->exec($q);
-                        } catch (Throwable $qErr) {}
-                    }
-                }
+            $stmt = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
+            $rows = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+            if (!empty($rows)) {
+                return $rows;
             }
+        } catch (Throwable $e) {}
+    }
+    return $modulosDefault;
+}
+
+/**
+ * Carga los permisos del usuario en la sesión desde la base de datos
+ */
+function cargarPermisosSesion($pdo, $usuario_id) {
+    if (!$pdo || !$usuario_id) return;
+
+    try {
+        // Cargar datos de perfil, rol y áreas autorizadas de tickets
+        $stmtU = $pdo->prepare("SELECT usuario, nombre, email, rol, agencia, areas_tickets FROM usuarios WHERE id = ?");
+        $stmtU->execute([$usuario_id]);
+        $uInfo = $stmtU->fetch(PDO::FETCH_ASSOC);
+        if ($uInfo) {
+            if (!empty($uInfo['usuario'])) $_SESSION['usuario_login'] = $uInfo['usuario'];
+            if (!empty($uInfo['nombre']))  $_SESSION['usuario_nombre'] = $uInfo['nombre'];
+            if (!empty($uInfo['email']))   $_SESSION['usuario_email']  = $uInfo['email'];
+            if (!empty($uInfo['agencia'])) $_SESSION['agencia']        = $uInfo['agencia'];
+            $_SESSION['usuario_rol'] = $uInfo['rol'] ?? ($_SESSION['usuario_rol'] ?? 'Usuario');
+            $_SESSION['areas_tickets'] = $uInfo['areas_tickets'] ?? 'TODOS';
         }
 
-        // Asegurar la existencia de las nuevas columnas para compatibilidad
-        $nuevasColumnas = ['garantia2', 'garantia', 'contrasena_remoto', 'contrasena_gds', 'correo_oficial_planta', 'motivo_baja', 'puerto_patch_panel', 'puerto_sw', 'numero_nodo', 'factura_url', 'responsiva_url', 'costo', 'foto_equipo', 'dvr_vinculado', 'tipo_registro', 'dias_grabacion', 'usuario_dvr', 'numero_discos', 'canal_analogico', 'canal_ip', 'ubicacion', 'foto_vista_camara', 'subtipo_camara', 'fabricante', 'folio_factura', 'mac_ethernet', 'mac_wifi', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'sistema_op', 'procesador', 'ram', 'almacenamiento', 'cantidad_discos', 'tipo_servidor', 'funcion_servicio', 'ambiente', 'criticidad', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'proveedor', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'ip_publica', 'ip_local', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia', 'imei_1', 'imei_2', 'numero_telefonico', 'color', 'accesorios', 'fecha_asignacion', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan', 'estado_fisico', 'tamano_pantalla', 'resolucion', 'subtipo_dispositivo', 'especificaciones', 'observaciones', 'marca', 'modelo_exacto', 'fecha_adquisicion', 'contrato', 'usuario_impresora', 'contrasena_impresora', 'usuario_impresora_web', 'contrasena_impresora_web', 'ip'];
-        $todasLasTablasInv = ['inv_equipos_vw', 'inv_equipos_baja', 'inv_equipos_corp', 'inv_nobreak_baja', 'inv_site_vw', 'inv_dispositivos_moviles', 'inv_archivo', 'inv_monitores', 'inv_dvr_camaras', 'inv_licencias_office'];
-        foreach ($todasLasTablasInv as $tbl) {
-            foreach ($nuevasColumnas as $col) {
-                try {
-                    $pdo->exec("ALTER TABLE `$tbl` ADD COLUMN `$col` TEXT");
-                } catch (Throwable $e) {}
-            }
+        $stmt = $pdo->prepare("
+            SELECT modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar 
+            FROM usuario_permisos 
+            WHERE usuario_id = ?
+        ");
+        $stmt->execute([$usuario_id]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $_SESSION['permisos'] = [];
+        foreach ($rows as $row) {
+            $_SESSION['permisos'][$row['modulo_clave']] = [
+                'puede_ver'      => (int)$row['puede_ver'],
+                'puede_crear'    => (int)$row['puede_crear'],
+                'puede_editar'   => (int)$row['puede_editar'],
+                'puede_eliminar' => (int)$row['puede_eliminar'],
+                'puede_exportar' => (int)$row['puede_exportar']
+            ];
         }
     } catch (Throwable $e) {
-        // Fallback silencioso
+        // En caso de que las tablas aún no existan, auto-crearlas
+        asegurarTablasPermisos($pdo);
+        $_SESSION['permisos'] = [];
+    }
+}
+
+/**
+ * Verifica si el usuario actual tiene un permiso específico sobre un módulo
+ */
+function tienePermiso($modulo_clave, $accion = 'puede_ver') {
+    // Si no hay sesión iniciada, denegar
+    if (!isset($_SESSION['usuario_id'])) {
+        return false;
+    }
+
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+
+    // SuperAdmin tiene acceso total a todos los módulos
+    if ($rol === 'superadmin') {
+        return true;
+    }
+
+    // Verificar en la matriz de permisos de la sesión
+    $permisos = $_SESSION['permisos'] ?? [];
+    if (isset($permisos[$modulo_clave])) {
+        return !empty($permisos[$modulo_clave][$accion]);
+    }
+
+    // Si es Admin pero aún no tiene configuración explícita guardada
+    if ($rol === 'admin') {
+        return true;
+    }
+
+    // Si es Usuario y no tiene el permiso explícito: DENEGADO
+    return false;
+}
+
+/**
+ * Exige un permiso o bloquea la ejecución con mensaje de Acceso Denegado (403)
+ */
+function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
+    if (!tienePermiso($modulo_clave, $accion)) {
+        header("HTTP/1.1 403 Forbidden");
+        echo '<!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Acceso Restringido - 403 Forbidden</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+            <style>
+                body {
+                    background-color: #040d1a;
+                    background-image: radial-gradient(#0b223e 1px, transparent 1px);
+                    background-size: 28px 28px;
+                    color: #ffffff;
+                    font-family: \'Segoe UI\', system-ui, sans-serif;
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px;
+                }
+                .error-card {
+                    background: #0a192e;
+                    border: 1px solid rgba(239, 68, 68, 0.4);
+                    border-radius: 24px;
+                    padding: 45px 35px;
+                    max-width: 520px;
+                    text-align: center;
+                    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+                }
+            </style>
+        </head>
+        <body>
+            <div class="error-card">
+                <div class="mb-3">
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-danger bg-opacity-15 text-danger p-3" style="width: 86px; height: 86px; font-size: 2.8rem;">
+                        <i class="bi bi-shield-lock-fill"></i>
+                    </span>
+                </div>
+                <h3 class="fw-bold text-white mb-2">Acceso No Autorizado (403)</h3>
+                <div class="badge bg-danger bg-opacity-25 text-danger border border-danger px-3 py-1 mb-3">Módulo: ' . htmlspecialchars($modulo_clave) . '</div>
+                <p class="text-secondary small mb-4">
+                    Tu usuario no tiene permisos asignados para ver o utilizar este módulo. Si requieres acceso para tus funciones, solicita la autorización al <strong>Administrador de Sistemas</strong> en Gestión de Usuarios.
+                </p>
+                <div class="d-grid gap-2">
+                    <a href="menu.php" class="btn btn-primary rounded-3 py-2 fw-semibold">
+                        <i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal
+                    </a>
+                    <a href="logout.php" class="btn btn-outline-secondary rounded-3 py-2 text-white">
+                        <i class="bi bi-box-arrow-right me-2"></i>Cerrar Sesión
+                    </a>
+                </div>
+            </div>
+        </body>
+        </html>';
+        exit();
     }
 }
 
@@ -371,15 +368,13 @@ function asegurarTablaTickets($pdo = null) {
         try {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
         } catch (Throwable $eAlt) {}
-
-        asegurarTablaTicketsMensajes($pdo);
     } catch (Throwable $e) {}
 }
 
 /**
- * Asegura la existencia de la tabla tickets_mensajes para el hilo de conversación y respuestas
+ * Asegura la existencia de la tabla citas_soporte
  */
-function asegurarTablaTicketsMensajes($pdo = null) {
+function asegurarTablaCitas($pdo = null) {
     if (!$pdo) {
         global $pdo;
     }
@@ -392,34 +387,46 @@ function asegurarTablaTicketsMensajes($pdo = null) {
 
         if ($driver === 'sqlite') {
             $pdo->exec("
-                CREATE TABLE IF NOT EXISTS tickets_mensajes (
+                CREATE TABLE IF NOT EXISTS citas_soporte (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ticket_id INTEGER NOT NULL,
                     folio TEXT,
-                    autor_id INTEGER,
-                    autor_nombre TEXT,
-                    autor_usuario TEXT,
-                    autor_rol TEXT DEFAULT 'usuario',
-                    mensaje TEXT NOT NULL,
-                    archivo_adjunto TEXT,
-                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                    agencia TEXT NOT NULL,
+                    area_sistemas TEXT DEFAULT 'INFRAESTRUCTURA',
+                    tipo_cita TEXT DEFAULT 'Presencial',
+                    asunto TEXT NOT NULL,
+                    descripcion TEXT,
+                    solicitante_nombre TEXT,
+                    solicitante_usuario TEXT,
+                    solicitante_email TEXT,
+                    tecnico_asignado TEXT,
+                    fecha_cita DATE NOT NULL,
+                    hora_cita TEXT NOT NULL,
+                    estado TEXT DEFAULT 'Programada',
+                    notas_atencion TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
         } else {
             $pdo->exec("
-                CREATE TABLE IF NOT EXISTS `tickets_mensajes` (
+                CREATE TABLE IF NOT EXISTS `citas_soporte` (
                     `id` INT AUTO_INCREMENT PRIMARY KEY,
-                    `ticket_id` INT NOT NULL,
-                    `folio` VARCHAR(50) NULL,
-                    `autor_id` INT NULL,
-                    `autor_nombre` VARCHAR(150),
-                    `autor_usuario` VARCHAR(100),
-                    `autor_rol` VARCHAR(50) DEFAULT 'usuario',
-                    `mensaje` TEXT NOT NULL,
-                    `archivo_adjunto` VARCHAR(255) NULL,
+                    `folio` VARCHAR(50),
+                    `agencia` VARCHAR(100) NOT NULL,
+                    `area_sistemas` VARCHAR(100) DEFAULT 'INFRAESTRUCTURA',
+                    `tipo_cita` VARCHAR(50) DEFAULT 'Presencial',
+                    `asunto` VARCHAR(255) NOT NULL,
+                    `descripcion` TEXT,
+                    `solicitante_nombre` VARCHAR(150),
+                    `solicitante_usuario` VARCHAR(100),
+                    `solicitante_email` VARCHAR(150),
+                    `tecnico_asignado` VARCHAR(150),
+                    `fecha_cita` DATE NOT NULL,
+                    `hora_cita` VARCHAR(20) NOT NULL,
+                    `estado` VARCHAR(50) DEFAULT 'Programada',
+                    `notas_atencion` TEXT,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    INDEX (`ticket_id`),
-                    INDEX (`folio`)
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
@@ -447,6 +454,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     titulo TEXT NOT NULL,
                     descripcion TEXT,
                     categoria TEXT DEFAULT 'General',
+                    area TEXT,
+                    subarea TEXT,
                     archivo_pdf TEXT NOT NULL,
                     version TEXT DEFAULT '1.0',
                     fecha_vigencia DATE,
@@ -465,7 +474,7 @@ function asegurarTablaPoliticas($pdo = null) {
                     usuario_login TEXT NOT NULL,
                     agencia TEXT NOT NULL,
                     ip TEXT NOT NULL,
-                    origen TEXT DEFAULT 'Portal Agencia',
+                    origen TEXT DEFAULT 'Portal Central GH',
                     fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
@@ -483,6 +492,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     `titulo` VARCHAR(255) NOT NULL,
                     `descripcion` TEXT NULL,
                     `categoria` VARCHAR(100) DEFAULT 'General',
+                    `area` VARCHAR(100) NULL,
+                    `subarea` VARCHAR(100) NULL,
                     `archivo_pdf` VARCHAR(255) NOT NULL,
                     `version` VARCHAR(20) DEFAULT '1.0',
                     `fecha_vigencia` DATE NULL,
@@ -502,11 +513,12 @@ function asegurarTablaPoliticas($pdo = null) {
                     `usuario_login` VARCHAR(100) NOT NULL,
                     `agencia` VARCHAR(100) NOT NULL,
                     `ip` VARCHAR(50) NOT NULL,
-                    `origen` VARCHAR(50) DEFAULT 'Portal Agencia',
+                    `origen` VARCHAR(50) DEFAULT 'Portal Central GH',
                     `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     INDEX `idx_politica` (`politica_id`),
                     INDEX `idx_usuario` (`usuario_login`),
                     INDEX `idx_fecha` (`fecha_lectura`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL"); } catch (Throwable $t) {}
@@ -561,7 +573,7 @@ function asegurarTablaCompliance($pdo = null) {
                     usuario_login TEXT NOT NULL,
                     agencia TEXT NOT NULL,
                     ip TEXT NOT NULL,
-                    origen TEXT DEFAULT 'Portal Agencia',
+                    origen TEXT DEFAULT 'Portal Central GH',
                     fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
@@ -601,7 +613,7 @@ function asegurarTablaCompliance($pdo = null) {
                     `usuario_login` VARCHAR(100) NOT NULL,
                     `agencia` VARCHAR(100) NOT NULL,
                     `ip` VARCHAR(50) NOT NULL,
-                    `origen` VARCHAR(50) DEFAULT 'Portal Agencia',
+                    `origen` VARCHAR(50) DEFAULT 'Portal Central GH',
                     `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     INDEX `idx_comp_doc` (`documento_id`),
                     INDEX `idx_comp_usr` (`usuario_login`),
@@ -618,7 +630,7 @@ function asegurarTablaCompliance($pdo = null) {
             $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-04.svg' WHERE codigo = 'AV-04' AND (imagen_url IS NULL OR imagen_url = '')");
         } catch (Throwable $t) {}
 
-        // Sembrado inicial de documentos oficiales de compliance si la tabla está vacía
+        // Sembrado inicial si está vacía
         $stmtCount = $pdo->query("SELECT COUNT(*) FROM compliance_documentos");
         $totalDocs = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
         if ($totalDocs === 0) {
@@ -712,7 +724,7 @@ function asegurarTablaCompliance($pdo = null) {
  * Genera una tarjeta gráfica vectorial oficial (SVG 1200x675) para un Aviso o Comunicado Institucional.
  * Convierte el texto y descripción en una imagen institucional de alta resolución con sellos corporativos.
  */
-function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $categoria = 'General', $codigo = 'AV-01', $fecha = null, $emisor = 'Dirección General') {
+function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $categoria = 'General', $codigo = 'AV-01', $fecha = null, $emisor = 'Dirección General', $estiloFondo = 'negro_oro') {
     if (!$fecha) $fecha = date('d/m/Y');
     
     $badgeBg = '#ef4444';
@@ -729,13 +741,48 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
         $badgeLabel = 'COMUNICADO URGENTE';
     }
 
+    // Configuración de Paletas de Fondo Estilo Facebook
+    switch ($estiloFondo) {
+        case 'azul_zafiro':
+            $bgStop1 = '#031024'; $bgStop2 = '#0a254d'; $bgStop3 = '#020914';
+            $cardStop1 = 'rgba(10, 37, 77, 0.88)'; $cardStop2 = 'rgba(3, 16, 36, 0.95)';
+            $goldColor = '#38bdf8'; $goldLight = '#bae6fd';
+            $strokeBorder = 'rgba(56, 189, 248, 0.45)';
+            break;
+        case 'rojo_rubi':
+            $bgStop1 = '#200505'; $bgStop2 = '#450f0f'; $bgStop3 = '#110202';
+            $cardStop1 = 'rgba(69, 15, 15, 0.88)'; $cardStop2 = 'rgba(17, 2, 2, 0.95)';
+            $goldColor = '#f87171'; $goldLight = '#fecaca';
+            $strokeBorder = 'rgba(248, 113, 113, 0.45)';
+            break;
+        case 'esmeralda':
+            $bgStop1 = '#031a11'; $bgStop2 = '#0a3a27'; $bgStop3 = '#020f09';
+            $cardStop1 = 'rgba(10, 58, 39, 0.88)'; $cardStop2 = 'rgba(2, 15, 9, 0.95)';
+            $goldColor = '#34d399'; $goldLight = '#a7f3d0';
+            $strokeBorder = 'rgba(52, 211, 153, 0.45)';
+            break;
+        case 'purpura':
+            $bgStop1 = '#13061d'; $bgStop2 = '#2d1242'; $bgStop3 = '#0a0210';
+            $cardStop1 = 'rgba(45, 18, 66, 0.88)'; $cardStop2 = 'rgba(10, 2, 16, 0.95)';
+            $goldColor = '#c084fc'; $goldLight = '#f3e8ff';
+            $strokeBorder = 'rgba(192, 132, 252, 0.45)';
+            break;
+        case 'negro_oro':
+        default:
+            $bgStop1 = '#040d1a'; $bgStop2 = '#081a33'; $bgStop3 = '#020812';
+            $cardStop1 = 'rgba(11, 26, 48, 0.88)'; $cardStop2 = 'rgba(4, 13, 26, 0.95)';
+            $goldColor = '#d4af37'; $goldLight = '#f5df9e';
+            $strokeBorder = 'rgba(212, 175, 55, 0.45)';
+            break;
+    }
+
     // Procesar título con salto de línea automático
     $palabrasTit = explode(' ', trim($titulo));
     $tLines = [];
     $currTit = '';
     foreach ($palabrasTit as $w) {
         if ($w === '') continue;
-        if (mb_strlen($currTit . ' ' . $w) <= 38) {
+        if (mb_strlen($currTit . ' ' . $w) <= 36) {
             $currTit = trim($currTit . ' ' . $w);
         } else {
             if ($currTit !== '') $tLines[] = $currTit;
@@ -772,18 +819,22 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
         if ($curr !== '') $dLines[] = $curr;
     }
 
-    // Ajuste dinámico de tamaño de fuente según extensión del texto
+    // Ajuste dinámico de tamaño de fuente estilo Facebook
     $cantLineasDesc = count($dLines);
     $dLines = array_slice($dLines, 0, 11);
     
-    $fontSizeDesc = 19;
-    $lineHeightDesc = 31;
-    if ($cantLineasDesc > 7) {
+    if ($cantLineasDesc <= 2 && mb_strlen($descripcion) <= 120) {
+        $fontSizeDesc = 24;
+        $lineHeightDesc = 38;
+    } elseif ($cantLineasDesc <= 4) {
+        $fontSizeDesc = 21;
+        $lineHeightDesc = 34;
+    } elseif ($cantLineasDesc > 7) {
         $fontSizeDesc = 16;
         $lineHeightDesc = 26;
-    } elseif ($cantLineasDesc <= 3) {
-        $fontSizeDesc = 22;
-        $lineHeightDesc = 36;
+    } else {
+        $fontSizeDesc = 18;
+        $lineHeightDesc = 30;
     }
 
     // Escapado seguro para SVG/XML
@@ -794,36 +845,36 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">' . "\n";
     $svg .= '  <defs>' . "\n";
     $svg .= '    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="#040d1a" />' . "\n";
-    $svg .= '      <stop offset="45%" stop-color="#081a33" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="#020812" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $bgStop1 . '" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="' . $bgStop2 . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $bgStop3 . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="rgba(11, 26, 48, 0.85)" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="rgba(4, 13, 26, 0.95)" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $cardStop1 . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $cardStop2 . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="#d4af37" />' . "\n";
-    $svg .= '      <stop offset="50%" stop-color="#f5df9e" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="#a6841e" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $goldColor . '" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="' . $goldLight . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $goldColor . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '  </defs>' . "\n";
 
-    // Fondo y marcos dorados de lujo
+    // Fondo y marcos decorativos
     $svg .= '  <rect width="1200" height="675" fill="url(#bgGrad)" />' . "\n";
-    $svg .= '  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="rgba(212, 175, 55, 0.45)" stroke-width="2" />' . "\n";
-    $svg .= '  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(212, 175, 55, 0.15)" stroke-width="1" />' . "\n";
+    $svg .= '  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="' . $strokeBorder . '" stroke-width="2" />' . "\n";
+    $svg .= '  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1" />' . "\n";
 
     // Cantoneras ornamentales
-    $svg .= '  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
 
     // Membrete Superior: Marca Grupo Huerta
     $svg .= '  <g transform="translate(60, 60)">' . "\n";
-    $svg .= '    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(212, 175, 55, 0.2)" stroke="#d4af37" stroke-width="2" />' . "\n";
-    $svg .= '    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="#f5df9e" stroke-width="2.5" stroke-linecap="round" />' . "\n";
+    $svg .= '    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(255, 255, 255, 0.15)" stroke="' . $goldColor . '" stroke-width="2" />' . "\n";
+    $svg .= '    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="' . $goldLight . '" stroke-width="2.5" stroke-linecap="round" />' . "\n";
     $svg .= '    <text x="65" y="24" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="2">GRUPO HUERTA</text>' . "\n";
     $svg .= '    <text x="65" y="46" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#94a3b8" letter-spacing="1">GOBIERNO CORPORATIVO &amp; COMPLIANCE INSTITUCIONAL</text>' . "\n";
     $svg .= '  </g>' . "\n";
@@ -834,19 +885,19 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '    <text x="140" y="26" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="800" fill="' . $badgeText . '" text-anchor="middle" letter-spacing="1">' . $xmlEsc($badgeLabel) . '</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
-    // Divisor dorado
+    // Divisor
     $svg .= '  <line x1="60" y1="130" x2="1140" y2="130" stroke="url(#goldGrad)" stroke-width="2" />' . "\n";
 
     // Metadatos: Código, Categoría y Fecha
     $svg .= '  <g transform="translate(60, 160)">' . "\n";
-    $svg .= '    <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(212, 175, 55, 0.18)" stroke="#d4af37" stroke-width="1" />' . "\n";
-    $svg .= '    <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="#f5df9e" text-anchor="middle">' . $xmlEsc($codigo) . '</text>' . "\n";
+    $svg .= '    <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(255, 255, 255, 0.1)" stroke="' . $goldColor . '" stroke-width="1" />' . "\n";
+    $svg .= '    <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="' . $goldLight . '" text-anchor="middle">' . $xmlEsc($codigo) . '</text>' . "\n";
     $svg .= '    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&bull; ' . $xmlEsc($categoria) . '</text>' . "\n";
     $svg .= '    <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: ' . $xmlEsc($fecha) . '</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
     // Contenedor interno estilizado para el contenido
-    $svg .= '  <rect x="55" y="205" width="1090" height="375" rx="14" fill="url(#cardGrad)" stroke="rgba(212, 175, 55, 0.25)" stroke-width="1" />' . "\n";
+    $svg .= '  <rect x="55" y="205" width="1090" height="375" rx="14" fill="url(#cardGrad)" stroke="' . $strokeBorder . '" stroke-width="1.2" />' . "\n";
 
     // Título Oficial en la Tarjeta
     $yTitulo = 250;
@@ -871,532 +922,13 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '  </text>' . "\n";
 
     // Pie institucional
-    $svg .= '  <line x1="60" y1="595" x2="1140" y2="595" stroke="rgba(212, 175, 55, 0.3)" stroke-width="1" />' . "\n";
+    $svg .= '  <line x1="60" y1="595" x2="1140" y2="595" stroke="' . $strokeBorder . '" stroke-width="1" />' . "\n";
     $svg .= '  <g transform="translate(60, 625)">' . "\n";
-    $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="#d4af37">EMISOR: ' . $xmlEsc($emisor) . '</text>' . "\n";
+    $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="' . $goldColor . '">EMISOR: ' . $xmlEsc($emisor) . '</text>' . "\n";
     $svg .= '    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
     $svg .= '</svg>' . "\n";
     return $svg;
-}
-
-/**
- * Carga los permisos del usuario en la sesión desde la base de datos
- */
-function cargarPermisosSesion($pdo, $usuario_id) {
-    if (!$pdo || !$usuario_id) return;
-
-    try {
-        // Cargar datos de perfil, rol y áreas autorizadas de tickets
-        $stmtU = $pdo->prepare("SELECT usuario, nombre, email, rol, agencia, areas_tickets FROM usuarios WHERE id = ?");
-        $stmtU->execute([$usuario_id]);
-        $uInfo = $stmtU->fetch(PDO::FETCH_ASSOC);
-        if ($uInfo) {
-            if (!empty($uInfo['usuario'])) $_SESSION['usuario_login'] = $uInfo['usuario'];
-            if (!empty($uInfo['nombre']))  $_SESSION['usuario_nombre'] = $uInfo['nombre'];
-            if (!empty($uInfo['email']))   $_SESSION['usuario_email']  = $uInfo['email'];
-            if (!empty($uInfo['agencia'])) $_SESSION['agencia']        = $uInfo['agencia'];
-            $_SESSION['usuario_rol'] = $uInfo['rol'] ?? ($_SESSION['usuario_rol'] ?? 'Usuario');
-            $_SESSION['areas_tickets'] = $uInfo['areas_tickets'] ?? 'TODOS';
-        }
-    } catch (Throwable $eU) {}
-
-    try {
-        $stmt = $pdo->prepare("
-            SELECT modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar 
-            FROM usuario_permisos 
-            WHERE usuario_id = ?
-        ");
-        $stmt->execute([$usuario_id]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        $_SESSION['permisos'] = [];
-        foreach ($rows as $row) {
-            $_SESSION['permisos'][$row['modulo_clave']] = [
-                'puede_ver'      => (int)$row['puede_ver'],
-                'puede_crear'    => (int)$row['puede_crear'],
-                'puede_editar'   => (int)$row['puede_editar'],
-                'puede_eliminar' => (int)$row['puede_eliminar'],
-                'puede_exportar' => (int)$row['puede_exportar']
-            ];
-        }
-    } catch (Throwable $e) {
-        // En caso de que las tablas aún no existan, auto-crearlas
-        asegurarTablasPermisos($pdo);
-        $_SESSION['permisos'] = [];
-    }
-}
-
-/**
- * Verifica si el usuario actual tiene un permiso específico sobre un módulo
- */
-function tienePermiso($modulo_clave, $accion = 'puede_ver') {
-    // Si no hay sesión iniciada, denegar
-    if (!isset($_SESSION['usuario_id'])) {
-        return false;
-    }
-
-    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
-
-    // 1. Si el usuario tiene permisos configurados en la matriz (usuario_permisos), respetarlos SIEMPRE
-    if (isset($_SESSION['permisos']) && is_array($_SESSION['permisos']) && isset($_SESSION['permisos'][$modulo_clave])) {
-        $permisosMod = $_SESSION['permisos'][$modulo_clave];
-        return !empty($permisosMod[$accion]);
-    }
-
-    // 2. Si no se han configurado permisos específicos en la matriz aún (fallback inicial):
-    // SuperAdmin y Admin tienen acceso total por defecto
-    if (in_array($rol, ['superadmin', 'admin'])) {
-        return true;
-    }
-
-    // Para rol Usuario general sin permisos configurados, denegar por seguridad
-    return false;
-}
-
-/**
- * Exige un permiso o bloquea la ejecución con mensaje de Acceso Denegado
- */
-function requerirPermiso($modulo_clave, $accion = 'puede_ver') {
-    if (!tienePermiso($modulo_clave, $accion)) {
-        header("HTTP/1.1 403 Forbidden");
-        echo '<!DOCTYPE html>
-        <html lang="es">
-        <head>
-            <meta charset="UTF-8">
-            <title>Acceso Denegado - 403</title>
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
-        </head>
-        <body class="bg-dark text-white d-flex align-items-center justify-content-center vh-100 text-center">
-            <div class="card bg-secondary bg-opacity-25 border-danger p-5 rounded-4 shadow-lg text-white" style="max-width: 500px;">
-                <i class="bi bi-shield-lock-fill text-danger display-1 mb-3"></i>
-                <h3 class="fw-bold text-danger">Acceso restringido</h3>
-                <p class="text-light">No posees los permisos necesarios para acceder o visualizar el módulo <code>'.htmlspecialchars($modulo_clave).'</code>.</p>
-                <a href="menu.php" class="btn btn-primary rounded-3 px-4 mt-2"><i class="bi bi-arrow-left me-2"></i>Volver al Menú Principal</a>
-            </div>
-        </body>
-        </html>';
-        exit();
-    }
-}
-
-/**
- * Auto-Instala o asegura la existencia de las tablas de infraestructura (diagramas, site, red_idf)
- */
-function asegurarTablasInfraestructura($pdo = null) {
-    if (!$pdo) {
-        global $pdo;
-    }
-    if (!$pdo) return;
-    try {
-        $driver = '';
-        try {
-            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
-        } catch (Throwable $drvErr) {}
-
-        if ($driver === 'sqlite') {
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS infra_diagramas (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    titulo TEXT NOT NULL,
-                    tipo TEXT DEFAULT 'Red / Topología',
-                    version TEXT DEFAULT '1.0',
-                    archivo_url TEXT NOT NULL,
-                    descripcion TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS infra_site (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre_site TEXT NOT NULL,
-                    ubicacion TEXT,
-                    tipo_espacio TEXT DEFAULT 'SITE Principal',
-                    temperatura_objetivo TEXT,
-                    aire_acondicionado TEXT,
-                    btu TEXT,
-                    aire_estatus TEXT DEFAULT 'Operativo',
-                    ups_principal TEXT,
-                    cap_ups TEXT,
-                    planta_luz TEXT,
-                    control_acceso TEXT,
-                    contra_incendio TEXT,
-                    foto_site TEXT,
-                    observaciones TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS infra_red_idf (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre_idf TEXT NOT NULL,
-                    ubicacion TEXT,
-                    rango_ips TEXT,
-                    vlans TEXT,
-                    switch_principal TEXT,
-                    no_puertos TEXT,
-                    no_racks TEXT,
-                    estatus TEXT DEFAULT 'Activo',
-                    foto_idf TEXT,
-                    notas TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS infra_planos_2d (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nombre_plano TEXT NOT NULL,
-                    imagen_fondo_url TEXT,
-                    ancho_canvas INTEGER DEFAULT 1200,
-                    alto_canvas INTEGER DEFAULT 800,
-                    elementos_json TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS infra_nodos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo_nodo TEXT NOT NULL,
-                    tipo_nodo TEXT DEFAULT 'Voz y Datos',
-                    ubicacion TEXT,
-                    patch_panel TEXT,
-                    switch_puerto TEXT,
-                    vlan TEXT,
-                    estatus TEXT DEFAULT 'Activo',
-                    notas TEXT,
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS infra_vlans (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    vlan_id INTEGER NOT NULL,
-                    nombre_vlan TEXT NOT NULL,
-                    subred TEXT,
-                    gateway TEXT,
-                    dhcp_rango TEXT,
-                    descripcion TEXT,
-                    estatus TEXT DEFAULT 'Activa',
-                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-            ");
-        } else {
-            $pdo->exec("
-                CREATE TABLE IF NOT EXISTS `infra_diagramas` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `titulo` VARCHAR(150) NOT NULL,
-                  `tipo` VARCHAR(100) DEFAULT 'Red / Topología',
-                  `version` VARCHAR(50) DEFAULT '1.0',
-                  `archivo_url` VARCHAR(255) NOT NULL,
-                  `descripcion` TEXT,
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-                CREATE TABLE IF NOT EXISTS `infra_site` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `nombre_site` VARCHAR(150) NOT NULL,
-                  `ubicacion` VARCHAR(200),
-                  `tipo_espacio` VARCHAR(100) DEFAULT 'SITE Principal',
-                  `temperatura_objetivo` VARCHAR(100),
-                  `aire_acondicionado` VARCHAR(150),
-                  `btu` VARCHAR(50),
-                  `aire_estatus` VARCHAR(50) DEFAULT 'Operativo',
-                  `ups_principal` VARCHAR(150),
-                  `cap_ups` VARCHAR(50),
-                  `planta_luz` VARCHAR(150),
-                  `control_acceso` VARCHAR(150),
-                  `contra_incendio` VARCHAR(150),
-                  `foto_site` VARCHAR(255),
-                  `observaciones` TEXT,
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-                CREATE TABLE IF NOT EXISTS `infra_red_idf` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `nombre_idf` VARCHAR(150) NOT NULL,
-                  `ubicacion` VARCHAR(200),
-                  `rango_ips` VARCHAR(150),
-                  `vlans` VARCHAR(200),
-                  `switch_principal` VARCHAR(150),
-                  `no_puertos` VARCHAR(50),
-                  `no_racks` VARCHAR(50),
-                  `estatus` VARCHAR(50) DEFAULT 'Activo',
-                  `foto_idf` VARCHAR(255),
-                  `notas` TEXT,
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-                CREATE TABLE IF NOT EXISTS `infra_planos_2d` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `nombre_plano` VARCHAR(150) NOT NULL,
-                  `imagen_fondo_url` VARCHAR(255),
-                  `ancho_canvas` INT DEFAULT 1200,
-                  `alto_canvas` INT DEFAULT 800,
-                  `elementos_json` LONGTEXT,
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-                CREATE TABLE IF NOT EXISTS `infra_nodos` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `codigo_nodo` VARCHAR(100) NOT NULL,
-                  `tipo_nodo` VARCHAR(100) DEFAULT 'Voz y Datos',
-                  `ubicacion` VARCHAR(200),
-                  `patch_panel` VARCHAR(150),
-                  `switch_puerto` VARCHAR(150),
-                  `vlan` VARCHAR(100),
-                  `estatus` VARCHAR(50) DEFAULT 'Activo',
-                  `notas` TEXT,
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-                CREATE TABLE IF NOT EXISTS `infra_vlans` (
-                  `id` INT AUTO_INCREMENT PRIMARY KEY,
-                  `vlan_id` INT NOT NULL,
-                  `nombre_vlan` VARCHAR(150) NOT NULL,
-                  `subred` VARCHAR(100),
-                  `gateway` VARCHAR(100),
-                  `dhcp_rango` VARCHAR(150),
-                  `descripcion` TEXT,
-                  `estatus` VARCHAR(50) DEFAULT 'Activa',
-                  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-            ");
-        }
-
-        // Migraciones automáticas para infra_nodos y telefonía PoE
-        try {
-            $pdo->exec("ALTER TABLE `infra_nodos` ADD COLUMN `tiene_telefono_poe` TINYINT(1) DEFAULT 0;");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE `infra_nodos` ADD COLUMN `telefono_poe_id` INT DEFAULT 0;");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE `infra_planos_2d` MODIFY COLUMN `elementos_json` LONGTEXT;");
-        } catch (Throwable $e) {}
-        try {
-            $pdo->exec("ALTER TABLE `infra_site` MODIFY COLUMN `observaciones` LONGTEXT;");
-        } catch (Throwable $e) {}
-    } catch (Throwable $e) {}
-}
-
-/**
- * Catálogo oficial de temas OBSCUROS para el Portal de la Agencia
- */
-function obtenerCatalogoTemasOscuros() {
-    return [
-        'azul' => [
-            'clave' => 'azul',
-            'nombre' => 'Azul Obscuro (Medianoche)',
-            'bg_dark' => '#040d1a',
-            'bg_deep' => '#02070e',
-            'bg_card' => '#08162a',
-            'primary' => '#0284c7',
-            'accent' => '#38bdf8',
-            'secondary' => '#2563eb',
-            'glow' => 'rgba(2, 132, 199, 0.45)',
-            'glow_soft' => 'rgba(56, 189, 248, 0.22)',
-            'border' => 'rgba(56, 189, 248, 0.25)',
-            'three_p1' => '0x38bdf8',
-            'three_p2' => '0x2563eb',
-            'three_p3' => '0x818cf8',
-            'hex_swatch' => '#0284c7'
-        ],
-        'rojo' => [
-            'clave' => 'rojo',
-            'nombre' => 'Rojo Obscuro (Borgoña / Carmesí)',
-            'bg_dark' => '#140306',
-            'bg_deep' => '#0a0103',
-            'bg_card' => '#20080e',
-            'primary' => '#e11d48',
-            'accent' => '#fb7185',
-            'secondary' => '#be123c',
-            'glow' => 'rgba(225, 29, 72, 0.45)',
-            'glow_soft' => 'rgba(251, 113, 133, 0.22)',
-            'border' => 'rgba(251, 113, 133, 0.25)',
-            'three_p1' => '0xfb7185',
-            'three_p2' => '0xe11d48',
-            'three_p3' => '0xf43f5e',
-            'hex_swatch' => '#e11d48'
-        ],
-        'verde' => [
-            'clave' => 'verde',
-            'nombre' => 'Verde Obscuro (Esmeralda / Bosque)',
-            'bg_dark' => '#03140c',
-            'bg_deep' => '#010a06',
-            'bg_card' => '#071f14',
-            'primary' => '#059669',
-            'accent' => '#34d399',
-            'secondary' => '#047857',
-            'glow' => 'rgba(5, 150, 105, 0.45)',
-            'glow_soft' => 'rgba(52, 211, 153, 0.22)',
-            'border' => 'rgba(52, 211, 153, 0.25)',
-            'three_p1' => '0x34d399',
-            'three_p2' => '0x10b981',
-            'three_p3' => '0x059669',
-            'hex_swatch' => '#059669'
-        ],
-        'morado' => [
-            'clave' => 'morado',
-            'nombre' => 'Morado Obscuro (Púrpura / Amatista)',
-            'bg_dark' => '#0e041c',
-            'bg_deep' => '#07010e',
-            'bg_card' => '#170a2c',
-            'primary' => '#7c3aed',
-            'accent' => '#a78bfa',
-            'secondary' => '#6d28d9',
-            'glow' => 'rgba(124, 58, 237, 0.45)',
-            'glow_soft' => 'rgba(167, 139, 250, 0.22)',
-            'border' => 'rgba(167, 139, 250, 0.25)',
-            'three_p1' => '0xa78bfa',
-            'three_p2' => '0x8b5cf6',
-            'three_p3' => '0xc084fc',
-            'hex_swatch' => '#7c3aed'
-        ],
-        'ambar' => [
-            'clave' => 'ambar',
-            'nombre' => 'Ámbar Obscuro (Bronce / Oro Ejecutivo)',
-            'bg_dark' => '#140d02',
-            'bg_deep' => '#0a0601',
-            'bg_card' => '#211606',
-            'primary' => '#d97706',
-            'accent' => '#fbbf24',
-            'secondary' => '#b45309',
-            'glow' => 'rgba(217, 119, 6, 0.45)',
-            'glow_soft' => 'rgba(251, 191, 36, 0.22)',
-            'border' => 'rgba(251, 191, 36, 0.25)',
-            'three_p1' => '0xfbbf24',
-            'three_p2' => '0xf59e0b',
-            'three_p3' => '0xd97706',
-            'hex_swatch' => '#d97706'
-        ],
-        'grafito' => [
-            'clave' => 'grafito',
-            'nombre' => 'Grafito Obscuro (Obsidiana / Titanio)',
-            'bg_dark' => '#0a0c10',
-            'bg_deep' => '#040507',
-            'bg_card' => '#13161c',
-            'primary' => '#475569',
-            'accent' => '#94a3b8',
-            'secondary' => '#334155',
-            'glow' => 'rgba(71, 85, 105, 0.45)',
-            'glow_soft' => 'rgba(148, 163, 184, 0.22)',
-            'border' => 'rgba(148, 163, 184, 0.25)',
-            'three_p1' => '0xe2e8f0',
-            'three_p2' => '0x94a3b8',
-            'three_p3' => '0x64748b',
-            'hex_swatch' => '#475569'
-        ]
-    ];
-}
-
-/**
- * Obtiene el tema activo de la agencia desde BD o sesión
- */
-function obtenerTemaColorActivo($pdo = null) {
-    if (!$pdo && isset($GLOBALS['pdo'])) {
-        $pdo = $GLOBALS['pdo'];
-    }
-
-    $clave = 'azul';
-    if (!empty($_SESSION['color_tema'])) {
-        $clave = $_SESSION['color_tema'];
-    } elseif ($pdo) {
-        try {
-            try { $pdo->exec("ALTER TABLE agencias ADD COLUMN color_tema VARCHAR(50) DEFAULT 'azul'"); } catch (Throwable $t) {}
-            $stmt = $pdo->query("SELECT color_tema FROM agencias ORDER BY id ASC LIMIT 1");
-            $col = $stmt ? $stmt->fetchColumn() : null;
-            if (!empty($col)) {
-                $clave = strtolower(trim($col));
-                $_SESSION['color_tema'] = $clave;
-            }
-        } catch (Throwable $e) {}
-    }
-
-    $catalogo = obtenerCatalogoTemasOscuros();
-    return $catalogo[$clave] ?? $catalogo['azul'];
-}
-
-/**
- * Inyecta los estilos CSS dinámicos para teñir el fondo y los componentes de todos los módulos
- */
-function renderizarEstilosTemaGlobal($pdo = null) {
-    $t = obtenerTemaColorActivo($pdo);
-    ?>
-    <style id="estilos-tema-portal-obscuro">
-        :root {
-            --portal-theme-bg: <?= $t['bg_dark']; ?>;
-            --portal-theme-bg-deep: <?= $t['bg_deep']; ?>;
-            --portal-theme-card-bg: <?= $t['bg_card']; ?>;
-            --portal-theme-primary: <?= $t['primary']; ?>;
-            --portal-theme-accent: <?= $t['accent']; ?>;
-            --portal-theme-secondary: <?= $t['secondary']; ?>;
-            --portal-theme-glow: <?= $t['glow']; ?>;
-            --portal-theme-glow-soft: <?= $t['glow_soft']; ?>;
-            --portal-theme-border: <?= $t['border']; ?>;
-        }
-
-        body {
-            background-color: var(--portal-theme-bg) !important;
-            background-image: radial-gradient(var(--portal-theme-bg-deep) 1px, transparent 1px) !important;
-        }
-
-        .top-navbar, .navbar-custom {
-            background: var(--portal-theme-bg-deep) !important;
-            border-bottom: 1px solid var(--portal-theme-border) !important;
-        }
-
-        .card-custom, .module-card, .portal-card {
-            background: var(--portal-theme-card-bg) !important;
-            border-color: var(--portal-theme-border) !important;
-        }
-
-        .card-custom:hover, .module-card:hover {
-            border-color: var(--portal-theme-accent) !important;
-            box-shadow: 0 10px 30px var(--portal-theme-glow-soft) !important;
-        }
-
-        .hero-banner {
-            background: linear-gradient(135deg, var(--portal-theme-card-bg) 0%, var(--portal-theme-bg-deep) 100%) !important;
-            border-color: var(--portal-theme-border) !important;
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 25px var(--portal-theme-glow-soft) !important;
-        }
-
-        .hero-overlay {
-            background: linear-gradient(90deg, var(--portal-theme-bg) 0%, rgba(0, 0, 0, 0.65) 100%) !important;
-        }
-
-        .logo-container {
-            background: var(--portal-theme-bg-deep) !important;
-            border-color: var(--portal-theme-border) !important;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, var(--portal-theme-primary) 0%, var(--portal-theme-secondary) 100%) !important;
-            border-color: var(--portal-theme-secondary) !important;
-            box-shadow: 0 4px 15px var(--portal-theme-glow-soft);
-        }
-
-        .btn-primary:hover {
-            box-shadow: 0 6px 20px var(--portal-theme-glow);
-        }
-
-        .text-primary, .text-info {
-            color: var(--portal-theme-accent) !important;
-        }
-
-        .badge.bg-primary {
-            background-color: var(--portal-theme-primary) !important;
-        }
-
-        .badge.bg-info.bg-opacity-25 {
-            background-color: var(--portal-theme-glow-soft) !important;
-            color: var(--portal-theme-accent) !important;
-            border-color: var(--portal-theme-accent) !important;
-        }
-
-        .form-control:focus, .form-select:focus {
-            background-color: var(--portal-theme-card-bg) !important;
-            border-color: var(--portal-theme-accent) !important;
-            box-shadow: 0 0 0 0.25rem var(--portal-theme-glow-soft) !important;
-        }
-    </style>
-    <?php
 }
 ?>
