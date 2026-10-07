@@ -90,8 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
 
             // B. Si es aviso y NO subieron imagen física (o pusieron solo texto), convertir el texto en imagen institucional oficial SVG
+            $estiloFondo = trim($_POST['estilo_fondo'] ?? 'negro_oro');
             if ($tipo === 'aviso' && empty($rutaImagen)) {
-                $svgContenido = generarImagenAvisoSVG($titulo, $descripcion, $prioridad, $categoria, $codigo, date('d/m/Y'), $nombreUsuario);
+                $svgContenido = generarImagenAvisoSVG($titulo, $descripcion, $prioridad, $categoria, $codigo, date('d/m/Y'), $nombreUsuario, $estiloFondo);
                 $codLimpio = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $codigo);
                 $nombreLimpioSvg = 'aviso_card_' . $codLimpio . '_' . time() . '_' . rand(100, 999) . '.svg';
                 $rutaFisicaSvg = $dirDestino . $nombreLimpioSvg;
@@ -689,21 +690,29 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         .gallery-main-stage {
             position: relative;
             width: 100%;
+            height: 520px;
+            min-height: 480px;
             background: #030812;
             border: 1px solid rgba(212, 175, 55, 0.3);
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .gallery-slide-item {
             display: none;
             position: relative;
             width: 100%;
+            height: 100%;
             animation: slideFade 0.45s ease forwards;
         }
         .gallery-slide-item.active {
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         @keyframes slideFade {
@@ -713,7 +722,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
         .gallery-slide-img {
             width: 100%;
-            height: auto;
+            height: 100%;
             max-height: 520px;
             object-fit: contain;
             background: #030812;
@@ -737,6 +746,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             align-items: flex-end;
             justify-content: space-between;
             gap: 20px;
+            z-index: 15;
         }
 
         .gallery-controls-btn {
@@ -746,27 +756,180 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             width: 48px;
             height: 48px;
             border-radius: 50%;
-            background: rgba(4, 13, 26, 0.75);
+            background: rgba(4, 13, 26, 0.85);
             backdrop-filter: blur(8px);
+            border: 2px solid var(--gold-border-bright);
+            color: var(--gold-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 25;
+        }
+        .gallery-controls-btn:hover {
+            background: rgba(212, 175, 55, 0.35);
+            border-color: #ffd700;
+            color: #ffffff;
+            box-shadow: 0 0 20px var(--gold-glow);
+            transform: translateY(-50%) scale(1.1);
+        }
+        .gallery-btn-prev { left: 20px; }
+        .gallery-btn-next { right: 20px; }
+
+        /* Estilos Facebook Text Card Creator */
+        .fb-theme-picker {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 6px;
+            margin-bottom: 10px;
+        }
+        .fb-swatch {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            padding: 0;
+        }
+        .fb-swatch:hover {
+            transform: scale(1.12);
+        }
+        .fb-swatch.active {
+            border-color: #ffd700;
+            box-shadow: 0 0 12px rgba(255, 215, 0, 0.7);
+            transform: scale(1.15);
+        }
+        .fb-swatch.active::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 900;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        .swatch-negro { background: linear-gradient(135deg, #050b14, #101c30); border-color: rgba(212, 175, 55, 0.5); }
+        .swatch-azul { background: linear-gradient(135deg, #0a1e3f, #0d3b66); }
+        .swatch-rojo { background: linear-gradient(135deg, #400b11, #70131e); }
+        .swatch-verde { background: linear-gradient(135deg, #092b1a, #0f5132); }
+        .swatch-purpura { background: linear-gradient(135deg, #230c33, #4a154b); }
+
+        .fb-live-card {
+            width: 100%;
+            min-height: 220px;
+            border-radius: 16px;
+            padding: 22px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            position: relative;
+            border: 1px solid rgba(212, 175, 55, 0.4);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+        .fb-live-card-body {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 12px 10px;
+            word-break: break-word;
+        }
+        .fb-live-card-text {
+            color: #ffffff;
+            font-weight: 700;
+            line-height: 1.35;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+            font-family: 'Montserrat', sans-serif;
+            transition: font-size 0.2s ease;
+            white-space: pre-wrap;
+        }
+
+        /* Dashboard Principal Avisos Carousel */
+        .dash-carousel-container {
+            position: relative;
+            width: 100%;
+            height: 240px;
+            background: #030812;
+            border-radius: 14px;
+            overflow: hidden;
+            border: 1px solid rgba(212, 175, 55, 0.25);
+        }
+        .dash-carousel-slide {
+            display: none;
+            width: 100%;
+            height: 100%;
+            position: relative;
+            cursor: pointer;
+            animation: slideFade 0.4s ease;
+        }
+        .dash-carousel-slide.active {
+            display: block;
+        }
+        .dash-carousel-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: center;
+        }
+        .dash-carousel-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, transparent 0%, rgba(4, 13, 26, 0.8) 35%, rgba(4, 13, 26, 0.98) 100%);
+            padding: 14px 18px 10px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .dash-carousel-nav {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(4, 13, 26, 0.85);
             border: 1px solid var(--gold-border);
             color: var(--gold-accent-light);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.3rem;
+            font-size: 1rem;
             cursor: pointer;
+            z-index: 10;
             transition: all 0.2s ease;
+        }
+        .dash-carousel-nav:hover {
+            background: var(--gold-accent);
+            color: #030812;
+        }
+        .dash-carousel-prev { left: 8px; }
+        .dash-carousel-next { right: 8px; }
+        .dash-carousel-indicator {
+            position: absolute;
+            top: 10px;
+            right: 12px;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(212,175,55,0.4);
+            border-radius: 20px;
+            padding: 2px 10px;
+            font-size: 0.7rem;
+            color: var(--gold-accent-light);
+            font-weight: 700;
             z-index: 10;
         }
-        .gallery-controls-btn:hover {
-            background: rgba(212, 175, 55, 0.25);
-            border-color: var(--gold-border-bright);
-            color: #ffffff;
-            box-shadow: 0 0 15px var(--gold-glow);
-            transform: translateY(-50%) scale(1.1);
-        }
-        .gallery-btn-prev { left: 16px; }
-        .gallery-btn-next { right: 16px; }
 
         .gallery-thumbs-strip {
             display: flex;
@@ -1141,25 +1304,49 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </div>
 
                 <div class="col-12 col-lg-5">
-                    <div class="p-4 rounded-4" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
+                    <div class="p-4 rounded-4 d-flex flex-column justify-content-between" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
                                 <i class="bi bi-megaphone-fill text-warning"></i> Avisos
+                                <span class="badge bg-warning text-dark fw-bold px-2 py-0.5 rounded-pill" style="font-size: 0.7rem;"><?php echo count($avisos); ?></span>
                             </h3>
-                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('avisos')">
-                                Ver avisos <i class="bi bi-arrow-right"></i>
+                            <button class="btn btn-sm btn-link text-warning text-decoration-none p-0 fw-semibold" onclick="cambiarSeccion('avisos')">
+                                Ver todos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
 
-                        <?php if (!empty($avisos)): 
-                            $primerAviso = $avisos[0];
-                        ?>
-                            <div class="position-relative rounded-3 overflow-hidden border border-secondary border-opacity-25" style="cursor: pointer;" onclick="cambiarSeccion('avisos')">
-                                <img src="<?php echo htmlspecialchars($primerAviso['imagen_url'] ?: 'uploads/compliance/aviso_AV-01.svg'); ?>" alt="Aviso Destacado" class="w-100" style="max-height: 190px; object-fit: cover;">
-                                <div class="position-absolute bottom-0 start-0 end-0 p-2 text-white" style="background: rgba(4, 13, 26, 0.88); backdrop-filter: blur(4px);">
-                                    <div class="small fw-bold text-truncate"><?php echo htmlspecialchars($primerAviso['titulo']); ?></div>
-                                    <div class="text-secondary" style="font-size: 0.7rem;"><?php echo htmlspecialchars($primerAviso['codigo']); ?> &bull; Prioridad <?php echo htmlspecialchars($primerAviso['prioridad']); ?></div>
-                                </div>
+                        <?php if (!empty($avisos)): ?>
+                            <div class="dash-carousel-container" id="dashAvisosCarousel" onmouseenter="pausarDashCarousel()" onmouseleave="reanudarDashCarousel()">
+                                <div class="dash-carousel-indicator" id="dashCarouselCounter">1 / <?php echo count($avisos); ?></div>
+                                <button class="dash-carousel-nav dash-carousel-prev" onclick="cambiarDashSlide(-1); event.stopPropagation();" aria-label="Anterior">
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                                <button class="dash-carousel-nav dash-carousel-next" onclick="cambiarDashSlide(1); event.stopPropagation();" aria-label="Siguiente">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+
+                                <?php foreach ($avisos as $dIdx => $dAv): 
+                                    $dImg = !empty($dAv['imagen_url']) ? $dAv['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg';
+                                    $dPrio = $dAv['prioridad'];
+                                    $dBadge = ($dPrio === 'Alta' || $dPrio === 'Urgente') ? 'bg-danger' : (($dPrio === 'Media') ? 'bg-warning text-dark' : 'bg-primary');
+                                ?>
+                                    <div class="dash-carousel-slide <?php echo $dIdx === 0 ? 'active' : ''; ?>" data-dash-index="<?php echo $dIdx; ?>" onclick="cambiarSeccion('avisos')">
+                                        <img src="<?php echo htmlspecialchars($dImg); ?>" alt="<?php echo htmlspecialchars($dAv['titulo']); ?>" class="dash-carousel-img">
+                                        <div class="dash-carousel-overlay">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <span class="badge <?php echo $dBadge; ?> px-2 py-0.5" style="font-size: 0.68rem; font-weight: 700;"><?php echo htmlspecialchars($dAv['codigo']); ?></span>
+                                                <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($dAv['fecha_publicacion']); ?></span>
+                                            </div>
+                                            <div class="fw-bold text-white text-truncate mt-1" style="font-size: 0.95rem;"><?php echo htmlspecialchars($dAv['titulo']); ?></div>
+                                            <div class="text-light text-opacity-75 text-truncate" style="font-size: 0.78rem;"><?php echo htmlspecialchars($dAv['descripcion']); ?></div>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="p-4 text-center text-secondary rounded-3" style="background: rgba(0,0,0,0.2);">
+                                <i class="bi bi-megaphone opacity-50 display-6 d-block mb-2"></i>
+                                No hay avisos activos registrados.
                             </div>
                         <?php endif; ?>
                     </div>
@@ -1515,7 +1702,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label-gold">Código Oficial *</label>
-                            <input type="text" name="codigo" id="inpCodigoDoc" class="form-control form-control-gold" placeholder="Ej. AV-05 o FR-TI-03" required value="AV-0<?php echo $totalAvisos + 1; ?>">
+                            <input type="text" name="codigo" id="inpCodigoDoc" class="form-control form-control-gold" placeholder="Ej. AV-05 o FR-TI-03" required value="AV-0<?php echo $totalAvisos + 1; ?>" oninput="actualizarPreviewFacebook()">
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label-gold">Categoría *</label>
@@ -1532,7 +1719,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
                         <div class="col-12">
                             <label class="form-label-gold">Título Oficial *</label>
-                            <input type="text" name="titulo" class="form-control form-control-gold" placeholder="Título formal del comunicado o documento" required>
+                            <input type="text" name="titulo" id="inpTituloDoc" class="form-control form-control-gold" placeholder="Título formal del comunicado o documento" required oninput="actualizarPreviewFacebook()">
                         </div>
 
                         <div class="col-12 col-md-4">
@@ -1541,7 +1728,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         </div>
                         <div class="col-12 col-md-4">
                             <label class="form-label-gold">Prioridad</label>
-                            <select name="prioridad" class="form-select form-select-gold">
+                            <select name="prioridad" id="selPrioridadDoc" class="form-select form-select-gold" onchange="actualizarPreviewFacebook()">
                                 <option value="Alta">Alta</option>
                                 <option value="Media">Media</option>
                                 <option value="Normal">Normal</option>
@@ -1553,19 +1740,67 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <input type="date" name="fecha_vigencia" class="form-control form-control-gold" value="<?php echo date('Y') + 1; ?>-12-31">
                         </div>
 
+                        <!-- CREADOR DE TARJETA ESTILO FACEBOOK (SOLO AVISOS) -->
+                        <div class="col-12" id="boxCreadorFacebookAviso">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <label class="form-label-gold m-0">
+                                    <i class="bi bi-palette-fill text-warning me-1"></i> Diseño de Tarjeta Tipo Facebook (Generación de Imagen)
+                                </label>
+                                <span class="badge bg-dark text-warning border border-warning border-opacity-25 small px-2 py-1">
+                                    <i class="bi bi-sparkles me-1"></i> En vivo como Facebook
+                                </span>
+                            </div>
+
+                            <div class="d-flex flex-wrap align-items-center gap-3 mb-2 p-2 rounded-3" style="background: rgba(0,0,0,0.3); border: 1px solid rgba(212,175,55,0.2);">
+                                <span class="text-secondary small fw-bold">Elegir Fondo:</span>
+                                <div class="fb-theme-picker m-0">
+                                    <button type="button" class="fb-swatch swatch-negro active" data-tema="negro_oro" title="Negro Carbón & Oro Imperial" onclick="seleccionarTemaFondo('negro_oro')"></button>
+                                    <button type="button" class="fb-swatch swatch-azul" data-tema="azul_zafiro" title="Azul Zafiro Corporativo" onclick="seleccionarTemaFondo('azul_zafiro')"></button>
+                                    <button type="button" class="fb-swatch swatch-rojo" data-tema="rojo_rubi" title="Rojo Rubí Alta Dirección" onclick="seleccionarTemaFondo('rojo_rubi')"></button>
+                                    <button type="button" class="fb-swatch swatch-verde" data-tema="esmeralda" title="Verde Esmeralda Normativo" onclick="seleccionarTemaFondo('esmeralda')"></button>
+                                    <button type="button" class="fb-swatch swatch-purpura" data-tema="purpura" title="Púrpura Presidencial" onclick="seleccionarTemaFondo('purpura')"></button>
+                                </div>
+                                <span class="text-secondary small ms-auto fst-italic" id="fbNombreTema">Tema: Negro Carbón & Oro</span>
+                            </div>
+                            <input type="hidden" name="estilo_fondo" id="inpEstiloFondo" value="negro_oro">
+
+                            <!-- Vista Previa de la Tarjeta en Vivo -->
+                            <div class="fb-live-card swatch-negro" id="fbLivePreviewCard">
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div style="width: 28px; height: 28px; border-radius: 50%; background: #d4af37; color: #040d1a; font-weight: 900; display: flex; align-items: center; justify-content: center; font-size: 0.72rem;">GH</div>
+                                        <div>
+                                            <div class="text-white fw-bold" style="font-size: 0.78rem;">GRUPO HUERTA &bull; COMPLIANCE</div>
+                                            <div class="text-secondary" style="font-size: 0.65rem;" id="fbPreviewFecha">Oficial &bull; <?php echo date('d/m/Y'); ?></div>
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-warning text-dark fw-bold px-2 py-0.5" id="fbPreviewBadge" style="font-size: 0.68rem;">ALTA DIRECCIÓN</span>
+                                </div>
+                                <div class="fb-live-card-body">
+                                    <div class="fb-live-card-text" id="fbPreviewTexto" style="font-size: 1.25rem;">
+                                        Escribe aquí tu aviso institucional...
+                                    </div>
+                                </div>
+                                <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-25">
+                                    <span class="text-secondary" style="font-size: 0.68rem;" id="fbPreviewCodigo">CÓDIGO: AV-0<?php echo $totalAvisos + 1; ?></span>
+                                    <span class="text-warning text-opacity-75" style="font-size: 0.68rem;"><i class="bi bi-shield-check"></i> Documento Oficial Certificado</span>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="col-12">
                             <label class="form-label-gold">Texto / Contenido del Aviso *</label>
-                            <textarea name="descripcion" class="form-control form-control-gold" rows="4" placeholder="Escribe aquí el texto del aviso (si no subes imagen, este texto se convertirá automáticamente en una imagen ejecutiva oficial con sellos corporativos)..."></textarea>
+                            <textarea name="descripcion" id="inpDescripcionAviso" class="form-control form-control-gold" rows="3" placeholder="Escribe aquí el texto del aviso (se reflejará en tiempo real en la tarjeta estilo Facebook arriba)..." oninput="actualizarPreviewFacebook()"></textarea>
                         </div>
 
                         <!-- Campo Imagen para Avisos -->
                         <div class="col-12" id="boxImagenAviso">
                             <label class="form-label-gold">
-                                <i class="bi bi-image text-warning"></i> Imagen del Aviso (Opcional)
+                                <i class="bi bi-image text-warning"></i> O bien, adjunta una Imagen Física (Opcional)
                             </label>
-                            <input type="file" name="imagen_aviso" class="form-control form-control-gold" accept=".jpg,.jpeg,.png,.webp,.svg,.gif">
-                            <div class="form-text text-secondary" style="font-size: 0.74rem;">
-                                <i class="bi bi-magic text-warning"></i> <strong>Conversión Automática:</strong> Si no adjuntas una imagen física, el sistema convertirá automáticamente el texto en una imagen gráfica oficial de alta resolución.
+                            <input type="file" name="imagen_aviso" id="inpImagenAviso" class="form-control form-control-gold" accept=".jpg,.jpeg,.png,.webp,.svg,.gif" onchange="onImagenAvisoSeleccionada(this)">
+                            <div class="form-text text-secondary" style="font-size: 0.74rem;" id="boxImagenAvisoHelp">
+                                <i class="bi bi-info-circle text-warning"></i> Si no seleccionas una imagen física, el sistema guardará automáticamente la tarjeta visual que estás previsualizando.
                             </div>
                         </div>
 
@@ -1879,17 +2114,164 @@ function verDocumento(doc) {
     modal.show();
 }
 
+// --- Control de Carrusel en Dashboard Principal ---
+let dashCurrentSlide = 0;
+const dashSlides = document.querySelectorAll('.dash-carousel-slide');
+const totalDashSlides = dashSlides.length;
+let dashInterval = null;
+let dashPausado = false;
+
+function mostrarDashSlide(idx) {
+    if (totalDashSlides === 0) return;
+    if (idx >= totalDashSlides) dashCurrentSlide = 0;
+    else if (idx < 0) dashCurrentSlide = totalDashSlides - 1;
+    else dashCurrentSlide = idx;
+
+    dashSlides.forEach((sl, i) => {
+        sl.classList.toggle('active', i === dashCurrentSlide);
+    });
+
+    const counter = document.getElementById('dashCarouselCounter');
+    if (counter) {
+        counter.innerText = `${dashCurrentSlide + 1} / ${totalDashSlides}`;
+    }
+}
+
+function cambiarDashSlide(delta) {
+    mostrarDashSlide(dashCurrentSlide + delta);
+}
+
+function pausarDashCarousel() {
+    dashPausado = true;
+}
+
+function reanudarDashCarousel() {
+    dashPausado = false;
+}
+
+function iniciarDashCarousel() {
+    if (totalDashSlides <= 1) return;
+    if (dashInterval) clearInterval(dashInterval);
+    dashInterval = setInterval(() => {
+        if (!dashPausado) {
+            cambiarDashSlide(1);
+        }
+    }, 4500);
+}
+
+if (totalDashSlides > 0) {
+    iniciarDashCarousel();
+}
+
+// --- Control Tarjeta Facebook y Live Preview ---
+const temasFondo = {
+    'negro_oro': { bg: 'linear-gradient(135deg, #050b14 0%, #101c30 100%)', border: '#d4af37', label: 'Negro Carbón & Oro Imperial' },
+    'azul_zafiro': { bg: 'linear-gradient(135deg, #0a1e3f 0%, #0d3b66 100%)', border: '#60a5fa', label: 'Azul Zafiro Corporativo' },
+    'rojo_rubi': { bg: 'linear-gradient(135deg, #400b11 0%, #70131e 100%)', border: '#f87171', label: 'Rojo Rubí Alta Dirección' },
+    'esmeralda': { bg: 'linear-gradient(135deg, #092b1a 0%, #0f5132 100%)', border: '#34d399', label: 'Verde Esmeralda Normativo' },
+    'purpura': { bg: 'linear-gradient(135deg, #230c33 0%, #4a154b 100%)', border: '#c084fc', label: 'Púrpura Presidencial' }
+};
+
+function seleccionarTemaFondo(tema) {
+    const inp = document.getElementById('inpEstiloFondo');
+    if (inp) inp.value = tema;
+    document.querySelectorAll('.fb-swatch').forEach(sw => {
+        sw.classList.toggle('active', sw.getAttribute('data-tema') === tema);
+    });
+    const card = document.getElementById('fbLivePreviewCard');
+    const lbl = document.getElementById('fbNombreTema');
+    if (temasFondo[tema]) {
+        if (card) {
+            card.style.background = temasFondo[tema].bg;
+            card.style.borderColor = temasFondo[tema].border;
+        }
+        if (lbl) lbl.innerText = 'Tema: ' + temasFondo[tema].label;
+    }
+}
+
+function actualizarPreviewFacebook() {
+    const txtArea = document.getElementById('inpDescripcionAviso');
+    const txtPreview = document.getElementById('fbPreviewTexto');
+    const inpTitulo = document.getElementById('inpTituloDoc');
+    const inpCodigo = document.getElementById('inpCodigoDoc');
+    const selPrio = document.getElementById('selPrioridadDoc');
+    const cardBadge = document.getElementById('fbPreviewBadge');
+    const cardCod = document.getElementById('fbPreviewCodigo');
+
+    if (inpCodigo && cardCod) {
+        cardCod.innerText = 'CÓDIGO: ' + (inpCodigo.value || 'AV-01');
+    }
+    if (selPrio && cardBadge) {
+        cardBadge.innerText = 'PRIORIDAD ' + (selPrio.value || 'NORMAL').toUpperCase();
+    }
+
+    if (!txtPreview) return;
+    const desc = txtArea ? txtArea.value.trim() : '';
+    const titulo = inpTitulo ? inpTitulo.value.trim() : '';
+
+    if (!desc && !titulo) {
+        txtPreview.innerText = 'Escribe aquí tu aviso institucional...';
+        txtPreview.style.fontSize = '1.25rem';
+        return;
+    }
+
+    let contenido = desc;
+    if (titulo && desc) {
+        contenido = `"${titulo}"\n\n${desc}`;
+    } else if (titulo) {
+        contenido = `"${titulo}"`;
+    }
+
+    txtPreview.innerText = contenido;
+    
+    // Auto-escalado tipográfico interactivo estilo Facebook
+    const len = contenido.length;
+    if (len <= 70) {
+        txtPreview.style.fontSize = '1.45rem';
+    } else if (len <= 150) {
+        txtPreview.style.fontSize = '1.15rem';
+    } else if (len <= 300) {
+        txtPreview.style.fontSize = '0.96rem';
+    } else {
+        txtPreview.style.fontSize = '0.84rem';
+    }
+}
+
+function onImagenAvisoSeleccionada(input) {
+    const card = document.getElementById('fbLivePreviewCard');
+    const help = document.getElementById('boxImagenAvisoHelp');
+    if (input.files && input.files[0]) {
+        if (help) {
+            help.innerHTML = `<span class="text-warning"><i class="bi bi-file-earmark-image"></i> Archivo seleccionado: <strong>${input.files[0].name}</strong>. Se usará este archivo en lugar de la tarjeta de texto generada.</span>`;
+        }
+        if (card) {
+            card.style.opacity = '0.45';
+        }
+    } else {
+        if (help) {
+            help.innerHTML = `<i class="bi bi-info-circle text-warning"></i> Si no seleccionas una imagen física, el sistema guardará automáticamente la tarjeta visual que estás previsualizando.`;
+        }
+        if (card) {
+            card.style.opacity = '1';
+        }
+    }
+}
+
 // Dinamismo formulario Modal de Nuevo Documento
 function onTipoDocChange() {
     const sel = document.getElementById('selTipoDoc');
     const boxImg = document.getElementById('boxImagenAviso');
+    const boxFb = document.getElementById('boxCreadorFacebookAviso');
     const inpCod = document.getElementById('inpCodigoDoc');
     if (!sel) return;
     if (sel.value === 'aviso') {
         if (boxImg) boxImg.style.display = 'block';
+        if (boxFb) boxFb.style.display = 'block';
         if (inpCod && !inpCod.value.startsWith('AV-')) inpCod.value = 'AV-0<?php echo $totalAvisos + 1; ?>';
+        actualizarPreviewFacebook();
     } else {
         if (boxImg) boxImg.style.display = 'none';
+        if (boxFb) boxFb.style.display = 'none';
         if (inpCod && inpCod.value.startsWith('AV-')) {
             inpCod.value = (sel.value === 'formato') ? 'FR-TI-0<?php echo $totalFormatos + 1; ?>' : 'MN-TI-0<?php echo $totalManuales + 1; ?>';
         }

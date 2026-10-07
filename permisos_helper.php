@@ -724,7 +724,7 @@ function asegurarTablaCompliance($pdo = null) {
  * Genera una tarjeta gráfica vectorial oficial (SVG 1200x675) para un Aviso o Comunicado Institucional.
  * Convierte el texto y descripción en una imagen institucional de alta resolución con sellos corporativos.
  */
-function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $categoria = 'General', $codigo = 'AV-01', $fecha = null, $emisor = 'Dirección General') {
+function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $categoria = 'General', $codigo = 'AV-01', $fecha = null, $emisor = 'Dirección General', $estiloFondo = 'negro_oro') {
     if (!$fecha) $fecha = date('d/m/Y');
     
     $badgeBg = '#ef4444';
@@ -741,13 +741,48 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
         $badgeLabel = 'COMUNICADO URGENTE';
     }
 
+    // Configuración de Paletas de Fondo Estilo Facebook
+    switch ($estiloFondo) {
+        case 'azul_zafiro':
+            $bgStop1 = '#031024'; $bgStop2 = '#0a254d'; $bgStop3 = '#020914';
+            $cardStop1 = 'rgba(10, 37, 77, 0.88)'; $cardStop2 = 'rgba(3, 16, 36, 0.95)';
+            $goldColor = '#38bdf8'; $goldLight = '#bae6fd';
+            $strokeBorder = 'rgba(56, 189, 248, 0.45)';
+            break;
+        case 'rojo_rubi':
+            $bgStop1 = '#200505'; $bgStop2 = '#450f0f'; $bgStop3 = '#110202';
+            $cardStop1 = 'rgba(69, 15, 15, 0.88)'; $cardStop2 = 'rgba(17, 2, 2, 0.95)';
+            $goldColor = '#f87171'; $goldLight = '#fecaca';
+            $strokeBorder = 'rgba(248, 113, 113, 0.45)';
+            break;
+        case 'esmeralda':
+            $bgStop1 = '#031a11'; $bgStop2 = '#0a3a27'; $bgStop3 = '#020f09';
+            $cardStop1 = 'rgba(10, 58, 39, 0.88)'; $cardStop2 = 'rgba(2, 15, 9, 0.95)';
+            $goldColor = '#34d399'; $goldLight = '#a7f3d0';
+            $strokeBorder = 'rgba(52, 211, 153, 0.45)';
+            break;
+        case 'purpura':
+            $bgStop1 = '#13061d'; $bgStop2 = '#2d1242'; $bgStop3 = '#0a0210';
+            $cardStop1 = 'rgba(45, 18, 66, 0.88)'; $cardStop2 = 'rgba(10, 2, 16, 0.95)';
+            $goldColor = '#c084fc'; $goldLight = '#f3e8ff';
+            $strokeBorder = 'rgba(192, 132, 252, 0.45)';
+            break;
+        case 'negro_oro':
+        default:
+            $bgStop1 = '#040d1a'; $bgStop2 = '#081a33'; $bgStop3 = '#020812';
+            $cardStop1 = 'rgba(11, 26, 48, 0.88)'; $cardStop2 = 'rgba(4, 13, 26, 0.95)';
+            $goldColor = '#d4af37'; $goldLight = '#f5df9e';
+            $strokeBorder = 'rgba(212, 175, 55, 0.45)';
+            break;
+    }
+
     // Procesar título con salto de línea automático
     $palabrasTit = explode(' ', trim($titulo));
     $tLines = [];
     $currTit = '';
     foreach ($palabrasTit as $w) {
         if ($w === '') continue;
-        if (mb_strlen($currTit . ' ' . $w) <= 38) {
+        if (mb_strlen($currTit . ' ' . $w) <= 36) {
             $currTit = trim($currTit . ' ' . $w);
         } else {
             if ($currTit !== '') $tLines[] = $currTit;
@@ -784,18 +819,22 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
         if ($curr !== '') $dLines[] = $curr;
     }
 
-    // Ajuste dinámico de tamaño de fuente según extensión del texto
+    // Ajuste dinámico de tamaño de fuente estilo Facebook
     $cantLineasDesc = count($dLines);
     $dLines = array_slice($dLines, 0, 11);
     
-    $fontSizeDesc = 19;
-    $lineHeightDesc = 31;
-    if ($cantLineasDesc > 7) {
+    if ($cantLineasDesc <= 2 && mb_strlen($descripcion) <= 120) {
+        $fontSizeDesc = 24;
+        $lineHeightDesc = 38;
+    } elseif ($cantLineasDesc <= 4) {
+        $fontSizeDesc = 21;
+        $lineHeightDesc = 34;
+    } elseif ($cantLineasDesc > 7) {
         $fontSizeDesc = 16;
         $lineHeightDesc = 26;
-    } elseif ($cantLineasDesc <= 3) {
-        $fontSizeDesc = 22;
-        $lineHeightDesc = 36;
+    } else {
+        $fontSizeDesc = 18;
+        $lineHeightDesc = 30;
     }
 
     // Escapado seguro para SVG/XML
@@ -806,36 +845,36 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">' . "\n";
     $svg .= '  <defs>' . "\n";
     $svg .= '    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="#040d1a" />' . "\n";
-    $svg .= '      <stop offset="45%" stop-color="#081a33" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="#020812" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $bgStop1 . '" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="' . $bgStop2 . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $bgStop3 . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="rgba(11, 26, 48, 0.85)" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="rgba(4, 13, 26, 0.95)" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $cardStop1 . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $cardStop2 . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">' . "\n";
-    $svg .= '      <stop offset="0%" stop-color="#d4af37" />' . "\n";
-    $svg .= '      <stop offset="50%" stop-color="#f5df9e" />' . "\n";
-    $svg .= '      <stop offset="100%" stop-color="#a6841e" />' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="' . $goldColor . '" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="' . $goldLight . '" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="' . $goldColor . '" />' . "\n";
     $svg .= '    </linearGradient>' . "\n";
     $svg .= '  </defs>' . "\n";
 
-    // Fondo y marcos dorados de lujo
+    // Fondo y marcos decorativos
     $svg .= '  <rect width="1200" height="675" fill="url(#bgGrad)" />' . "\n";
-    $svg .= '  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="rgba(212, 175, 55, 0.45)" stroke-width="2" />' . "\n";
-    $svg .= '  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(212, 175, 55, 0.15)" stroke-width="1" />' . "\n";
+    $svg .= '  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="' . $strokeBorder . '" stroke-width="2" />' . "\n";
+    $svg .= '  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1" />' . "\n";
 
     // Cantoneras ornamentales
-    $svg .= '  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
-    $svg .= '  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="' . $goldColor . '" stroke-width="4" />' . "\n";
 
     // Membrete Superior: Marca Grupo Huerta
     $svg .= '  <g transform="translate(60, 60)">' . "\n";
-    $svg .= '    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(212, 175, 55, 0.2)" stroke="#d4af37" stroke-width="2" />' . "\n";
-    $svg .= '    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="#f5df9e" stroke-width="2.5" stroke-linecap="round" />' . "\n";
+    $svg .= '    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(255, 255, 255, 0.15)" stroke="' . $goldColor . '" stroke-width="2" />' . "\n";
+    $svg .= '    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="' . $goldLight . '" stroke-width="2.5" stroke-linecap="round" />' . "\n";
     $svg .= '    <text x="65" y="24" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="2">GRUPO HUERTA</text>' . "\n";
     $svg .= '    <text x="65" y="46" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#94a3b8" letter-spacing="1">GOBIERNO CORPORATIVO &amp; COMPLIANCE INSTITUCIONAL</text>' . "\n";
     $svg .= '  </g>' . "\n";
@@ -846,19 +885,19 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '    <text x="140" y="26" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="800" fill="' . $badgeText . '" text-anchor="middle" letter-spacing="1">' . $xmlEsc($badgeLabel) . '</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
-    // Divisor dorado
+    // Divisor
     $svg .= '  <line x1="60" y1="130" x2="1140" y2="130" stroke="url(#goldGrad)" stroke-width="2" />' . "\n";
 
     // Metadatos: Código, Categoría y Fecha
     $svg .= '  <g transform="translate(60, 160)">' . "\n";
-    $svg .= '    <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(212, 175, 55, 0.18)" stroke="#d4af37" stroke-width="1" />' . "\n";
-    $svg .= '    <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="#f5df9e" text-anchor="middle">' . $xmlEsc($codigo) . '</text>' . "\n";
+    $svg .= '    <rect x="0" y="0" width="130" height="30" rx="6" fill="rgba(255, 255, 255, 0.1)" stroke="' . $goldColor . '" stroke-width="1" />' . "\n";
+    $svg .= '    <text x="65" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="800" fill="' . $goldLight . '" text-anchor="middle">' . $xmlEsc($codigo) . '</text>' . "\n";
     $svg .= '    <text x="150" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#38bdf8">&bull; ' . $xmlEsc($categoria) . '</text>' . "\n";
     $svg .= '    <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: ' . $xmlEsc($fecha) . '</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
     // Contenedor interno estilizado para el contenido
-    $svg .= '  <rect x="55" y="205" width="1090" height="375" rx="14" fill="url(#cardGrad)" stroke="rgba(212, 175, 55, 0.25)" stroke-width="1" />' . "\n";
+    $svg .= '  <rect x="55" y="205" width="1090" height="375" rx="14" fill="url(#cardGrad)" stroke="' . $strokeBorder . '" stroke-width="1.2" />' . "\n";
 
     // Título Oficial en la Tarjeta
     $yTitulo = 250;
@@ -883,9 +922,9 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
     $svg .= '  </text>' . "\n";
 
     // Pie institucional
-    $svg .= '  <line x1="60" y1="595" x2="1140" y2="595" stroke="rgba(212, 175, 55, 0.3)" stroke-width="1" />' . "\n";
+    $svg .= '  <line x1="60" y1="595" x2="1140" y2="595" stroke="' . $strokeBorder . '" stroke-width="1" />' . "\n";
     $svg .= '  <g transform="translate(60, 625)">' . "\n";
-    $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="#d4af37">EMISOR: ' . $xmlEsc($emisor) . '</text>' . "\n";
+    $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="' . $goldColor . '">EMISOR: ' . $xmlEsc($emisor) . '</text>' . "\n";
     $svg .= '    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>' . "\n";
     $svg .= '  </g>' . "\n";
 
