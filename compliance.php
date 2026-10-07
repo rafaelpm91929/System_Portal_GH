@@ -555,29 +555,38 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         .gallery-main-stage {
             position: relative;
             width: 100%;
-            height: 520px;
-            min-height: 480px;
+            height: 560px;
             background: #030812;
             border: 1px solid rgba(212, 175, 55, 0.3);
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
             display: flex;
-            align-items: center;
-            justify-content: center;
+            flex-direction: column;
+        }
+
+        .gallery-slides-viewport {
+            position: relative;
+            width: 100%;
+            height: 440px;
+            overflow: hidden;
+            background: #020711;
         }
 
         .gallery-slide-item {
             display: none;
-            position: relative;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            animation: slideFade 0.45s ease forwards;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+            animation: slideFade 0.35s ease forwards;
         }
         .gallery-slide-item.active {
             display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
         @keyframes slideFade {
@@ -586,37 +595,87 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         }
 
         .gallery-slide-img {
-            width: 100%;
-            height: 100%;
-            max-height: 520px;
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
-            background: #030812;
+            background: transparent;
             display: block;
             margin: 0 auto;
             cursor: pointer;
-            transition: transform 0.3s ease;
+            transition: transform 0.25s ease;
         }
         .gallery-slide-img:hover {
-            transform: scale(1.01);
+            transform: scale(1.015);
         }
 
-        .gallery-slide-overlay {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(180deg, transparent 0%, rgba(4, 13, 26, 0.85) 40%, rgba(4, 13, 26, 0.98) 100%);
-            padding: 24px 28px 18px 28px;
+        /* Tarjeta de Aviso en HTML (tipo Facebook) cuando no hay imagen física */
+        .gallery-fb-slide-card {
+            width: 100%;
+            max-width: 860px;
+            height: 100%;
+            border-radius: 14px;
+            padding: 24px 32px;
             display: flex;
-            align-items: flex-end;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: transform 0.25s ease;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(212, 175, 55, 0.3);
+        }
+        .gallery-fb-slide-card:hover {
+            transform: scale(1.01);
+        }
+        .fb-card-logo {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: #d4af37;
+            color: #040d1a;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+        .gallery-fb-titulo {
+            font-family: 'Cinzel', serif;
+            color: #ffffff;
+            font-size: 1.85rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.8);
+        }
+        .gallery-fb-desc {
+            font-family: 'Montserrat', sans-serif;
+            color: #f1f5f9;
+            font-size: 1.15rem;
+            line-height: 1.5;
+            max-width: 780px;
+            margin: 0 auto;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.7);
+        }
+
+        /* PIE FIJO DEL ANUNCIO (100% ESTÁTICO, NO SE MUEVE NI PARPADEA) */
+        .gallery-static-footer {
+            height: 120px;
+            min-height: 120px;
+            width: 100%;
+            background: rgba(4, 13, 26, 0.98);
+            border-top: 1px solid var(--gold-border);
+            padding: 16px 28px;
+            display: flex;
+            align-items: center;
             justify-content: space-between;
             gap: 20px;
-            z-index: 15;
+            z-index: 20;
+            position: relative;
         }
 
         .gallery-controls-btn {
             position: absolute;
-            top: 50%;
+            top: 220px;
             transform: translateY(-50%);
             width: 48px;
             height: 48px;
@@ -1287,51 +1346,81 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div class="gallery-autoplay-bar" id="galleryProgressBar"></div>
 
                         <!-- Botones de Navegación -->
-                        <button class="gallery-controls-btn gallery-btn-prev" onclick="cambiarSlideGaleria(-1)" aria-label="Aviso Anterior">
+                        <button type="button" class="gallery-controls-btn gallery-btn-prev" onclick="cambiarSlideGaleria(-1)" aria-label="Aviso Anterior">
                             <i class="bi bi-chevron-left"></i>
                         </button>
-                        <button class="gallery-controls-btn gallery-btn-next" onclick="cambiarSlideGaleria(1)" aria-label="Aviso Siguiente">
+                        <button type="button" class="gallery-controls-btn gallery-btn-next" onclick="cambiarSlideGaleria(1)" aria-label="Aviso Siguiente">
                             <i class="bi bi-chevron-right"></i>
                         </button>
 
-                        <!-- Diapositivas de la Galería -->
-                        <?php foreach ($avisos as $index => $av): 
-                            $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
-                            $anexoUrl = !empty($av['archivo_url_completo']) ? $av['archivo_url_completo'] : ($av['archivo_url'] ?? '');
-                            $pClass = 'priority-normal';
-                            if ($av['prioridad'] === 'Alta') $pClass = 'priority-alta';
-                            elseif ($av['prioridad'] === 'Media') $pClass = 'priority-media';
-                        ?>
-                            <div class="gallery-slide-item <?php echo $index === 0 ? 'active' : ''; ?>" data-slide-index="<?php echo $index; ?>">
-                                <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                        <!-- 1. ÁREA VISUAL DE DIAPOSITIVAS (IMAGEN O TARJETA DE TEXTO) -->
+                        <div class="gallery-slides-viewport">
+                            <?php foreach ($avisos as $index => $av): 
+                                $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                                $imgExt = strtolower(pathinfo($imgSrc, PATHINFO_EXTENSION));
+                                $esFisica = in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false);
                                 
-                                <div class="gallery-slide-overlay">
-                                    <div style="max-width: 750px;">
-                                        <div class="d-flex align-items-center gap-2 mb-2">
-                                            <span class="doc-code-badge"><?php echo htmlspecialchars($av['codigo']); ?></span>
-                                            <span class="doc-priority-badge <?php echo $pClass; ?>">Prioridad <?php echo htmlspecialchars($av['prioridad']); ?></span>
-                                            <span class="category-tag"><?php echo htmlspecialchars($av['categoria']); ?></span>
-                                            <span class="text-secondary small ms-2"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
-                                        </div>
-                                        <h3 class="h4 fw-bold text-white mb-1"><?php echo htmlspecialchars($av['titulo']); ?></h3>
-                                        <p class="text-light text-opacity-75 mb-0 text-truncate" style="font-size: 0.88rem; max-width: 680px;">
-                                            <?php echo htmlspecialchars($av['descripcion']); ?>
-                                        </p>
-                                    </div>
+                                $prio = $av['prioridad'] ?? 'Normal';
+                                $badgeCls = ($prio === 'Alta' || $prio === 'Urgente') ? 'bg-danger text-white' : (($prio === 'Media') ? 'bg-warning text-dark' : 'bg-primary text-white');
+                                $fondoCls = 'swatch-negro';
+                                if ($prio === 'Alta' || $prio === 'Urgente') $fondoCls = 'swatch-rojo';
+                                elseif ($prio === 'Media') $fondoCls = 'swatch-azul';
+                                elseif (stripos($av['categoria'], 'ciber') !== false) $fondoCls = 'swatch-azul';
+                                elseif (stripos($av['categoria'], 'legal') !== false) $fondoCls = 'swatch-rojo';
+                            ?>
+                                <div class="gallery-slide-item <?php echo $index === 0 ? 'active' : ''; ?>" data-slide-index="<?php echo $index; ?>">
+                                    <?php if ($esFisica): ?>
+                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                    <?php else: ?>
+                                        <div class="gallery-fb-slide-card <?php echo $fondoCls; ?>" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                            <div class="d-flex align-items-center justify-content-between w-100 mb-2">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <div class="fb-card-logo">GH</div>
+                                                    <div class="text-start">
+                                                        <div class="text-white fw-bold small">GRUPO HUERTA &bull; COMPLIANCE INSTITUCIONAL</div>
+                                                        <div class="text-secondary" style="font-size: 0.68rem;">Comunicado Oficial &bull; <?php echo htmlspecialchars($av['fecha_publicacion']); ?></div>
+                                                    </div>
+                                                </div>
+                                                <span class="badge <?php echo $badgeCls; ?> fw-bold px-3 py-1.5 rounded-pill" style="font-size: 0.72rem;"><?php echo htmlspecialchars(strtoupper($av['prioridad'])); ?></span>
+                                            </div>
+                                            
+                                            <div class="gallery-fb-content text-center my-auto py-2">
+                                                <h2 class="gallery-fb-titulo"><?php echo htmlspecialchars($av['titulo']); ?></h2>
+                                                <p class="gallery-fb-desc"><?php echo nl2br(htmlspecialchars($av['descripcion'])); ?></p>
+                                            </div>
 
-                                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
-                                        <button class="btn btn-sm btn-gold-primary rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
-                                            <i class="bi bi-arrows-fullscreen me-1"></i> Pantalla Completa
-                                        </button>
-                                        <?php if (!empty($anexoUrl)): ?>
-                                            <a href="<?php echo htmlspecialchars($anexoUrl); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3">
-                                                <i class="bi bi-download me-1"></i> Anexo
-                                            </a>
-                                        <?php endif; ?>
-                                    </div>
+                                            <div class="d-flex align-items-center justify-content-between w-100 pt-2 border-top border-secondary border-opacity-25" style="font-size: 0.72rem;">
+                                                <span class="text-secondary fw-semibold"><i class="bi bi-shield-check text-warning me-1"></i> CÓDIGO: <?php echo htmlspecialchars($av['codigo']); ?> &bull; <?php echo htmlspecialchars($av['categoria']); ?></span>
+                                                <span class="text-warning text-opacity-75"><i class="bi bi-patch-check-fill me-1"></i> Emisión Oficial Certificada</span>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <!-- 2. PIE FIJO DEL ANUNCIO (NUNCA SE MUEVE, SOLO CAMBIA SU TEXTO) -->
+                        <div class="gallery-static-footer" id="galleryStaticFooter">
+                            <div style="max-width: 750px;">
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="doc-code-badge" id="ftAvisoCodigo"></span>
+                                    <span class="doc-priority-badge" id="ftAvisoPrioridad"></span>
+                                    <span class="category-tag" id="ftAvisoCategoria"></span>
+                                    <span class="text-secondary small ms-2"><i class="bi bi-calendar3"></i> <span id="ftAvisoFecha"></span></span>
+                                </div>
+                                <h3 class="h5 fw-bold text-white mb-1 text-truncate" id="ftAvisoTitulo"></h3>
+                                <p class="text-light text-opacity-75 mb-0 text-truncate" style="font-size: 0.85rem; max-width: 680px;" id="ftAvisoDescripcion"></p>
                             </div>
-                        <?php endforeach; ?>
+
+                            <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                <button type="button" class="btn btn-sm btn-gold-primary rounded-pill px-3" id="ftBtnZoom" onclick="abrirLightboxAvisoActual()">
+                                    <i class="bi bi-arrows-fullscreen me-1"></i> Pantalla Completa
+                                </button>
+                                <a href="#" download class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 d-none" id="ftBtnAnexo">
+                                    <i class="bi bi-download me-1"></i> Anexo
+                                </a>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Tira de Miniaturas Inferior -->
@@ -1508,6 +1597,7 @@ if (btnToggle) {
 }
 
 // MOTOR DE LA GALERÍA / CARRUSEL CONTINUO DE AVISOS
+const avisosGaleriaData = <?php echo json_encode(array_values($avisos)); ?>;
 let currentSlideIndex = 0;
 const slides = document.querySelectorAll('.gallery-slide-item');
 const thumbs = document.querySelectorAll('.gallery-thumb-card');
@@ -1535,12 +1625,56 @@ function mostrarSlide(index) {
         indTexto.innerText = `Aviso ${currentSlideIndex + 1} de ${totalSlides}`;
     }
 
+    // Centrar miniatura activa en el scroll
     const activeThumb = document.querySelector(`.gallery-thumb-card[data-thumb-index="${currentSlideIndex}"]`);
     if (activeThumb) {
         activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
     }
 
+    // ACTUALIZACIÓN DEL PIE FIJO (INMÓVIL, SIN ANIMACIONES DE MOVIMIENTO)
+    const av = avisosGaleriaData[currentSlideIndex];
+    if (av) {
+        const ftCod = document.getElementById('ftAvisoCodigo');
+        const ftPrio = document.getElementById('ftAvisoPrioridad');
+        const ftCat = document.getElementById('ftAvisoCategoria');
+        const ftFecha = document.getElementById('ftAvisoFecha');
+        const ftTit = document.getElementById('ftAvisoTitulo');
+        const ftDesc = document.getElementById('ftAvisoDescripcion');
+        const ftBtnAnexo = document.getElementById('ftBtnAnexo');
+
+        if (ftCod) ftCod.innerText = av.codigo || 'AV';
+        if (ftPrio) {
+            ftPrio.innerText = 'Prioridad ' + (av.prioridad || 'Normal');
+            let pClass = 'priority-normal';
+            if (av.prioridad === 'Alta') pClass = 'priority-alta';
+            else if (av.prioridad === 'Media') pClass = 'priority-media';
+            ftPrio.className = 'doc-priority-badge ' + pClass;
+        }
+        if (ftCat) ftCat.innerText = av.categoria || 'General';
+        if (ftFecha) ftFecha.innerText = av.fecha_publicacion || '';
+        if (ftTit) ftTit.innerText = av.titulo || '';
+        if (ftDesc) ftDesc.innerText = av.descripcion || '';
+
+        const anexoUrl = av.archivo_url_completo || av.archivo_url;
+        if (ftBtnAnexo) {
+            if (anexoUrl && anexoUrl.length > 0) {
+                ftBtnAnexo.href = anexoUrl;
+                ftBtnAnexo.classList.remove('d-none');
+            } else {
+                ftBtnAnexo.classList.add('d-none');
+            }
+        }
+    }
+
     reiniciarProgreso();
+}
+
+function abrirLightboxAvisoActual() {
+    const av = avisosGaleriaData[currentSlideIndex];
+    if (av) {
+        const src = av.imagen_url_completa || av.imagen_url || 'uploads/compliance/aviso_AV-01.svg';
+        abrirLightbox(src, av.titulo);
+    }
 }
 
 function cambiarSlideGaleria(delta) {
@@ -1595,6 +1729,7 @@ function togglePlayGaleria() {
 }
 
 if (totalSlides > 0) {
+    mostrarSlide(0);
     iniciarAutoPlay();
 }
 
