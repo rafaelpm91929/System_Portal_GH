@@ -297,21 +297,21 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 
             <!-- 4. POLÍTICAS CORPORATIVAS -->
             <?php if ($puedeVerPoliticas): ?>
-                <div class="main-module-card card-politicas" style="border-color: rgba(168, 85, 247, 0.35);">
-                    <span class="module-badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3);">
-                        <i class="bi bi-shield-lock-fill"></i> BLINDADO GH
+                <div class="main-module-card card-politicas" style="border: 1px solid rgba(212, 175, 55, 0.4); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35), 0 0 15px rgba(212, 175, 55, 0.15);">
+                    <span class="module-badge" style="background: rgba(212, 175, 55, 0.15); color: #f5df9e; border: 1px solid rgba(212, 175, 55, 0.4);">
+                        <i class="bi bi-shield-check"></i> ALTA DIRECCIÓN
                     </span>
 
-                    <div class="module-icon-box" style="background: rgba(168, 85, 247, 0.15); color: #a855f7;">
+                    <div class="module-icon-box" style="background: rgba(212, 175, 55, 0.15); color: #d4af37; border: 1px solid rgba(212, 175, 55, 0.3);">
                         <i class="bi bi-file-earmark-lock2-fill"></i>
                     </div>
 
                     <div class="module-title">Políticas Corporativas</div>
                     <div class="module-desc">
-                        Gestión, publicación y distribución de políticas y lineamientos para todas las agencias con visor blindado anti-captura.
+                        Directrices oficiales, códigos de conducta y normativas de Grupo Huerta organizadas por áreas y subáreas, con visor blindado anti-captura.
                     </div>
 
-                    <a href="politicas.php" class="btn-module" style="background: #9333ea; box-shadow: 0 4px 15px rgba(147, 51, 234, 0.35);">
+                    <a href="politicas.php" class="btn-module" style="background: linear-gradient(135deg, #b8972e 0%, #8c711e 100%); border: 1px solid rgba(245, 223, 158, 0.4); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.35);">
                         Ingresar a Políticas <i class="bi bi-arrow-right ms-1"></i>
                     </a>
                 </div>

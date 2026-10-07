@@ -452,6 +452,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     titulo TEXT NOT NULL,
                     descripcion TEXT,
                     categoria TEXT DEFAULT 'General',
+                    area TEXT,
+                    subarea TEXT,
                     archivo_pdf TEXT NOT NULL,
                     version TEXT DEFAULT '1.0',
                     fecha_vigencia DATE,
@@ -470,7 +472,7 @@ function asegurarTablaPoliticas($pdo = null) {
                     usuario_login TEXT NOT NULL,
                     agencia TEXT NOT NULL,
                     ip TEXT NOT NULL,
-                    origen TEXT DEFAULT 'Portal GH',
+                    origen TEXT DEFAULT 'Portal Central GH',
                     fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
@@ -481,6 +483,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     `titulo` VARCHAR(255) NOT NULL,
                     `descripcion` TEXT NULL,
                     `categoria` VARCHAR(100) DEFAULT 'General',
+                    `area` VARCHAR(100) NULL,
+                    `subarea` VARCHAR(100) NULL,
                     `archivo_pdf` VARCHAR(255) NOT NULL,
                     `version` VARCHAR(20) DEFAULT '1.0',
                     `fecha_vigencia` DATE NULL,
@@ -500,13 +504,15 @@ function asegurarTablaPoliticas($pdo = null) {
                     `usuario_login` VARCHAR(100) NOT NULL,
                     `agencia` VARCHAR(100) NOT NULL,
                     `ip` VARCHAR(50) NOT NULL,
-                    `origen` VARCHAR(50) DEFAULT 'Portal GH',
+                    `origen` VARCHAR(50) DEFAULT 'Portal Central GH',
                     `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     INDEX `idx_politica` (`politica_id`),
                     INDEX `idx_usuario` (`usuario_login`),
                     INDEX `idx_fecha` (`fecha_lectura`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+            try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+            try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL"); } catch (Throwable $t) {}
         }
     } catch (Throwable $e) {}
 }

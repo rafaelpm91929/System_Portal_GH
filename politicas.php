@@ -18,6 +18,8 @@ if ($pdo) {
     asegurarTablasPermisos($pdo);
 }
 
+requerirPermiso('politicas', 'puede_ver');
+
 // Datos de sesión del usuario
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador');
@@ -45,192 +47,382 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
 $mensaje = '';
 $error = '';
 
-// 2. Procesamiento de Acciones Administrativas (Subida y Gestión de Políticas)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
-    $accion = $_POST['accion'] ?? '';
+// 2. Consulta Automática de Políticas desde el Portal Central GH (portal.grupohuerta.mx)
+$politicasLista = [];
+$urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
+$ctx = stream_context_create([
+    'http' => [
+        'timeout' => 6,
+        'header'  => "User-Agent: PortalAgencia/1.0\r\n"
+    ],
+    'ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false
+    ]
+]);
 
-    // ACCIÓN: SUBIR NUEVA POLÍTICA CORPORATIVA (ADMIN)
-    if ($accion === 'subir_politica' && $esAdmin) {
-        $titulo = trim($_POST['titulo'] ?? '');
-        $descripcion = trim($_POST['descripcion'] ?? '');
-        $categoria = trim($_POST['categoria'] ?? 'General');
-        $version = trim($_POST['version'] ?? '1.0');
-        $fechaVigencia = !empty($_POST['fecha_vigencia']) ? $_POST['fecha_vigencia'] : null;
-        $obligatorio = isset($_POST['obligatorio_lectura']) ? 1 : 0;
-
-        if (empty($titulo)) {
-            $error = "El título de la política es obligatorio.";
-        } elseif (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
-            $error = "Debes seleccionar un archivo PDF válido.";
-        } else {
-            $ext = strtolower(pathinfo($_FILES['archivo_pdf']['name'], PATHINFO_EXTENSION));
-            if ($ext !== 'pdf') {
-                $error = "Únicamente se permiten archivos en formato PDF.";
-            } else {
-                $dirDestino = __DIR__ . '/uploads/politicas/';
-                if (!file_exists($dirDestino)) {
-                    @mkdir($dirDestino, 0755, true);
-                }
-
-                $nombreLimpio = 'politica_' . time() . '_' . rand(100, 999) . '.pdf';
-                $rutaFisica = $dirDestino . $nombreLimpio;
-                $rutaRelativa = 'uploads/politicas/' . $nombreLimpio;
-
-                if (move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $rutaFisica)) {
-                    try {
-                        $stmtIns = $pdo->prepare("
-                            INSERT INTO politicas_corporativas 
-                            (titulo, descripcion, categoria, archivo_pdf, version, fecha_vigencia, obligatorio_lectura, estatus, creado_por) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-                        ");
-                        $stmtIns->execute([
-                            $titulo, 
-                            $descripcion, 
-                            $categoria, 
-                            $rutaRelativa, 
-                            $version, 
-                            $fechaVigencia, 
-                            $obligatorio, 
-                            $nombreUsuario
-                        ]);
-                        $mensaje = "✅ Política <strong>" . htmlspecialchars($titulo) . "</strong> publicada y protegida exitosamente.";
-                    } catch (Throwable $e) {
-                        $error = "Error al registrar en la base de datos: " . $e->getMessage();
-                    }
-                } else {
-                    $error = "No se pudo guardar el archivo en el servidor. Verifica permisos de la carpeta uploads/politicas.";
-                }
-            }
-        }
-    }
-
-    // ACCIÓN: ELIMINAR POLÍTICA (ADMIN)
-    if ($accion === 'eliminar_politica' && $esAdmin) {
-        $idPol = intval($_POST['politica_id'] ?? 0);
-        if ($idPol > 0) {
-            try {
-                $stmtArchivo = $pdo->prepare("SELECT archivo_pdf FROM politicas_corporativas WHERE id = ?");
-                $stmtArchivo->execute([$idPol]);
-                $archivoBorrar = $stmtArchivo->fetchColumn();
-
-                if ($archivoBorrar && file_exists(__DIR__ . '/' . $archivoBorrar)) {
-                    @unlink(__DIR__ . '/' . $archivoBorrar);
-                }
-
-                $stmtDel = $pdo->prepare("DELETE FROM politicas_corporativas WHERE id = ?");
-                $stmtDel->execute([$idPol]);
-                $mensaje = "🗑️ Política eliminada del sistema.";
-            } catch (Throwable $e) {
-                $error = "Error al eliminar política: " . $e->getMessage();
-            }
-        }
-    }
-
-    // ACCIÓN: SINCRONIZAR POLÍTICAS DESDE EL PORTAL CENTRAL GH
-    if ($accion === 'sincronizar_gh') {
-        $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
-        $ctx = stream_context_create([
-            'http' => ['timeout' => 8, 'header' => "User-Agent: PortalAgencia/1.0\r\n"],
-            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
-        ]);
-        $resp = @file_get_contents($urlCentral, false, $ctx);
-        if ($resp) {
-            $dataJson = json_decode($resp, true);
-            if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
-                $mensaje = "🔄 Sincronización exitosa con la Dirección Central de Grupo Huerta (" . count($dataJson['politicas']) . " políticas verificadas).";
-            } else {
-                $error = "Respuesta vacía o no válida del Portal Central GH.";
-            }
-        } else {
-            $error = "No se pudo conectar al Portal Central GH (portal.grupohuerta.mx). Mostrando políticas registradas en esta agencia.";
-        }
+$resp = @file_get_contents($urlCentral, false, $ctx);
+if ($resp) {
+    $dataJson = json_decode($resp, true);
+    if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
+        $politicasLista = $dataJson['politicas'];
     }
 }
 
-// 3. Consultar Políticas Activas
-$politicasLista = [];
-if ($pdo) {
+// Fallback: si no hay conexión con Central GH, consultar base de datos local
+if (empty($politicasLista) && $pdo) {
     try {
         $stmtList = $pdo->query("
             SELECT * FROM politicas_corporativas 
             WHERE estatus = 1 
-            ORDER BY categoria ASC, titulo ASC
+            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
         ");
-        $politicasLista = $stmtList->fetchAll(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        $error = "Error al cargar políticas: " . $e->getMessage();
-    }
+        $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $e) {}
 }
 
-// Extraer categorías únicas para filtro
-$categorias = array_unique(array_filter(array_column($politicasLista, 'categoria')));
-sort($categorias);
+// 3. Estructuración Jerárquica: Áreas -> Subáreas -> Políticas
+$areasEstructuradas = [];
+foreach ($politicasLista as $pol) {
+    // Resolver Área
+    $area = !empty($pol['area']) ? trim($pol['area']) : (!empty($pol['categoria']) ? trim($pol['categoria']) : 'General');
+    
+    // Resolver Subárea
+    $subarea = !empty($pol['subarea']) ? trim($pol['subarea']) : (!empty($pol['sub_area']) ? trim($pol['sub_area']) : '');
+
+    // Si viene en formato combinado "Área / Subárea" o "Área - Subárea"
+    if (empty($subarea) && strpos($area, '/') !== false) {
+        $partes = explode('/', $area, 2);
+        $area = trim($partes[0]);
+        $subarea = trim($partes[1]);
+    } elseif (empty($subarea) && strpos($area, ' - ') !== false) {
+        $partes = explode(' - ', $area, 2);
+        $area = trim($partes[0]);
+        $subarea = trim($partes[1]);
+    }
+
+    if (empty($subarea)) {
+        $subarea = 'Políticas Generales';
+    }
+
+    if (!isset($areasEstructuradas[$area])) {
+        $areasEstructuradas[$area] = [
+            'nombre' => $area,
+            'subareas' => [],
+            'total_politicas' => 0,
+            'total_obligatorias' => 0
+        ];
+    }
+
+    if (!isset($areasEstructuradas[$area]['subareas'][$subarea])) {
+        $areasEstructuradas[$area]['subareas'][$subarea] = [];
+    }
+
+    $pol['area_resuelto'] = $area;
+    $pol['subarea_resuelto'] = $subarea;
+    $areasEstructuradas[$area]['subareas'][$subarea][] = $pol;
+    $areasEstructuradas[$area]['total_politicas']++;
+    if (!empty($pol['obligatorio_lectura'])) {
+        $areasEstructuradas[$area]['total_obligatorias']++;
+    }
+}
+ksort($areasEstructuradas);
+
+// Función auxiliar para iconos representativos por área
+function obtenerIconoArea($nombreArea) {
+    $n = strtolower($nombreArea);
+    if (strpos($n, 'sistema') !== false || strpos($n, 'desarrollo') !== false) return 'bi-cpu-fill';
+    if (strpos($n, 'equipo') !== false || strpos($n, 'ti') !== false || strpos($n, 'red') !== false) return 'bi-hdd-network-fill';
+    if (strpos($n, 'seguridad') !== false || strpos($n, 'ciber') !== false) return 'bi-shield-check';
+    if (strpos($n, 'direccion') !== false || strpos($n, 'consejo') !== false || strpos($n, 'gerencia') !== false) return 'bi-building-fill-check';
+    if (strpos($n, 'humano') !== false || strpos($n, 'personal') !== false || strpos($n, 'rh') !== false) return 'bi-people-fill';
+    if (strpos($n, 'finanza') !== false || strpos($n, 'contab') !== false || strpos($n, 'administra') !== false) return 'bi-cash-coin';
+    if (strpos($n, 'operacion') !== false || strpos($n, 'taller') !== false || strpos($n, 'servicio') !== false) return 'bi-gear-wide-connected';
+    if (strpos($n, 'etica') !== false || strpos($n, 'conducta') !== false || strpos($n, 'legal') !== false) return 'bi-award-fill';
+    return 'bi-folder2-open';
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Políticas Corporativas Protegidas - PORTAL <?php echo htmlspecialchars($agenciaNombre); ?></title>
+    <title>Políticas y Normativas Corporativas - <?php echo htmlspecialchars($agenciaNombre); ?></title>
     <?php include_once 'pwa_head.php'; ?>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     
-    <!-- PDF.js de Mozilla para renderizado nativo en Canvas (Sin descarga) -->
+    <!-- PDF.js para renderizado en Canvas (Protección sin descarga directa) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     </script>
 
     <style>
+        :root {
+            --bg-dark: #050d1a;
+            --surface-card: #09172c;
+            --surface-card-hover: #0d2242;
+            --gold-accent: #d4af37;
+            --gold-accent-light: #f5df9e;
+            --gold-border: rgba(212, 175, 55, 0.35);
+            --gold-border-bright: rgba(212, 175, 55, 0.7);
+            --gold-glow: rgba(212, 175, 55, 0.18);
+        }
+
         body {
-            background-color: #061325;
-            background-image: radial-gradient(#0e2440 1px, transparent 1px);
-            background-size: 28px 28px;
+            background-color: var(--bg-dark);
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(212, 175, 55, 0.08) 0%, transparent 45%),
+                radial-gradient(circle at 85% 12%, rgba(30, 58, 138, 0.25) 0%, transparent 40%),
+                radial-gradient(circle at 50% 90%, rgba(9, 23, 44, 0.7) 0%, transparent 60%);
+            background-attachment: fixed;
             color: #ffffff;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
             user-select: none;
             -webkit-user-select: none;
         }
 
-        .top-navbar {
-            background: rgba(6, 19, 37, 0.92);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        .executive-navbar {
+            background: rgba(5, 13, 26, 0.95);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border-bottom: 1px solid var(--gold-border);
             padding: 12px 24px;
             position: sticky;
             top: 0;
             z-index: 1020;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
         }
 
-        .policy-card {
-            background: #0d1e36;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 22px;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        .agency-logo-thumb {
+            max-height: 32px;
+            max-width: 120px;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+
+        /* PESTAÑAS DENTRO DEL MÓDULO CON CONTORNOS DORADOS */
+        .module-tab-nav {
+            border-bottom: 1px solid var(--gold-border);
+            gap: 10px;
+        }
+
+        .module-tab-nav .nav-link {
+            color: #94a3b8;
+            font-weight: 600;
+            font-size: 0.9rem;
+            padding: 11px 22px;
+            border-radius: 12px 12px 0 0;
+            border: 1px solid transparent;
+            background: transparent;
+            transition: all 0.22s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .module-tab-nav .nav-link:hover {
+            color: var(--gold-accent-light);
+            background: rgba(212, 175, 55, 0.05);
+            border-color: var(--gold-border) var(--gold-border) transparent;
+        }
+
+        .module-tab-nav .nav-link.active {
+            color: var(--gold-accent-light);
+            background: #09172c;
+            border-color: var(--gold-border) var(--gold-border) #09172c;
+            border-bottom-color: #09172c;
+            font-weight: 700;
+            box-shadow: 0 -4px 15px var(--gold-glow);
+        }
+
+        /* TARJETAS DE ÁREAS CON CONTORNOS DORADOS */
+        .area-folder-card {
+            background: linear-gradient(145deg, #09172c 0%, #061224 100%);
+            border: 1px solid var(--gold-border);
+            border-radius: 18px;
+            padding: 26px;
+            transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
+            cursor: pointer;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
+            height: 100%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4), 0 0 15px var(--gold-glow);
         }
 
-        .policy-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(56, 189, 248, 0.5);
-            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.15);
+        .area-folder-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--gold-accent), transparent);
+            opacity: 0.5;
+            transition: opacity 0.3s ease;
         }
 
-        .badge-mandatory {
-            background: rgba(239, 68, 68, 0.15);
-            color: #f87171;
+        .area-folder-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--gold-border-bright);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), 0 0 25px rgba(212, 175, 55, 0.35);
+            background: linear-gradient(145deg, #0d2242 0%, #081932 100%);
+        }
+
+        .area-folder-card:hover::before {
+            opacity: 1;
+        }
+
+        .area-icon-wrap {
+            width: 54px;
+            height: 54px;
+            border-radius: 14px;
+            background: rgba(212, 175, 55, 0.12);
+            border: 1px solid var(--gold-border);
+            color: var(--gold-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.65rem;
+            margin-bottom: 16px;
+            box-shadow: 0 0 15px var(--gold-glow);
+        }
+
+        .area-title-text {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin-bottom: 8px;
+            line-height: 1.3;
+            letter-spacing: -0.2px;
+        }
+
+        /* SECCIONES DE SUBÁREA CON CONTORNO DORADO */
+        .subarea-group-card {
+            background: rgba(9, 23, 44, 0.75);
+            border: 1px solid var(--gold-border);
+            border-radius: 18px;
+            margin-bottom: 24px;
+            overflow: hidden;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 15px var(--gold-glow);
+        }
+
+        .subarea-header {
+            background: rgba(14, 34, 64, 0.65);
+            border-bottom: 1px solid var(--gold-border);
+            padding: 15px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .subarea-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .subarea-badge-count {
+            background: rgba(212, 175, 55, 0.12);
+            border: 1px solid var(--gold-border);
+            color: var(--gold-accent-light);
+            font-family: monospace;
+            font-size: 0.74rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* FILAS DE POLÍTICAS */
+        .policy-item-row {
+            padding: 18px 24px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 16px;
+            transition: background 0.15s ease;
+        }
+
+        .policy-item-row:last-child {
+            border-bottom: none;
+        }
+
+        .policy-item-row:hover {
+            background: rgba(212, 175, 55, 0.035);
+        }
+
+        .folio-pill {
+            background: rgba(212, 175, 55, 0.12);
+            color: var(--gold-accent-light);
+            border: 1px solid var(--gold-border);
+            font-family: monospace;
+            font-size: 0.74rem;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-mandatory-pill {
+            background: rgba(239, 68, 68, 0.14);
+            color: #fca5a5;
             border: 1px solid rgba(239, 68, 68, 0.35);
             font-size: 0.68rem;
             font-weight: 700;
-            padding: 3px 8px;
+            padding: 3px 9px;
             border-radius: 20px;
+        }
+
+        .btn-view-doc {
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(14, 38, 70, 0.9) 100%);
+            border: 1px solid var(--gold-border);
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.84rem;
+            padding: 8px 18px;
+            border-radius: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.22s ease;
+            white-space: nowrap;
+        }
+
+        .btn-view-doc:hover {
+            background: linear-gradient(135deg, var(--gold-accent) 0%, #b8972e 100%);
+            border-color: var(--gold-accent-light);
+            color: #06101e;
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+        }
+
+        /* BUSCADOR CON CONTORNO DORADO */
+        .gold-search-input {
+            background: rgba(7, 18, 36, 0.85) !important;
+            border: 1px solid var(--gold-border) !important;
+            color: #ffffff !important;
+            font-size: 0.88rem;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .gold-search-input:focus {
+            border-color: var(--gold-accent) !important;
+            box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2) !important;
         }
 
         /* ESTILOS DEL VISOR BLINDADO FULLSCREEN */
@@ -238,15 +430,15 @@ sort($categorias);
             position: fixed;
             top: 0; left: 0;
             width: 100vw; height: 100vh;
-            background: #030a14;
+            background: #020610;
             z-index: 999990;
             display: none;
             flex-direction: column;
         }
 
         .visor-header {
-            background: #061325;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            background: #050d1a;
+            border-bottom: 1px solid var(--gold-border);
             padding: 10px 20px;
             display: flex;
             align-items: center;
@@ -254,6 +446,7 @@ sort($categorias);
             z-index: 999995;
             flex-wrap: wrap;
             gap: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
         }
 
         #visorCanvasContainer {
@@ -267,19 +460,20 @@ sort($categorias);
             padding: 30px 20px;
             gap: 30px;
             position: relative;
-            background: #050e1c;
+            background: #030814;
         }
 
-        /* CONTENEDOR DE CADA PÁGINA CON CAPAS DE SEGURIDAD */
         .pdf-page-wrapper {
             position: relative;
             flex-shrink: 0 !important;
             display: block;
-            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.85);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
             border-radius: 6px;
             overflow: hidden;
             background: #ffffff;
             margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            transition: filter 0.18s ease, opacity 0.18s ease;
         }
 
         .pdf-page-canvas {
@@ -288,7 +482,6 @@ sort($categorias);
             height: 100%;
         }
 
-        /* CAPA 1: MARCA DE AGUA FORENSE DINÁMICA REPETIDA EN MOSAICO */
         .forensic-watermark-overlay {
             position: absolute;
             top: 0; left: 0;
@@ -302,14 +495,13 @@ sort($categorias);
             overflow: hidden;
         }
 
-        /* CAPA DE SEGURIDAD ÓPTICA TIPO BILLETE BANCARIO (ANTI-SENSOR CÁMARA MOIRÉ) */
         .banknote-security-pattern {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
             pointer-events: none;
             z-index: 4;
-            opacity: 0.16;
+            opacity: 0.15;
             background-image: 
                 radial-gradient(#0f172a 1px, transparent 1px),
                 repeating-linear-gradient(45deg, rgba(15,23,42,0.4) 0, rgba(15,23,42,0.4) 1px, transparent 0, transparent 3px),
@@ -328,24 +520,61 @@ sort($categorias);
             font-size: 0.72rem;
             font-weight: 800;
             text-align: center;
-            line-height: 1.2;
+            line-height: 1.25;
             user-select: none;
             font-family: monospace;
             text-shadow: 0 0 1px rgba(0,0,0,0.25);
             letter-spacing: 0.5px;
         }
 
-        /* CAPA 2: PANTALLA NEGRA PURA ANTI-CAPTURA (TIPO WHATSAPP / TELEGRAM VER UNA VEZ) */
-        #censorSecurityShield {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100vw; height: 100vh;
-            background: #000000 !important;
-            z-index: 2147483647 !important;
-            display: none;
-            user-select: none;
-            -webkit-user-select: none;
-            pointer-events: all;
+        /* OVERLAY DE BLOQUEO POR CURSOR */
+        #pdfLockOverlay {
+            position: absolute;
+            top: 56px;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 56px);
+            background: rgba(3, 8, 18, 0.95);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            z-index: 999998;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        #pdfLockOverlay.activo {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .pdf-lock-box-gold {
+            background: rgba(9, 23, 44, 0.9);
+            border: 2px solid var(--gold-border);
+            border-radius: 20px;
+            padding: 36px 32px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 35px var(--gold-glow);
+            max-width: 540px;
+            text-align: center;
+        }
+
+        .visor-bloqueado .pdf-page-wrapper {
+            filter: blur(28px) grayscale(90%) !important;
+            opacity: 0.12 !important;
+        }
+
+        .pulsing-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--gold-accent);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--gold-accent);
         }
 
         @media print {
@@ -355,7 +584,6 @@ sort($categorias);
             }
             html, body {
                 background: #000000 !important;
-                background-color: #000000 !important;
                 display: block !important;
             }
         }
@@ -365,162 +593,249 @@ sort($categorias);
 
 <?php include_once 'pwa_body.php'; ?>
 
-<!-- CORTINA ANTI-RECORTE / PANTALLA NEGRA PURA ANTI-CAPTURA (TIPO WHATSAPP VER UNA VEZ) -->
-<div id="censorSecurityShield"></div>
-
-
-<!-- NAVBAR -->
-<div class="top-navbar d-flex flex-wrap justify-content-between align-items-center gap-2">
+<!-- TOP NAVBAR -->
+<nav class="executive-navbar d-flex flex-wrap justify-content-between align-items-center gap-2">
     <div class="d-flex align-items-center gap-2 gap-md-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3 py-1 px-2 px-md-3" title="Regresar al Menú Principal">
+        <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3 py-1 px-2 px-md-3" title="Regresar al Menú Principal" style="border-color: var(--gold-border);">
             <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline ms-1">Menú Principal</span>
         </a>
-        <span class="fw-bold fs-6 fs-md-5 text-truncate">
-            PORTAL <span class="text-primary"><?php echo htmlspecialchars($agenciaNombre); ?></span> 
-            <span class="text-secondary small d-none d-md-inline">| Políticas Corporativas</span>
-        </span>
+
+        <div class="d-flex align-items-center gap-2">
+            <?php if (!empty($logoAgencia)): ?>
+                <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo Agencia" class="agency-logo-thumb">
+            <?php endif; ?>
+            <span class="fw-bold fs-6 text-white text-uppercase">
+                PORTAL <span style="color: var(--gold-accent-light);"><?php echo htmlspecialchars($agenciaNombre); ?></span>
+            </span>
+        </div>
     </div>
 
     <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-1">
-            <i class="bi bi-shield-lock-fill"></i> Visor Blindado Anti-Captura
+        <span class="badge bg-dark border text-light px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-2 font-monospace" style="border-color: var(--gold-border) !important;">
+            <span class="pulsing-dot"></span> Central GH Sincronizado
         </span>
-
-        <?php if ($esAdmin): ?>
-            <button type="button" class="btn btn-warning btn-sm rounded-3 fw-bold px-3 py-1.5 shadow d-flex align-items-center gap-1.5" onclick="abrirModalAuditoriaLecturas()">
-                <i class="bi bi-clock-history"></i> <span class="d-none d-md-inline">Bitácora de</span> Lecturas
-            </button>
-            <button type="button" class="btn btn-primary btn-sm rounded-3 fw-bold px-3 py-1.5 shadow" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
-                <i class="bi bi-plus-lg me-1"></i> Subir Política (PDF)
-            </button>
-            <form method="POST" class="d-inline">
-                <input type="hidden" name="accion" value="sincronizar_gh">
-                <button type="submit" class="btn btn-outline-info btn-sm rounded-3 py-1.5 px-2" title="Sincronizar Políticas con Dirección Central GH">
-                    <i class="bi bi-arrow-repeat"></i> <span class="d-none d-lg-inline">Sincronizar GH</span>
-                </button>
-            </form>
-        <?php endif; ?>
+        <span class="badge bg-dark border px-3 py-1.5 rounded-pill small d-none d-md-inline-flex align-items-center gap-1.5 font-monospace" style="color: var(--gold-accent-light); border-color: var(--gold-border) !important;">
+            <i class="bi bi-shield-lock-fill" style="color: var(--gold-accent);"></i> DLP Protegido
+        </span>
+        <a href="politicas.php" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-2.5 text-light" style="border-color: var(--gold-border);" title="Actualizar políticas">
+            <i class="bi bi-arrow-clockwise"></i>
+        </a>
     </div>
-</div>
+</nav>
 
 <div class="container-fluid py-4 px-3 px-md-4" style="max-width: 1400px;">
 
-    <!-- MENSAJES DE NOTIFICACIÓN -->
+    <!-- MENSAJES -->
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert">
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(6, 78, 59, 0.85); color: #a7f3d0;">
             <i class="bi bi-check-circle-fill me-2"></i> <?php echo $mensaje; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert">
+        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(127, 29, 29, 0.85); color: #fecaca;">
             <i class="bi bi-exclamation-triangle-fill me-2"></i> <?php echo $error; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
-    <!-- ENCABEZADO Y BUSCADOR -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom border-secondary border-opacity-25">
+    <!-- TÍTULO LIMPIO (SIN HERO NI TARJETAS INNECESARIAS) -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-2 border-bottom" style="border-color: var(--gold-border) !important;">
         <div>
-            <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
-                <i class="bi bi-file-earmark-lock2-fill text-primary"></i> Políticas y Normativas Institucionales
-            </h3>
+            <h2 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                <i class="bi bi-file-earmark-lock2-fill" style="color: var(--gold-accent);"></i> Políticas y Normativas Institucionales
+            </h2>
             <p class="text-secondary small mb-0">
-                Documentos oficiales de observancia obligatoria para el personal de la agencia. Lectura protegida sin descarga permitida.
+                Documentación oficial y directrices corporativas organizadas por áreas de Grupo Huerta.
             </p>
         </div>
 
-        <!-- BUSCADOR EN TIEMPO REAL -->
-        <div class="d-flex align-items-center gap-2 w-100 w-md-auto">
-            <div class="input-group input-group-sm" style="max-width: 320px;">
-                <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
-                <input type="text" id="filtroTextoPolitica" class="form-control bg-dark text-white border-secondary" placeholder="Buscar por título o categoría..." oninput="filtrarPoliticasEnTiempoReal()">
+        <!-- BUSCADOR CON CONTORNO DORADO -->
+        <div class="w-100 w-md-auto" style="min-width: 280px; max-width: 360px;">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text bg-dark text-secondary" style="border: 1px solid var(--gold-border); border-right: none; border-radius: 10px 0 0 10px;"><i class="bi bi-search" style="color: var(--gold-accent);"></i></span>
+                <input type="text" id="filtroTextoPolitica" class="form-control gold-search-input" style="border-radius: 0 10px 10px 0;" placeholder="Buscar por título, folio o subárea..." oninput="filtrarPoliticasGlobal()">
             </div>
         </div>
     </div>
 
-    <!-- PESTAÑAS DE CATEGORÍAS -->
-    <div class="d-flex flex-wrap gap-2 mb-4">
-        <button type="button" class="btn btn-sm btn-outline-primary active btn-cat-filtro rounded-pill px-3 fw-bold" onclick="filtrarPorCategoria('todas', this)">
-            Todas (<?php echo count($politicasLista); ?>)
-        </button>
-        <?php foreach ($categorias as $cat): 
-            $countCat = count(array_filter($politicasLista, function($p) use ($cat) { return $p['categoria'] === $cat; }));
-        ?>
-            <button type="button" class="btn btn-sm btn-outline-secondary text-light btn-cat-filtro rounded-pill px-3" onclick="filtrarPorCategoria('<?php echo htmlspecialchars($cat); ?>', this)">
-                <?php echo htmlspecialchars($cat); ?> (<?php echo $countCat; ?>)
+    <!-- PESTAÑAS DENTRO DEL MÓDULO (ÁREAS Y POLÍTICAS) -->
+    <ul class="nav module-tab-nav mb-4" id="politicasPillsTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="pill-areas-tab" data-bs-toggle="tab" data-bs-target="#vista-areas" type="button" role="tab" onclick="volverACatalogoAreas()">
+                <i class="bi bi-folder-fill" style="color: var(--gold-accent);"></i> Áreas Institucionales
+                <span class="subarea-badge-count ms-1"><?php echo count($areasEstructuradas); ?></span>
             </button>
-        <?php endforeach; ?>
-    </div>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="pill-detalle-tab" data-bs-toggle="tab" data-bs-target="#vista-detalle-politicas" type="button" role="tab">
+                <i class="bi bi-list-task" style="color: var(--gold-accent);"></i> <span id="lblTituloPestanaDetalle">Listado de Políticas</span>
+                <span class="subarea-badge-count ms-1" id="badgeTotalPoliticasPestana"><?php echo count($politicasLista); ?></span>
+            </button>
+        </li>
+    </ul>
 
-    <!-- REJILLA DE TARJETAS DE POLÍTICAS -->
-    <?php if (empty($politicasLista)): ?>
-        <div class="text-center py-5 rounded-4 border border-secondary border-opacity-25 p-5" style="background: rgba(13, 30, 54, 0.4);">
-            <i class="bi bi-shield-shaded display-1 text-secondary opacity-50 d-block mb-3"></i>
-            <h4 class="fw-bold text-white">No hay políticas registradas actualmente</h4>
-            <p class="text-secondary small mb-3">
-                Cuando el corporativo publique una nueva política, aparecerá de forma inmediata en este módulo.
-            </p>
-            <?php if ($esAdmin): ?>
-                <button type="button" class="btn btn-primary rounded-3 px-4 fw-bold" data-bs-toggle="modal" data-bs-target="#modalSubirPolitica">
-                    <i class="bi bi-plus-lg me-1"></i> Publicar Primer Documento
-                </button>
+    <!-- CONTENIDO DE LAS PESTAÑAS -->
+    <div class="tab-content" id="politicasPillsContent">
+
+        <!-- PESTAÑA 1: CATÁLOGO DE ÁREAS -->
+        <div class="tab-pane fade show active" id="vista-areas" role="tabpanel">
+            <?php if (empty($areasEstructuradas)): ?>
+                <div class="text-center py-5 rounded-4 p-5" style="background: rgba(10, 27, 50, 0.4); border: 1px solid var(--gold-border);">
+                    <i class="bi bi-folder-x display-2 opacity-50 d-block mb-3" style="color: var(--gold-accent);"></i>
+                    <h4 class="fw-bold text-white">No hay áreas de políticas disponibles</h4>
+                    <p class="text-secondary small mb-0">
+                        Las áreas y directrices dadas de alta en el Portal Central de Grupo Huerta aparecerán aquí automáticamente.
+                    </p>
+                </div>
+            <?php else: ?>
+                <div class="row g-4">
+                    <?php foreach ($areasEstructuradas as $nombreArea => $infoArea): 
+                        $iconoArea = obtenerIconoArea($nombreArea);
+                        $cantSubareas = count($infoArea['subareas']);
+                        $cantPoliticas = $infoArea['total_politicas'];
+                    ?>
+                        <div class="col-md-6 col-lg-4 col-xl-3">
+                            <div class="area-folder-card" onclick="seleccionarArea('<?php echo addslashes(htmlspecialchars($nombreArea)); ?>')">
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div class="area-icon-wrap">
+                                            <i class="bi <?php echo $iconoArea; ?>"></i>
+                                        </div>
+                                        <?php if ($infoArea['total_obligatorias'] > 0): ?>
+                                            <span class="badge-mandatory-pill">
+                                                <i class="bi bi-exclamation-circle-fill me-1"></i> <?php echo $infoArea['total_obligatorias']; ?> Obligatoria<?php echo $infoArea['total_obligatorias'] > 1 ? 's' : ''; ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+
+                                    <h4 class="area-title-text">
+                                        <?php echo htmlspecialchars($nombreArea); ?>
+                                    </h4>
+
+                                    <p class="text-secondary small mb-3">
+                                        <?php echo $cantSubareas; ?> subárea<?php echo $cantSubareas !== 1 ? 's' : ''; ?> registrada<?php echo $cantSubareas !== 1 ? 's' : ''; ?>
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-center pt-3 border-top text-secondary small" style="border-color: rgba(212, 175, 55, 0.18) !important;">
+                                        <span><i class="bi bi-file-earmark-text me-1" style="color: var(--gold-accent);"></i> <b><?php echo $cantPoliticas; ?></b> política<?php echo $cantPoliticas !== 1 ? 's' : ''; ?></span>
+                                        <span class="fw-semibold" style="color: var(--gold-accent-light);">Entrar <i class="bi bi-arrow-right ms-1"></i></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
             <?php endif; ?>
         </div>
-    <?php else: ?>
-        <div class="row g-4" id="contenedorTarjetasPoliticas">
-            <?php foreach ($politicasLista as $pol): ?>
-                <div class="col-md-6 col-lg-4 item-politica-card" data-cat="<?php echo htmlspecialchars($pol['categoria']); ?>" data-titulo="<?php echo htmlspecialchars(strtolower($pol['titulo'] . ' ' . $pol['descripcion'])); ?>">
-                    <div class="policy-card h-100">
-                        <div>
-                            <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
-                                <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-30 rounded-pill font-monospace" style="font-size: 0.7rem;">
-                                    <?php echo htmlspecialchars($pol['categoria']); ?> &bull; v<?php echo htmlspecialchars($pol['version']); ?>
-                                </span>
-                                <?php if (!empty($pol['obligatorio_lectura'])): ?>
-                                    <span class="badge-mandatory">
-                                        <i class="bi bi-exclamation-circle-fill me-1"></i> Obligatorio
-                                    </span>
-                                <?php endif; ?>
-                            </div>
 
-                            <h5 class="fw-bold text-white mb-2" style="line-height: 1.3;">
-                                <?php echo htmlspecialchars($pol['titulo']); ?>
-                            </h5>
-                            
-                            <p class="text-secondary small mb-3" style="font-size: 0.82rem; min-height: 38px;">
-                                <?php echo htmlspecialchars($pol['descripcion'] ?: 'Documento normativo corporativo de cumplimiento oficial.'); ?>
-                            </p>
-                        </div>
-
-                        <div>
-                            <div class="d-flex justify-content-between align-items-center pt-3 border-top border-secondary border-opacity-25 mb-3 small text-secondary" style="font-size: 0.72rem;">
-                                <span><i class="bi bi-calendar3 me-1"></i> Vigencia: <?php echo !empty($pol['fecha_vigencia']) ? date('d/m/Y', strtotime($pol['fecha_vigencia'])) : 'Permanente'; ?></span>
-                                <span><i class="bi bi-file-earmark-pdf text-danger me-1"></i> PDF Protegido</span>
-                            </div>
-
-                            <div class="d-flex gap-2">
-                                <button type="button" class="btn btn-primary btn-sm w-100 rounded-3 fw-bold py-2 d-flex align-items-center justify-content-center gap-1.5 shadow" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>')">
-                                    <i class="bi bi-eye-fill"></i> Leer Documento Seguro
-                                </button>
-
-                                <?php if ($esAdmin): ?>
-                                    <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta política corporativa?');">
-                                        <input type="hidden" name="accion" value="eliminar_politica">
-                                        <input type="hidden" name="politica_id" value="<?php echo $pol['id']; ?>">
-                                        <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 py-2 px-2.5" title="Eliminar política">
-                                            <i class="bi bi-trash3-fill"></i>
-                                        </button>
-                                    </form>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
+        <!-- PESTAÑA 2: LISTADO DE POLÍTICAS POR ÁREA Y SUBÁREAS -->
+        <div class="tab-pane fade" id="vista-detalle-politicas" role="tabpanel">
+            
+            <!-- BARRA DE NAVEGACIÓN Y ACCIÓN RÁPIDA -->
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 p-3 rounded-3" style="background: rgba(14, 38, 70, 0.4); border: 1px solid var(--gold-border);">
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-3" style="border-color: var(--gold-border);" onclick="volverACatalogoAreas()">
+                        <i class="bi bi-arrow-left me-1"></i> Volver a Áreas
+                    </button>
+                    <span class="text-secondary opacity-50">&bull;</span>
+                    <h5 class="fw-bold text-white mb-0 d-inline-flex align-items-center gap-2">
+                        <i class="bi bi-folder2-open" style="color: var(--gold-accent);"></i> <span id="lblAreaNombreActiva">Todas las Áreas</span>
+                    </h5>
                 </div>
-            <?php endforeach; ?>
+
+                <div class="d-flex align-items-center gap-2">
+                    <span class="subarea-badge-count" id="lblBadgeConteoDetalle">
+                        <?php echo count($politicasLista); ?> Políticas
+                    </span>
+                </div>
+            </div>
+
+            <!-- CONTENEDOR DE SUBÁREAS Y POLÍTICAS -->
+            <div id="contenedorSubareasYPoliticas">
+                <?php if (empty($areasEstructuradas)): ?>
+                    <div class="text-center py-5 text-secondary">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        No hay políticas registradas actualmente.
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($areasEstructuradas as $nombreArea => $infoArea): ?>
+                        <div class="bloque-area-contenedor" data-area-nombre="<?php echo htmlspecialchars($nombreArea); ?>">
+                            
+                            <?php foreach ($infoArea['subareas'] as $nombreSubarea => $politicasSub): ?>
+                                <div class="subarea-group-card bloque-subarea-item" data-area="<?php echo htmlspecialchars($nombreArea); ?>" data-subarea="<?php echo htmlspecialchars($nombreSubarea); ?>">
+                                    <!-- ENCABEZADO DE SUBÁREA -->
+                                    <div class="subarea-header">
+                                        <h5 class="subarea-title">
+                                            <i class="bi bi-folder-fill" style="color: var(--gold-accent);"></i>
+                                            <span><?php echo htmlspecialchars($nombreSubarea); ?></span>
+                                            <span class="text-secondary small fw-normal">(<?php echo htmlspecialchars($nombreArea); ?>)</span>
+                                        </h5>
+                                        <span class="subarea-badge-count">
+                                            <?php echo count($politicasSub); ?> documento<?php echo count($politicasSub) !== 1 ? 's' : ''; ?>
+                                        </span>
+                                    </div>
+
+                                    <!-- LISTADO DE POLÍTICAS EN ESTA SUBÁREA -->
+                                    <div class="subarea-body">
+                                        <?php foreach ($politicasSub as $pol): 
+                                            $folioCode = 'GH-POL-' . str_pad($pol['id'], 3, '0', STR_PAD_LEFT);
+                                            $textoBusqueda = strtolower($pol['titulo'] . ' ' . $pol['descripcion'] . ' ' . $folioCode . ' ' . $nombreArea . ' ' . $nombreSubarea);
+                                        ?>
+                                            <div class="policy-item-row fila-politica-item" data-search="<?php echo htmlspecialchars($textoBusqueda); ?>" data-area="<?php echo htmlspecialchars($nombreArea); ?>">
+                                                <div class="d-flex align-items-center gap-3" style="max-width: 65%;">
+                                                    <span class="folio-pill flex-shrink-0"><?php echo $folioCode; ?></span>
+                                                    
+                                                    <div>
+                                                        <div class="d-flex align-items-center gap-2 mb-1">
+                                                            <h6 class="fw-bold text-white mb-0">
+                                                                <?php echo htmlspecialchars($pol['titulo']); ?>
+                                                            </h6>
+                                                            <span class="badge bg-dark border font-monospace" style="font-size: 0.65rem; border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                                                                v<?php echo htmlspecialchars($pol['version'] ?? '1.0'); ?>
+                                                            </span>
+                                                            <?php if (!empty($pol['obligatorio_lectura'])): ?>
+                                                                <span class="badge-mandatory-pill">
+                                                                    <i class="bi bi-shield-fill-exclamation"></i> Obligatoria
+                                                                </span>
+                                                            <?php endif; ?>
+                                                        </div>
+
+                                                        <?php if (!empty($pol['descripcion'])): ?>
+                                                            <p class="text-secondary small mb-0" style="font-size: 0.8rem;">
+                                                                <?php echo htmlspecialchars($pol['descripcion']); ?>
+                                                            </p>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+
+                                                <div class="d-flex align-items-center gap-3">
+                                                    <div class="text-end text-secondary small d-none d-md-block" style="font-size: 0.72rem;">
+                                                        <span class="d-block"><i class="bi bi-calendar3 me-1" style="color: var(--gold-accent);"></i> Vigencia: <?php echo !empty($pol['fecha_vigencia']) ? date('d/m/Y', strtotime($pol['fecha_vigencia'])) : 'Permanente'; ?></span>
+                                                        <span style="color: var(--gold-accent-light);"><i class="bi bi-shield-check me-1"></i> Protegido</span>
+                                                    </div>
+
+                                                    <button type="button" class="btn-view-doc" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>', '<?php echo $folioCode; ?>')">
+                                                        <i class="bi bi-eye-fill"></i> Leer Documento Seguro
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+
         </div>
-    <?php endif; ?>
+
+    </div>
 
 </div>
 
@@ -532,6 +847,9 @@ sort($categorias);
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2.5 py-1 rounded-pill small font-monospace">
                 <i class="bi bi-shield-fill-x me-1"></i> LECTURA PROTEGIDA
             </span>
+            <span class="folio-pill d-none d-sm-inline" id="visorFolioDoc">
+                GH-POL-000
+            </span>
             <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 45vw;">
                 Cargando Documento...
             </h6>
@@ -540,13 +858,13 @@ sort($categorias);
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <!-- CONTROLES DE ZOOM -->
             <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-dark text-white border-secondary" onclick="cambiarZoomVisor(-0.15)" title="Alejar Zoom">
+                <button type="button" class="btn btn-dark text-white" style="border: 1px solid var(--gold-border);" onclick="cambiarZoomVisor(-0.15)" title="Alejar Zoom">
                     <i class="bi bi-dash-lg"></i>
                 </button>
-                <span id="visorZoomBadge" class="badge bg-dark border-top border-bottom border-secondary text-info d-flex align-items-center px-2 font-monospace">
+                <span id="visorZoomBadge" class="badge bg-dark border-top border-bottom text-info d-flex align-items-center px-2 font-monospace" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light) !important;">
                     100%
                 </span>
-                <button type="button" class="btn btn-dark text-white border-secondary" onclick="cambiarZoomVisor(0.15)" title="Acercar Zoom">
+                <button type="button" class="btn btn-dark text-white" style="border: 1px solid var(--gold-border);" onclick="cambiarZoomVisor(0.15)" title="Acercar Zoom">
                     <i class="bi bi-plus-lg"></i>
                 </button>
             </div>
@@ -556,16 +874,15 @@ sort($categorias);
                 <span>Página <b id="lblPaginaActual" class="text-white">1</b> de <b id="lblTotalPaginas" class="text-white">1</b></span>
             </div>
 
-            <!-- BADGE DE SEGURIDAD ÓPTICA -->
-            <span class="badge bg-dark border border-secondary text-info rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
-                <i class="bi bi-shield-lock-fill text-warning me-1"></i> Trama Óptica Anti-Cámara
+            <!-- BADGES DE SEGURIDAD -->
+            <span class="badge bg-dark border rounded-pill px-2.5 py-1.5 small font-monospace d-none d-lg-inline-flex align-items-center" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                <i class="bi bi-shield-lock-fill me-1" style="color: var(--gold-accent);"></i> Anti-Cámara Moiré
             </span>
 
-            <!-- BOTÓN MODO VER UNA VEZ (ANTI-CAPTURA CELULAR TIPO WHATSAPP) -->
-            <button type="button" id="btnModoWhatsApp" class="btn btn-outline-warning btn-sm rounded-3 fw-semibold px-2.5 d-flex align-items-center gap-1 ms-1" onclick="toggleModoWhatsApp()" title="Pantalla negra estilo WhatsApp Ver Una Vez (Tocar para ver)">
-                <i class="bi bi-eye-slash-fill"></i> <span class="d-none d-sm-inline">Modo Ver Una Vez</span>
-            </button>
-
+            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
+                <i class="bi bi-cursor-fill text-danger me-1"></i> Bloqueo de Cursor Activo
+            </span>
+            
             <!-- BOTÓN CERRAR VISOR -->
             <button type="button" class="btn btn-outline-danger btn-sm rounded-3 fw-bold px-3 ms-2" onclick="cerrarVisorBlindado()">
                 <i class="bi bi-x-lg me-1"></i> Cerrar
@@ -573,186 +890,39 @@ sort($categorias);
         </div>
     </div>
 
+    <!-- OVERLAY DE BLOQUEO POR CURSOR FUERA DEL PDF -->
+    <div id="pdfLockOverlay">
+        <div class="pdf-lock-box-gold px-4">
+            <div class="mb-3" style="width: 76px; height: 76px; margin: 0 auto; border-radius: 50%; background: rgba(212, 175, 55, 0.15); border: 2px solid var(--gold-accent); display: flex; align-items: center; justify-content: center; font-size: 2.3rem; color: var(--gold-accent-light); box-shadow: 0 0 25px var(--gold-glow);">
+                <i class="bi bi-shield-slash-fill"></i>
+            </div>
+            <h4 class="fw-bold text-white mb-2" style="letter-spacing: 0.5px;">LECTURA BLOQUEADA POR SEGURIDAD</h4>
+            <p class="text-secondary mb-3 small" style="line-height: 1.5;">
+                El cursor ha salido del área del documento. Por normativas de confidencialidad institucional de Grupo Huerta, el contenido se protege automáticamente.
+            </p>
+            <div class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-40 px-3.5 py-2 rounded-pill font-monospace small d-inline-flex align-items-center gap-2 shadow-lg mb-2">
+                <span class="spinner-grow spinner-grow-sm text-danger" role="status"></span>
+                Coloca el cursor sobre el documento PDF para continuar la lectura
+            </div>
+            <div class="text-secondary small font-monospace opacity-75" style="font-size: 0.72rem;">
+                Lector: <?php echo htmlspecialchars($nombreUsuario); ?> | Terminal: <?php echo htmlspecialchars($ipUsuario); ?>
+            </div>
+        </div>
+    </div>
+
     <!-- ÁREA DE RENDERIZADO DE PÁGINAS PDF CON MARCA DE AGUA Y MALLA MOIRÉ -->
     <div id="visorCanvasContainer">
         <div id="visorLoader" class="text-center py-5">
-            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+            <div class="spinner-border mb-3" role="status" style="width: 3rem; height: 3rem; color: var(--gold-accent);"></div>
             <h5 class="fw-bold text-white">Desencriptando y renderizando documento protegido...</h5>
-            <p class="text-secondary small">Aplicando marcas de agua forenses y filtros ópticos anti-captura.</p>
-        </div>
-    </div>
-
-    <!-- CAPA MODO VER UNA VEZ (MANTENER PRESIONADO PARA VER) -->
-    <div id="touchToViewShield" style="display:flex; position:fixed; top:65px; left:0; width:100vw; height:calc(100vh - 65px); background:#000000; z-index:999992; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:20px; user-select:none; -webkit-user-select:none; transition: opacity 0.1s ease; cursor: pointer;">
-        <div style="max-width:420px; background: rgba(10, 15, 25, 0.95);" class="p-4 rounded-4 border border-secondary border-opacity-25 shadow-lg">
-            <div class="mb-3" style="width:85px; height:85px; border-radius:50%; background:rgba(234,179,8,0.15); border:2px dashed #eab308; display:inline-flex; align-items:center; justify-content:center;">
-                <i class="bi bi-fingerprint display-3 text-warning"></i>
-            </div>
-            <h4 class="fw-bold text-white mb-2">Visor Blindado Anti-Captura</h4>
-            <p class="text-secondary small mb-3">
-                Mantén presionado tu dedo (en celular) o el clic (en PC) para leer el documento.<br>
-                <b class="text-warning">Si sueltas o intentas tomar captura, la pantalla se graba 100% en negro.</b>
-            </p>
-            <div class="d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill bg-warning text-dark fw-bold small shadow">
-                <i class="bi bi-hand-index-thumb-fill fs-5"></i> MANTÉN PRESIONADO PARA LEER
-            </div>
+            <p class="text-secondary small">Aplicando marcas de agua forenses y trama óptica anti-captura.</p>
         </div>
     </div>
 </div>
-
-<!-- MODAL: SUBIR NUEVA POLÍTICA (SOLO ADMINISTRADORES) -->
-<?php if ($esAdmin): ?>
-<div class="modal fade" id="modalSubirPolitica" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content text-white" style="background: #0d1e36; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 16px;">
-            <div class="modal-header border-secondary border-opacity-25">
-                <h5 class="modal-title fw-bold text-primary d-flex align-items-center gap-2">
-                    <i class="bi bi-cloud-arrow-up-fill"></i> Publicar Nueva Política Corporativa
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="accion" value="subir_politica">
-                <div class="modal-body p-4">
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Título Oficial de la Política *</label>
-                        <input type="text" name="titulo" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Política de Uso Aceptable de Equipo de Cómputo" required>
-                    </div>
-
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label text-light small fw-bold">Categoría Institucional *</label>
-                            <input list="listaCategorias" name="categoria" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Seguridad de la Información" required>
-                            <datalist id="listaCategorias">
-                                <option value="Seguridad de la Información">
-                                <option value="Uso de Equipos y TI">
-                                <option value="Código de Conducta">
-                                <option value="Recursos Humanos">
-                                <option value="Protección de Datos Personales">
-                                <option value="Operaciones de Agencia">
-                            </datalist>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-light small fw-bold">Versión</label>
-                            <input type="text" name="version" class="form-control bg-dark text-white border-secondary" value="1.0" required>
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label text-light small fw-bold">Vigencia (Opcional)</label>
-                            <input type="date" name="fecha_vigencia" class="form-control bg-dark text-white border-secondary">
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Descripción Corta / Resumen</label>
-                        <textarea name="descripcion" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="Describe brevemente de qué trata este documento..."></textarea>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label text-light small fw-bold">Seleccionar Archivo PDF *</label>
-                        <input type="file" name="archivo_pdf" accept="application/pdf" class="form-control bg-dark text-white border-secondary" required>
-                        <div class="form-text text-secondary small">
-                            <i class="bi bi-info-circle text-info"></i> El PDF se blindará automáticamente contra descargas, capturas de pantalla y fotos.
-                        </div>
-                    </div>
-
-                    <div class="form-check form-switch mt-3">
-                        <input class="form-check-input" type="checkbox" name="obligatorio_lectura" id="chkObligatorio" value="1">
-                        <label class="form-check-label text-light small" for="chkObligatorio">
-                            Marcar como <strong>Lectura Obligatoria</strong> para todo el personal
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary border-opacity-25">
-                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary rounded-3 fw-bold px-4">
-                        <i class="bi bi-shield-check me-1"></i> Publicar Documento Seguro
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL: AUDITORÍA Y BITÁCORA DE LECTURAS DE POLÍTICAS -->
-<div class="modal fade" id="modalAuditoriaLecturas" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
-        <div class="modal-content text-white" style="background: #0b1a2f; border: 1px solid rgba(234, 179, 8, 0.4); border-radius: 16px;">
-            <div class="modal-header border-secondary border-opacity-25 pb-3">
-                <div>
-                    <h5 class="modal-title fw-bold text-warning d-flex align-items-center gap-2 mb-1">
-                        <i class="bi bi-shield-check"></i> Bitácora de Lecturas y Auditoría de Acceso
-                    </h5>
-                    <p class="text-secondary small mb-0">Registro en tiempo real de qué colaboradores y agencias han consultado las políticas corporativas.</p>
-                </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4">
-                <!-- KPI STATS -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
-                            <span class="text-secondary small d-block">Total de Lecturas Realizadas</span>
-                            <h3 class="fw-bold text-white mb-0" id="kpiTotalLecturas">0</h3>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
-                            <span class="text-secondary small d-block">Colaboradores Únicos</span>
-                            <h3 class="fw-bold text-info mb-0" id="kpiUsuariosUnicos">0</h3>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="p-3 rounded-3 border border-secondary border-opacity-25 bg-dark bg-opacity-50">
-                            <span class="text-secondary small d-block">Agencias / Portales Activos</span>
-                            <h3 class="fw-bold text-success mb-0" id="kpiAgenciasActivas">0</h3>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- FILTROS Y BÚSQUEDA -->
-                <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
-                    <div class="input-group input-group-sm" style="max-width: 340px;">
-                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
-                        <input type="text" id="filtroTablaAuditoria" class="form-control bg-dark text-white border-secondary" placeholder="Buscar por empleado, agencia, política..." oninput="filtrarTablaAuditoria()">
-                    </div>
-                    <button type="button" class="btn btn-outline-warning btn-sm rounded-3" onclick="cargarBitacoraLecturas()">
-                        <i class="bi bi-arrow-repeat me-1"></i> Actualizar Bitácora
-                    </button>
-                </div>
-
-                <!-- TABLA DE AUDITORÍA -->
-                <div class="table-responsive rounded-3 border border-secondary border-opacity-25">
-                    <table class="table table-dark table-hover mb-0 align-middle small" id="tablaAuditoriaLecturas">
-                        <thead class="table-dark text-secondary font-monospace" style="border-bottom: 2px solid rgba(255,255,255,0.1);">
-                            <tr>
-                                <th>FECHA Y HORA</th>
-                                <th>COLABORADOR</th>
-                                <th>AGENCIA / PORTAL</th>
-                                <th>POLÍTICA CONSULTADA</th>
-                                <th>DIRECCIÓN IP</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyAuditoriaLecturas">
-                            <tr>
-                                <td colspan="5" class="text-center py-4 text-secondary">
-                                    <div class="spinner-border spinner-border-sm text-warning me-2"></div> Cargando bitácora de lecturas...
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            <div class="modal-footer border-secondary border-opacity-25">
-                <button type="button" class="btn btn-secondary btn-sm rounded-3 px-3" data-bs-dismiss="modal">Cerrar</button>
-            </div>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- LÓGICA DE CONTROL Y SEGURIDAD DEL VISOR BLINDADO -->
+<!-- CONTROL DE PESTAÑAS Y VISOR BLINDADO -->
 <script>
     // Datos forenses del usuario actual para la marca de agua
     const FORENSIC_USER_NAME = "<?php echo addslashes($nombreUsuario); ?>";
@@ -760,256 +930,262 @@ sort($categorias);
     const FORENSIC_AGENCIA = "<?php echo addslashes($agenciaNombre); ?>";
     const FORENSIC_IP = "<?php echo addslashes($ipUsuario); ?>";
 
+    let currentAreaSeleccionada = 'todas';
+
+    // 1. GESTIÓN DE NAVEGACIÓN ENTRE PESTAÑAS INTERNAS
+    function seleccionarArea(nombreArea) {
+        currentAreaSeleccionada = nombreArea;
+        
+        // Actualizar etiqueta del encabezado
+        document.getElementById('lblAreaNombreActiva').textContent = 'Área: ' + nombreArea;
+        document.getElementById('lblTituloPestanaDetalle').textContent = 'Políticas: ' + nombreArea;
+
+        // Filtrar bloques de áreas visibles
+        const bloquesArea = document.querySelectorAll('.bloque-area-contenedor');
+        let contadorPoliticasArea = 0;
+
+        bloquesArea.forEach(b => {
+            if (b.getAttribute('data-area-nombre') === nombreArea) {
+                b.style.display = 'block';
+                const filas = b.querySelectorAll('.fila-politica-item');
+                contadorPoliticasArea += filas.length;
+                filas.forEach(f => f.style.display = 'flex');
+            } else {
+                b.style.display = 'none';
+            }
+        });
+
+        document.getElementById('lblBadgeConteoDetalle').textContent = contadorPoliticasArea + (contadorPoliticasArea === 1 ? ' Política' : ' Políticas');
+        document.getElementById('badgeTotalPoliticasPestana').textContent = contadorPoliticasArea;
+
+        // Cambiar a la pestaña de detalle
+        const tabDetalleBtn = document.getElementById('pill-detalle-tab');
+        const tab = bootstrap.Tab.getOrCreateInstance(tabDetalleBtn);
+        tab.show();
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function volverACatalogoAreas() {
+        currentAreaSeleccionada = 'todas';
+        document.getElementById('lblTituloPestanaDetalle').textContent = 'Listado de Políticas';
+        document.getElementById('lblAreaNombreActiva').textContent = 'Todas las Áreas';
+        
+        // Restaurar visibilidad de todos los bloques
+        document.querySelectorAll('.bloque-area-contenedor').forEach(b => b.style.display = 'block');
+        document.querySelectorAll('.fila-politica-item').forEach(f => f.style.display = 'flex');
+
+        const totalTodas = document.querySelectorAll('.fila-politica-item').length;
+        document.getElementById('lblBadgeConteoDetalle').textContent = totalTodas + ' Políticas';
+        document.getElementById('badgeTotalPoliticasPestana').textContent = totalTodas;
+
+        const tabAreasBtn = document.getElementById('pill-areas-tab');
+        const tab = bootstrap.Tab.getOrCreateInstance(tabAreasBtn);
+        tab.show();
+    }
+
+    // 2. BUSCADOR GLOBAL EN TIEMPO REAL
+    function filtrarPoliticasGlobal() {
+        const query = (document.getElementById('filtroTextoPolitica').value || '').toLowerCase().trim();
+        
+        // Si hay una búsqueda activa, cambiamos a la pestaña de políticas para ver resultados
+        if (query.length > 0) {
+            const tabDetalleBtn = document.getElementById('pill-detalle-tab');
+            const tab = bootstrap.Tab.getOrCreateInstance(tabDetalleBtn);
+            tab.show();
+
+            document.querySelectorAll('.bloque-area-contenedor').forEach(b => b.style.display = 'block');
+
+            let encontrados = 0;
+            document.querySelectorAll('.bloque-subarea-item').forEach(subCard => {
+                let subcardTieneMatches = false;
+                const filas = subCard.querySelectorAll('.fila-politica-item');
+                filas.forEach(fila => {
+                    const texto = fila.getAttribute('data-search') || '';
+                    if (texto.includes(query)) {
+                        fila.style.display = 'flex';
+                        subcardTieneMatches = true;
+                        encontrados++;
+                    } else {
+                        fila.style.display = 'none';
+                    }
+                });
+
+                subCard.style.display = subcardTieneMatches ? 'block' : 'none';
+            });
+
+            document.getElementById('lblBadgeConteoDetalle').textContent = encontrados + ' Encontradas';
+        } else {
+            // Si limpió la búsqueda, restaurar de acuerdo al área seleccionada
+            if (currentAreaSeleccionada === 'todas') {
+                volverACatalogoAreas();
+            } else {
+                seleccionarArea(currentAreaSeleccionada);
+            }
+        }
+    }
+
+    // =========================================================================
+    // VISOR BLINDADO Y PROTECCIÓN DLP POR CURSOR
+    // =========================================================================
     let currentPdfDoc = null;
     let currentZoom = 1.0;
     let totalPdfPages = 0;
     let isViewerActive = false;
+    let isPdfRenderCompleted = false;
+    let isCursorOverDocument = false;
+    let ultimoMouseX = null;
+    let ultimoMouseY = null;
 
-    // 1. SISTEMA ANTI-CAPTURA / PANTALLA NEGRA PURA (TIPO WHATSAPP VER UNA VEZ)
-    const censorShield = document.getElementById('censorSecurityShield');
-    let modoWhatsAppActivo = true;
+    function actualizarEstadoBloqueoPdf(bloquear) {
+        if (!isViewerActive || !isPdfRenderCompleted) return;
 
-    function activarCensura() {
-        if (isViewerActive) {
-            if (censorShield) {
-                censorShield.style.display = 'block';
-                censorShield.style.background = '#000000';
-            }
-            const shield = document.getElementById('touchToViewShield');
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-            const container = document.getElementById('visorCanvasContainer');
-            if (container) {
-                container.style.opacity = '0';
-                container.style.visibility = 'hidden';
-            }
-            document.querySelectorAll('.pdf-page-canvas').forEach(cv => {
-                cv.style.opacity = '0';
-                cv.style.visibility = 'hidden';
-            });
-        }
-    }
-
-    function desactivarCensura() {
-        if (censorShield) {
-            censorShield.style.display = 'none';
-        }
+        const overlay = document.getElementById('pdfLockOverlay');
         const container = document.getElementById('visorCanvasContainer');
-        if (container) {
-            container.style.opacity = '1';
-            container.style.visibility = 'visible';
-            container.style.filter = 'none';
-        }
-        document.querySelectorAll('.pdf-page-canvas').forEach(cv => {
-            cv.style.opacity = '1';
-            cv.style.visibility = 'visible';
-        });
-    }
+        if (!overlay || !container) return;
 
-    // MODO WHATSAPP: "VER UNA VEZ" (TOUCH & HOLD TO VIEW)
-    function toggleModoWhatsApp() {
-        modoWhatsAppActivo = !modoWhatsAppActivo;
-        const btn = document.getElementById('btnModoWhatsApp');
-        const shield = document.getElementById('touchToViewShield');
-
-        if (modoWhatsAppActivo) {
-            if (btn) {
-                btn.classList.remove('btn-outline-warning');
-                btn.classList.add('btn-warning', 'text-dark');
-            }
-            if (shield) {
-                shield.style.display = 'flex';
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
+        if (bloquear) {
+            overlay.classList.add('activo');
+            container.classList.add('visor-bloqueado');
         } else {
-            if (btn) {
-                btn.classList.remove('btn-warning', 'text-dark');
-                btn.classList.add('btn-outline-warning');
-            }
-            if (shield) {
-                shield.style.display = 'none';
-            }
+            overlay.classList.remove('activo');
+            container.classList.remove('visor-bloqueado');
         }
     }
 
-    // Listeners para revelar el documento mientras se mantenga presionado el dedo / clic
-    function initTouchToViewListeners() {
-        const shield = document.getElementById('touchToViewShield');
-        const container = document.getElementById('visorCanvasContainer');
+    function verificarCursorSobrePdf(clientX, clientY) {
+        ultimoMouseX = clientX;
+        ultimoMouseY = clientY;
 
-        const revelar = function() {
-            if (!modoWhatsAppActivo) return;
-            if (shield) {
-                shield.style.opacity = '0';
-                shield.style.pointerEvents = 'none';
-            }
-        };
+        if (!isViewerActive || !isPdfRenderCompleted) return;
 
-        const ocultar = function() {
-            if (!modoWhatsAppActivo) return;
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-        };
+        const wrappers = document.querySelectorAll('.pdf-page-wrapper');
+        if (!wrappers || wrappers.length === 0) return;
 
-        if (container) {
-            container.addEventListener('mousedown', revelar);
-            container.addEventListener('touchstart', revelar, { passive: true });
+        // 1. Detección directa del elemento bajo el cursor
+        const elUnderCursor = document.elementFromPoint(clientX, clientY);
+        if (elUnderCursor && (elUnderCursor.classList.contains('pdf-page-wrapper') || elUnderCursor.closest('.pdf-page-wrapper'))) {
+            isCursorOverDocument = true;
+            actualizarEstadoBloqueoPdf(false);
+            return;
         }
-        if (shield) {
-            shield.addEventListener('mousedown', revelar);
-            shield.addEventListener('touchstart', revelar, { passive: true });
+
+        // 2. Detección de la columna vertical del documento PDF (tolerancia de lectura continua)
+        let dentroDeColumna = false;
+        for (let i = 0; i < wrappers.length; i++) {
+            const rect = wrappers[i].getBoundingClientRect();
+            if (clientX >= (rect.left - 20) && clientX <= (rect.right + 20)) {
+                if (clientY >= (rect.top - 25) && clientY <= (rect.bottom + 25)) {
+                    dentroDeColumna = true;
+                    break;
+                }
+            }
         }
-        window.addEventListener('mouseup', ocultar);
-        window.addEventListener('touchend', ocultar, { passive: true });
-        window.addEventListener('touchcancel', ocultar, { passive: true });
-        document.addEventListener('mouseleave', ocultar);
+
+        if (dentroDeColumna) {
+            isCursorOverDocument = true;
+            actualizarEstadoBloqueoPdf(false);
+        } else {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
     }
-    initTouchToViewListeners();
 
-    // Detectar cuando la ventana pierde el foco (PowerPoint grabando, Recortes Win+Shift+S, cambio de app o captura en celular)
+    window.addEventListener('mousemove', function(e) {
+        if (!isViewerActive) return;
+        verificarCursorSobrePdf(e.clientX, e.clientY);
+    }, { passive: true });
+
+    document.addEventListener('mouseleave', function() {
+        if (isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
+    });
+
     window.addEventListener('blur', function() {
-        if (isViewerActive) activarCensura();
+        if (isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
+        }
     });
 
     document.addEventListener('visibilitychange', function() {
-        if (document.hidden && isViewerActive) {
-            activarCensura();
-        } else if (!document.hidden && isViewerActive) {
-            setTimeout(desactivarCensura, 300);
+        if (document.hidden && isViewerActive && isPdfRenderCompleted) {
+            isCursorOverDocument = false;
+            actualizarEstadoBloqueoPdf(true);
         }
     });
 
-    window.addEventListener('focus', function() {
-        if (isViewerActive) {
-            setTimeout(desactivarCensura, 200);
+    window.addEventListener('touchmove', function(e) {
+        if (!isViewerActive) return;
+        if (e.touches && e.touches.length > 0) {
+            verificarCursorSobrePdf(e.touches[0].clientX, e.touches[0].clientY);
         }
-    });
+    }, { passive: true });
 
-    // Detección móvil específica para capturas en celulares Android / iOS
-    window.addEventListener('pagehide', function() {
-        if (isViewerActive) activarCensura();
-    });
-    window.addEventListener('resize', function() {
-        if (isViewerActive && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-            activarCensura();
-            setTimeout(desactivarCensura, 1500);
+    window.addEventListener('touchstart', function(e) {
+        if (!isViewerActive) return;
+        if (e.touches && e.touches.length > 0) {
+            verificarCursorSobrePdf(e.touches[0].clientX, e.touches[0].clientY);
         }
-    });
+    }, { passive: true });
 
-    // Censurar si el cursor del ratón sale de la ventana del navegador en PC
-    document.addEventListener('mouseleave', function() {
-        if (isViewerActive) activarCensura();
-    });
-
-    document.addEventListener('mouseenter', function() {
-        if (isViewerActive && !modoWhatsAppActivo) desactivarCensura();
-    });
-
-    // Bloquear atajos de teclado para PrintScreen, Guardar, Imprimir e Inspeccionar
+    // Protección de atajos de teclado
     window.addEventListener('keydown', function(e) {
         if (!isViewerActive) return;
 
-        // PrintScreen, Tecla Windows (Meta), o Alt (Alt+PrtScn)
-        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta' || (e.shiftKey && (e.key === 's' || e.key === 'S')) || e.altKey) {
+        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || (e.shiftKey && (e.key === 's' || e.key === 'S'))) {
             e.preventDefault();
-            const shield = document.getElementById('touchToViewShield');
-            if (shield) {
-                shield.style.opacity = '1';
-                shield.style.pointerEvents = 'all';
-            }
-            activarCensura();
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText('');
             }
-            setTimeout(desactivarCensura, 2500);
             return false;
         }
 
-        // Ctrl+P (Imprimir)
-        if (e.ctrlKey && (e.key === 'p' || e.key === 'P')) {
-            e.preventDefault();
-            activarCensura();
-            setTimeout(desactivarCensura, 1500);
-            return false;
-        }
-
-        // Ctrl+S (Guardar)
-        if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
+        if (e.ctrlKey && (e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S' || e.key === 'u' || e.key === 'U')) {
             e.preventDefault();
             return false;
         }
 
-        // F12 o Ctrl+Shift+I (Inspeccionar)
         if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j'))) {
             e.preventDefault();
             return false;
         }
-
-        // Ctrl+U (Ver código fuente)
-        if (e.ctrlKey && (e.key === 'u' || e.key === 'U')) {
-            e.preventDefault();
-            return false;
-        }
     }, true);
 
-    window.addEventListener('keyup', function(e) {
-        if (!isViewerActive) return;
-        if (e.key === 'PrintScreen' || e.keyCode === 44 || e.key === 'Snapshot' || e.key === 'Meta') {
-            activarCensura();
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText('');
-            }
-            setTimeout(desactivarCensura, 2000);
-        }
-    }, true);
-
-    // 2. FUNCIÓN PARA ABRIR Y RENDERIZAR EL VISOR BLINDADO
-    function abrirVisorBlindado(docId, tituloDoc) {
+    function abrirVisorBlindado(docId, tituloDoc, folioDoc) {
         const modal = document.getElementById('visorModalOverlay');
         const container = document.getElementById('visorCanvasContainer');
         const tituloLbl = document.getElementById('visorTituloDoc');
+        const folioLbl = document.getElementById('visorFolioDoc');
 
         if (!modal || !container) return;
 
         tituloLbl.textContent = tituloDoc;
+        if (folioLbl && folioDoc) {
+            folioLbl.textContent = folioDoc;
+        }
         modal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
         isViewerActive = true;
+        isPdfRenderCompleted = false;
+        isCursorOverDocument = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        container.classList.remove('visor-bloqueado');
 
-        // Activar por defecto el Modo WhatsApp "Ver Una Vez" (Pantalla negra, mantener presionado para leer)
-        modoWhatsAppActivo = true;
-        const btn = document.getElementById('btnModoWhatsApp');
-        const shield = document.getElementById('touchToViewShield');
-        if (btn) {
-            btn.classList.remove('btn-outline-warning');
-            btn.classList.add('btn-warning', 'text-dark');
-        }
-        if (shield) {
-            shield.style.display = 'flex';
-            shield.style.opacity = '1';
-            shield.style.pointerEvents = 'all';
-        }
-
-        // Registrar lectura en bitácora auditable
         registrarLecturaAuditoria(docId, tituloDoc);
 
-        // Limpiar visor y mostrar loader
         container.innerHTML = `
             <div id="visorLoader" class="text-center py-5">
-                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                <div class="spinner-border mb-3" role="status" style="width: 3rem; height: 3rem; color: var(--gold-accent);"></div>
                 <h5 class="fw-bold text-white">Desencriptando y renderizando documento protegido...</h5>
-                <p class="text-secondary small">Aplicando marcas de agua forenses y filtros ópticos anti-captura.</p>
+                <p class="text-secondary small">Aplicando marcas de agua forenses y trama óptica anti-captura.</p>
             </div>
         `;
 
-        // URL segura del stream (sin exponer el archivo directo)
         const pdfUrl = 'api_politicas.php?action=stream_pdf&id=' + encodeURIComponent(docId);
-
         currentZoom = (window.innerWidth < 768) ? 0.9 : 1.25;
         document.getElementById('visorZoomBadge').textContent = Math.round(currentZoom * 100) + '%';
 
@@ -1018,7 +1194,7 @@ sort($categorias);
             totalPdfPages = pdf.numPages;
             document.getElementById('lblTotalPaginas').textContent = totalPdfPages;
 
-            container.innerHTML = ''; // Quitar loader
+            container.innerHTML = '';
             renderizarTodasLasPaginas(pdf, container);
 
         }).catch(function(error) {
@@ -1032,12 +1208,11 @@ sort($categorias);
         });
     }
 
-    // 3. RENDERIZAR CADA PÁGINA EN CANVAS CON CAPAS DE SEGURIDAD (EN ORDEN SECUENCIAL)
     function renderizarTodasLasPaginas(pdf, container) {
         container.innerHTML = '';
         const wrappers = [];
+        let paginasRenderizadas = 0;
 
-        // 1. Crear los contenedores individuales en orden secuencial estricto
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
             const pageWrapper = document.createElement('div');
             pageWrapper.className = 'pdf-page-wrapper';
@@ -1045,7 +1220,7 @@ sort($categorias);
             pageWrapper.style.flexShrink = '0';
             pageWrapper.innerHTML = `
                 <div class="text-center py-5 text-secondary" style="min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                    <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                    <div class="spinner-border spinner-border-sm mb-2" style="color: var(--gold-accent);"></div>
                     <span style="font-size: 0.8rem;">Cargando página ${pageNum} de ${pdf.numPages}...</span>
                 </div>
             `;
@@ -1053,7 +1228,6 @@ sort($categorias);
             wrappers[pageNum] = pageWrapper;
         }
 
-        // 2. Renderizar cada página en su respectivo contenedor
         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
             (function(num, wrapper) {
                 pdf.getPage(num).then(function(page) {
@@ -1061,15 +1235,13 @@ sort($categorias);
                     const w = Math.round(viewport.width);
                     const h = Math.round(viewport.height);
 
-                    // Dimensiones fijas inalterables contra aplastamiento de flexbox
                     wrapper.style.width = w + 'px';
                     wrapper.style.height = h + 'px';
                     wrapper.style.minHeight = h + 'px';
                     wrapper.style.maxHeight = h + 'px';
                     wrapper.style.flexShrink = '0';
-                    wrapper.innerHTML = ''; // Limpiar loader de página
+                    wrapper.innerHTML = '';
 
-                    // Canvas para dibujo del PDF
                     const canvas = document.createElement('canvas');
                     canvas.className = 'pdf-page-canvas';
                     canvas.width = w;
@@ -1078,14 +1250,11 @@ sort($categorias);
                     canvas.style.height = h + 'px';
                     const ctx = canvas.getContext('2d');
 
-                    // Renderizar PDF sobre Canvas
                     page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-                        // 1. Trama de Seguridad Óptica Tipo Billete Bancario (Anti-Sensor Moiré)
                         const securityPattern = document.createElement('div');
                         securityPattern.className = 'banknote-security-pattern';
                         wrapper.appendChild(securityPattern);
 
-                        // 2. Marca de Agua Forense Auditable
                         const watermarkLayer = document.createElement('div');
                         watermarkLayer.className = 'forensic-watermark-overlay';
 
@@ -1101,6 +1270,18 @@ sort($categorias);
                         }
 
                         wrapper.appendChild(watermarkLayer);
+
+                        paginasRenderizadas++;
+                        if (paginasRenderizadas === pdf.numPages) {
+                            isPdfRenderCompleted = true;
+                            setTimeout(function() {
+                                if (ultimoMouseX !== null && ultimoMouseY !== null) {
+                                    verificarCursorSobrePdf(ultimoMouseX, ultimoMouseY);
+                                } else {
+                                    actualizarEstadoBloqueoPdf(true);
+                                }
+                            }, 120);
+                        }
                     });
 
                     wrapper.appendChild(canvas);
@@ -1109,13 +1290,16 @@ sort($categorias);
         }
     }
 
-    // 4. CONTROLES DE ZOOM Y CIERRE
     function cambiarZoomVisor(delta) {
         if (!currentPdfDoc) return;
         currentZoom = Math.max(0.5, Math.min(2.5, currentZoom + delta));
         document.getElementById('visorZoomBadge').textContent = Math.round(currentZoom * 100) + '%';
         const container = document.getElementById('visorCanvasContainer');
         container.innerHTML = '';
+        isPdfRenderCompleted = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        container.classList.remove('visor-bloqueado');
         renderizarTodasLasPaginas(currentPdfDoc, container);
     }
 
@@ -1124,47 +1308,23 @@ sort($categorias);
         if (modal) modal.style.display = 'none';
         document.body.style.overflow = '';
         isViewerActive = false;
-        desactivarCensura();
-        if (modoWhatsAppActivo) {
-            toggleModoWhatsApp();
-        }
+        isPdfRenderCompleted = false;
+        isCursorOverDocument = false;
+        const lockOv = document.getElementById('pdfLockOverlay');
+        if (lockOv) lockOv.classList.remove('activo');
+        const container = document.getElementById('visorCanvasContainer');
+        if (container) container.classList.remove('visor-bloqueado');
+        currentPdfDoc = null;
     }
 
-    // 5. FILTROS DE POLÍTICAS EN TIEMPO REAL
-    function filtrarPorCategoria(categoria, btn) {
-        document.querySelectorAll('.btn-cat-filtro').forEach(b => {
-            b.classList.remove('active', 'btn-primary');
-            b.classList.add('btn-outline-secondary');
-        });
-        btn.classList.add('active', 'btn-primary');
-        btn.classList.remove('btn-outline-secondary');
-
-        const items = document.querySelectorAll('.item-politica-card');
-        items.forEach(item => {
-            const itemCat = item.getAttribute('data-cat');
-            if (categoria === 'todas' || itemCat === categoria) {
-                item.style.display = 'block';
-            } else {
-                item.style.display = 'none';
+    const containerCanvasEl = document.getElementById('visorCanvasContainer');
+    if (containerCanvasEl) {
+        containerCanvasEl.addEventListener('scroll', function() {
+            if (isViewerActive && isPdfRenderCompleted && ultimoMouseX !== null && ultimoMouseY !== null) {
+                verificarCursorSobrePdf(ultimoMouseX, ultimoMouseY);
             }
-        });
+        }, { passive: true });
     }
-
-    function filtrarPoliticasEnTiempoReal() {
-        const q = (document.getElementById('filtroTextoPolitica').value || '').toLowerCase().trim();
-        const items = document.querySelectorAll('.item-politica-card');
-        items.forEach(item => {
-            const txt = item.getAttribute('data-titulo') || '';
-            if (!q || txt.includes(q)) {
-                item.style.display = 'block';
-            } else {
-                item.style.display = 'none';
-            }
-        });
-    }
-
-    // 6. SISTEMA DE BITÁCORA Y AUDITORÍA DE LECTURAS
-    let bitacoraLecturasData = [];
 
     function registrarLecturaAuditoria(docId, tituloDoc) {
         try {
@@ -1176,112 +1336,12 @@ sort($categorias);
             formData.append('usuario_login', FORENSIC_USER_LOGIN);
             formData.append('agencia', FORENSIC_AGENCIA);
             formData.append('ip', FORENSIC_IP);
-            formData.append('origen', 'Portal Central GH');
 
             fetch('api_politicas.php', {
                 method: 'POST',
                 body: formData
-            }).catch(e => console.warn('Audit err:', e));
+            }).catch(e => console.warn('Audit log notice:', e));
         } catch(err) {}
-    }
-
-    function abrirModalAuditoriaLecturas() {
-        const modalEl = document.getElementById('modalAuditoriaLecturas');
-        if (!modalEl) return;
-        const bsModal = new bootstrap.Modal(modalEl);
-        bsModal.show();
-        cargarBitacoraLecturas();
-    }
-
-    function cargarBitacoraLecturas() {
-        const tbody = document.getElementById('tbodyAuditoriaLecturas');
-        if (!tbody) return;
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center py-4 text-secondary">
-                    <div class="spinner-border spinner-border-sm text-warning me-2"></div> Actualizando bitácora de lecturas...
-                </td>
-            </tr>
-        `;
-
-        fetch('api_politicas.php?action=obtener_lecturas')
-            .then(res => res.json())
-            .then(data => {
-                if (!data.exito) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">${data.error || 'Error al cargar la bitácora.'}</td></tr>`;
-                    return;
-                }
-
-                // Actualizar KPIs
-                if (data.stats) {
-                    document.getElementById('kpiTotalLecturas').textContent = data.stats.total_lecturas || 0;
-                    document.getElementById('kpiUsuariosUnicos').textContent = data.stats.usuarios_unicos || 0;
-                    document.getElementById('kpiAgenciasActivas').textContent = data.stats.agencias_activas || 0;
-                }
-
-                bitacoraLecturasData = data.lecturas || [];
-                renderizarFilasBitacora(bitacoraLecturasData);
-            })
-            .catch(err => {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-danger">Error de conexión al cargar auditoría: ${err.message}</td></tr>`;
-            });
-    }
-
-    function renderizarFilasBitacora(filas) {
-        const tbody = document.getElementById('tbodyAuditoriaLecturas');
-        if (!tbody) return;
-
-        if (filas.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center py-4 text-secondary">
-                        <i class="bi bi-inbox fs-3 d-block mb-2 opacity-50"></i>
-                        No hay lecturas registradas aún en la bitácora.
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        let html = '';
-        filas.forEach(row => {
-            const fechaStr = row.fecha_lectura ? new Date(row.fecha_lectura.replace(' ', 'T')).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'Reciente';
-            const esCentral = (row.origen || '').toLowerCase().includes('central') || (row.agencia || '').toLowerCase().includes('corporativo') || (row.agencia || '').toLowerCase().includes('huerta');
-            const badgeAgencia = esCentral 
-                ? `<span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-30 rounded-pill"><i class="bi bi-building me-1"></i>${row.agencia}</span>`
-                : `<span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30 rounded-pill"><i class="bi bi-shop me-1"></i>${row.agencia}</span>`;
-
-            html += `
-                <tr>
-                    <td class="font-monospace text-secondary">${fechaStr}</td>
-                    <td>
-                        <span class="fw-bold text-white">${row.usuario_nombre}</span>
-                        <span class="text-secondary small d-block font-monospace">@${row.usuario_login}</span>
-                    </td>
-                    <td>${badgeAgencia}</td>
-                    <td>
-                        <span class="text-light fw-semibold">${row.politica_titulo}</span>
-                        <span class="text-secondary small d-block font-monospace">ID: #${row.politica_id}</span>
-                    </td>
-                    <td class="font-monospace text-info small">${row.ip || '127.0.0.1'}</td>
-                </tr>
-            `;
-        });
-        tbody.innerHTML = html;
-    }
-
-    function filtrarTablaAuditoria() {
-        const q = (document.getElementById('filtroTablaAuditoria').value || '').toLowerCase().trim();
-        if (!q) {
-            renderizarFilasBitacora(bitacoraLecturasData);
-            return;
-        }
-
-        const filtradas = bitacoraLecturasData.filter(r => {
-            const txt = `${r.usuario_nombre} ${r.usuario_login} ${r.agencia} ${r.politica_titulo} ${r.ip}`.toLowerCase();
-            return txt.includes(q);
-        });
-        renderizarFilasBitacora(filtradas);
     }
 </script>
 </body>

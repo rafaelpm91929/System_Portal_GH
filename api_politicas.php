@@ -1,5 +1,5 @@
 <?php
-// API Central y Gestor de Políticas Corporativas Protegidas
+// API Central y Gestor de Políticas Corporativas Protegidas (Portal Central GH)
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -18,7 +18,7 @@ $action = $_GET['action'] ?? ($_POST['action'] ?? 'listar');
 
 // 1. STREAM SEGURO DE ARCHIVO PDF (PARA PDF.JS)
 if ($action === 'stream_pdf') {
-    $token = $_GET['token'] ?? ($_SERVER['HTTP_X_GH_TOKEN'] ?? '');
+    $token = $_GET['token'] ?? ($_SERVER['HTTP_X_GH_TOKEN'] ?? ($_POST['token'] ?? ''));
     $esPeticionAgenciaAutorizada = ($token === 'GH_POLITICAS_SEGURA_2026_CORP');
 
     if (!isset($_SESSION['usuario_id']) && !$esPeticionAgenciaAutorizada) {
@@ -27,33 +27,33 @@ if ($action === 'stream_pdf') {
     }
 
     $id = intval($_GET['id'] ?? 0);
-    if ($id <= 0 || !$pdo) {
+    if ($id <= 0) {
         http_response_code(404);
         die("Documento no encontrado.");
     }
 
-    try {
-        $stmt = $pdo->prepare("SELECT archivo_pdf, titulo FROM politicas_corporativas WHERE id = ? AND estatus = 1 LIMIT 1");
-        $stmt->execute([$id]);
-        $doc = $stmt->fetch(PDO::FETCH_ASSOC);
+    $filePath = null;
+    if ($pdo) {
+        try {
+            $stmt = $pdo->prepare("SELECT archivo_pdf, titulo FROM politicas_corporativas WHERE id = ? AND estatus = 1 LIMIT 1");
+            $stmt->execute([$id]);
+            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$doc) {
-            http_response_code(404);
-            die("Política no disponible o inactiva.");
-        }
+            if ($doc) {
+                $possiblePath = __DIR__ . '/' . $doc['archivo_pdf'];
+                if (file_exists($possiblePath)) {
+                    $filePath = $possiblePath;
+                } else {
+                    $altPath = __DIR__ . '/uploads/politicas/' . basename($doc['archivo_pdf']);
+                    if (file_exists($altPath)) {
+                        $filePath = $altPath;
+                    }
+                }
+            }
+        } catch (Throwable $e) {}
+    }
 
-        $filePath = __DIR__ . '/' . $doc['archivo_pdf'];
-        if (!file_exists($filePath)) {
-            // Intentar buscar relativo en uploads/politicas
-            $filePath = __DIR__ . '/uploads/politicas/' . basename($doc['archivo_pdf']);
-        }
-
-        if (!file_exists($filePath)) {
-            http_response_code(404);
-            die("Archivo físico no encontrado en el servidor.");
-        }
-
-        // Enviar encabezados anti-descarga y anti-caché
+    if ($filePath && file_exists($filePath)) {
         header('Content-Type: application/pdf');
         header('Content-Length: ' . filesize($filePath));
         header('Content-Disposition: inline; filename="politica_protegida_' . $id . '.pdf"');
@@ -63,11 +63,10 @@ if ($action === 'stream_pdf') {
 
         readfile($filePath);
         exit();
-
-    } catch (Throwable $e) {
-        http_response_code(500);
-        die("Error al procesar el documento: " . $e->getMessage());
     }
+
+    http_response_code(404);
+    die("Archivo de política no disponible en el servidor.");
 }
 
 // 2. LISTADO JSON DE POLÍTICAS ACTIVAS
@@ -81,10 +80,10 @@ if ($action === 'listar') {
 
     try {
         $stmt = $pdo->query("
-            SELECT id, titulo, descripcion, categoria, version, fecha_vigencia, obligatorio_lectura, estatus, creado_en 
+            SELECT * 
             FROM politicas_corporativas 
             WHERE estatus = 1 
-            ORDER BY categoria ASC, titulo ASC
+            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
         ");
         $politicas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -101,52 +100,33 @@ if ($action === 'listar') {
     }
 }
 
-// 3. SINCRONIZAR DESDE EL PORTAL CENTRAL GH (PARA PORTALES DE AGENCIA)
+// 3. SINCRONIZAR DESDE EL PORTAL CENTRAL GH
 if ($action === 'sincronizar_central') {
     header('Content-Type: application/json; charset=utf-8');
     
-    // URL del endpoint central de Grupo Huerta
-    $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
-
-    $ctx = stream_context_create([
-        'http' => [
-            'timeout' => 8,
-            'header'  => "User-Agent: PortalAgenciaClient/1.0\r\n"
-        ],
-        'ssl' => [
-            'verify_peer' => false,
-            'verify_peer_name' => false
-        ]
-    ]);
-
-    $response = @file_get_contents($urlCentral, false, $ctx);
-    if ($response === false) {
-        echo json_encode([
-            'exito' => false, 
-            'error' => 'No se pudo contactar al Portal Central GH. Mostrando políticas locales.'
-        ]);
+    if (!$pdo) {
+        echo json_encode(['exito' => false, 'error' => 'No hay conexión a la base de datos local']);
         exit();
     }
 
-    $json = json_decode($response, true);
-    if (!$json || empty($json['exito'])) {
+    try {
+        $stmt = $pdo->query("SELECT * FROM politicas_corporativas WHERE estatus = 1 ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC");
+        $politicas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         echo json_encode([
-            'exito' => false, 
-            'error' => 'Respuesta no válida del Portal Central GH.'
-        ]);
+            'exito' => true,
+            'mensaje' => 'Políticas sincronizadas desde servidor central',
+            'total' => count($politicas),
+            'politicas' => $politicas
+        ], JSON_UNESCAPED_UNICODE);
+        exit();
+    } catch (Throwable $e) {
+        echo json_encode(['exito' => false, 'error' => $e->getMessage()]);
         exit();
     }
-
-    echo json_encode([
-        'exito' => true,
-        'mensaje' => 'Sincronización con Central GH exitosa',
-        'total' => count($json['politicas'] ?? []),
-        'politicas' => $json['politicas'] ?? []
-    ]);
-    exit();
 }
 
-// 4. REGISTRAR LECTURA DE POLÍTICA EN BITÁCORA
+// 4. REGISTRAR LECTURA DE POLÍTICA EN BITÁCORA AUDITABLE
 if ($action === 'registrar_lectura') {
     header('Content-Type: application/json; charset=utf-8');
 
@@ -160,12 +140,12 @@ if ($action === 'registrar_lectura') {
 
     $politicaId = intval($_POST['politica_id'] ?? 0);
     $politicaTitulo = trim($_POST['politica_titulo'] ?? '');
-    $usuarioId = isset($_SESSION['usuario_id']) ? intval($_SESSION['usuario_id']) : (intval($_POST['usuario_id'] ?? 0));
+    $usuarioId = isset($_SESSION['usuario_id']) ? intval($_SESSION['usuario_id']) : intval($_POST['usuario_id'] ?? 0);
     $usuarioNombre = trim($_POST['usuario_nombre'] ?? ($_SESSION['usuario_nombre'] ?? 'Colaborador'));
     $usuarioLogin = trim($_POST['usuario_login'] ?? ($_SESSION['usuario_login'] ?? 'usuario'));
     $agencia = trim($_POST['agencia'] ?? ($_SESSION['agencia'] ?? 'Grupo Huerta'));
     $ip = trim($_POST['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
-    $origen = trim($_POST['origen'] ?? ($esPeticionAgenciaAutorizada ? 'Portal Agencia' : 'Portal GH'));
+    $origen = trim($_POST['origen'] ?? ($esPeticionAgenciaAutorizada ? 'Portal ' . $agencia : 'Portal Central GH'));
 
     if ($politicaId <= 0) {
         echo json_encode(['exito' => false, 'error' => 'ID de política requerido']);
@@ -180,7 +160,7 @@ if ($action === 'registrar_lectura') {
             ");
             $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen]);
 
-            echo json_encode(['exito' => true, 'mensaje' => 'Lectura registrada correctamente']);
+            echo json_encode(['exito' => true, 'mensaje' => 'Lectura registrada correctamente en Central GH']);
             exit();
         } catch (Throwable $e) {
             echo json_encode(['exito' => false, 'error' => $e->getMessage()]);
@@ -192,7 +172,7 @@ if ($action === 'registrar_lectura') {
     exit();
 }
 
-// 5. OBTENER BITÁCORA AUDITABLE DE LECTURAS (SOLO ADMINISTRADORES)
+// 5. OBTENER BITÁCORA AUDITABLE DE LECTURAS (ADMINISTRADORES)
 if ($action === 'obtener_lecturas') {
     header('Content-Type: application/json; charset=utf-8');
 
