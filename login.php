@@ -9,16 +9,39 @@ if (file_exists('conexion.php')) {
     $pdo = null;
 }
 
+if (file_exists('permisos_helper.php')) {
+    require_once 'permisos_helper.php';
+}
+
 // Cargar información de la agencia registrada en la BD
 $agenciaInfo = null;
 if ($pdo) {
     try {
-        $stmtAg = $pdo->query("SELECT nombre, razon_social, logo_url FROM agencias ORDER BY id ASC LIMIT 1");
+        $stmtAg = $pdo->query("SELECT nombre, razon_social, logo_url, color_tema FROM agencias ORDER BY id ASC LIMIT 1");
         $agenciaInfo = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
     } catch (Throwable $e) {}
 }
 
 $nombreAgencia = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : 'AGENCIA';
+$colorTemaClave = $agenciaInfo['color_tema'] ?? ($_SESSION['color_tema'] ?? 'azul');
+$catalogoTemas = function_exists('obtenerCatalogoTemasOscuros') ? obtenerCatalogoTemasOscuros() : [];
+$temaActual = $catalogoTemas[$colorTemaClave] ?? ($catalogoTemas['azul'] ?? [
+    'clave' => 'azul',
+    'nombre' => 'Azul Obscuro (Medianoche)',
+    'bg_dark' => '#040d1a',
+    'bg_deep' => '#02070e',
+    'bg_card' => '#08162a',
+    'primary' => '#0284c7',
+    'accent' => '#38bdf8',
+    'secondary' => '#2563eb',
+    'glow' => 'rgba(2, 132, 199, 0.45)',
+    'glow_soft' => 'rgba(56, 189, 248, 0.22)',
+    'border' => 'rgba(56, 189, 248, 0.25)',
+    'three_p1' => '0x38bdf8',
+    'three_p2' => '0x2563eb',
+    'three_p3' => '0x818cf8',
+    'hex_swatch' => '#0284c7'
+]);
 
 // Detección robusta del logo registrado de la agencia
 $logoAgencia = '';
@@ -180,10 +203,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         :root {
-            --primary-glow: #0284c7;
-            --cyan-glow: #38bdf8;
-            --blue-accent: #2563eb;
-            --bg-dark: #040d1a;
+            --primary-glow: <?php echo $temaActual['glow']; ?>;
+            --cyan-glow: <?php echo $temaActual['accent']; ?>;
+            --blue-accent: <?php echo $temaActual['secondary']; ?>;
+            --bg-dark: <?php echo $temaActual['bg_dark']; ?>;
+            --bg-deep: <?php echo $temaActual['bg_deep']; ?>;
+            --card-bg: <?php echo $temaActual['bg_card']; ?>;
+            --card-border: <?php echo $temaActual['border']; ?>;
+            --primary-color: <?php echo $temaActual['primary']; ?>;
         }
 
         * {
@@ -225,9 +252,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             height: 100vh;
             z-index: 0;
             background: 
-                radial-gradient(circle at 15% 20%, rgba(2, 132, 199, 0.18) 0%, transparent 45%),
-                radial-gradient(circle at 85% 75%, rgba(37, 99, 235, 0.15) 0%, transparent 45%),
-                radial-gradient(circle at 50% 50%, rgba(6, 19, 37, 0.95) 0%, #030a16 100%);
+                radial-gradient(circle at 15% 20%, <?php echo $temaActual['glow']; ?> 0%, transparent 45%),
+                radial-gradient(circle at 85% 75%, <?php echo $temaActual['glow_soft']; ?> 0%, transparent 45%),
+                radial-gradient(circle at 50% 50%, <?php echo $temaActual['bg_card']; ?> 0%, <?php echo $temaActual['bg_dark']; ?> 100%);
             pointer-events: none;
         }
 
@@ -354,15 +381,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .login-card {
-            background: rgba(8, 22, 42, 0.78);
+            background: <?php echo $temaActual['bg_card']; ?>;
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(56, 189, 248, 0.22);
+            border: 1px solid <?php echo $temaActual['border']; ?>;
             border-radius: 24px;
             padding: 44px 36px;
             box-shadow: 
                 0 25px 50px -12px rgba(0, 0, 0, 0.75),
-                0 0 35px rgba(2, 132, 199, 0.2),
+                0 0 35px <?php echo $temaActual['glow_soft']; ?>,
                 inset 0 1px 0 rgba(255, 255, 255, 0.15);
             position: relative;
             overflow: hidden;
@@ -407,8 +434,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             justify-content: center;
             margin-bottom: 18px;
             padding: 12px 20px;
-            background: rgba(15, 34, 61, 0.6);
-            border: 1px solid rgba(56, 189, 248, 0.25);
+            background: <?php echo $temaActual['bg_deep']; ?>;
+            border: 1px solid <?php echo $temaActual['border']; ?>;
             border-radius: 18px;
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
             transition: all 0.3s ease;
@@ -495,8 +522,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .btn-submit-3d {
-            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
-            border: 1px solid rgba(56, 189, 248, 0.4);
+            background: linear-gradient(135deg, <?php echo $temaActual['primary']; ?> 0%, <?php echo $temaActual['secondary']; ?> 100%);
+            border: 1px solid <?php echo $temaActual['border']; ?>;
             color: #ffffff;
             font-weight: 700;
             font-size: 1rem;
@@ -509,7 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             justify-content: center;
             gap: 10px;
             cursor: pointer;
-            box-shadow: 0 6px 20px rgba(2, 132, 199, 0.4);
+            box-shadow: 0 6px 20px <?php echo $temaActual['glow']; ?>;
             transition: all 0.25s ease;
             position: relative;
             overflow: hidden;
@@ -528,9 +555,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .btn-submit-3d:hover {
-            background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+            background: linear-gradient(135deg, <?php echo $temaActual['secondary']; ?> 0%, <?php echo $temaActual['primary']; ?> 100%);
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(2, 132, 199, 0.55), 0 0 25px rgba(56, 189, 248, 0.35);
+            box-shadow: 0 10px 25px <?php echo $temaActual['glow']; ?>, 0 0 25px <?php echo $temaActual['glow_soft']; ?>;
         }
 
         .btn-submit-3d:hover::after {
@@ -557,7 +584,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             display: none;
             align-items: center;
             justify-content: center;
-            background: radial-gradient(circle at center, rgba(3, 15, 33, 0.94) 0%, rgba(2, 6, 15, 0.98) 100%);
+            background: radial-gradient(circle at center, <?php echo $temaActual['bg_deep']; ?> 0%, <?php echo $temaActual['bg_dark']; ?> 100%);
             backdrop-filter: blur(28px);
             -webkit-backdrop-filter: blur(28px);
             opacity: 0;
@@ -597,8 +624,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             position: absolute;
             inset: 0;
             border-radius: 50%;
-            border: 2px dashed rgba(56, 189, 248, 0.65);
-            box-shadow: 0 0 35px rgba(56, 189, 248, 0.4), inset 0 0 25px rgba(56, 189, 248, 0.25);
+            border: 2px dashed <?php echo $temaActual['accent']; ?>;
+            box-shadow: 0 0 35px <?php echo $temaActual['glow']; ?>, inset 0 0 25px <?php echo $temaActual['glow_soft']; ?>;
             animation: spinHolo 8s linear infinite;
         }
 
@@ -606,10 +633,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             position: absolute;
             inset: 16px;
             border-radius: 50%;
-            border: 2px solid rgba(37, 99, 235, 0.8);
-            border-top-color: #38bdf8;
-            border-bottom-color: #38bdf8;
-            box-shadow: 0 0 25px rgba(37, 99, 235, 0.5);
+            border: 2px solid <?php echo $temaActual['secondary']; ?>;
+            border-top-color: <?php echo $temaActual['accent']; ?>;
+            border-bottom-color: <?php echo $temaActual['accent']; ?>;
+            box-shadow: 0 0 25px <?php echo $temaActual['glow_soft']; ?>;
             animation: spinHoloRev 4.5s linear infinite;
         }
 
@@ -617,7 +644,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             position: absolute;
             inset: -20px;
             border-radius: 50%;
-            border: 1px solid rgba(56, 189, 248, 0.6);
+            border: 1px solid <?php echo $temaActual['accent']; ?>;
             opacity: 0;
             animation: shockwavePulse 1.8s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
         }
@@ -642,11 +669,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 145px;
             height: 145px;
             border-radius: 50%;
-            background: radial-gradient(circle at 35% 35%, #0f2747 0%, #06152b 100%);
-            border: 2px solid rgba(56, 189, 248, 0.5);
+            background: radial-gradient(circle at 35% 35%, <?php echo $temaActual['bg_card']; ?> 0%, <?php echo $temaActual['bg_dark']; ?> 100%);
+            border: 2px solid <?php echo $temaActual['accent']; ?>;
             box-shadow: 
-                0 0 40px rgba(56, 189, 248, 0.55),
-                inset 0 0 20px rgba(56, 189, 248, 0.4);
+                0 0 40px <?php echo $temaActual['glow']; ?>,
+                inset 0 0 20px <?php echo $temaActual['glow_soft']; ?>;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -665,13 +692,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             max-width: 105px;
             max-height: 85px;
             object-fit: contain;
-            filter: drop-shadow(0 4px 15px rgba(0,0,0,0.7)) drop-shadow(0 0 10px rgba(56, 189, 248, 0.5));
+            filter: drop-shadow(0 4px 15px rgba(0,0,0,0.7)) drop-shadow(0 0 10px <?php echo $temaActual['glow_soft']; ?>);
         }
 
         .holo-logo-capsule .fallback-icon {
             font-size: 3.2rem;
-            color: #38bdf8;
-            filter: drop-shadow(0 0 15px #38bdf8);
+            color: <?php echo $temaActual['accent']; ?>;
+            filter: drop-shadow(0 0 15px <?php echo $temaActual['accent']; ?>);
         }
 
         /* Insignia y Títulos */
@@ -704,11 +731,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin-bottom: 8px;
             color: #ffffff;
             letter-spacing: -0.5px;
-            text-shadow: 0 0 25px rgba(56, 189, 248, 0.5);
+            text-shadow: 0 0 25px <?php echo $temaActual['glow_soft']; ?>;
         }
 
         .holo-welcome-name span {
-            background: linear-gradient(135deg, #38bdf8 0%, #60a5fa 100%);
+            background: linear-gradient(135deg, <?php echo $temaActual['accent']; ?> 0%, #ffffff 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -720,7 +747,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         .holo-agency-name strong {
-            color: #38bdf8;
+            color: <?php echo $temaActual['accent']; ?>;
         }
 
         /* Barra de progreso de carga cibernética */
@@ -728,7 +755,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             width: 100%;
             max-width: 380px;
             background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+            border: 1px solid <?php echo $temaActual['border']; ?>;
             border-radius: 12px;
             height: 10px;
             overflow: hidden;
@@ -740,8 +767,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .holo-progress-bar {
             height: 100%;
             width: 0%;
-            background: linear-gradient(90deg, #0284c7 0%, #38bdf8 50%, #60a5fa 100%);
-            box-shadow: 0 0 18px #38bdf8;
+            background: linear-gradient(90deg, <?php echo $temaActual['primary']; ?> 0%, <?php echo $temaActual['accent']; ?> 50%, <?php echo $temaActual['secondary']; ?> 100%);
+            box-shadow: 0 0 18px <?php echo $temaActual['accent']; ?>;
             border-radius: 12px;
             transition: width 0.05s linear;
         }
@@ -819,7 +846,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <h1 class="hero-title mb-0">
             PORTAL<br>
-            <span style="color: #38bdf8;"><?php echo htmlspecialchars($nombreAgencia); ?></span>
+            <span style="color: <?php echo $temaActual['accent']; ?>;"><?php echo htmlspecialchars($nombreAgencia); ?></span>
         </h1>
     </div>
 
@@ -933,9 +960,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const colors = new Float32Array(particleCount * 3);
         particleSpeeds = [];
 
-        const colorCyan = new THREE.Color(0x38bdf8);
-        const colorBlue = new THREE.Color(0x2563eb);
-        const colorIndigo = new THREE.Color(0x818cf8);
+        const colorCyan = new THREE.Color(<?php echo $temaActual['three_p1']; ?>);
+        const colorBlue = new THREE.Color(<?php echo $temaActual['three_p2']; ?>);
+        const colorIndigo = new THREE.Color(<?php echo $temaActual['three_p3']; ?>);
 
         for (let i = 0; i < particleCount; i++) {
             positions[i * 3]     = (Math.random() - 0.5) * 220;
@@ -963,7 +990,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         const ctx = spriteCanvas.getContext('2d');
         const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
         grad.addColorStop(0, 'rgba(255,255,255,1)');
-        grad.addColorStop(0.3, 'rgba(56,189,248,0.8)');
+        grad.addColorStop(0.3, '<?php echo $temaActual['accent']; ?>');
         grad.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -988,7 +1015,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Geometría 3D Principal (Icosaedro wireframe con resplandor)
         const icosaGeo = new THREE.IcosahedronGeometry(18, 1);
         const icosaMat = new THREE.MeshBasicMaterial({
-            color: 0x38bdf8,
+            color: <?php echo $temaActual['three_p1']; ?>,
             wireframe: true,
             transparent: true,
             opacity: 0.28
@@ -1000,7 +1027,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Geometría concéntrica interior
         const innerGeo = new THREE.OctahedronGeometry(10, 0);
         const innerMat = new THREE.MeshBasicMaterial({
-            color: 0x60a5fa,
+            color: <?php echo $temaActual['three_p2']; ?>,
             wireframe: true,
             transparent: true,
             opacity: 0.35
@@ -1015,7 +1042,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         for (let j = 0; j < 6; j++) {
             const satGeo = new THREE.TetrahedronGeometry(1.6, 0);
             const satMat = new THREE.MeshBasicMaterial({
-                color: (j % 2 === 0) ? 0x38bdf8 : 0x818cf8,
+                color: (j % 2 === 0) ? <?php echo $temaActual['three_p1']; ?> : <?php echo $temaActual['three_p3']; ?>,
                 wireframe: true,
                 transparent: true,
                 opacity: 0.65

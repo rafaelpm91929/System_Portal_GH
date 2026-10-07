@@ -75,6 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $telefono = trim($_POST['telefono_sistemas'] ?? '');
         $correo = trim($_POST['correo_sistemas'] ?? '');
         $mapsUrl = trim($_POST['maps_url'] ?? '');
+        $colorTema = trim($_POST['color_tema'] ?? ($agenciaData['color_tema'] ?? 'azul'));
 
         if (empty($nombre) || empty($razon_social) || empty($rfc)) {
             $error = "Por favor completa los campos obligatorios: Nombre, Razón Social y RFC.";
@@ -122,12 +123,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 if (empty($error)) {
                     $nombreAnterior = $agenciaData['nombre'] ?? '';
                     if ($agencia_id > 0) {
+                        try { $pdo->exec("ALTER TABLE agencias ADD COLUMN color_tema VARCHAR(50) DEFAULT 'azul'"); } catch (Throwable $t) {}
                         $stmtUpd = $pdo->prepare("
                             UPDATE agencias 
-                            SET nombre=?, razon_social=?, rfc=?, direccion=?, encargado_sistemas=?, telefono_sistemas=?, correo_sistemas=?, logo_url=?, foto_url=?, maps_url=? 
+                            SET nombre=?, razon_social=?, rfc=?, direccion=?, encargado_sistemas=?, telefono_sistemas=?, correo_sistemas=?, logo_url=?, foto_url=?, maps_url=?, color_tema=? 
                             WHERE id=?
                         ");
-                        $stmtUpd->execute([$nombre, $razon_social, $rfc, $direccion, $encargado, $telefono, $correo, $logoUrl, $fotoUrl, $mapsUrl, $agencia_id]);
+                        $stmtUpd->execute([$nombre, $razon_social, $rfc, $direccion, $encargado, $telefono, $correo, $logoUrl, $fotoUrl, $mapsUrl, $colorTema, $agencia_id]);
+                        $_SESSION['color_tema'] = $colorTema;
                     }
 
                     // Sincronizar automáticamente A TODOS LOS USUARIOS con el nombre de la agencia registrada
@@ -149,6 +152,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
             } catch (PDOException $e) {
                 $error = "Error al actualizar la agencia: " . $e->getMessage();
+            }
+        }
+    }
+
+    // ACCIÓN: CAMBIAR COLOR INSTITUCIONAL DEL TEMA OBSCURO
+    elseif ($accion === 'cambiar_color_tema') {
+        $agencia_id = intval($_POST['agencia_id'] ?? 0);
+        $colorTema = trim($_POST['color_tema'] ?? 'azul');
+        if ($agencia_id > 0) {
+            try {
+                try { $pdo->exec("ALTER TABLE agencias ADD COLUMN color_tema VARCHAR(50) DEFAULT 'azul'"); } catch (Throwable $t) {}
+                $stmtUpd = $pdo->prepare("UPDATE agencias SET color_tema = ? WHERE id = ?");
+                $stmtUpd->execute([$colorTema, $agencia_id]);
+                $_SESSION['color_tema'] = $colorTema;
+
+                $catalogo = function_exists('obtenerCatalogoTemasOscuros') ? obtenerCatalogoTemasOscuros() : [];
+                $nombreTema = $catalogo[$colorTema]['nombre'] ?? $colorTema;
+                $mensaje = "Paleta de color obscuro cambiada a <strong>" . htmlspecialchars($nombreTema) . "</strong> con éxito para el login y todos los módulos.";
+
+                // Recargar datos actualizados de la agencia
+                $stmt = $pdo->prepare("SELECT * FROM agencias WHERE id=? LIMIT 1");
+                $stmt->execute([$agencia_id]);
+                $agenciaData = $stmt->fetch(PDO::FETCH_ASSOC);
+            } catch (PDOException $e) {
+                $error = "Error al actualizar el color: " . $e->getMessage();
             }
         }
     }
@@ -247,6 +275,11 @@ if ($agenciaData && isset($agenciaData['id'])) {
         // Ignorar error secundario
     }
 }
+
+// Cargar catálogo de temas oscuros y tema activo
+$catalogoTemas = function_exists('obtenerCatalogoTemasOscuros') ? obtenerCatalogoTemasOscuros() : [];
+$temaActivo = function_exists('obtenerTemaColorActivo') ? obtenerTemaColorActivo($pdo) : ($catalogoTemas['azul'] ?? []);
+$colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul');
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -254,6 +287,7 @@ if ($agenciaData && isset($agenciaData['id'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Datos de la Agencia - Portal de Sistemas Grupo Huerta</title>
+    <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -560,6 +594,56 @@ if ($agenciaData && isset($agenciaData['id'])) {
             </div>
         </div>
 
+        <!-- CARD 4: COLOR DEL PORTAL / TEMA OBSCURO -->
+        <div class="col-12">
+            <div class="card-custom">
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 border-bottom border-secondary border-opacity-25 pb-3 mb-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="p-3 rounded-3 fs-4" style="background: rgba(255, 255, 255, 0.05); color: var(--portal-theme-accent, #38bdf8);">
+                            <i class="bi bi-palette-fill"></i>
+                        </div>
+                        <div>
+                            <h5 class="fw-bold mb-0 text-white">Color Institucional del Portal</h5>
+                            <small class="text-secondary">Paleta oscura aplicada automáticamente al fondo 3D del login, barras y módulos</small>
+                        </div>
+                    </div>
+                    <div>
+                        <span class="badge px-3 py-2 fs-6 rounded-pill d-inline-flex align-items-center gap-2" style="background: <?php echo $temaActivo['bg_deep'] ?? '#02070e'; ?>; border: 1px solid <?php echo $temaActivo['accent'] ?? '#38bdf8'; ?>; color: <?php echo $temaActivo['accent'] ?? '#38bdf8'; ?>;">
+                            <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background: <?php echo $temaActivo['hex_swatch'] ?? '#0284c7'; ?>; box-shadow: 0 0 10px <?php echo $temaActivo['hex_swatch'] ?? '#0284c7'; ?>;"></span>
+                            <?php echo htmlspecialchars($temaActivo['nombre'] ?? 'Azul Obscuro'); ?>
+                        </span>
+                    </div>
+                </div>
+
+                <div class="row g-3 align-items-center">
+                    <div class="col-lg-4">
+                        <p class="text-secondary small mb-0">
+                            Haz clic en cualquiera de las tonalidades oscuras para cambiar el color del sistema al instante. Se sincronizará en tiempo real con el fondo del login interactivo y todas las secciones.
+                        </p>
+                    </div>
+                    <div class="col-lg-8">
+                        <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                            <?php foreach ($catalogoTemas as $claveT => $infoT): ?>
+                                <?php $esSeleccionado = ($colorClaveActual === $claveT); ?>
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="accion" value="cambiar_color_tema">
+                                    <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 0; ?>">
+                                    <input type="hidden" name="color_tema" value="<?php echo $claveT; ?>">
+                                    <button type="submit" class="btn btn-sm rounded-pill px-3 py-2 d-inline-flex align-items-center gap-2 <?php echo $esSeleccionado ? 'fw-bold shadow' : 'btn-outline-secondary text-white'; ?>" style="<?php echo $esSeleccionado ? ('border: 2px solid ' . $infoT['accent'] . '; background: ' . $infoT['bg_deep'] . '; color: ' . $infoT['accent'] . ' !important;') : 'background: rgba(255,255,255,0.03);'; ?>">
+                                        <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background: <?php echo $infoT['hex_swatch']; ?>; box-shadow: 0 0 8px <?php echo $infoT['hex_swatch']; ?>;"></span>
+                                        <span><?php echo htmlspecialchars($infoT['nombre']); ?></span>
+                                        <?php if ($esSeleccionado): ?>
+                                            <i class="bi bi-check-circle-fill ms-1" style="color: <?php echo $infoT['accent']; ?>;"></i>
+                                        <?php endif; ?>
+                                    </button>
+                                </form>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- SECCIÓN: ÁREAS Y DEPARTAMENTOS DE LA AGENCIA -->
@@ -697,6 +781,21 @@ if ($agenciaData && isset($agenciaData['id'])) {
                         <div class="col-md-12">
                             <label class="form-label small fw-bold text-secondary">Correo Electrónico de Sistemas</label>
                             <input type="email" name="correo_sistemas" class="form-control" value="<?php echo htmlspecialchars($agenciaData['correo_sistemas'] ?? ''); ?>">
+                        </div>
+
+                        <hr class="my-3 border-secondary border-opacity-50">
+
+                        <!-- COLOR DEL PORTAL / TEMA OBSCURO -->
+                        <div class="col-md-12">
+                            <label class="form-label small fw-bold text-info"><i class="bi bi-palette-fill me-1"></i> Color del Portal / Tema Obscuro (Login y Módulos)</label>
+                            <select name="color_tema" class="form-select" id="selectorColorTemaModal">
+                                <?php foreach ($catalogoTemas as $claveT => $infoT): ?>
+                                    <option value="<?php echo $claveT; ?>" <?php echo ($colorClaveActual === $claveT) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($infoT['nombre']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <small class="text-muted fs-7 d-block mt-1">Elige la paleta oscura oficial que teñirá el fondo 3D del login interactivo y las secciones del sistema.</small>
                         </div>
 
                         <hr class="my-3 border-secondary border-opacity-50">
