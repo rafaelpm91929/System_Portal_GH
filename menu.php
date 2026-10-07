@@ -33,7 +33,7 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal de Sistemas - Dirección Grupo Huerta</title>
+    <title>Portal Grupo Huerta</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
@@ -204,7 +204,7 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 <div class="top-navbar d-flex justify-content-between align-items-center">
     <div class="d-flex align-items-center gap-2">
         <i class="bi bi-shield-lock-fill text-primary fs-4"></i>
-        <span class="fw-bold tracking-wide">GRUPO HUERTA <span class="text-secondary fw-normal">| Portal Maestro Central</span></span>
+        <span class="fw-bold tracking-wide">Portal Grupo Huerta</span>
     </div>
     <div class="d-flex align-items-center gap-3">
         <div class="text-end d-none d-md-block">
@@ -220,8 +220,8 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 <!-- Header Principal -->
 <div class="header-section">
     <div class="master-badge"><i class="bi bi-shield-check"></i> DIRECCIÓN CENTRAL MAESTRA</div>
-    <h1 class="header-title">Portal Dirección de Sistemas</h1>
-    <p class="header-desc">Módulos autorizados para tu perfil en los servicios de Sistemas Grupo Huerta.</p>
+    <h1 class="header-title">Portal Grupo Huerta</h1>
+    <p class="header-desc">Módulos autorizados para tu perfil en los servicios de Grupo Huerta.</p>
 </div>
 
 <!-- Contenedor con los Módulos Permitidos -->

@@ -713,7 +713,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         <div class="d-none d-md-flex align-items-center gap-2">
             <i class="bi bi-shield-check text-warning fs-5"></i>
             <span class="fw-bold tracking-wide" style="font-size: 0.92rem;">
-                GRUPO HUERTA <span class="text-secondary fw-normal">| Portal Dirección Central</span>
+                PORTAL GRUPO HUERTA
             </span>
         </div>
     </div>
