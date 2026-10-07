@@ -465,6 +465,13 @@ function asegurarTablaPoliticas($pdo = null) {
                     fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
+            // Auto-migración SQLite: Asegurar columnas en caso de tabla preexistente
+            $colsSqlite = ['area', 'subarea', 'categoria', 'version', 'fecha_vigencia', 'obligatorio_lectura', 'creado_por', 'estatus'];
+            foreach ($colsSqlite as $col) {
+                try {
+                    $pdo->exec("ALTER TABLE politicas_corporativas ADD COLUMN {$col} TEXT");
+                } catch (Throwable $t) {}
+            }
         } else {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
