@@ -25,7 +25,9 @@ $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador');
 $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario');
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
-$esAdmin = in_array($rolActual, ['superadmin', 'admin']);
+// En el Portal Central Grupo Huerta (rama gh), la administración y borrado de documentos/avisos está habilitada para gestores
+$esAdmin = true;
+$puedeEliminar = true;
 $agenciaUsuario = $_SESSION['agencia'] ?? 'Dirección General Grupo Huerta';
 
 // Obtener IP real del usuario para auditoría / marcas de agua
@@ -43,8 +45,8 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     $accion = $_POST['accion'] ?? '';
 
-    // ACCIÓN: SUBIR NUEVO DOCUMENTO / AVISO (ADMIN)
-    if ($accion === 'subir_documento' && $esAdmin) {
+    // ACCIÓN: SUBIR NUEVO DOCUMENTO / AVISO
+    if ($accion === 'subir_documento') {
         $tipo = trim($_POST['tipo'] ?? 'formato');
         if (!in_array($tipo, ['formato', 'manual', 'aviso'])) {
             $tipo = 'formato';
@@ -87,10 +89,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 }
             }
 
-            // B. Si es aviso y NO subieron imagen, convertir el texto en tarjeta gráfica oficial SVG
+            // B. Si es aviso y NO subieron imagen física (o pusieron solo texto), convertir el texto en imagen institucional oficial SVG
             if ($tipo === 'aviso' && empty($rutaImagen)) {
                 $svgContenido = generarImagenAvisoSVG($titulo, $descripcion, $prioridad, $categoria, $codigo, date('d/m/Y'), $nombreUsuario);
-                $nombreLimpioSvg = 'aviso_card_' . time() . '_' . rand(100, 999) . '.svg';
+                $codLimpio = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $codigo);
+                $nombreLimpioSvg = 'aviso_card_' . $codLimpio . '_' . time() . '_' . rand(100, 999) . '.svg';
                 $rutaFisicaSvg = $dirDestino . $nombreLimpioSvg;
                 if (@file_put_contents($rutaFisicaSvg, $svgContenido)) {
                     $rutaImagen = 'uploads/compliance/' . $nombreLimpioSvg;
@@ -148,7 +151,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $obligatorio,
                         $nombreUsuario
                     ]);
-                    $mensaje = "El documento " . htmlspecialchars($codigo) . " ha sido publicado exitosamente en Compliance.";
+                    $mensaje = "El registro " . htmlspecialchars($codigo) . " ha sido publicado exitosamente en Compliance.";
+                    // Cambiar a la sección respectiva para visualizar el nuevo registro
+                    $seccionActiva = ($tipo === 'aviso') ? 'avisos' : (($tipo === 'manual') ? 'manuales' : 'formatos');
                 } catch (Throwable $eIns) {
                     $error = "Error al registrar en la base de datos: " . $eIns->getMessage();
                 }
@@ -156,12 +161,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
-    // ACCIÓN: ELIMINAR DOCUMENTO (ADMIN)
-    if ($accion === 'eliminar_documento' && $esAdmin) {
+    // ACCIÓN: ELIMINAR DOCUMENTO / AVISO (PORTAL CENTRAL GH)
+    if ($accion === 'eliminar_documento') {
         $docId = (int)($_POST['documento_id'] ?? 0);
+        $seccionDestino = $_POST['seccion'] ?? '';
         if ($docId > 0) {
             try {
-                $stmtDoc = $pdo->prepare("SELECT archivo_url, imagen_url FROM compliance_documentos WHERE id = ?");
+                $stmtDoc = $pdo->prepare("SELECT id, codigo, tipo, titulo, archivo_url, imagen_url FROM compliance_documentos WHERE id = ?");
                 $stmtDoc->execute([$docId]);
                 $docFila = $stmtDoc->fetch(PDO::FETCH_ASSOC);
                 if ($docFila) {
@@ -171,13 +177,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     if (!empty($docFila['imagen_url']) && file_exists(__DIR__ . '/' . $docFila['imagen_url'])) {
                         @unlink(__DIR__ . '/' . $docFila['imagen_url']);
                     }
-                }
 
-                $stmtDel = $pdo->prepare("DELETE FROM compliance_documentos WHERE id = ?");
-                $stmtDel->execute([$docId]);
-                $mensaje = "El documento ha sido eliminado correctamente del catálogo de Compliance.";
+                    $stmtDel = $pdo->prepare("DELETE FROM compliance_documentos WHERE id = ?");
+                    $stmtDel->execute([$docId]);
+                    $tipoTxt = ($docFila['tipo'] === 'aviso') ? 'Aviso' : (($docFila['tipo'] === 'manual') ? 'Manual' : 'Formato');
+                    $mensaje = "{$tipoTxt} [" . htmlspecialchars($docFila['codigo'] ?? '') . "] eliminado exitosamente del catálogo.";
+                    if (in_array($seccionDestino, ['principal', 'formatos', 'manuales', 'avisos'])) {
+                        $seccionActiva = $seccionDestino;
+                    }
+                } else {
+                    $error = "El registro solicitado no fue encontrado o ya fue eliminado.";
+                }
             } catch (Throwable $eDel) {
-                $error = "Error al eliminar el documento: " . $eDel->getMessage();
+                $error = "Error al eliminar el registro: " . $eDel->getMessage();
             }
         }
     }
@@ -206,14 +218,19 @@ if ($pdo) {
         $stmtA = $pdo->query("SELECT * FROM compliance_documentos WHERE tipo = 'aviso' AND estatus = 1 ORDER BY id DESC");
         $avisos = $stmtA ? $stmtA->fetchAll(PDO::FETCH_ASSOC) : [];
 
-        // Asegurar que cada aviso tenga su imagen generada si está vacía
+        // Asegurar que cada aviso tenga su imagen generada si está vacía o es basada en texto
         foreach ($avisos as &$avItem) {
+            $necesitaGenerar = false;
             if (empty($avItem['imagen_url'])) {
-                $svgFile = 'uploads/compliance/aviso_' . $avItem['codigo'] . '.svg';
-                if (!file_exists(__DIR__ . '/' . $svgFile)) {
-                    $svgBody = generarImagenAvisoSVG($avItem['titulo'], $avItem['descripcion'], $avItem['prioridad'], $avItem['categoria'], $avItem['codigo'], $avItem['fecha_publicacion'], $avItem['creado_por'] ?? 'Dirección General');
-                    @file_put_contents(__DIR__ . '/' . $svgFile, $svgBody);
-                }
+                $necesitaGenerar = true;
+            } elseif (!file_exists(__DIR__ . '/' . $avItem['imagen_url']) && strpos($avItem['imagen_url'], '.svg') !== false) {
+                $necesitaGenerar = true;
+            }
+            if ($necesitaGenerar) {
+                $codLimpio = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $avItem['codigo']);
+                $svgFile = 'uploads/compliance/aviso_' . $codLimpio . '_' . $avItem['id'] . '.svg';
+                $svgBody = generarImagenAvisoSVG($avItem['titulo'], $avItem['descripcion'], $avItem['prioridad'], $avItem['categoria'], $avItem['codigo'], $avItem['fecha_publicacion'], $avItem['creado_por'] ?? 'Dirección General');
+                @file_put_contents(__DIR__ . '/' . $svgFile, $svgBody);
                 $avItem['imagen_url'] = $svgFile;
                 try {
                     $updImg = $pdo->prepare("UPDATE compliance_documentos SET imagen_url = ? WHERE id = ?");
@@ -1026,7 +1043,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <i class="bi bi-book-half"></i> Consultar Manuales
                     </button>
                     <button class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
-                        <i class="bi bi-megaphone-fill"></i> Ver Galería de Avisos
+                        <i class="bi bi-megaphone-fill"></i> Ver Avisos
                     </button>
                 </div>
             </div>
@@ -1064,7 +1081,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number"><?php echo $totalAvisos; ?></div>
                             <div class="kpi-metric-label">Avisos y Circulares</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Galería visual y comunicados</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Comunicados y circulares</div>
                         </div>
                         <div class="kpi-icon-box">
                             <i class="bi bi-megaphone-fill"></i>
@@ -1127,10 +1144,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <div class="p-4 rounded-4" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                                <i class="bi bi-images text-warning"></i> Galería de Avisos
+                                <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                             </h3>
                             <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('avisos')">
-                                Ver galería <i class="bi bi-arrow-right"></i>
+                                Ver avisos <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
 
@@ -1204,19 +1221,18 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                             <i class="bi bi-eye"></i> Visualizar
                                         </button>
                                         <?php if (!empty($fmt['archivo_url'])): ?>
-                                            <a href="<?php echo htmlspecialchars($fmt['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3">
+                                            <a href="<?php echo htmlspecialchars($fmt['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3" title="Descargar Formato">
                                                 <i class="bi bi-download"></i>
                                             </a>
                                         <?php endif; ?>
-                                        <?php if ($esAdmin): ?>
-                                            <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este formato oficial?');" class="m-0">
-                                                <input type="hidden" name="accion" value="eliminar_documento">
-                                                <input type="hidden" name="documento_id" value="<?php echo $fmt['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3" title="Eliminar Formato">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
+                                        <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este formato oficial?');" class="m-0">
+                                            <input type="hidden" name="accion" value="eliminar_documento">
+                                            <input type="hidden" name="documento_id" value="<?php echo $fmt['id']; ?>">
+                                            <input type="hidden" name="seccion" value="formatos">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3 d-inline-flex align-items-center gap-1" title="Eliminar Formato">
+                                                <i class="bi bi-trash3-fill"></i> Borrar
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -1280,19 +1296,17 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                             <i class="bi bi-book"></i> Consultar Manual
                                         </button>
                                         <?php if (!empty($man['archivo_url'])): ?>
-                                            <a href="<?php echo htmlspecialchars($man['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3">
+                                            <a href="<?php echo htmlspecialchars($man['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3" title="Descargar Manual">
                                                 <i class="bi bi-download"></i>
                                             </a>
                                         <?php endif; ?>
-                                        <?php if ($esAdmin): ?>
-                                            <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este manual?');" class="m-0">
-                                                <input type="hidden" name="accion" value="eliminar_documento">
-                                                <input type="hidden" name="documento_id" value="<?php echo $man['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3" title="Eliminar Manual">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
+                                        <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este manual?');" class="m-0">
+                                            <input type="hidden" name="accion" value="eliminar_documento">
+                                            <input type="hidden" name="documento_id" value="<?php echo $man['id']; ?>">
+                                            <input type="hidden" name="seccion" value="manuales">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3 px-3 d-inline-flex align-items-center gap-1" title="Eliminar Manual">
+                                                <i class="bi bi-trash3-fill"></i> Borrar
+                                            </button>
                                     </div>
                                 </div>
                             </div>
@@ -1311,9 +1325,9 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
                 <div>
                     <h2 class="h3 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                        <i class="bi bi-images text-warning"></i> Galería de Avisos & Circulares
+                        <i class="bi bi-megaphone-fill text-warning"></i> Avisos
                     </h2>
-                    <p class="text-secondary small mb-0">Comunicados oficiales, avisos de privacidad y alertas en formato de galería gráfica continua.</p>
+                    <p class="text-secondary small mb-0">Comunicados oficiales, avisos de privacidad y alertas institucionales de Grupo Huerta.</p>
                 </div>
                 <div class="d-flex align-items-center gap-2">
                     <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="btnToggleVistaAvisos" onclick="toggleVistaAvisos()">
@@ -1330,12 +1344,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </div>
             <?php else: ?>
 
-                <!-- 1. VISTA GALERÍA (CARRUSEL AUTOMÁTICO INTERACTIVO) -->
+                <!-- 1. VISTA CARRUSEL CONTINUO DE AVISOS -->
                 <div class="avisos-gallery-wrapper" id="vistaGaleriaAvisos">
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="d-flex align-items-center gap-2">
                             <span class="badge bg-warning text-dark fw-bold px-3 py-1.5 rounded-pill">
-                                <i class="bi bi-play-circle-fill me-1"></i> GALERÍA ACTIVA
+                                <i class="bi bi-megaphone-fill me-1"></i> AVISOS
                             </span>
                             <span class="text-secondary small" id="indicadorGaleriaTexto">Aviso 1 de <?php echo count($avisos); ?></span>
                         </div>
@@ -1357,7 +1371,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <i class="bi bi-chevron-right"></i>
                         </button>
 
-                        <!-- Diapositivas de la Galería -->
+                        <!-- Diapositivas de Avisos -->
                         <?php foreach ($avisos as $index => $av): 
                             $imgSrc = !empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg';
                             $pClass = 'priority-normal';
@@ -1390,15 +1404,14 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                                 <i class="bi bi-download me-1"></i> Anexo
                                             </a>
                                         <?php endif; ?>
-                                        <?php if ($esAdmin): ?>
-                                            <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este aviso de la galería?');" class="m-0">
-                                                <input type="hidden" name="accion" value="eliminar_documento">
-                                                <input type="hidden" name="documento_id" value="<?php echo $av['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle" title="Eliminar Aviso" style="width: 32px; height: 32px; padding: 0;">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
+                                        <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este aviso?');" class="m-0">
+                                            <input type="hidden" name="accion" value="eliminar_documento">
+                                            <input type="hidden" name="documento_id" value="<?php echo $av['id']; ?>">
+                                            <input type="hidden" name="seccion" value="avisos">
+                                            <button type="submit" class="btn btn-sm btn-danger text-white fw-bold rounded-pill px-3 d-inline-flex align-items-center gap-1" title="Eliminar Aviso">
+                                                <i class="bi bi-trash3-fill"></i> Borrar Aviso
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -1444,7 +1457,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
                                 <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-10">
                                     <span class="text-secondary" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
-                                    <div class="d-flex gap-2">
+                                    <div class="d-flex align-items-center gap-2">
                                         <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
                                             <i class="bi bi-arrows-fullscreen"></i>
                                         </button>
@@ -1453,6 +1466,14 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                                 <i class="bi bi-download"></i>
                                             </a>
                                         <?php endif; ?>
+                                        <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este aviso?');" class="m-0">
+                                            <input type="hidden" name="accion" value="eliminar_documento">
+                                            <input type="hidden" name="documento_id" value="<?php echo $av['id']; ?>">
+                                            <input type="hidden" name="seccion" value="avisos">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3 d-inline-flex align-items-center gap-1" title="Eliminar Aviso">
+                                                <i class="bi bi-trash3-fill"></i> Borrar
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>
@@ -1487,7 +1508,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div class="col-12 col-md-4">
                             <label class="form-label-gold">Sección / Tipo *</label>
                             <select name="tipo" id="selTipoDoc" class="form-select form-select-gold" required onchange="onTipoDocChange()">
-                                <option value="aviso" selected>Avisos &amp; Comunicados (Galería)</option>
+                                <option value="aviso" selected>Avisos</option>
                                 <option value="formato">Formatos Oficiales</option>
                                 <option value="manual">Manuales de Procedimiento</option>
                             </select>
@@ -1533,18 +1554,18 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label-gold">Contenido / Descripción</label>
-                            <textarea name="descripcion" class="form-control form-control-gold" rows="3" placeholder="Mensaje del aviso o alcance del documento"></textarea>
+                            <label class="form-label-gold">Texto / Contenido del Aviso *</label>
+                            <textarea name="descripcion" class="form-control form-control-gold" rows="4" placeholder="Escribe aquí el texto del aviso (si no subes imagen, este texto se convertirá automáticamente en una imagen ejecutiva oficial con sellos corporativos)..."></textarea>
                         </div>
 
                         <!-- Campo Imagen para Avisos -->
                         <div class="col-12" id="boxImagenAviso">
                             <label class="form-label-gold">
-                                <i class="bi bi-image text-warning"></i> Imagen del Aviso (Galería)
+                                <i class="bi bi-image text-warning"></i> Imagen del Aviso (Opcional)
                             </label>
                             <input type="file" name="imagen_aviso" class="form-control form-control-gold" accept=".jpg,.jpeg,.png,.webp,.svg,.gif">
                             <div class="form-text text-secondary" style="font-size: 0.74rem;">
-                                <i class="bi bi-magic text-warning"></i> <strong>Conversión Automática:</strong> Si no adjuntas una imagen, el sistema convertirá automáticamente el texto en una tarjeta gráfica oficial de alta resolución.
+                                <i class="bi bi-magic text-warning"></i> <strong>Conversión Automática:</strong> Si no adjuntas una imagen física, el sistema convertirá automáticamente el texto en una imagen gráfica oficial de alta resolución.
                             </div>
                         </div>
 
@@ -1798,7 +1819,7 @@ function toggleVistaAvisos() {
         if (esGal) {
             gal.classList.add('d-none');
             cuad.classList.remove('d-none');
-            if (txt) txt.innerText = 'Ver Galería';
+            if (txt) txt.innerText = 'Ver Carrusel de Avisos';
             pausarAutoPlay();
         } else {
             gal.classList.remove('d-none');
