@@ -131,15 +131,15 @@ ksort($areasEstructuradas);
 // Función auxiliar para iconos representativos por área
 function obtenerIconoArea($nombreArea) {
     $n = strtolower($nombreArea);
-    if (strpos($n, 'sistema') !== false || strpos($n, 'desarrollo') !== false) return 'bi-cpu-fill text-info';
-    if (strpos($n, 'equipo') !== false || strpos($n, 'ti') !== false || strpos($n, 'red') !== false) return 'bi-hdd-network-fill text-primary';
-    if (strpos($n, 'seguridad') !== false || strpos($n, 'ciber') !== false) return 'bi-shield-check text-warning';
-    if (strpos($n, 'direccion') !== false || strpos($n, 'consejo') !== false || strpos($n, 'gerencia') !== false) return 'bi-building-fill-check text-warning';
-    if (strpos($n, 'humano') !== false || strpos($n, 'personal') !== false || strpos($n, 'rh') !== false) return 'bi-people-fill text-success';
-    if (strpos($n, 'finanza') !== false || strpos($n, 'contab') !== false || strpos($n, 'administra') !== false) return 'bi-cash-coin text-success';
-    if (strpos($n, 'operacion') !== false || strpos($n, 'taller') !== false || strpos($n, 'servicio') !== false) return 'bi-gear-wide-connected text-info';
-    if (strpos($n, 'etica') !== false || strpos($n, 'conducta') !== false || strpos($n, 'legal') !== false) return 'bi-award-fill text-warning';
-    return 'bi-folder2-open text-primary';
+    if (strpos($n, 'sistema') !== false || strpos($n, 'desarrollo') !== false) return 'bi-cpu-fill';
+    if (strpos($n, 'equipo') !== false || strpos($n, 'ti') !== false || strpos($n, 'red') !== false) return 'bi-hdd-network-fill';
+    if (strpos($n, 'seguridad') !== false || strpos($n, 'ciber') !== false) return 'bi-shield-check';
+    if (strpos($n, 'direccion') !== false || strpos($n, 'consejo') !== false || strpos($n, 'gerencia') !== false) return 'bi-building-fill-check';
+    if (strpos($n, 'humano') !== false || strpos($n, 'personal') !== false || strpos($n, 'rh') !== false) return 'bi-people-fill';
+    if (strpos($n, 'finanza') !== false || strpos($n, 'contab') !== false || strpos($n, 'administra') !== false) return 'bi-cash-coin';
+    if (strpos($n, 'operacion') !== false || strpos($n, 'taller') !== false || strpos($n, 'servicio') !== false) return 'bi-gear-wide-connected';
+    if (strpos($n, 'etica') !== false || strpos($n, 'conducta') !== false || strpos($n, 'legal') !== false) return 'bi-award-fill';
+    return 'bi-folder2-open';
 }
 ?>
 <!DOCTYPE html>
@@ -163,19 +163,22 @@ function obtenerIconoArea($nombreArea) {
 
     <style>
         :root {
-            --bg-dark: #06101e;
-            --surface-card: #0a1b32;
-            --surface-card-hover: #0e2444;
-            --border-subtle: rgba(255, 255, 255, 0.08);
+            --bg-dark: #050d1a;
+            --surface-card: #09172c;
+            --surface-card-hover: #0d2242;
             --gold-accent: #d4af37;
+            --gold-accent-light: #f5df9e;
+            --gold-border: rgba(212, 175, 55, 0.35);
+            --gold-border-bright: rgba(212, 175, 55, 0.7);
+            --gold-glow: rgba(212, 175, 55, 0.18);
         }
 
         body {
             background-color: var(--bg-dark);
             background-image: 
-                radial-gradient(circle at 20% 15%, rgba(30, 58, 138, 0.22) 0%, transparent 45%),
-                radial-gradient(circle at 80% 10%, rgba(212, 175, 55, 0.06) 0%, transparent 40%),
-                radial-gradient(circle at 50% 90%, rgba(10, 25, 47, 0.6) 0%, transparent 60%);
+                radial-gradient(circle at 15% 15%, rgba(212, 175, 55, 0.08) 0%, transparent 45%),
+                radial-gradient(circle at 85% 12%, rgba(30, 58, 138, 0.25) 0%, transparent 40%),
+                radial-gradient(circle at 50% 90%, rgba(9, 23, 44, 0.7) 0%, transparent 60%);
             background-attachment: fixed;
             color: #ffffff;
             font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
@@ -185,14 +188,15 @@ function obtenerIconoArea($nombreArea) {
         }
 
         .executive-navbar {
-            background: rgba(6, 16, 30, 0.94);
+            background: rgba(5, 13, 26, 0.95);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
-            border-bottom: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--gold-border);
             padding: 12px 24px;
             position: sticky;
             top: 0;
             z-index: 1020;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
         }
 
         .agency-logo-thumb {
@@ -202,48 +206,48 @@ function obtenerIconoArea($nombreArea) {
             border-radius: 4px;
         }
 
-        /* PESTAÑAS DENTRO DEL MÓDULO */
+        /* PESTAÑAS DENTRO DEL MÓDULO CON CONTORNOS DORADOS */
         .module-tab-nav {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            gap: 8px;
+            border-bottom: 1px solid var(--gold-border);
+            gap: 10px;
         }
 
         .module-tab-nav .nav-link {
             color: #94a3b8;
             font-weight: 600;
             font-size: 0.9rem;
-            padding: 10px 20px;
+            padding: 11px 22px;
             border-radius: 12px 12px 0 0;
             border: 1px solid transparent;
             background: transparent;
-            transition: all 0.2s ease;
+            transition: all 0.22s ease;
             display: inline-flex;
             align-items: center;
             gap: 8px;
         }
 
         .module-tab-nav .nav-link:hover {
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.04);
-            border-color: rgba(255, 255, 255, 0.08) rgba(255, 255, 255, 0.08) transparent;
+            color: var(--gold-accent-light);
+            background: rgba(212, 175, 55, 0.05);
+            border-color: var(--gold-border) var(--gold-border) transparent;
         }
 
         .module-tab-nav .nav-link.active {
-            color: #ffffff;
-            background: #0a1b32;
-            border-color: rgba(255, 255, 255, 0.15) rgba(255, 255, 255, 0.15) #0a1b32;
-            border-bottom-color: #0a1b32;
+            color: var(--gold-accent-light);
+            background: #09172c;
+            border-color: var(--gold-border) var(--gold-border) #09172c;
+            border-bottom-color: #09172c;
             font-weight: 700;
-            box-shadow: 0 -3px 10px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 -4px 15px var(--gold-glow);
         }
 
-        /* TARJETAS DE ÁREAS */
+        /* TARJETAS DE ÁREAS CON CONTORNOS DORADOS */
         .area-folder-card {
-            background: linear-gradient(145deg, #0a1b32 0%, #071529 100%);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 24px;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            background: linear-gradient(145deg, #09172c 0%, #061224 100%);
+            border: 1px solid var(--gold-border);
+            border-radius: 18px;
+            padding: 26px;
+            transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
             cursor: pointer;
@@ -251,6 +255,7 @@ function obtenerIconoArea($nombreArea) {
             flex-direction: column;
             justify-content: space-between;
             height: 100%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4), 0 0 15px var(--gold-glow);
         }
 
         .area-folder-card::before {
@@ -258,16 +263,16 @@ function obtenerIconoArea($nombreArea) {
             position: absolute;
             top: 0; left: 0; right: 0;
             height: 3px;
-            background: linear-gradient(90deg, transparent, #38bdf8, transparent);
-            opacity: 0.3;
+            background: linear-gradient(90deg, transparent, var(--gold-accent), transparent);
+            opacity: 0.5;
             transition: opacity 0.3s ease;
         }
 
         .area-folder-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(56, 189, 248, 0.4);
-            box-shadow: 0 16px 35px rgba(0, 0, 0, 0.45), 0 0 20px rgba(56, 189, 248, 0.15);
-            background: linear-gradient(145deg, #0e2444 0%, #091c36 100%);
+            transform: translateY(-5px);
+            border-color: var(--gold-border-bright);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), 0 0 25px rgba(212, 175, 55, 0.35);
+            background: linear-gradient(145deg, #0d2242 0%, #081932 100%);
         }
 
         .area-folder-card:hover::before {
@@ -275,39 +280,43 @@ function obtenerIconoArea($nombreArea) {
         }
 
         .area-icon-wrap {
-            width: 52px;
-            height: 52px;
+            width: 54px;
+            height: 54px;
             border-radius: 14px;
-            background: rgba(14, 38, 70, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(212, 175, 55, 0.12);
+            border: 1px solid var(--gold-border);
+            color: var(--gold-accent-light);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.6rem;
+            font-size: 1.65rem;
             margin-bottom: 16px;
+            box-shadow: 0 0 15px var(--gold-glow);
         }
 
         .area-title-text {
-            font-size: 1.2rem;
-            font-weight: 700;
+            font-size: 1.25rem;
+            font-weight: 800;
             color: #ffffff;
             margin-bottom: 8px;
             line-height: 1.3;
+            letter-spacing: -0.2px;
         }
 
-        /* SECCIONES DE SUBÁREA */
+        /* SECCIONES DE SUBÁREA CON CONTORNO DORADO */
         .subarea-group-card {
-            background: rgba(10, 27, 50, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
+            background: rgba(9, 23, 44, 0.75);
+            border: 1px solid var(--gold-border);
+            border-radius: 18px;
             margin-bottom: 24px;
             overflow: hidden;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 15px var(--gold-glow);
         }
 
         .subarea-header {
-            background: rgba(14, 38, 70, 0.5);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 14px 22px;
+            background: rgba(14, 34, 64, 0.65);
+            border-bottom: 1px solid var(--gold-border);
+            padding: 15px 24px;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -316,18 +325,29 @@ function obtenerIconoArea($nombreArea) {
         }
 
         .subarea-title {
-            font-size: 1rem;
-            font-weight: 700;
-            color: #f1f5f9;
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #ffffff;
             margin: 0;
             display: flex;
             align-items: center;
             gap: 8px;
         }
 
-        /* FILAS DE POLÍTICAS DENTRO DEL LISTADO */
+        .subarea-badge-count {
+            background: rgba(212, 175, 55, 0.12);
+            border: 1px solid var(--gold-border);
+            color: var(--gold-accent-light);
+            font-family: monospace;
+            font-size: 0.74rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* FILAS DE POLÍTICAS */
         .policy-item-row {
-            padding: 18px 22px;
+            padding: 18px 24px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             display: flex;
             align-items: center;
@@ -342,51 +362,67 @@ function obtenerIconoArea($nombreArea) {
         }
 
         .policy-item-row:hover {
-            background: rgba(255, 255, 255, 0.025);
+            background: rgba(212, 175, 55, 0.035);
         }
 
         .folio-pill {
             background: rgba(212, 175, 55, 0.12);
-            color: #f1df9c;
-            border: 1px solid rgba(212, 175, 55, 0.3);
+            color: var(--gold-accent-light);
+            border: 1px solid var(--gold-border);
             font-family: monospace;
-            font-size: 0.72rem;
-            font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 6px;
+            font-size: 0.74rem;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 8px;
+            letter-spacing: 0.5px;
         }
 
         .badge-mandatory-pill {
-            background: rgba(239, 68, 68, 0.15);
+            background: rgba(239, 68, 68, 0.14);
             color: #fca5a5;
             border: 1px solid rgba(239, 68, 68, 0.35);
             font-size: 0.68rem;
             font-weight: 700;
-            padding: 2px 8px;
+            padding: 3px 9px;
             border-radius: 20px;
         }
 
         .btn-view-doc {
-            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 100%);
-            border: 1px solid rgba(96, 165, 250, 0.4);
+            background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(14, 38, 70, 0.9) 100%);
+            border: 1px solid var(--gold-border);
             color: #ffffff;
-            font-weight: 600;
-            font-size: 0.82rem;
-            padding: 7px 16px;
+            font-weight: 700;
+            font-size: 0.84rem;
+            padding: 8px 18px;
             border-radius: 10px;
             display: inline-flex;
             align-items: center;
             gap: 6px;
-            transition: all 0.2s ease;
+            transition: all 0.22s ease;
             white-space: nowrap;
         }
 
         .btn-view-doc:hover {
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-            border-color: rgba(147, 197, 253, 0.7);
-            color: #ffffff;
+            background: linear-gradient(135deg, var(--gold-accent) 0%, #b8972e 100%);
+            border-color: var(--gold-accent-light);
+            color: #06101e;
             transform: translateY(-1px);
-            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+            box-shadow: 0 6px 20px rgba(212, 175, 55, 0.4);
+        }
+
+        /* BUSCADOR CON CONTORNO DORADO */
+        .gold-search-input {
+            background: rgba(7, 18, 36, 0.85) !important;
+            border: 1px solid var(--gold-border) !important;
+            color: #ffffff !important;
+            font-size: 0.88rem;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .gold-search-input:focus {
+            border-color: var(--gold-accent) !important;
+            box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.2) !important;
         }
 
         /* ESTILOS DEL VISOR BLINDADO FULLSCREEN */
@@ -401,8 +437,8 @@ function obtenerIconoArea($nombreArea) {
         }
 
         .visor-header {
-            background: #06101e;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+            background: #050d1a;
+            border-bottom: 1px solid var(--gold-border);
             padding: 10px 20px;
             display: flex;
             align-items: center;
@@ -410,6 +446,7 @@ function obtenerIconoArea($nombreArea) {
             z-index: 999995;
             flex-wrap: wrap;
             gap: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
         }
 
         #visorCanvasContainer {
@@ -423,18 +460,19 @@ function obtenerIconoArea($nombreArea) {
             padding: 30px 20px;
             gap: 30px;
             position: relative;
-            background: #040a14;
+            background: #030814;
         }
 
         .pdf-page-wrapper {
             position: relative;
             flex-shrink: 0 !important;
             display: block;
-            box-shadow: 0 15px 45px rgba(0, 0, 0, 0.85);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9);
             border-radius: 6px;
             overflow: hidden;
             background: #ffffff;
             margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.15);
             transition: filter 0.18s ease, opacity 0.18s ease;
         }
 
@@ -497,8 +535,8 @@ function obtenerIconoArea($nombreArea) {
             width: 100%;
             height: calc(100% - 56px);
             background: rgba(3, 8, 18, 0.95);
-            backdrop-filter: blur(25px);
-            -webkit-backdrop-filter: blur(25px);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
             z-index: 999998;
             display: flex;
             flex-direction: column;
@@ -515,18 +553,28 @@ function obtenerIconoArea($nombreArea) {
             visibility: visible;
         }
 
+        .pdf-lock-box-gold {
+            background: rgba(9, 23, 44, 0.9);
+            border: 2px solid var(--gold-border);
+            border-radius: 20px;
+            padding: 36px 32px;
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 35px var(--gold-glow);
+            max-width: 540px;
+            text-align: center;
+        }
+
         .visor-bloqueado .pdf-page-wrapper {
-            filter: blur(25px) grayscale(90%) !important;
+            filter: blur(28px) grayscale(90%) !important;
             opacity: 0.12 !important;
         }
 
         .pulsing-dot {
             width: 8px;
             height: 8px;
-            background-color: #10b981;
+            background-color: var(--gold-accent);
             border-radius: 50%;
             display: inline-block;
-            box-shadow: 0 0 8px #10b981;
+            box-shadow: 0 0 8px var(--gold-accent);
         }
 
         @media print {
@@ -548,7 +596,7 @@ function obtenerIconoArea($nombreArea) {
 <!-- TOP NAVBAR -->
 <nav class="executive-navbar d-flex flex-wrap justify-content-between align-items-center gap-2">
     <div class="d-flex align-items-center gap-2 gap-md-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3 py-1 px-2 px-md-3" title="Regresar al Menú Principal">
+        <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3 py-1 px-2 px-md-3" title="Regresar al Menú Principal" style="border-color: var(--gold-border);">
             <i class="bi bi-arrow-left"></i> <span class="d-none d-sm-inline ms-1">Menú Principal</span>
         </a>
 
@@ -557,19 +605,19 @@ function obtenerIconoArea($nombreArea) {
                 <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo Agencia" class="agency-logo-thumb">
             <?php endif; ?>
             <span class="fw-bold fs-6 text-white text-uppercase">
-                PORTAL <span class="text-primary"><?php echo htmlspecialchars($agenciaNombre); ?></span>
+                PORTAL <span style="color: var(--gold-accent-light);"><?php echo htmlspecialchars($agenciaNombre); ?></span>
             </span>
         </div>
     </div>
 
     <div class="d-flex align-items-center gap-2">
-        <span class="badge bg-dark border border-secondary text-light px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-2 font-monospace">
+        <span class="badge bg-dark border text-light px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-2 font-monospace" style="border-color: var(--gold-border) !important;">
             <span class="pulsing-dot"></span> Central GH Sincronizado
         </span>
-        <span class="badge bg-dark border border-secondary text-info px-3 py-1.5 rounded-pill small d-none d-md-inline-flex align-items-center gap-1.5 font-monospace">
-            <i class="bi bi-shield-lock-fill text-warning"></i> DLP Protegido
+        <span class="badge bg-dark border px-3 py-1.5 rounded-pill small d-none d-md-inline-flex align-items-center gap-1.5 font-monospace" style="color: var(--gold-accent-light); border-color: var(--gold-border) !important;">
+            <i class="bi bi-shield-lock-fill" style="color: var(--gold-accent);"></i> DLP Protegido
         </span>
-        <a href="politicas.php" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-2.5 text-light" title="Actualizar políticas">
+        <a href="politicas.php" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-2.5 text-light" style="border-color: var(--gold-border);" title="Actualizar políticas">
             <i class="bi bi-arrow-clockwise"></i>
         </a>
     </div>
@@ -579,35 +627,35 @@ function obtenerIconoArea($nombreArea) {
 
     <!-- MENSAJES -->
     <?php if (!empty($mensaje)): ?>
-        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert">
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(6, 78, 59, 0.85); color: #a7f3d0;">
             <i class="bi bi-check-circle-fill me-2"></i> <?php echo $mensaje; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
     <?php if (!empty($error)): ?>
-        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert">
+        <div class="alert alert-danger alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert" style="background: rgba(127, 29, 29, 0.85); color: #fecaca;">
             <i class="bi bi-exclamation-triangle-fill me-2"></i> <?php echo $error; ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
 
     <!-- TÍTULO LIMPIO (SIN HERO NI TARJETAS INNECESARIAS) -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-2 border-bottom border-secondary border-opacity-25">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-2 border-bottom" style="border-color: var(--gold-border) !important;">
         <div>
             <h2 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
-                <i class="bi bi-file-earmark-lock2-fill text-primary"></i> Políticas y Normativas Institucionales
+                <i class="bi bi-file-earmark-lock2-fill" style="color: var(--gold-accent);"></i> Políticas y Normativas Institucionales
             </h2>
             <p class="text-secondary small mb-0">
                 Documentación oficial y directrices corporativas organizadas por áreas de Grupo Huerta.
             </p>
         </div>
 
-        <!-- BUSCADOR -->
+        <!-- BUSCADOR CON CONTORNO DORADO -->
         <div class="w-100 w-md-auto" style="min-width: 280px; max-width: 360px;">
             <div class="input-group input-group-sm">
-                <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
-                <input type="text" id="filtroTextoPolitica" class="form-control bg-dark text-white border-secondary" placeholder="Buscar por título, folio o subárea..." oninput="filtrarPoliticasGlobal()">
+                <span class="input-group-text bg-dark text-secondary" style="border: 1px solid var(--gold-border); border-right: none; border-radius: 10px 0 0 10px;"><i class="bi bi-search" style="color: var(--gold-accent);"></i></span>
+                <input type="text" id="filtroTextoPolitica" class="form-control gold-search-input" style="border-radius: 0 10px 10px 0;" placeholder="Buscar por título, folio o subárea..." oninput="filtrarPoliticasGlobal()">
             </div>
         </div>
     </div>
@@ -616,14 +664,14 @@ function obtenerIconoArea($nombreArea) {
     <ul class="nav module-tab-nav mb-4" id="politicasPillsTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="pill-areas-tab" data-bs-toggle="tab" data-bs-target="#vista-areas" type="button" role="tab" onclick="volverACatalogoAreas()">
-                <i class="bi bi-folder-fill text-warning"></i> Áreas Institucionales
-                <span class="badge bg-dark border border-secondary text-light ms-1"><?php echo count($areasEstructuradas); ?></span>
+                <i class="bi bi-folder-fill" style="color: var(--gold-accent);"></i> Áreas Institucionales
+                <span class="subarea-badge-count ms-1"><?php echo count($areasEstructuradas); ?></span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="pill-detalle-tab" data-bs-toggle="tab" data-bs-target="#vista-detalle-politicas" type="button" role="tab">
-                <i class="bi bi-list-task text-info"></i> <span id="lblTituloPestanaDetalle">Listado de Políticas</span>
-                <span class="badge bg-dark border border-secondary text-info ms-1" id="badgeTotalPoliticasPestana"><?php echo count($politicasLista); ?></span>
+                <i class="bi bi-list-task" style="color: var(--gold-accent);"></i> <span id="lblTituloPestanaDetalle">Listado de Políticas</span>
+                <span class="subarea-badge-count ms-1" id="badgeTotalPoliticasPestana"><?php echo count($politicasLista); ?></span>
             </button>
         </li>
     </ul>
@@ -634,8 +682,8 @@ function obtenerIconoArea($nombreArea) {
         <!-- PESTAÑA 1: CATÁLOGO DE ÁREAS -->
         <div class="tab-pane fade show active" id="vista-areas" role="tabpanel">
             <?php if (empty($areasEstructuradas)): ?>
-                <div class="text-center py-5 rounded-4 border border-secondary border-opacity-25 p-5" style="background: rgba(10, 27, 50, 0.4);">
-                    <i class="bi bi-folder-x display-2 text-secondary opacity-50 d-block mb-3"></i>
+                <div class="text-center py-5 rounded-4 p-5" style="background: rgba(10, 27, 50, 0.4); border: 1px solid var(--gold-border);">
+                    <i class="bi bi-folder-x display-2 opacity-50 d-block mb-3" style="color: var(--gold-accent);"></i>
                     <h4 class="fw-bold text-white">No hay áreas de políticas disponibles</h4>
                     <p class="text-secondary small mb-0">
                         Las áreas y directrices dadas de alta en el Portal Central de Grupo Huerta aparecerán aquí automáticamente.
@@ -672,9 +720,9 @@ function obtenerIconoArea($nombreArea) {
                                 </div>
 
                                 <div>
-                                    <div class="d-flex justify-content-between align-items-center pt-3 border-top border-secondary border-opacity-25 text-secondary small">
-                                        <span><i class="bi bi-file-earmark-text me-1 text-primary"></i> <b><?php echo $cantPoliticas; ?></b> política<?php echo $cantPoliticas !== 1 ? 's' : ''; ?></span>
-                                        <span class="text-info fw-semibold">Entrar <i class="bi bi-arrow-right ms-1"></i></span>
+                                    <div class="d-flex justify-content-between align-items-center pt-3 border-top text-secondary small" style="border-color: rgba(212, 175, 55, 0.18) !important;">
+                                        <span><i class="bi bi-file-earmark-text me-1" style="color: var(--gold-accent);"></i> <b><?php echo $cantPoliticas; ?></b> política<?php echo $cantPoliticas !== 1 ? 's' : ''; ?></span>
+                                        <span class="fw-semibold" style="color: var(--gold-accent-light);">Entrar <i class="bi bi-arrow-right ms-1"></i></span>
                                     </div>
                                 </div>
                             </div>
@@ -688,19 +736,19 @@ function obtenerIconoArea($nombreArea) {
         <div class="tab-pane fade" id="vista-detalle-politicas" role="tabpanel">
             
             <!-- BARRA DE NAVEGACIÓN Y ACCIÓN RÁPIDA -->
-            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 p-3 rounded-3" style="background: rgba(14, 38, 70, 0.4); border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 p-3 rounded-3" style="background: rgba(14, 38, 70, 0.4); border: 1px solid var(--gold-border);">
                 <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-3" onclick="volverACatalogoAreas()">
+                    <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-3" style="border-color: var(--gold-border);" onclick="volverACatalogoAreas()">
                         <i class="bi bi-arrow-left me-1"></i> Volver a Áreas
                     </button>
                     <span class="text-secondary opacity-50">&bull;</span>
                     <h5 class="fw-bold text-white mb-0 d-inline-flex align-items-center gap-2">
-                        <i class="bi bi-folder2-open text-warning"></i> <span id="lblAreaNombreActiva">Todas las Áreas</span>
+                        <i class="bi bi-folder2-open" style="color: var(--gold-accent);"></i> <span id="lblAreaNombreActiva">Todas las Áreas</span>
                     </h5>
                 </div>
 
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-30 rounded-pill px-3 py-1.5 font-monospace small" id="lblBadgeConteoDetalle">
+                    <span class="subarea-badge-count" id="lblBadgeConteoDetalle">
                         <?php echo count($politicasLista); ?> Políticas
                     </span>
                 </div>
@@ -722,11 +770,11 @@ function obtenerIconoArea($nombreArea) {
                                     <!-- ENCABEZADO DE SUBÁREA -->
                                     <div class="subarea-header">
                                         <h5 class="subarea-title">
-                                            <i class="bi bi-folder-fill text-warning"></i>
+                                            <i class="bi bi-folder-fill" style="color: var(--gold-accent);"></i>
                                             <span><?php echo htmlspecialchars($nombreSubarea); ?></span>
                                             <span class="text-secondary small fw-normal">(<?php echo htmlspecialchars($nombreArea); ?>)</span>
                                         </h5>
-                                        <span class="badge bg-dark border border-secondary text-secondary font-monospace small">
+                                        <span class="subarea-badge-count">
                                             <?php echo count($politicasSub); ?> documento<?php echo count($politicasSub) !== 1 ? 's' : ''; ?>
                                         </span>
                                     </div>
@@ -746,7 +794,7 @@ function obtenerIconoArea($nombreArea) {
                                                             <h6 class="fw-bold text-white mb-0">
                                                                 <?php echo htmlspecialchars($pol['titulo']); ?>
                                                             </h6>
-                                                            <span class="badge bg-dark border border-secondary text-secondary font-monospace" style="font-size: 0.65rem;">
+                                                            <span class="badge bg-dark border font-monospace" style="font-size: 0.65rem; border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
                                                                 v<?php echo htmlspecialchars($pol['version'] ?? '1.0'); ?>
                                                             </span>
                                                             <?php if (!empty($pol['obligatorio_lectura'])): ?>
@@ -766,8 +814,8 @@ function obtenerIconoArea($nombreArea) {
 
                                                 <div class="d-flex align-items-center gap-3">
                                                     <div class="text-end text-secondary small d-none d-md-block" style="font-size: 0.72rem;">
-                                                        <span class="d-block"><i class="bi bi-calendar3 me-1"></i> Vigencia: <?php echo !empty($pol['fecha_vigencia']) ? date('d/m/Y', strtotime($pol['fecha_vigencia'])) : 'Permanente'; ?></span>
-                                                        <span class="text-info"><i class="bi bi-shield-check me-1"></i> Protegido</span>
+                                                        <span class="d-block"><i class="bi bi-calendar3 me-1" style="color: var(--gold-accent);"></i> Vigencia: <?php echo !empty($pol['fecha_vigencia']) ? date('d/m/Y', strtotime($pol['fecha_vigencia'])) : 'Permanente'; ?></span>
+                                                        <span style="color: var(--gold-accent-light);"><i class="bi bi-shield-check me-1"></i> Protegido</span>
                                                     </div>
 
                                                     <button type="button" class="btn-view-doc" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>', '<?php echo $folioCode; ?>')">
@@ -799,7 +847,7 @@ function obtenerIconoArea($nombreArea) {
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2.5 py-1 rounded-pill small font-monospace">
                 <i class="bi bi-shield-fill-x me-1"></i> LECTURA PROTEGIDA
             </span>
-            <span class="badge bg-dark border border-secondary text-secondary small font-monospace d-none d-sm-inline" id="visorFolioDoc">
+            <span class="folio-pill d-none d-sm-inline" id="visorFolioDoc">
                 GH-POL-000
             </span>
             <h6 class="fw-bold text-white mb-0 text-truncate" id="visorTituloDoc" style="max-width: 45vw;">
@@ -810,13 +858,13 @@ function obtenerIconoArea($nombreArea) {
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <!-- CONTROLES DE ZOOM -->
             <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-dark text-white border-secondary" onclick="cambiarZoomVisor(-0.15)" title="Alejar Zoom">
+                <button type="button" class="btn btn-dark text-white" style="border: 1px solid var(--gold-border);" onclick="cambiarZoomVisor(-0.15)" title="Alejar Zoom">
                     <i class="bi bi-dash-lg"></i>
                 </button>
-                <span id="visorZoomBadge" class="badge bg-dark border-top border-bottom border-secondary text-info d-flex align-items-center px-2 font-monospace">
+                <span id="visorZoomBadge" class="badge bg-dark border-top border-bottom text-info d-flex align-items-center px-2 font-monospace" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light) !important;">
                     100%
                 </span>
-                <button type="button" class="btn btn-dark text-white border-secondary" onclick="cambiarZoomVisor(0.15)" title="Acercar Zoom">
+                <button type="button" class="btn btn-dark text-white" style="border: 1px solid var(--gold-border);" onclick="cambiarZoomVisor(0.15)" title="Acercar Zoom">
                     <i class="bi bi-plus-lg"></i>
                 </button>
             </div>
@@ -827,8 +875,8 @@ function obtenerIconoArea($nombreArea) {
             </div>
 
             <!-- BADGES DE SEGURIDAD -->
-            <span class="badge bg-dark border border-secondary text-info rounded-pill px-2.5 py-1.5 small font-monospace d-none d-lg-inline-flex align-items-center">
-                <i class="bi bi-shield-lock-fill text-warning me-1"></i> Anti-Cámara Moiré
+            <span class="badge bg-dark border rounded-pill px-2.5 py-1.5 small font-monospace d-none d-lg-inline-flex align-items-center" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                <i class="bi bi-shield-lock-fill me-1" style="color: var(--gold-accent);"></i> Anti-Cámara Moiré
             </span>
 
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
@@ -844,9 +892,9 @@ function obtenerIconoArea($nombreArea) {
 
     <!-- OVERLAY DE BLOQUEO POR CURSOR FUERA DEL PDF -->
     <div id="pdfLockOverlay">
-        <div class="text-center px-4" style="max-width: 520px;">
-            <div class="mb-3" style="width: 72px; height: 72px; margin: 0 auto; border-radius: 50%; background: rgba(220, 38, 38, 0.15); border: 2px solid rgba(220, 38, 38, 0.5); display: flex; align-items: center; justify-content: center; font-size: 2.2rem;">
-                <i class="bi bi-shield-slash-fill text-danger"></i>
+        <div class="pdf-lock-box-gold px-4">
+            <div class="mb-3" style="width: 76px; height: 76px; margin: 0 auto; border-radius: 50%; background: rgba(212, 175, 55, 0.15); border: 2px solid var(--gold-accent); display: flex; align-items: center; justify-content: center; font-size: 2.3rem; color: var(--gold-accent-light); box-shadow: 0 0 25px var(--gold-glow);">
+                <i class="bi bi-shield-slash-fill"></i>
             </div>
             <h4 class="fw-bold text-white mb-2" style="letter-spacing: 0.5px;">LECTURA BLOQUEADA POR SEGURIDAD</h4>
             <p class="text-secondary mb-3 small" style="line-height: 1.5;">
@@ -865,7 +913,7 @@ function obtenerIconoArea($nombreArea) {
     <!-- ÁREA DE RENDERIZADO DE PÁGINAS PDF CON MARCA DE AGUA Y MALLA MOIRÉ -->
     <div id="visorCanvasContainer">
         <div id="visorLoader" class="text-center py-5">
-            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+            <div class="spinner-border mb-3" role="status" style="width: 3rem; height: 3rem; color: var(--gold-accent);"></div>
             <h5 class="fw-bold text-white">Desencriptando y renderizando documento protegido...</h5>
             <p class="text-secondary small">Aplicando marcas de agua forenses y trama óptica anti-captura.</p>
         </div>
@@ -1131,7 +1179,7 @@ function obtenerIconoArea($nombreArea) {
 
         container.innerHTML = `
             <div id="visorLoader" class="text-center py-5">
-                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                <div class="spinner-border mb-3" role="status" style="width: 3rem; height: 3rem; color: var(--gold-accent);"></div>
                 <h5 class="fw-bold text-white">Desencriptando y renderizando documento protegido...</h5>
                 <p class="text-secondary small">Aplicando marcas de agua forenses y trama óptica anti-captura.</p>
             </div>
@@ -1172,7 +1220,7 @@ function obtenerIconoArea($nombreArea) {
             pageWrapper.style.flexShrink = '0';
             pageWrapper.innerHTML = `
                 <div class="text-center py-5 text-secondary" style="min-height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                    <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                    <div class="spinner-border spinner-border-sm mb-2" style="color: var(--gold-accent);"></div>
                     <span style="font-size: 0.8rem;">Cargando página ${pageNum} de ${pdf.numPages}...</span>
                 </div>
             `;
