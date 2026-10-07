@@ -538,6 +538,7 @@ function asegurarTablaCompliance($pdo = null) {
                     descripcion TEXT,
                     categoria TEXT DEFAULT 'General',
                     archivo_url TEXT,
+                    imagen_url TEXT,
                     archivo_tipo TEXT DEFAULT 'pdf',
                     archivo_tamano TEXT,
                     version TEXT DEFAULT '1.0',
@@ -574,6 +575,7 @@ function asegurarTablaCompliance($pdo = null) {
                     `descripcion` TEXT NULL,
                     `categoria` VARCHAR(100) DEFAULT 'General',
                     `archivo_url` VARCHAR(255) NULL,
+                    `imagen_url` VARCHAR(255) NULL,
                     `archivo_tipo` VARCHAR(20) DEFAULT 'pdf',
                     `archivo_tamano` VARCHAR(50) NULL,
                     `version` VARCHAR(20) DEFAULT '1.0',
@@ -607,6 +609,14 @@ function asegurarTablaCompliance($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        try { $pdo->exec("ALTER TABLE compliance_documentos ADD COLUMN imagen_url VARCHAR(255) NULL"); } catch (Throwable $t) {}
+        try {
+            $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-01.svg' WHERE codigo = 'AV-01' AND (imagen_url IS NULL OR imagen_url = '')");
+            $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-02.svg' WHERE codigo = 'AV-02' AND (imagen_url IS NULL OR imagen_url = '')");
+            $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-03.svg' WHERE codigo = 'AV-03' AND (imagen_url IS NULL OR imagen_url = '')");
+            $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-04.svg' WHERE codigo = 'AV-04' AND (imagen_url IS NULL OR imagen_url = '')");
+        } catch (Throwable $t) {}
 
         // Sembrado inicial de documentos oficiales de compliance si la tabla está vacía
         $stmtCount = $pdo->query("SELECT COUNT(*) FROM compliance_documentos");
@@ -696,6 +706,112 @@ function asegurarTablaCompliance($pdo = null) {
             }
         }
     } catch (Throwable $e) {}
+}
+
+/**
+ * Genera una tarjeta gráfica vectorial oficial (SVG 1200x675) para un Aviso o Comunicado Institucional.
+ */
+function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $categoria = 'General', $codigo = 'AV-01', $fecha = null, $emisor = 'Dirección General') {
+    if (!$fecha) $fecha = date('d/m/Y');
+    
+    $badgeBg = '#ef4444';
+    $badgeText = '#ffffff';
+    $badgeLabel = 'PRIORIDAD ALTA';
+    if ($prioridad === 'Media') {
+        $badgeBg = '#f59e0b';
+        $badgeLabel = 'PRIORIDAD MEDIA';
+    } elseif ($prioridad === 'Normal') {
+        $badgeBg = '#0284c7';
+        $badgeLabel = 'COMUNICADO OFICIAL';
+    }
+
+    $wrap = function($str, $max) {
+        $w = explode(' ', $str);
+        $lines = [];
+        $curr = '';
+        foreach ($w as $word) {
+            if (mb_strlen($curr . ' ' . $word) <= $max) {
+                $curr = trim($curr . ' ' . $word);
+            } else {
+                if ($curr !== '') $lines[] = $curr;
+                $curr = $word;
+            }
+        }
+        if ($curr !== '') $lines[] = $curr;
+        return $lines;
+    };
+
+    $tLines = array_slice($wrap($titulo, 45), 0, 3);
+    $dLines = array_slice($wrap($descripcion, 70), 0, 6);
+
+    $svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">' . "\n";
+    $svg .= '  <defs>' . "\n";
+    $svg .= '    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="#040d1a" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="#081a33" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="#020812" />' . "\n";
+    $svg .= '    </linearGradient>' . "\n";
+    $svg .= '    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="0%">' . "\n";
+    $svg .= '      <stop offset="0%" stop-color="#d4af37" />' . "\n";
+    $svg .= '      <stop offset="50%" stop-color="#f5df9e" />' . "\n";
+    $svg .= '      <stop offset="100%" stop-color="#a6841e" />' . "\n";
+    $svg .= '    </linearGradient>' . "\n";
+    $svg .= '  </defs>' . "\n";
+
+    $svg .= '  <rect width="1200" height="675" fill="url(#bgGrad)" />' . "\n";
+    $svg .= '  <rect x="25" y="25" width="1150" height="625" rx="20" fill="none" stroke="rgba(212, 175, 55, 0.45)" stroke-width="2" />' . "\n";
+    $svg .= '  <rect x="35" y="35" width="1130" height="605" rx="14" fill="none" stroke="rgba(212, 175, 55, 0.15)" stroke-width="1" />' . "\n";
+
+    $svg .= '  <path d="M 25 65 L 25 25 L 65 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 65 L 1175 25 L 1135 25" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 25 610 L 25 650 L 65 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+    $svg .= '  <path d="M 1175 610 L 1175 650 L 1135 650" fill="none" stroke="#d4af37" stroke-width="4" />' . "\n";
+
+    $svg .= '  <g transform="translate(60, 65)">' . "\n";
+    $svg .= '    <path d="M 0 0 L 24 -8 L 48 0 L 48 24 Q 48 48 24 58 Q 0 48 0 24 Z" fill="rgba(212, 175, 55, 0.2)" stroke="#d4af37" stroke-width="2" />' . "\n";
+    $svg .= '    <path d="M 24 16 L 24 40 M 16 28 L 32 28" stroke="#f5df9e" stroke-width="2.5" stroke-linecap="round" />' . "\n";
+    $svg .= '    <text x="65" y="24" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="800" fill="#ffffff" letter-spacing="2">GRUPO HUERTA</text>' . "\n";
+    $svg .= '    <text x="65" y="46" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="600" fill="#94a3b8" letter-spacing="1">GOBIERNO CORPORATIVO &amp; COMPLIANCE INSTITUCIONAL</text>' . "\n";
+    $svg .= '  </g>' . "\n";
+
+    $svg .= '  <g transform="translate(860, 65)">' . "\n";
+    $svg .= '    <rect x="0" y="0" width="280" height="42" rx="10" fill="' . $badgeBg . '" />' . "\n";
+    $svg .= '    <text x="140" y="26" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="800" fill="' . $badgeText . '" text-anchor="middle" letter-spacing="1">' . htmlspecialchars($badgeLabel) . '</text>' . "\n";
+    $svg .= '  </g>' . "\n";
+
+    $svg .= '  <line x1="60" y1="140" x2="1140" y2="140" stroke="url(#goldGrad)" stroke-width="2" />' . "\n";
+
+    $svg .= '  <g transform="translate(60, 180)">' . "\n";
+    $svg .= '    <rect x="0" y="0" width="120" height="30" rx="6" fill="rgba(212, 175, 55, 0.15)" stroke="#d4af37" stroke-width="1" />' . "\n";
+    $svg .= '    <text x="60" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="700" fill="#f5df9e" text-anchor="middle">' . htmlspecialchars($codigo) . '</text>' . "\n";
+    $svg .= '    <text x="145" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="14" font-weight="600" fill="#38bdf8">&bull; ' . htmlspecialchars($categoria) . '</text>' . "\n";
+    $svg .= '    <text x="1080" y="20" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="500" fill="#94a3b8" text-anchor="end">Fecha de Emisión: ' . htmlspecialchars($fecha) . '</text>' . "\n";
+    $svg .= '  </g>' . "\n";
+
+    $yTitulo = 250;
+    $svg .= '  <text x="60" y="' . $yTitulo . '" font-family="Plus Jakarta Sans, sans-serif" font-size="34" font-weight="800" fill="#ffffff" letter-spacing="0.5">' . "\n";
+    foreach ($tLines as $idx => $lt) {
+        $dy = $idx === 0 ? 0 : 42;
+        $svg .= '    <tspan x="60" dy="' . $dy . '">' . htmlspecialchars($lt) . '</tspan>' . "\n";
+    }
+    $svg .= '  </text>' . "\n";
+
+    $yDesc = $yTitulo + (count($tLines) * 42) + 25;
+    $svg .= '  <text x="60" y="' . $yDesc . '" font-family="Plus Jakarta Sans, sans-serif" font-size="20" font-weight="400" fill="#cbd5e1" letter-spacing="0.2">' . "\n";
+    foreach ($dLines as $idx => $ld) {
+        $dy = $idx === 0 ? 0 : 34;
+        $svg .= '    <tspan x="60" dy="' . $dy . '">' . htmlspecialchars($ld) . '</tspan>' . "\n";
+    }
+    $svg .= '  </text>' . "\n";
+
+    $svg .= '  <line x1="60" y1="580" x2="1140" y2="580" stroke="rgba(212, 175, 55, 0.3)" stroke-width="1" />' . "\n";
+    $svg .= '  <g transform="translate(60, 615)">' . "\n";
+    $svg .= '    <text x="0" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700" fill="#d4af37">EMISOR: ' . htmlspecialchars($emisor) . '</text>' . "\n";
+    $svg .= '    <text x="1080" y="0" font-family="Plus Jakarta Sans, sans-serif" font-size="12" font-weight="600" fill="#64748b" text-anchor="end">COMUNICADO OFICIAL AUDITADO &bull; GRUPO HUERTA</text>' . "\n";
+    $svg .= '  </g>' . "\n";
+
+    $svg .= '</svg>' . "\n";
+    return $svg;
 }
 
 /**

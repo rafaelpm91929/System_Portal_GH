@@ -12,7 +12,7 @@ if (!isset($_SESSION['usuario_id'])) {
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
 
-// Asegurar existencia de tablas de permisos y compliance
+// Asegurar existencia de tablas de permisos y compliance local
 if ($pdo) {
     asegurarTablasPermisos($pdo);
     asegurarTablaCompliance($pdo);
@@ -25,7 +25,6 @@ $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador');
 $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario');
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
-$esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
 // Cargar información de la agencia registrada
 $agenciaInfo = null;
@@ -36,7 +35,6 @@ if ($pdo) {
     } catch (Throwable $e) {}
 }
 $agenciaNombre = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : ($_SESSION['agencia'] ?? 'Agencia Grupo Huerta');
-$logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . $agenciaInfo['logo_url'])) ? $agenciaInfo['logo_url'] : '';
 
 // Obtener IP real del usuario para auditoría / marcas de agua
 $ipUsuario = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
@@ -44,159 +42,80 @@ if (strpos($ipUsuario, ',') !== false) {
     $ipUsuario = trim(explode(',', $ipUsuario)[0]);
 }
 
-$mensaje = '';
-$error = '';
-
 // =============================================================================
-// 2. ACCIONES ADMINISTRATIVAS: SUBIR DOCUMENTO / ELIMINAR (PORTAL AGENCIA)
-// =============================================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
-    $accion = $_POST['accion'] ?? '';
-
-    // ACCIÓN: SUBIR NUEVO DOCUMENTO DE COMPLIANCE (ADMIN)
-    if ($accion === 'subir_documento' && $esAdmin) {
-        $tipo = trim($_POST['tipo'] ?? 'formato');
-        if (!in_array($tipo, ['formato', 'manual', 'aviso'])) {
-            $tipo = 'formato';
-        }
-        $codigo = trim($_POST['codigo'] ?? '');
-        $titulo = trim($_POST['titulo'] ?? '');
-        $descripcion = trim($_POST['descripcion'] ?? '');
-        $categoria = trim($_POST['categoria'] ?? 'General');
-        $version = trim($_POST['version'] ?? '1.0');
-        $prioridad = trim($_POST['prioridad'] ?? 'Normal');
-        $fechaVigencia = !empty($_POST['fecha_vigencia']) ? $_POST['fecha_vigencia'] : null;
-        $obligatorio = isset($_POST['obligatorio_lectura']) ? 1 : 0;
-
-        if (empty($titulo)) {
-            $error = "El título del documento o aviso es obligatorio.";
-        } elseif (empty($codigo)) {
-            $error = "El código de identificación institucional es obligatorio (ej. FR-TI-01).";
-        } else {
-            $rutaRelativa = '';
-            $archivoTipo = 'pdf';
-            $archivoTamano = '0 KB';
-
-            if (isset($_FILES['archivo']) && $_FILES['archivo']['error'] === UPLOAD_ERR_OK) {
-                $nombreOriginal = $_FILES['archivo']['name'];
-                $ext = strtolower(pathinfo($nombreOriginal, PATHINFO_EXTENSION));
-                $permitidos = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'];
-
-                if (!in_array($ext, $permitidos)) {
-                    $error = "Formato no permitido. Se permiten archivos PDF, Word o Excel.";
-                } else {
-                    $dirDestino = __DIR__ . '/uploads/compliance/';
-                    if (!file_exists($dirDestino)) {
-                        @mkdir($dirDestino, 0755, true);
-                    }
-
-                    $nombreLimpio = 'comp_' . $tipo . '_' . time() . '_' . rand(100, 999) . '.' . $ext;
-                    $rutaFisica = $dirDestino . $nombreLimpio;
-                    $rutaRelativa = 'uploads/compliance/' . $nombreLimpio;
-
-                    if (move_uploaded_file($_FILES['archivo']['tmp_name'], $rutaFisica)) {
-                        $archivoTipo = $ext;
-                        $tamBytes = @filesize($rutaFisica);
-                        if ($tamBytes >= 1048576) {
-                            $archivoTamano = round($tamBytes / 1048576, 1) . ' MB';
-                        } else {
-                            $archivoTamano = round($tamBytes / 1024, 0) . ' KB';
-                        }
-                    } else {
-                        $error = "No fue posible guardar el archivo adjunto en el servidor.";
-                    }
-                }
-            }
-
-            if (empty($error)) {
-                try {
-                    $stmtIns = $pdo->prepare("
-                        INSERT INTO compliance_documentos 
-                        (tipo, codigo, titulo, descripcion, categoria, archivo_url, archivo_tipo, archivo_tamano, version, fecha_publicacion, fecha_vigencia, prioridad, obligatorio_lectura, estatus, creado_por)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                    ");
-                    $stmtIns->execute([
-                        $tipo,
-                        $codigo,
-                        $titulo,
-                        $descripcion,
-                        $categoria,
-                        $rutaRelativa,
-                        $archivoTipo,
-                        $archivoTamano,
-                        $version,
-                        date('Y-m-d'),
-                        $fechaVigencia,
-                        $prioridad,
-                        $obligatorio,
-                        $nombreUsuario
-                    ]);
-                    $mensaje = "El documento " . htmlspecialchars($codigo) . " ha sido publicado exitosamente en Compliance.";
-                } catch (Throwable $eIns) {
-                    $error = "Error al registrar en la base de datos: " . $eIns->getMessage();
-                }
-            }
-        }
-    }
-
-    // ACCIÓN: ELIMINAR DOCUMENTO (ADMIN)
-    if ($accion === 'eliminar_documento' && $esAdmin) {
-        $docId = (int)($_POST['documento_id'] ?? 0);
-        if ($docId > 0) {
-            try {
-                $stmtDoc = $pdo->prepare("SELECT archivo_url FROM compliance_documentos WHERE id = ?");
-                $stmtDoc->execute([$docId]);
-                $docFila = $stmtDoc->fetch(PDO::FETCH_ASSOC);
-                if ($docFila && !empty($docFila['archivo_url'])) {
-                    $archivoFisico = __DIR__ . '/' . $docFila['archivo_url'];
-                    if (file_exists($archivoFisico) && strpos($docFila['archivo_url'], 'uploads/compliance/') !== false) {
-                        @unlink($archivoFisico);
-                    }
-                }
-
-                $stmtDel = $pdo->prepare("DELETE FROM compliance_documentos WHERE id = ?");
-                $stmtDel->execute([$docId]);
-                $mensaje = "El documento ha sido eliminado correctamente del catálogo de Compliance.";
-            } catch (Throwable $eDel) {
-                $error = "Error al eliminar el documento: " . $eDel->getMessage();
-            }
-        }
-    }
-}
-
-// =============================================================================
-// 3. CONSULTA DE DOCUMENTOS Y ESTADÍSTICAS
+// 2. CONSULTA SINCRONIZADA DESDE EL PORTAL CENTRAL GH (portal.grupohuerta.mx)
+//    (En rama main solo se visualiza lo subido en la rama gh)
 // =============================================================================
 $formatos = [];
 $manuales = [];
 $avisos = [];
-$categoriasFormatos = [];
-$categoriasManuales = [];
+$origenDatos = 'central_gh';
 
-if ($pdo) {
+$urlCentral = 'https://portal.grupohuerta.mx/api_compliance.php?action=listar';
+$ctx = stream_context_create([
+    'http' => [
+        'timeout' => 6,
+        'header'  => "User-Agent: PortalAgenciaCompliance/1.0\r\n"
+    ],
+    'ssl' => [
+        'verify_peer' => false,
+        'verify_peer_name' => false
+    ]
+]);
+
+$resp = @file_get_contents($urlCentral, false, $ctx);
+if ($resp) {
+    $dataJson = json_decode($resp, true);
+    if (!empty($dataJson['exito'])) {
+        $formatos = $dataJson['formatos'] ?? [];
+        $manuales = $dataJson['manuales'] ?? [];
+        $avisos   = $dataJson['avisos'] ?? [];
+    }
+}
+
+// Fallback: si no hay conexión temporal con Central GH, consultar base local
+if (empty($formatos) && empty($manuales) && empty($avisos) && $pdo) {
+    $origenDatos = 'local_fallback';
     try {
-        // Formatos
         $stmtF = $pdo->query("SELECT * FROM compliance_documentos WHERE tipo = 'formato' AND estatus = 1 ORDER BY codigo ASC, id DESC");
         $formatos = $stmtF ? $stmtF->fetchAll(PDO::FETCH_ASSOC) : [];
 
-        // Manuales
         $stmtM = $pdo->query("SELECT * FROM compliance_documentos WHERE tipo = 'manual' AND estatus = 1 ORDER BY codigo ASC, id DESC");
         $manuales = $stmtM ? $stmtM->fetchAll(PDO::FETCH_ASSOC) : [];
 
-        // Avisos
         $stmtA = $pdo->query("SELECT * FROM compliance_documentos WHERE tipo = 'aviso' AND estatus = 1 ORDER BY id DESC");
         $avisos = $stmtA ? $stmtA->fetchAll(PDO::FETCH_ASSOC) : [];
-
-        foreach ($formatos as $f) {
-            $cat = !empty($f['categoria']) ? trim($f['categoria']) : 'General';
-            $categoriasFormatos[$cat] = ($categoriasFormatos[$cat] ?? 0) + 1;
-        }
-        foreach ($manuales as $m) {
-            $cat = !empty($m['categoria']) ? trim($m['categoria']) : 'General';
-            $categoriasManuales[$cat] = ($categoriasManuales[$cat] ?? 0) + 1;
-        }
     } catch (Throwable $eQ) {}
 }
+
+// Normalizar URLs de imágenes y archivos para la galería y descargas
+foreach ($avisos as &$av) {
+    if (empty($av['imagen_url_completa'])) {
+        if (!empty($av['imagen_url'])) {
+            $av['imagen_url_completa'] = (strpos($av['imagen_url'], 'http') === 0) ? $av['imagen_url'] : 'https://portal.grupohuerta.mx/' . ltrim($av['imagen_url'], '/');
+        } else {
+            $av['imagen_url_completa'] = 'uploads/compliance/aviso_AV-01.svg';
+        }
+    }
+    if (empty($av['archivo_url_completo']) && !empty($av['archivo_url'])) {
+        $av['archivo_url_completo'] = (strpos($av['archivo_url'], 'http') === 0) ? $av['archivo_url'] : 'https://portal.grupohuerta.mx/' . ltrim($av['archivo_url'], '/');
+    }
+}
+unset($av);
+
+foreach ($formatos as &$fmt) {
+    if (empty($fmt['archivo_url_completo']) && !empty($fmt['archivo_url'])) {
+        $fmt['archivo_url_completo'] = (strpos($fmt['archivo_url'], 'http') === 0) ? $fmt['archivo_url'] : 'https://portal.grupohuerta.mx/' . ltrim($fmt['archivo_url'], '/');
+    }
+}
+unset($fmt);
+
+foreach ($manuales as &$man) {
+    if (empty($man['archivo_url_completo']) && !empty($man['archivo_url'])) {
+        $man['archivo_url_completo'] = (strpos($man['archivo_url'], 'http') === 0) ? $man['archivo_url'] : 'https://portal.grupohuerta.mx/' . ltrim($man['archivo_url'], '/');
+    }
+}
+unset($man);
 
 $totalFormatos = count($formatos);
 $totalManuales = count($manuales);
@@ -252,7 +171,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             overflow-x: hidden;
         }
 
-        /* NAVBAR SUPERIOR EJECUTIVA */
+        /* NAVBAR SUPERIOR */
         .executive-navbar {
             background: rgba(4, 13, 26, 0.96);
             backdrop-filter: blur(14px);
@@ -461,7 +380,6 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             overflow-x: hidden;
         }
 
-        /* SECCIONES OCULTAS / VISIBLES */
         .compliance-section {
             display: none;
             animation: fadeIn 0.25s ease forwards;
@@ -475,7 +393,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* BANNER HERO EJECUTIVO */
+        /* HERO CARD */
         .hero-compliance-card {
             background: linear-gradient(135deg, rgba(9, 23, 44, 0.95) 0%, rgba(6, 17, 34, 0.98) 100%);
             border: 1px solid var(--gold-border);
@@ -486,17 +404,6 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             position: relative;
             overflow: hidden;
         }
-        .hero-compliance-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            right: 0;
-            width: 320px;
-            height: 100%;
-            background: radial-gradient(circle at center, rgba(212, 175, 55, 0.12) 0%, transparent 70%);
-            pointer-events: none;
-        }
-
         .hero-gold-title {
             font-family: 'Cinzel', serif;
             font-size: 1.85rem;
@@ -506,7 +413,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             margin-bottom: 8px;
         }
 
-        /* TARJETAS KPI DE COMPLIANCE */
+        /* TARJETAS KPI */
         .kpi-metric-card {
             background: var(--bg-card);
             border: 1px solid var(--gold-border);
@@ -553,7 +460,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             flex-shrink: 0;
         }
 
-        /* TARJETAS DE DOCUMENTOS Y FORMATOS */
+        /* TARJETAS DE DOCUMENTOS */
         .doc-item-card {
             background: var(--bg-card);
             border: 1px solid var(--gold-border);
@@ -633,6 +540,142 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             outline: none;
         }
 
+        /* ===================================================================== */
+        /* GALERÍA / CARRUSEL DE AVISOS                                          */
+        /* ===================================================================== */
+        .avisos-gallery-wrapper {
+            background: #061224;
+            border: 1px solid var(--gold-border);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.5), 0 0 20px var(--gold-glow);
+            margin-bottom: 30px;
+        }
+
+        .gallery-main-stage {
+            position: relative;
+            width: 100%;
+            background: #030812;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+        }
+
+        .gallery-slide-item {
+            display: none;
+            position: relative;
+            width: 100%;
+            animation: slideFade 0.45s ease forwards;
+        }
+        .gallery-slide-item.active {
+            display: block;
+        }
+
+        @keyframes slideFade {
+            from { opacity: 0; transform: scale(0.985); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .gallery-slide-img {
+            width: 100%;
+            height: auto;
+            max-height: 520px;
+            object-fit: contain;
+            background: #030812;
+            display: block;
+            margin: 0 auto;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+        .gallery-slide-img:hover {
+            transform: scale(1.01);
+        }
+
+        .gallery-slide-overlay {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(180deg, transparent 0%, rgba(4, 13, 26, 0.85) 40%, rgba(4, 13, 26, 0.98) 100%);
+            padding: 24px 28px 18px 28px;
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        .gallery-controls-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: rgba(4, 13, 26, 0.75);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--gold-border);
+            color: var(--gold-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        .gallery-controls-btn:hover {
+            background: rgba(212, 175, 55, 0.25);
+            border-color: var(--gold-border-bright);
+            color: #ffffff;
+            box-shadow: 0 0 15px var(--gold-glow);
+            transform: translateY(-50%) scale(1.1);
+        }
+        .gallery-btn-prev { left: 16px; }
+        .gallery-btn-next { right: 16px; }
+
+        .gallery-thumbs-strip {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding: 16px 4px 6px 4px;
+            scrollbar-width: thin;
+            scrollbar-color: var(--gold-accent) transparent;
+        }
+        .gallery-thumb-card {
+            flex: 0 0 160px;
+            height: 90px;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid transparent;
+            cursor: pointer;
+            position: relative;
+            background: #030812;
+            transition: all 0.2s ease;
+            opacity: 0.6;
+        }
+        .gallery-thumb-card:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+        }
+        .gallery-thumb-card.active {
+            opacity: 1;
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 14px var(--gold-glow);
+        }
+        .gallery-thumb-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .gallery-autoplay-bar {
+            height: 3px;
+            width: 0%;
+            background: linear-gradient(90deg, #d4af37, #f5df9e);
+            transition: width 0.1s linear;
+        }
+
         /* MODAL STYLING */
         .modal-content-gold {
             background: #09172c;
@@ -650,32 +693,6 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             padding: 16px 24px;
         }
 
-        .form-label-gold {
-            font-size: 0.82rem;
-            font-weight: 700;
-            color: var(--gold-accent-light);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-        }
-
-        .form-control-gold, .form-select-gold {
-            background: #040d1a;
-            border: 1px solid rgba(212, 175, 55, 0.3);
-            color: #ffffff;
-            border-radius: 10px;
-            padding: 10px 14px;
-            font-size: 0.9rem;
-        }
-        .form-control-gold:focus, .form-select-gold:focus {
-            background: #061224;
-            border-color: var(--gold-accent);
-            color: #ffffff;
-            box-shadow: 0 0 12px var(--gold-glow);
-            outline: none;
-        }
-
-        /* RESPONSIVE TOGGLE SIDEBAR */
         .sidebar-toggle-btn {
             display: none;
             background: rgba(212, 175, 55, 0.15);
@@ -705,12 +722,16 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 max-width: 100vw;
                 padding: 20px 16px;
             }
+            .gallery-slide-overlay {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
     </style>
 </head>
 <body>
 
-<!-- NAVBAR SUPERIOR EJECUTIVA -->
+<!-- NAVBAR SUPERIOR -->
 <header class="executive-navbar d-flex align-items-center justify-content-between">
     <div class="d-flex align-items-center gap-3">
         <button class="sidebar-toggle-btn" id="sidebarToggle" aria-label="Abrir Menú">
@@ -729,11 +750,11 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
     </div>
 
     <div class="d-flex align-items-center gap-3">
-        <?php if ($esAdmin): ?>
-            <button class="btn-gold-primary" data-bs-toggle="modal" data-bs-target="#modalNuevoDocumento">
-                <i class="bi bi-cloud-arrow-up-fill"></i> <span class="d-none d-sm-inline">Nuevo Documento</span>
-            </button>
-        <?php endif; ?>
+        <!-- Indicador de Sincronización con Central GH -->
+        <span class="badge bg-primary bg-opacity-15 text-info border border-info border-opacity-30 rounded-pill px-3 py-2 small d-none d-sm-inline-flex align-items-center gap-1.5">
+            <i class="bi bi-cloud-check-fill text-info"></i>
+            <span>Central GH (Modo Consulta)</span>
+        </span>
 
         <div class="text-end d-none d-lg-block">
             <div class="small fw-bold text-white"><?php echo htmlspecialchars($nombreUsuario); ?></div>
@@ -758,7 +779,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 <i class="bi bi-shield-lock-fill"></i> GOBIERNO & CONTROL
             </div>
             <h2 class="sidebar-title">COMPLIANCE</h2>
-            <div class="sidebar-subtitle">Gestión Normativa e Institucional</div>
+            <div class="sidebar-subtitle">Normativas Centralizadas Grupo Huerta</div>
         </div>
 
         <nav class="sidebar-nav">
@@ -804,11 +825,11 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         <div class="sidebar-footer">
             <div class="sidebar-kpi-pill">
                 <div class="d-flex align-items-center justify-content-between mb-1">
-                    <span class="small text-secondary fw-semibold">Auditoría Normativa</span>
-                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50" style="font-size: 0.68rem;">100% VIGENTE</span>
+                    <span class="small text-secondary fw-semibold">Gobernanza TI</span>
+                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50" style="font-size: 0.68rem;">SINCRONIZADO</span>
                 </div>
                 <div class="text-white small fw-bold">
-                    <i class="bi bi-check2-circle text-warning me-1"></i> <?php echo $totalDocumentos; ?> Documentos Activos
+                    <i class="bi bi-check2-circle text-warning me-1"></i> <?php echo $totalDocumentos; ?> Documentos Oficiales
                 </div>
             </div>
 
@@ -819,25 +840,9 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
     </aside>
 
     <!-- ========================================================================= -->
-    <!-- CONTENIDO PRINCIPAL                                                       -->
+    <!-- CONTENIDO PRINCIPAL (SOLO LECTURA SINCRONIZADA DE GH)                     -->
     <!-- ========================================================================= -->
     <main class="compliance-content">
-
-        <?php if (!empty($mensaje)): ?>
-            <div class="alert alert-success alert-dismissible fade show border-success border-opacity-50 bg-success bg-opacity-10 text-white rounded-4 mb-4" role="alert">
-                <i class="bi bi-check-circle-fill text-success me-2 fs-5 align-middle"></i>
-                <?php echo htmlspecialchars($mensaje); ?>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
-        <?php if (!empty($error)): ?>
-            <div class="alert alert-danger alert-dismissible fade show border-danger border-opacity-50 bg-danger bg-opacity-10 text-white rounded-4 mb-4" role="alert">
-                <i class="bi bi-exclamation-triangle-fill text-danger me-2 fs-5 align-middle"></i>
-                <?php echo htmlspecialchars($error); ?>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
 
         <!-- ===================================================================== -->
         <!-- SECCIÓN 1: PRINCIPAL                                                  -->
@@ -851,7 +856,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 </div>
                 <h1 class="hero-gold-title">Módulo de Compliance</h1>
                 <p class="text-secondary mb-4" style="max-width: 820px; font-size: 0.98rem; line-height: 1.6;">
-                    Bienvenido al centro institucional de gobernanza de <strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>. Aquí encontrarás formatos oficiales, manuales de operación estandarizados y los avisos y circulares vigentes emitidos por la Dirección General y la Dirección de Sistemas.
+                    Bienvenido al centro institucional de gobernanza de <strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>. Aquí se consultan los formatos oficiales, manuales de operación y comunicados emitidos y autorizados por la Dirección Central de Grupo Huerta.
                 </p>
 
                 <div class="d-flex flex-wrap gap-3">
@@ -862,7 +867,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <i class="bi bi-book-half"></i> Consultar Manuales
                     </button>
                     <button class="btn-gold-outline" onclick="cambiarSeccion('avisos')">
-                        <i class="bi bi-megaphone-fill"></i> Ver Avisos Vigentes
+                        <i class="bi bi-megaphone-fill"></i> Ver Galería de Avisos
                     </button>
                 </div>
             </div>
@@ -874,7 +879,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number"><?php echo $totalFormatos; ?></div>
                             <div class="kpi-metric-label">Formatos Oficiales</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Responsivas y formatos activos</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Responsivas y formatos autorizados</div>
                         </div>
                         <div class="kpi-icon-box">
                             <i class="bi bi-file-earmark-check"></i>
@@ -887,7 +892,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number"><?php echo $totalManuales; ?></div>
                             <div class="kpi-metric-label">Manuales Operativos</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Guías y protocolos estandarizados</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Guías y protocolos oficiales</div>
                         </div>
                         <div class="kpi-icon-box">
                             <i class="bi bi-journal-bookmark-fill"></i>
@@ -900,7 +905,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number"><?php echo $totalAvisos; ?></div>
                             <div class="kpi-metric-label">Avisos y Circulares</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Privacidad y comunicados urgentes</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Galería visual continua</div>
                         </div>
                         <div class="kpi-icon-box">
                             <i class="bi bi-megaphone-fill"></i>
@@ -913,7 +918,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <div>
                             <div class="kpi-metric-number" style="color: #34d399;">100%</div>
                             <div class="kpi-metric-label">Estatus Regulatorio</div>
-                            <div class="text-secondary" style="font-size: 0.75rem;">Conforme a normatividad 2026</div>
+                            <div class="text-secondary" style="font-size: 0.75rem;">Auditado Central Grupo Huerta</div>
                         </div>
                         <div class="kpi-icon-box" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #34d399;">
                             <i class="bi bi-patch-check-fill"></i>
@@ -963,33 +968,25 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <div class="p-4 rounded-4" style="background: var(--bg-card); border: 1px solid var(--gold-border); height: 100%;">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                             <h3 class="h5 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                                <i class="bi bi-bell-fill text-warning"></i> Últimos Avisos
+                                <i class="bi bi-images text-warning"></i> Galería de Avisos
                             </h3>
                             <button class="btn btn-sm btn-link text-warning text-decoration-none p-0" onclick="cambiarSeccion('avisos')">
-                                Ver todos <i class="bi bi-arrow-right"></i>
+                                Ver galería <i class="bi bi-arrow-right"></i>
                             </button>
                         </div>
 
-                        <div class="d-flex flex-column gap-3">
-                            <?php 
-                            $muestraAvisos = array_slice($avisos, 0, 3);
-                            foreach ($muestraAvisos as $ma): 
-                                $pClass = 'priority-normal';
-                                if ($ma['prioridad'] === 'Alta') $pClass = 'priority-alta';
-                                elseif ($ma['prioridad'] === 'Media') $pClass = 'priority-media';
-                            ?>
-                                <div class="p-3 rounded-3" style="background: rgba(4, 13, 26, 0.6); border: 1px solid rgba(255, 255, 255, 0.06);">
-                                    <div class="d-flex align-items-center justify-content-between mb-1">
-                                        <span class="doc-priority-badge <?php echo $pClass; ?>"><?php echo htmlspecialchars($ma['prioridad']); ?></span>
-                                        <span class="text-secondary" style="font-size: 0.72rem;"><?php echo htmlspecialchars($ma['fecha_publicacion']); ?></span>
-                                    </div>
-                                    <div class="fw-bold text-white small mb-1"><?php echo htmlspecialchars($ma['titulo']); ?></div>
-                                    <p class="text-secondary mb-0 text-truncate" style="font-size: 0.75rem;">
-                                        <?php echo htmlspecialchars($ma['descripcion']); ?>
-                                    </p>
+                        <?php if (!empty($avisos)): 
+                            $primerAviso = $avisos[0];
+                            $imgThumb = !empty($primerAviso['imagen_url_completa']) ? $primerAviso['imagen_url_completa'] : 'uploads/compliance/aviso_AV-01.svg';
+                        ?>
+                            <div class="position-relative rounded-3 overflow-hidden border border-secondary border-opacity-25" style="cursor: pointer;" onclick="cambiarSeccion('avisos')">
+                                <img src="<?php echo htmlspecialchars($imgThumb); ?>" alt="Aviso Destacado" class="w-100" style="max-height: 190px; object-fit: cover;">
+                                <div class="position-absolute bottom-0 start-0 end-0 p-2 text-white" style="background: rgba(4, 13, 26, 0.88); backdrop-filter: blur(4px);">
+                                    <div class="small fw-bold text-truncate"><?php echo htmlspecialchars($primerAviso['titulo']); ?></div>
+                                    <div class="text-secondary" style="font-size: 0.7rem;"><?php echo htmlspecialchars($primerAviso['codigo']); ?> &bull; Prioridad <?php echo htmlspecialchars($primerAviso['prioridad']); ?></div>
                                 </div>
-                            <?php endforeach; ?>
-                        </div>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1006,7 +1003,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <h2 class="h3 fw-bold text-white m-0 d-flex align-items-center gap-2">
                         <i class="bi bi-file-earmark-text-fill text-warning"></i> Formatos Oficiales
                     </h2>
-                    <p class="text-secondary small mb-0">Cartas responsivas, solicitudes de cuentas y bitácoras oficiales de Grupo Huerta.</p>
+                    <p class="text-secondary small mb-0">Formatos y cartas responsivas autorizados por la Dirección Central Grupo Huerta.</p>
                 </div>
                 <div class="d-flex gap-2">
                     <input type="text" id="filtroFormatos" class="search-control-box" placeholder="Buscar formato por título o código..." style="min-width: 260px;">
@@ -1018,10 +1015,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                 <?php if (empty($formatos)): ?>
                     <div class="col-12 py-5 text-center text-secondary">
                         <i class="bi bi-folder2-open display-4 opacity-50 d-block mb-3"></i>
-                        No hay formatos registrados actualmente.
+                        No hay formatos disponibles actualmente.
                     </div>
                 <?php else: ?>
-                    <?php foreach ($formatos as $fmt): ?>
+                    <?php foreach ($formatos as $fmt): 
+                        $archivoUrl = !empty($fmt['archivo_url_completo']) ? $fmt['archivo_url_completo'] : ($fmt['archivo_url'] ?? '');
+                    ?>
                         <div class="col-12 col-md-6 col-xl-4 item-tarjeta-formato" data-search="<?php echo htmlspecialchars(strtolower($fmt['codigo'] . ' ' . $fmt['titulo'] . ' ' . $fmt['categoria'])); ?>">
                             <div class="doc-item-card h-100 d-flex flex-column justify-content-between">
                                 <div>
@@ -1048,19 +1047,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                         <button class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($fmt)); ?>)">
                                             <i class="bi bi-eye"></i> Visualizar
                                         </button>
-                                        <?php if (!empty($fmt['archivo_url'])): ?>
-                                            <a href="<?php echo htmlspecialchars($fmt['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3">
+                                        <?php if (!empty($archivoUrl)): ?>
+                                            <a href="<?php echo htmlspecialchars($archivoUrl); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3" title="Descargar Formato">
                                                 <i class="bi bi-download"></i>
                                             </a>
-                                        <?php endif; ?>
-                                        <?php if ($esAdmin): ?>
-                                            <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este formato oficial?');" class="m-0">
-                                                <input type="hidden" name="accion" value="eliminar_documento">
-                                                <input type="hidden" name="documento_id" value="<?php echo $fmt['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3" title="Eliminar Formato">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -1082,7 +1072,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <h2 class="h3 fw-bold text-white m-0 d-flex align-items-center gap-2">
                         <i class="bi bi-book-half text-warning"></i> Manuales de Procedimientos
                     </h2>
-                    <p class="text-secondary small mb-0">Manuales operativos, protocolos de seguridad de la información y guías de usuario.</p>
+                    <p class="text-secondary small mb-0">Manuales operativos, protocolos de seguridad de la información y guías oficiales.</p>
                 </div>
                 <div>
                     <input type="text" id="filtroManuales" class="search-control-box" placeholder="Buscar manual por título..." style="min-width: 260px;">
@@ -1097,7 +1087,9 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         No hay manuales registrados actualmente.
                     </div>
                 <?php else: ?>
-                    <?php foreach ($manuales as $man): ?>
+                    <?php foreach ($manuales as $man): 
+                        $manArchivoUrl = !empty($man['archivo_url_completo']) ? $man['archivo_url_completo'] : ($man['archivo_url'] ?? '');
+                    ?>
                         <div class="col-12 col-md-6 col-xl-4 item-tarjeta-manual" data-search="<?php echo htmlspecialchars(strtolower($man['codigo'] . ' ' . $man['titulo'] . ' ' . $man['categoria'])); ?>">
                             <div class="doc-item-card h-100 d-flex flex-column justify-content-between">
                                 <div>
@@ -1124,19 +1116,10 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                         <button class="btn btn-sm btn-outline-warning w-100 rounded-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($man)); ?>)">
                                             <i class="bi bi-book"></i> Consultar Manual
                                         </button>
-                                        <?php if (!empty($man['archivo_url'])): ?>
-                                            <a href="<?php echo htmlspecialchars($man['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3">
+                                        <?php if (!empty($manArchivoUrl)): ?>
+                                            <a href="<?php echo htmlspecialchars($manArchivoUrl); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3" title="Descargar Manual">
                                                 <i class="bi bi-download"></i>
                                             </a>
-                                        <?php endif; ?>
-                                        <?php if ($esAdmin): ?>
-                                            <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este manual?');" class="m-0">
-                                                <input type="hidden" name="accion" value="eliminar_documento">
-                                                <input type="hidden" name="documento_id" value="<?php echo $man['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-3" title="Eliminar Manual">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
-                                            </form>
                                         <?php endif; ?>
                                     </div>
                                 </div>
@@ -1149,80 +1132,156 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
         </section>
 
         <!-- ===================================================================== -->
-        <!-- SECCIÓN 4: AVISOS                                                     -->
+        <!-- SECCIÓN 4: AVISOS (GALERÍA INTERACTIVA DE IMÁGENES / CARRUSEL)       -->
         <!-- ===================================================================== -->
         <section class="compliance-section <?php echo $seccionActiva === 'avisos' ? 'active' : ''; ?>" id="sec-avisos">
             
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
                 <div>
                     <h2 class="h3 fw-bold text-white m-0 d-flex align-items-center gap-2">
-                        <i class="bi bi-megaphone-fill text-warning"></i> Avisos & Circulares Oficiales
+                        <i class="bi bi-images text-warning"></i> Galería de Avisos & Circulares
                     </h2>
-                    <p class="text-secondary small mb-0">Avisos de privacidad, alertas de ciberseguridad y circulares emitidas por Dirección.</p>
+                    <p class="text-secondary small mb-0">Avisos de privacidad, alertas de ciberseguridad y circulares oficiales de Grupo Huerta.</p>
                 </div>
-                <div>
-                    <input type="text" id="filtroAvisos" class="search-control-box" placeholder="Buscar avisos o circulares..." style="min-width: 260px;">
+                <div class="d-flex align-items-center gap-2">
+                    <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" id="btnToggleVistaAvisos" onclick="toggleVistaAvisos()">
+                        <i class="bi bi-grid-fill me-1"></i> <span id="txtToggleVista">Ver Cuadrícula</span>
+                    </button>
+                    <input type="text" id="filtroAvisos" class="search-control-box" placeholder="Buscar aviso..." style="min-width: 220px;">
                 </div>
             </div>
 
-            <!-- Listado de Avisos -->
-            <div class="d-flex flex-column gap-3" id="contenedorAvisos">
-                <?php if (empty($avisos)): ?>
-                    <div class="py-5 text-center text-secondary">
-                        <i class="bi bi-bell-slash display-4 opacity-50 d-block mb-3"></i>
-                        No hay avisos o circulares vigentes.
+            <?php if (empty($avisos)): ?>
+                <div class="py-5 text-center text-secondary">
+                    <i class="bi bi-bell-slash display-4 opacity-50 d-block mb-3"></i>
+                    No hay avisos registrados actualmente.
+                </div>
+            <?php else: ?>
+
+                <!-- 1. VISTA GALERÍA (CARRUSEL AUTOMÁTICO CONTINUO) -->
+                <div class="avisos-gallery-wrapper" id="vistaGaleriaAvisos">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-warning text-dark fw-bold px-3 py-1.5 rounded-pill">
+                                <i class="bi bi-play-circle-fill me-1"></i> GALERÍA ACTIVA
+                            </span>
+                            <span class="text-secondary small" id="indicadorGaleriaTexto">Aviso 1 de <?php echo count($avisos); ?></span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-sm btn-outline-secondary rounded-circle" id="btnPausaGaleria" onclick="togglePlayGaleria()" title="Pausar / Reanudar Rotación" style="width: 34px; height: 34px; padding: 0;">
+                                <i class="bi bi-pause-fill" id="iconoPausa"></i>
+                            </button>
+                        </div>
                     </div>
-                <?php else: ?>
+
+                    <div class="gallery-main-stage" id="galleryMainStage" onmouseenter="pausarAutoPlay()" onmouseleave="reanudarAutoPlay()">
+                        <div class="gallery-autoplay-bar" id="galleryProgressBar"></div>
+
+                        <!-- Botones de Navegación -->
+                        <button class="gallery-controls-btn gallery-btn-prev" onclick="cambiarSlideGaleria(-1)" aria-label="Aviso Anterior">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button class="gallery-controls-btn gallery-btn-next" onclick="cambiarSlideGaleria(1)" aria-label="Aviso Siguiente">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+
+                        <!-- Diapositivas de la Galería -->
+                        <?php foreach ($avisos as $index => $av): 
+                            $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                            $anexoUrl = !empty($av['archivo_url_completo']) ? $av['archivo_url_completo'] : ($av['archivo_url'] ?? '');
+                            $pClass = 'priority-normal';
+                            if ($av['prioridad'] === 'Alta') $pClass = 'priority-alta';
+                            elseif ($av['prioridad'] === 'Media') $pClass = 'priority-media';
+                        ?>
+                            <div class="gallery-slide-item <?php echo $index === 0 ? 'active' : ''; ?>" data-slide-index="<?php echo $index; ?>">
+                                <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                
+                                <div class="gallery-slide-overlay">
+                                    <div style="max-width: 750px;">
+                                        <div class="d-flex align-items-center gap-2 mb-2">
+                                            <span class="doc-code-badge"><?php echo htmlspecialchars($av['codigo']); ?></span>
+                                            <span class="doc-priority-badge <?php echo $pClass; ?>">Prioridad <?php echo htmlspecialchars($av['prioridad']); ?></span>
+                                            <span class="category-tag"><?php echo htmlspecialchars($av['categoria']); ?></span>
+                                            <span class="text-secondary small ms-2"><i class="bi bi-calendar3"></i> <?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
+                                        </div>
+                                        <h3 class="h4 fw-bold text-white mb-1"><?php echo htmlspecialchars($av['titulo']); ?></h3>
+                                        <p class="text-light text-opacity-75 mb-0 text-truncate" style="font-size: 0.88rem; max-width: 680px;">
+                                            <?php echo htmlspecialchars($av['descripcion']); ?>
+                                        </p>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                        <button class="btn btn-sm btn-gold-primary rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                            <i class="bi bi-arrows-fullscreen me-1"></i> Pantalla Completa
+                                        </button>
+                                        <?php if (!empty($anexoUrl)): ?>
+                                            <a href="<?php echo htmlspecialchars($anexoUrl); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3">
+                                                <i class="bi bi-download me-1"></i> Anexo
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <!-- Tira de Miniaturas Inferior -->
+                    <div class="gallery-thumbs-strip" id="galleryThumbsStrip">
+                        <?php foreach ($avisos as $idx => $av): 
+                            $thumbImg = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                        ?>
+                            <div class="gallery-thumb-card <?php echo $idx === 0 ? 'active' : ''; ?>" data-thumb-index="<?php echo $idx; ?>" onclick="irASlideGaleria(<?php echo $idx; ?>)" title="<?php echo htmlspecialchars($av['titulo']); ?>">
+                                <img src="<?php echo htmlspecialchars($thumbImg); ?>" alt="Miniatura <?php echo htmlspecialchars($av['codigo']); ?>">
+                                <div class="position-absolute bottom-0 start-0 end-0 p-1 text-center small text-white fw-bold" style="background: rgba(0,0,0,0.7); font-size: 0.65rem;">
+                                    <?php echo htmlspecialchars($av['codigo']); ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <!-- 2. VISTA CUADRÍCULA ALTERNA (OCULTA POR DEFECTO) -->
+                <div class="row g-3 d-none" id="vistaCuadriculaAvisos">
                     <?php foreach ($avisos as $av): 
+                        $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
+                        $anexoUrl = !empty($av['archivo_url_completo']) ? $av['archivo_url_completo'] : ($av['archivo_url'] ?? '');
                         $pClass = 'priority-normal';
                         if ($av['prioridad'] === 'Alta') $pClass = 'priority-alta';
                         elseif ($av['prioridad'] === 'Media') $pClass = 'priority-media';
                     ?>
-                        <div class="doc-item-card item-tarjeta-aviso" data-search="<?php echo htmlspecialchars(strtolower($av['codigo'] . ' ' . $av['titulo'] . ' ' . $av['descripcion'] . ' ' . $av['prioridad'])); ?>">
-                            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-                                <div class="d-flex align-items-center gap-2">
-                                    <span class="doc-code-badge"><?php echo htmlspecialchars($av['codigo']); ?></span>
-                                    <span class="doc-priority-badge <?php echo $pClass; ?>">Prioridad <?php echo htmlspecialchars($av['prioridad']); ?></span>
-                                    <span class="category-tag"><?php echo htmlspecialchars($av['categoria']); ?></span>
+                        <div class="col-12 col-md-6 item-tarjeta-aviso" data-search="<?php echo htmlspecialchars(strtolower($av['codigo'] . ' ' . $av['titulo'] . ' ' . $av['descripcion'] . ' ' . $av['prioridad'])); ?>">
+                            <div class="doc-item-card h-100 d-flex flex-column justify-content-between p-3">
+                                <div>
+                                    <div class="rounded-3 overflow-hidden mb-3 border border-secondary border-opacity-25" style="background: #030812; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="w-100" style="max-height: 220px; object-fit: contain;">
+                                    </div>
+                                    <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                                        <span class="doc-code-badge"><?php echo htmlspecialchars($av['codigo']); ?></span>
+                                        <span class="doc-priority-badge <?php echo $pClass; ?>">Prioridad <?php echo htmlspecialchars($av['prioridad']); ?></span>
+                                    </div>
+                                    <h4 class="h6 fw-bold text-white mb-2"><?php echo htmlspecialchars($av['titulo']); ?></h4>
+                                    <p class="text-secondary small mb-3"><?php echo htmlspecialchars($av['descripcion']); ?></p>
                                 </div>
-                                <div class="text-secondary small">
-                                    <i class="bi bi-calendar3 me-1"></i> Publicado: <?php echo htmlspecialchars($av['fecha_publicacion']); ?>
-                                </div>
-                            </div>
 
-                            <h3 class="h5 fw-bold text-white mb-2"><?php echo htmlspecialchars($av['titulo']); ?></h3>
-                            <p class="text-secondary mb-3" style="font-size: 0.88rem; line-height: 1.6;">
-                                <?php echo nl2br(htmlspecialchars($av['descripcion'])); ?>
-                            </p>
-
-                            <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-10">
-                                <div class="text-secondary" style="font-size: 0.75rem;">
-                                    <i class="bi bi-person-check text-warning me-1"></i> Emisor: <strong><?php echo htmlspecialchars($av['creado_por'] ?? 'Dirección General'); ?></strong>
-                                </div>
-                                <div class="d-flex gap-2">
-                                    <button class="btn btn-sm btn-outline-warning rounded-3 px-3" onclick="verDocumento(<?php echo htmlspecialchars(json_encode($av)); ?>)">
-                                        <i class="bi bi-eye"></i> Detalle
-                                    </button>
-                                    <?php if (!empty($av['archivo_url'])): ?>
-                                        <a href="<?php echo htmlspecialchars($av['archivo_url']); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-3 px-3">
-                                            <i class="bi bi-download"></i> Descargar Anexo
-                                        </a>
-                                    <?php endif; ?>
-                                    <?php if ($esAdmin): ?>
-                                        <form method="POST" onsubmit="return confirm('¿Confirmas que deseas eliminar este aviso?');" class="m-0">
-                                            <input type="hidden" name="accion" value="eliminar_documento">
-                                            <input type="hidden" name="documento_id" value="<?php echo $av['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-3" title="Eliminar Aviso">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
-                                    <?php endif; ?>
+                                <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-10">
+                                    <span class="text-secondary" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                            <i class="bi bi-arrows-fullscreen"></i>
+                                        </button>
+                                        <?php if (!empty($anexoUrl)): ?>
+                                            <a href="<?php echo htmlspecialchars($anexoUrl); ?>" download class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                        <?php endif; ?>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
+                </div>
+
+            <?php endif; ?>
 
         </section>
 
@@ -1230,105 +1289,33 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 </div>
 
 <!-- ========================================================================= -->
-<!-- MODAL: NUEVO DOCUMENTO DE COMPLIANCE (ADMINISTRADOR)                      -->
+<!-- MODAL: LIGHTBOX / ZOOM DE IMAGEN DE AVISO                                 -->
 <!-- ========================================================================= -->
-<?php if ($esAdmin): ?>
-<div class="modal fade" id="modalNuevoDocumento" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+<div class="modal fade" id="modalLightboxAviso" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content modal-content-gold">
             <div class="modal-header modal-header-gold">
-                <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
-                    <i class="bi bi-cloud-arrow-up-fill text-warning"></i> Nuevo Documento de Compliance
-                </h5>
+                <h5 class="modal-title fw-bold text-white" id="lightboxTitulo"></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <form method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="accion" value="subir_documento">
-                <div class="modal-body p-4">
-                    <div class="row g-3">
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Sección / Tipo *</label>
-                            <select name="tipo" class="form-select form-select-gold" required>
-                                <option value="formato">Formatos</option>
-                                <option value="manual">Manuales</option>
-                                <option value="aviso">Avisos</option>
-                            </select>
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Código Oficial *</label>
-                            <input type="text" name="codigo" class="form-control form-control-gold" placeholder="Ej. FR-TI-03" required>
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Categoría *</label>
-                            <select name="categoria" class="form-select form-select-gold">
-                                <option value="Tecnologías de la Información">Tecnologías de la Información</option>
-                                <option value="Ciberseguridad">Ciberseguridad</option>
-                                <option value="Recursos Humanos">Recursos Humanos</option>
-                                <option value="Legal & Cumplimiento">Legal & Cumplimiento</option>
-                                <option value="Seguridad Patrimonial">Seguridad Patrimonial</option>
-                                <option value="Operaciones & Soporte">Operaciones & Soporte</option>
-                                <option value="Dirección General">Dirección General</option>
-                            </select>
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label-gold">Título del Documento *</label>
-                            <input type="text" name="titulo" class="form-control form-control-gold" placeholder="Título formal del documento o circular" required>
-                        </div>
-
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Versión</label>
-                            <input type="text" name="version" class="form-control form-control-gold" value="1.0" placeholder="1.0">
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Prioridad</label>
-                            <select name="prioridad" class="form-select form-select-gold">
-                                <option value="Normal">Normal</option>
-                                <option value="Media">Media</option>
-                                <option value="Alta">Alta</option>
-                                <option value="Urgente">Urgente</option>
-                            </select>
-                        </div>
-                        <div class="col-12 col-md-4">
-                            <label class="form-label-gold">Fecha Vigencia</label>
-                            <input type="date" name="fecha_vigencia" class="form-control form-control-gold" value="<?php echo date('Y') + 1; ?>-12-31">
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label-gold">Descripción / Alcance</label>
-                            <textarea name="descripcion" class="form-control form-control-gold" rows="3" placeholder="Resumen o justificación del documento"></textarea>
-                        </div>
-
-                        <div class="col-12">
-                            <label class="form-label-gold">Archivo Adjunto (PDF, Word, Excel) *</label>
-                            <input type="file" name="archivo" class="form-control form-control-gold" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx">
-                            <div class="form-text text-secondary" style="font-size: 0.72rem;">Máximo 25 MB. Formatos permitidos: PDF, DOCX, XLSX.</div>
-                        </div>
-
-                        <div class="col-12">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="obligatorio_lectura" id="chkObligatorio" value="1">
-                                <label class="form-check-label small text-secondary" for="chkObligatorio">
-                                    Marcar como lectura institucional obligatoria para colaboradores
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+            <div class="modal-body p-2 p-md-3 text-center bg-black position-relative">
+                <img id="lightboxImg" src="" alt="Aviso Ampliado" class="img-fluid rounded-3" style="max-height: 80vh; width: auto; object-fit: contain;">
+                <div class="small text-secondary mt-2">
+                    <i class="bi bi-shield-lock-fill text-warning"></i> Portal Oficial Grupo Huerta &bull; Usuario: <?php echo htmlspecialchars($nombreUsuario); ?> &bull; IP: <?php echo htmlspecialchars($ipUsuario); ?>
                 </div>
-                <div class="modal-footer modal-footer-gold">
-                    <button type="button" class="btn btn-outline-secondary rounded-3 px-3" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn-gold-primary">
-                        <i class="bi bi-cloud-arrow-up-fill"></i> Publicar Documento
-                    </button>
-                </div>
-            </form>
+            </div>
+            <div class="modal-footer modal-footer-gold justify-content-between">
+                <a id="lightboxBtnDescargar" href="#" download class="btn btn-warning text-dark fw-bold rounded-pill px-4">
+                    <i class="bi bi-download me-1"></i> Descargar Imagen
+                </a>
+                <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cerrar</button>
+            </div>
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 <!-- ========================================================================= -->
-<!-- MODAL: VISOR / FICHA DETALLE DEL DOCUMENTO                                -->
+<!-- MODAL: VISOR / FICHA DETALLE DEL DOCUMENTO (FORMATOS Y MANUALES)          -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="modalVisorDocumento" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -1355,7 +1342,6 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <p id="vDocDescripcion" class="text-light" style="line-height: 1.6; font-size: 0.92rem;"></p>
                 </div>
 
-                <!-- Simulación / Link a archivo -->
                 <div id="vDocArchivoBox" class="p-4 rounded-3 text-center" style="background: rgba(212, 175, 55, 0.05); border: 1px dashed var(--gold-border);">
                     <i class="bi bi-file-earmark-pdf-fill text-warning display-4 d-block mb-2"></i>
                     <h6 class="text-white fw-bold mb-1">Documento Oficial Protegido</h6>
@@ -1374,57 +1360,166 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Manejo de cambio de secciones en el menú lateral
+// NAVEGACIÓN Y MENÚ LATERAL
 function cambiarSeccion(seccionId) {
     document.querySelectorAll('.compliance-section').forEach(sec => sec.classList.remove('active'));
     document.querySelectorAll('.compliance-nav-item').forEach(item => item.classList.remove('active'));
 
     const secTarget = document.getElementById('sec-' + seccionId);
-    if (secTarget) {
-        secTarget.classList.add('active');
-    }
+    if (secTarget) secTarget.classList.add('active');
 
     const navTarget = document.querySelector(`.compliance-nav-item[data-tab-target="${seccionId}"]`);
-    if (navTarget) {
-        navTarget.classList.add('active');
-    }
+    if (navTarget) navTarget.classList.add('active');
 
-    // Actualizar URL sin recargar
     if (history.pushState) {
         const nuevaUrl = window.location.pathname + '?seccion=' + seccionId;
         window.history.pushState({path: nuevaUrl}, '', nuevaUrl);
     }
 
-    // En pantallas móviles, cerrar sidebar al seleccionar
     const sidebar = document.getElementById('complianceSidebar');
     if (sidebar && window.innerWidth < 992) {
         sidebar.classList.remove('open');
     }
 }
 
-// Escuchar clicks de navegación del menú lateral
 document.querySelectorAll('.compliance-nav-item').forEach(link => {
     link.addEventListener('click', function(e) {
         e.preventDefault();
         const tab = this.getAttribute('data-tab-target');
-        if (tab) {
-            cambiarSeccion(tab);
-        }
+        if (tab) cambiarSeccion(tab);
     });
 });
 
-// Toggle Sidebar en móvil
 const btnToggle = document.getElementById('sidebarToggle');
 if (btnToggle) {
     btnToggle.addEventListener('click', () => {
         const sidebar = document.getElementById('complianceSidebar');
-        if (sidebar) {
-            sidebar.classList.toggle('open');
-        }
+        if (sidebar) sidebar.classList.toggle('open');
     });
 }
 
-// Filtros en vivo
+// MOTOR DE LA GALERÍA / CARRUSEL CONTINUO DE AVISOS
+let currentSlideIndex = 0;
+const slides = document.querySelectorAll('.gallery-slide-item');
+const thumbs = document.querySelectorAll('.gallery-thumb-card');
+const totalSlides = slides.length;
+let autoPlayPausado = false;
+let progresoTimer = null;
+let progresoPct = 0;
+const TIEMPO_SLIDE_MS = 5000;
+
+function mostrarSlide(index) {
+    if (totalSlides === 0) return;
+    if (index >= totalSlides) currentSlideIndex = 0;
+    else if (index < 0) currentSlideIndex = totalSlides - 1;
+    else currentSlideIndex = index;
+
+    slides.forEach((sl, idx) => {
+        sl.classList.toggle('active', idx === currentSlideIndex);
+    });
+    thumbs.forEach((th, idx) => {
+        th.classList.toggle('active', idx === currentSlideIndex);
+    });
+
+    const indTexto = document.getElementById('indicadorGaleriaTexto');
+    if (indTexto) {
+        indTexto.innerText = `Aviso ${currentSlideIndex + 1} de ${totalSlides}`;
+    }
+
+    const activeThumb = document.querySelector(`.gallery-thumb-card[data-thumb-index="${currentSlideIndex}"]`);
+    if (activeThumb) {
+        activeThumb.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+
+    reiniciarProgreso();
+}
+
+function cambiarSlideGaleria(delta) {
+    mostrarSlide(currentSlideIndex + delta);
+}
+
+function irASlideGaleria(index) {
+    mostrarSlide(index);
+}
+
+function reiniciarProgreso() {
+    progresoPct = 0;
+    const bar = document.getElementById('galleryProgressBar');
+    if (bar) bar.style.width = '0%';
+}
+
+function iniciarAutoPlay() {
+    if (totalSlides <= 1) return;
+    detenerAutoPlay();
+    reiniciarProgreso();
+
+    progresoTimer = setInterval(() => {
+        if (!autoPlayPausado) {
+            progresoPct += (100 / (TIEMPO_SLIDE_MS / 100));
+            const bar = document.getElementById('galleryProgressBar');
+            if (bar) bar.style.width = Math.min(progresoPct, 100) + '%';
+            if (progresoPct >= 100) {
+                cambiarSlideGaleria(1);
+            }
+        }
+    }, 100);
+}
+
+function detenerAutoPlay() {
+    if (progresoTimer) clearInterval(progresoTimer);
+}
+
+function pausarAutoPlay() {
+    autoPlayPausado = true;
+}
+
+function reanudarAutoPlay() {
+    autoPlayPausado = false;
+}
+
+function togglePlayGaleria() {
+    autoPlayPausado = !autoPlayPausado;
+    const icon = document.getElementById('iconoPausa');
+    if (icon) {
+        icon.className = autoPlayPausado ? 'bi bi-play-fill' : 'bi bi-pause-fill';
+    }
+}
+
+if (totalSlides > 0) {
+    iniciarAutoPlay();
+}
+
+function toggleVistaAvisos() {
+    const gal = document.getElementById('vistaGaleriaAvisos');
+    const cuad = document.getElementById('vistaCuadriculaAvisos');
+    const txt = document.getElementById('txtToggleVista');
+    if (gal && cuad) {
+        const esGal = !gal.classList.contains('d-none');
+        if (esGal) {
+            gal.classList.add('d-none');
+            cuad.classList.remove('d-none');
+            if (txt) txt.innerText = 'Ver Galería';
+            pausarAutoPlay();
+        } else {
+            gal.classList.remove('d-none');
+            cuad.classList.add('d-none');
+            if (txt) txt.innerText = 'Ver Cuadrícula';
+            reanudarAutoPlay();
+        }
+    }
+}
+
+function abrirLightbox(src, titulo) {
+    const img = document.getElementById('lightboxImg');
+    const tit = document.getElementById('lightboxTitulo');
+    const btn = document.getElementById('lightboxBtnDescargar');
+    if (img) img.src = src;
+    if (tit) tit.innerText = titulo || 'Aviso Institucional Grupo Huerta';
+    if (btn) btn.href = src;
+    const modal = new bootstrap.Modal(document.getElementById('modalLightboxAviso'));
+    modal.show();
+}
+
 function setupFiltro(inputId, itemsClass) {
     const inp = document.getElementById(inputId);
     if (!inp) return;
@@ -1440,7 +1535,6 @@ setupFiltro('filtroFormatos', 'item-tarjeta-formato');
 setupFiltro('filtroManuales', 'item-tarjeta-manual');
 setupFiltro('filtroAvisos', 'item-tarjeta-aviso');
 
-// Modal visor de documento
 function verDocumento(doc) {
     document.getElementById('vDocCodigo').innerText = doc.codigo || 'DOC';
     document.getElementById('vDocTitulo').innerText = doc.titulo || '';
@@ -1451,8 +1545,9 @@ function verDocumento(doc) {
     document.getElementById('vDocDescripcion').innerText = doc.descripcion || 'Sin descripción disponible.';
 
     const btnCont = document.getElementById('vDocBtnContainer');
-    if (doc.archivo_url && doc.archivo_url.length > 0) {
-        btnCont.innerHTML = `<a href="${doc.archivo_url}" download class="btn btn-warning text-dark fw-bold px-4 rounded-3"><i class="bi bi-download me-1"></i> Descargar Archivo Oficial (${doc.archivo_tamano || 'PDF'})</a>`;
+    const urlDescarga = doc.archivo_url_completo || doc.archivo_url;
+    if (urlDescarga && urlDescarga.length > 0) {
+        btnCont.innerHTML = `<a href="${urlDescarga}" download class="btn btn-warning text-dark fw-bold px-4 rounded-3"><i class="bi bi-download me-1"></i> Descargar Documento (${doc.archivo_tamano || 'PDF'})</a>`;
     } else {
         btnCont.innerHTML = `<button class="btn btn-outline-warning rounded-3 px-4" disabled><i class="bi bi-check-circle me-1"></i> Documento Oficial Resguardado en Archivo Central</button>`;
     }
