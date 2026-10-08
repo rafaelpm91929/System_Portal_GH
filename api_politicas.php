@@ -1,5 +1,6 @@
 <?php
 // API Central y Gestor de Políticas Corporativas Protegidas (Portal Central GH)
+date_default_timezone_set('America/Mexico_City');
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -154,17 +155,21 @@ if ($action === 'registrar_lectura') {
 
     if ($pdo) {
         try {
+            date_default_timezone_set('America/Mexico_City');
+            $fechaLecturaMexico = date('Y-m-d H:i:s');
+
             $stmt = $pdo->prepare("
                 INSERT INTO politicas_lecturas (politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
             ");
-            $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen]);
+            $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $fechaLecturaMexico]);
             $lecturaId = (int)$pdo->lastInsertId();
 
             echo json_encode([
                 'exito' => true, 
                 'mensaje' => 'Lectura registrada correctamente en Central GH',
-                'lectura_id' => $lecturaId
+                'lectura_id' => $lecturaId,
+                'fecha_lectura' => $fechaLecturaMexico
             ]);
             exit();
         } catch (Throwable $e) {
@@ -197,6 +202,7 @@ if ($action === 'finalizar_lectura') {
 
     if ($pdo) {
         try {
+            date_default_timezone_set('America/Mexico_City');
             $stmt = $pdo->prepare("SELECT fecha_lectura FROM politicas_lecturas WHERE id = ?");
             $stmt->execute([$lecturaId]);
             $fila = $stmt->fetch(PDO::FETCH_ASSOC);
