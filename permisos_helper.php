@@ -102,37 +102,38 @@ function asegurarTablasPermisos($pdo) {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN areas_tickets VARCHAR(255) DEFAULT 'TODOS'");
         } catch (Throwable $eAlter) {}
 
-        // 4. Sembrado Inicial de Módulos (Módulos activos en esta fase)
+        // Migración transparente si existía 'agencias'
+        try {
+            $pdo->exec("UPDATE modulos SET clave = 'agencia', nombre = 'Datos de la Agencia', icono = 'bi-building' WHERE clave = 'agencias'");
+            $pdo->exec("UPDATE usuario_permisos SET modulo_clave = 'agencia' WHERE modulo_clave = 'agencias'");
+        } catch (Throwable $tMig) {}
+
+        // 4. Sembrado Inicial de Módulos (Catálogo completo de módulos del portal)
         $modulosBase = [
-            ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 1, 1],
-            ['agencias',         'Agencias (Catálogo cPanel)',         'Monitoreo y administración de sucursales cPanel',            'bi-buildings-fill',       2, 1],
-            ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',   'bi-people-fill',          3, 1],
-            ['politicas',        'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado', 'bi-shield-shaded', 4, 1],
-            ['compliance',       'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales', 'bi-shield-check', 5, 1],
-            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados', 'bi-file-earmark-bar-graph', 6, 0],
-            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',          'bi-display-fill',            7, 0],
-            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',          'bi-phone-fill',              8, 0],
-            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',        'bi-key-fill',                9, 0],
-            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',        'bi-hdd-rack-fill',           10, 0]
+            ['agencia',          'Datos de la Agencia',                'Ficha oficial de la sucursal, datos de la agencia y encargado de sistemas', 'bi-building',               1, 1],
+            ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',                   'bi-people-fill',          2, 1],
+            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',                          'bi-display',              3, 1],
+            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',                        'bi-hdd-rack',             4, 1],
+            ['politicas',        'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado',     'bi-file-earmark-lock2-fill', 5, 1],
+            ['compliance',       'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales',          'bi-journal-check',        6, 1],
+            ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'bi-ticket-detailed-fill', 7, 1],
+            ['directorio',       'Directorio',                         'Directorio oficial de colaboradores, correos y extensiones',                'bi-telephone-inbound-fill', 8, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 9, 1],
+            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              10, 1],
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                11, 1]
         ];
 
         foreach ($modulosBase as $m) {
             $stmtCheck = $pdo->prepare("SELECT id FROM modulos WHERE clave = ?");
             $stmtCheck->execute([$m[0]]);
             if ($stmtCheck->fetch()) {
-                $stmtUpd = $pdo->prepare("UPDATE modulos SET nombre=?, descripcion=?, icono=?, orden=?, estatus=? WHERE clave=?");
-                $stmtUpd->execute([$m[1], $m[2], $m[3], $m[4], $m[5], $m[0]]);
+                $stmtUpd = $pdo->prepare("UPDATE modulos SET nombre=?, descripcion=?, icono=?, orden=?, estatus=1 WHERE clave=?");
+                $stmtUpd->execute([$m[1], $m[2], $m[3], $m[4], $m[0]]);
             } else {
                 $stmtIns = $pdo->prepare("INSERT INTO modulos (clave, nombre, descripcion, icono, orden, estatus) VALUES (?, ?, ?, ?, ?, ?)");
                 $stmtIns->execute([$m[0], $m[1], $m[2], $m[3], $m[4], $m[5]]);
             }
         }
-
-        // Mantener activos los 5 módulos vigentes
-        try {
-            $pdo->exec("UPDATE modulos SET estatus = 1 WHERE clave IN ('tickets', 'agencias', 'usuarios', 'politicas', 'compliance');");
-            $pdo->exec("UPDATE modulos SET estatus = 0 WHERE clave NOT IN ('tickets', 'agencias', 'usuarios', 'politicas', 'compliance');");
-        } catch (Throwable $eUpd) {}
 
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
@@ -143,14 +144,6 @@ function asegurarTablasPermisos($pdo) {
  * Obtiene el catálogo oficial de módulos del sistema, garantizando datos siempre.
  */
 function obtenerCatalogoModulos($pdo = null) {
-    $modulosDefault = [
-        ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'icono' => 'bi-ticket-detailed-fill', 'orden' => 1],
-        ['clave' => 'agencias',         'nombre' => 'Agencias (Catálogo cPanel)',         'descripcion' => 'Monitoreo y administración de sucursales cPanel',            'icono' => 'bi-buildings-fill',       'orden' => 2],
-        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',   'icono' => 'bi-people-fill',          'orden' => 3, 'estatus' => 1],
-        ['clave' => 'politicas',        'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado', 'icono' => 'bi-shield-shaded', 'orden' => 4, 'estatus' => 1],
-        ['clave' => 'compliance',       'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales', 'icono' => 'bi-shield-check', 'orden' => 5, 'estatus' => 1]
-    ];
-
     if ($pdo) {
         try {
             $stmt = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
@@ -160,7 +153,19 @@ function obtenerCatalogoModulos($pdo = null) {
             }
         } catch (Throwable $e) {}
     }
-    return $modulosDefault;
+    return [
+        ['clave' => 'agencia',          'nombre' => 'Datos de la Agencia',                'descripcion' => 'Ficha oficial de la sucursal, datos de la agencia y encargado de sistemas', 'icono' => 'bi-building',               'orden' => 1, 'estatus' => 1],
+        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',                   'icono' => 'bi-people-fill',          'orden' => 2, 'estatus' => 1],
+        ['clave' => 'equipos',          'nombre' => 'Inventario de Equipos',              'descripcion' => 'Control de PCs, laptops, servidores e impresoras',                          'icono' => 'bi-display',              'orden' => 3, 'estatus' => 1],
+        ['clave' => 'infraestructura',   'nombre' => 'Infraestructura (SITE / IDF)',       'descripcion' => 'Control de racks, switches y cableado estructurado',                        'icono' => 'bi-hdd-rack',             'orden' => 4, 'estatus' => 1],
+        ['clave' => 'politicas',        'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado',     'icono' => 'bi-file-earmark-lock2-fill', 'orden' => 5, 'estatus' => 1],
+        ['clave' => 'compliance',       'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales',          'icono' => 'bi-journal-check',        'orden' => 6, 'estatus' => 1],
+        ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'icono' => 'bi-ticket-detailed-fill', 'orden' => 7, 'estatus' => 1],
+        ['clave' => 'directorio',       'nombre' => 'Directorio',                         'descripcion' => 'Directorio oficial de colaboradores, correos y extensiones',                'icono' => 'bi-telephone-inbound-fill', 'orden' => 8, 'estatus' => 1],
+        ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 9, 'estatus' => 1],
+        ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 10, 'estatus' => 1],
+        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 11, 'estatus' => 1]
+    ];
 }
 
 /**
@@ -193,13 +198,21 @@ function cargarPermisosSesion($pdo, $usuario_id) {
 
         $_SESSION['permisos'] = [];
         foreach ($rows as $row) {
-            $_SESSION['permisos'][$row['modulo_clave']] = [
+            $pData = [
                 'puede_ver'      => (int)$row['puede_ver'],
                 'puede_crear'    => (int)$row['puede_crear'],
                 'puede_editar'   => (int)$row['puede_editar'],
                 'puede_eliminar' => (int)$row['puede_eliminar'],
                 'puede_exportar' => (int)$row['puede_exportar']
             ];
+            $_SESSION['permisos'][$row['modulo_clave']] = $pData;
+
+            // Aliasing transparente para compatibilidad bidireccional agencia / agencias
+            if ($row['modulo_clave'] === 'agencia') {
+                $_SESSION['permisos']['agencias'] = $pData;
+            } elseif ($row['modulo_clave'] === 'agencias') {
+                $_SESSION['permisos']['agencia'] = $pData;
+            }
         }
     } catch (Throwable $e) {
         // En caso de que las tablas aún no existan, auto-crearlas
@@ -224,10 +237,17 @@ function tienePermiso($modulo_clave, $accion = 'puede_ver') {
         return true;
     }
 
+    // Normalizar claves si es necesario (ej: agencia / agencias)
+    $claves = [$modulo_clave];
+    if ($modulo_clave === 'agencia') $claves[] = 'agencias';
+    if ($modulo_clave === 'agencias') $claves[] = 'agencia';
+
     // Verificar en la matriz de permisos de la sesión
     $permisos = $_SESSION['permisos'] ?? [];
-    if (isset($permisos[$modulo_clave])) {
-        return !empty($permisos[$modulo_clave][$accion]);
+    foreach ($claves as $k) {
+        if (isset($permisos[$k])) {
+            return !empty($permisos[$k][$accion]);
+        }
     }
 
     // Si es Admin pero aún no tiene configuración explícita guardada
