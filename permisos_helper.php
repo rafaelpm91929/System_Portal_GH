@@ -475,7 +475,9 @@ function asegurarTablaPoliticas($pdo = null) {
                     agencia TEXT NOT NULL,
                     ip TEXT NOT NULL,
                     origen TEXT DEFAULT 'Portal Central GH',
-                    fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP
+                    fecha_lectura DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    fecha_fin DATETIME NULL,
+                    duracion_segundos INTEGER DEFAULT 0
                 );
             ");
             // Auto-migración SQLite: Asegurar columnas en caso de tabla preexistente
@@ -485,6 +487,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     $pdo->exec("ALTER TABLE politicas_corporativas ADD COLUMN {$col} TEXT");
                 } catch (Throwable $t) {}
             }
+            try { $pdo->exec("ALTER TABLE politicas_lecturas ADD COLUMN fecha_fin DATETIME NULL"); } catch (Throwable $t) {}
+            try { $pdo->exec("ALTER TABLE politicas_lecturas ADD COLUMN duracion_segundos INTEGER DEFAULT 0"); } catch (Throwable $t) {}
         } else {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
@@ -515,6 +519,8 @@ function asegurarTablaPoliticas($pdo = null) {
                     `ip` VARCHAR(50) NOT NULL,
                     `origen` VARCHAR(50) DEFAULT 'Portal Central GH',
                     `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `fecha_fin` DATETIME NULL,
+                    `duracion_segundos` INT DEFAULT 0,
                     INDEX `idx_politica` (`politica_id`),
                     INDEX `idx_usuario` (`usuario_login`),
                     INDEX `idx_fecha` (`fecha_lectura`)
@@ -522,6 +528,8 @@ function asegurarTablaPoliticas($pdo = null) {
             ");
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `subarea` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+            try { $pdo->exec("ALTER TABLE `politicas_lecturas` ADD COLUMN `fecha_fin` DATETIME NULL"); } catch (Throwable $t) {}
+            try { $pdo->exec("ALTER TABLE `politicas_lecturas` ADD COLUMN `duracion_segundos` INT DEFAULT 0"); } catch (Throwable $t) {}
         }
     } catch (Throwable $e) {}
 }

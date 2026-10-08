@@ -1198,23 +1198,92 @@ function obtenerIconoArea($nombreArea) {
             <div class="modal-body p-4">
                 
                 <!-- STATS DE AUDITORÍA -->
-                <div class="row g-3 mb-4" id="statsAuditoriaContainer">
-                    <div class="col-md-4">
+                <div class="row g-3 mb-3" id="statsAuditoriaContainer">
+                    <div class="col-6 col-md-3">
                         <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
-                            <div class="text-secondary small text-uppercase">Total Lecturas Registradas</div>
-                            <div class="fs-3 fw-bold text-white" id="statTotalLecturas">0</div>
+                            <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Total Registros</div>
+                            <div class="fs-4 fw-bold text-white mt-1" id="statTotalLecturas">0</div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-6 col-md-3">
                         <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
-                            <div class="text-secondary small text-uppercase">Colaboradores Únicos</div>
-                            <div class="fs-3 fw-bold" style="color: var(--gold-accent-light);" id="statUsuariosUnicos">0</div>
+                            <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Colaboradores</div>
+                            <div class="fs-4 fw-bold" style="color: var(--gold-accent-light);" id="statUsuariosUnicos">0</div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-6 col-md-3">
                         <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
-                            <div class="text-secondary small text-uppercase">Agencias Activas</div>
-                            <div class="fs-3 fw-bold text-info" id="statAgenciasActivas">0</div>
+                            <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Agencias Activas</div>
+                            <div class="fs-4 fw-bold text-info mt-1" id="statAgenciasActivas">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                            <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Permanencia Promedio</div>
+                            <div class="fs-4 fw-bold text-warning mt-1" id="statTiempoPromedio">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- BARRA DE BÚSQUEDA Y FILTROS -->
+                <div class="p-3 mb-3 rounded-3" style="background: rgba(14, 38, 70, 0.45); border: 1px solid var(--gold-border);">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label text-secondary small fw-bold mb-1">
+                                <i class="bi bi-search text-warning me-1"></i> Búsqueda Rápida
+                            </label>
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                                <input type="text" id="filtroBitacoraTexto" class="form-control bg-dark text-white border-secondary" placeholder="Colaborador, política, IP, usuario..." oninput="filtrarBitacora()">
+                                <button class="btn btn-outline-secondary border-secondary text-secondary" type="button" onclick="limpiarFiltroBitacora()" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="col-6 col-lg-3">
+                            <label class="form-label text-secondary small fw-bold mb-1">
+                                <i class="bi bi-building text-info me-1"></i> Agencia
+                            </label>
+                            <select id="filtroBitacoraAgencia" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="filtrarBitacora()">
+                                <option value="">Todas las agencias</option>
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-lg-3">
+                            <label class="form-label text-secondary small fw-bold mb-1">
+                                <i class="bi bi-file-earmark-text text-success me-1"></i> Política / Actividad
+                            </label>
+                            <select id="filtroBitacoraPolitica" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="filtrarBitacora()">
+                                <option value="">Todas las políticas</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-lg-2">
+                            <label class="form-label text-secondary small fw-bold mb-1">
+                                <i class="bi bi-clock-history text-warning me-1"></i> Periodo / Estado
+                            </label>
+                            <select id="filtroBitacoraPeriodo" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="filtrarBitacora()">
+                                <option value="todos">Todo el historial</option>
+                                <option value="hoy">Hoy</option>
+                                <option value="ayer">Ayer</option>
+                                <option value="7dias">Últimos 7 días</option>
+                                <option value="activas">En visualización activa</option>
+                                <option value="concluidas">Concluidas</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mt-3 pt-2 border-top border-secondary border-opacity-25 gap-2">
+                        <div class="text-secondary small d-flex align-items-center gap-2">
+                            <span id="lblContadorFiltrados" class="badge bg-dark border border-secondary text-light font-monospace">Cargando...</span>
+                            <span id="lblFiltroActivoBadge" class="d-none badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-25">Filtros activos</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-2.5 py-1" onclick="exportarBitacoraCSV()" title="Exportar registros a CSV / Excel">
+                                <i class="bi bi-file-earmark-spreadsheet text-success me-1"></i> Exportar CSV
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-2.5 py-1" onclick="cargarDatosBitacora()" title="Actualizar bitácora en vivo">
+                                <i class="bi bi-arrow-clockwise text-warning me-1"></i> Actualizar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -1222,19 +1291,21 @@ function obtenerIconoArea($nombreArea) {
                 <!-- TABLA DE LECTURAS -->
                 <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
                     <table class="table table-dark table-hover align-middle mb-0" style="font-size: 0.82rem; background: transparent;">
-                        <thead>
+                        <thead class="sticky-top" style="background: #09172c; z-index: 2;">
                             <tr class="text-secondary border-secondary">
-                                <th>Fecha / Hora</th>
-                                <th>Política</th>
-                                <th>Colaborador</th>
-                                <th>Agencia</th>
-                                <th>Terminal / IP</th>
-                                <th>Origen</th>
+                                <th style="min-width: 130px;">Hora Ingreso</th>
+                                <th style="min-width: 130px;">Hora Salida</th>
+                                <th style="min-width: 110px;">Permanencia</th>
+                                <th style="min-width: 180px;">Política / Documento</th>
+                                <th style="min-width: 200px;">Colaborador</th>
+                                <th style="min-width: 140px;">Agencia</th>
+                                <th style="min-width: 110px;">Terminal / IP</th>
+                                <th style="min-width: 120px;">Origen</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyAuditoriaLecturas">
                             <tr>
-                                <td colspan="6" class="text-center py-4 text-secondary">
+                                <td colspan="8" class="text-center py-4 text-secondary">
                                     <div class="spinner-border spinner-border-sm me-2" style="color: var(--gold-accent);"></div>
                                     Cargando bitácora de auditoría...
                                 </td>
@@ -1445,7 +1516,12 @@ function obtenerIconoArea($nombreArea) {
         }
     }
 
-    // 3. CONSULTAR BITÁCORA AUDITABLE DE LECTURAS (ADMIN)
+    // =========================================================================
+    // 3. CONSULTAR BITÁCORA AUDITABLE DE LECTURAS, FILTROS Y BÚSQUEDA (ADMIN)
+    // =========================================================================
+    let bitacoraLecturasGlobal = [];
+    let activeBitacoraLecturaId = null;
+
     function abrirModalAuditoriaLecturas() {
         const modalEl = document.getElementById('modalAuditoriaLecturas');
         if (!modalEl) return;
@@ -1453,10 +1529,51 @@ function obtenerIconoArea($nombreArea) {
         const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
         modal.show();
 
+        // Registrar ingreso a la bitácora
+        if (!activeBitacoraLecturaId) {
+            try {
+                const formData = new FormData();
+                formData.append('action', 'registrar_lectura');
+                formData.append('politica_id', '0');
+                formData.append('politica_titulo', 'Inspección de Bitácora Forense');
+                formData.append('usuario_nombre', FORENSIC_USER_NAME);
+                formData.append('usuario_login', FORENSIC_USER_LOGIN);
+                formData.append('agencia', FORENSIC_AGENCIA);
+                formData.append('ip', FORENSIC_IP);
+                fetch('api_politicas.php', { method: 'POST', body: formData })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.exito && d.lectura_id) {
+                            activeBitacoraLecturaId = d.lectura_id;
+                        }
+                    })
+                    .catch(() => {});
+            } catch(e) {}
+        }
+
+        cargarDatosBitacora();
+    }
+
+    // Al cerrar el modal de bitácora, finalizar registro
+    document.addEventListener('DOMContentLoaded', function() {
+        const modalEl = document.getElementById('modalAuditoriaLecturas');
+        if (modalEl) {
+            modalEl.addEventListener('hidden.bs.modal', function() {
+                if (activeBitacoraLecturaId) {
+                    finalizarLecturaAuditoria(activeBitacoraLecturaId);
+                    activeBitacoraLecturaId = null;
+                }
+            });
+        }
+    });
+
+    function cargarDatosBitacora() {
         const tbody = document.getElementById('tbodyAuditoriaLecturas');
+        if (!tbody) return;
+
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="text-center py-4 text-secondary">
+                <td colspan="8" class="text-center py-4 text-secondary">
                     <div class="spinner-border spinner-border-sm me-2" style="color: var(--gold-accent);"></div>
                     Cargando bitácora de auditoría en tiempo real...
                 </td>
@@ -1467,7 +1584,7 @@ function obtenerIconoArea($nombreArea) {
             .then(res => res.json())
             .then(data => {
                 if (!data.exito) {
-                    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">${data.error || 'No se pudo cargar la auditoría'}</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">${data.error || 'No se pudo cargar la auditoría'}</td></tr>`;
                     return;
                 }
 
@@ -1475,31 +1592,326 @@ function obtenerIconoArea($nombreArea) {
                     document.getElementById('statTotalLecturas').textContent = data.stats.total_lecturas || 0;
                     document.getElementById('statUsuariosUnicos').textContent = data.stats.usuarios_unicos || 0;
                     document.getElementById('statAgenciasActivas').textContent = data.stats.agencias_activas || 0;
+                    const promSeg = parseInt(data.stats.promedio_duracion_seg, 10) || 0;
+                    document.getElementById('statTiempoPromedio').textContent = promSeg > 0 ? formatearDuracion(promSeg) : '--';
                 }
 
-                if (!data.lecturas || data.lecturas.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-secondary">No hay lecturas registradas aún.</td></tr>`;
-                    return;
-                }
-
-                let html = '';
-                data.lecturas.forEach(l => {
-                    html += `
-                        <tr>
-                            <td class="font-monospace text-secondary">${l.fecha_lectura}</td>
-                            <td class="fw-bold text-white">${escapeHtml(l.politica_titulo)}</td>
-                            <td><i class="bi bi-person-fill text-info me-1"></i>${escapeHtml(l.usuario_nombre)} <span class="text-secondary small">(${escapeHtml(l.usuario_login)})</span></td>
-                            <td><span class="badge bg-dark border" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">${escapeHtml(l.agencia)}</span></td>
-                            <td class="font-monospace small text-secondary">${escapeHtml(l.ip)}</td>
-                            <td><span class="badge bg-secondary bg-opacity-25 text-light">${escapeHtml(l.origen)}</span></td>
-                        </tr>
-                    `;
-                });
-                tbody.innerHTML = html;
+                bitacoraLecturasGlobal = data.lecturas || [];
+                poblarSelectoresFiltro();
+                filtrarBitacora();
             })
             .catch(err => {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-danger">Error de conexión al obtener bitácora.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error de conexión al obtener bitácora.</td></tr>`;
             });
+    }
+
+    function poblarSelectoresFiltro() {
+        const selAgencia = document.getElementById('filtroBitacoraAgencia');
+        const selPolitica = document.getElementById('filtroBitacoraPolitica');
+        if (!selAgencia || !selPolitica) return;
+
+        const valAgenciaActual = selAgencia.value;
+        const valPolActual = selPolitica.value;
+
+        const agenciasSet = new Set();
+        const politicasSet = new Set();
+
+        bitacoraLecturasGlobal.forEach(l => {
+            if (l.agencia) agenciasSet.add(l.agencia.trim());
+            if (l.politica_titulo) politicasSet.add(l.politica_titulo.trim());
+        });
+
+        // Agencias
+        selAgencia.innerHTML = '<option value="">Todas las agencias</option>';
+        Array.from(agenciasSet).sort().forEach(ag => {
+            const opt = document.createElement('option');
+            opt.value = ag;
+            opt.textContent = ag;
+            selAgencia.appendChild(opt);
+        });
+        selAgencia.value = valAgenciaActual;
+
+        // Políticas
+        selPolitica.innerHTML = '<option value="">Todas las políticas / actividades</option>';
+        Array.from(politicasSet).sort().forEach(pol => {
+            const opt = document.createElement('option');
+            opt.value = pol;
+            opt.textContent = pol;
+            selPolitica.appendChild(opt);
+        });
+        selPolitica.value = valPolActual;
+    }
+
+    function formatearDuracion(segundos) {
+        const seg = parseInt(segundos, 10) || 0;
+        if (seg <= 0) return '--';
+        if (seg < 60) return seg + 's';
+        const mins = Math.floor(seg / 60);
+        const remSeg = seg % 60;
+        if (mins < 60) {
+            return `${mins}m ${remSeg > 0 ? remSeg + 's' : ''}`;
+        }
+        const hrs = Math.floor(mins / 60);
+        const remMins = mins % 60;
+        return `${hrs}h ${remMins}m`;
+    }
+
+    function formatearFechaHora(strFecha) {
+        if (!strFecha) return { fecha: '', hora: '' };
+        // Formato esperado: YYYY-MM-DD HH:MM:SS
+        const partes = strFecha.split(' ');
+        if (partes.length === 2) {
+            return { fecha: partes[0], hora: partes[1] };
+        }
+        return { fecha: strFecha, hora: '' };
+    }
+
+    function filtrarBitacora() {
+        const txt = (document.getElementById('filtroBitacoraTexto')?.value || '').toLowerCase().trim();
+        const agenciaFiltro = document.getElementById('filtroBitacoraAgencia')?.value || '';
+        const polFiltro = document.getElementById('filtroBitacoraPolitica')?.value || '';
+        const periodoFiltro = document.getElementById('filtroBitacoraPeriodo')?.value || 'todos';
+        const badgeFiltroActivo = document.getElementById('lblFiltroActivoBadge');
+        const tbody = document.getElementById('tbodyAuditoriaLecturas');
+        const lblContador = document.getElementById('lblContadorFiltrados');
+
+        const hayFiltrosActivos = (txt !== '' || agenciaFiltro !== '' || polFiltro !== '' || periodoFiltro !== 'todos');
+        if (badgeFiltroActivo) {
+            badgeFiltroActivo.classList.toggle('d-none', !hayFiltrosActivos);
+        }
+
+        const ahora = new Date();
+        const hoyIso = ahora.toISOString().slice(0, 10);
+        const ayer = new Date(ahora.getTime() - 24 * 60 * 60 * 1000);
+        const ayerIso = ayer.toISOString().slice(0, 10);
+        const sieteDiasAtras = new Date(ahora.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const filtrados = bitacoraLecturasGlobal.filter(l => {
+            // Filtro texto
+            if (txt) {
+                const cadena = [
+                    l.politica_titulo,
+                    l.usuario_nombre,
+                    l.usuario_login,
+                    l.agencia,
+                    l.ip,
+                    l.origen,
+                    l.fecha_lectura,
+                    l.fecha_fin
+                ].join(' ').toLowerCase();
+                if (!cadena.includes(txt)) return false;
+            }
+
+            // Filtro agencia
+            if (agenciaFiltro && (l.agencia || '').trim() !== agenciaFiltro) return false;
+
+            // Filtro política
+            if (polFiltro && (l.politica_titulo || '').trim() !== polFiltro) return false;
+
+            // Filtro periodo / estado
+            if (periodoFiltro === 'hoy') {
+                if (!l.fecha_lectura || !l.fecha_lectura.startsWith(hoyIso)) return false;
+            } else if (periodoFiltro === 'ayer') {
+                if (!l.fecha_lectura || !l.fecha_lectura.startsWith(ayerIso)) return false;
+            } else if (periodoFiltro === '7dias') {
+                if (!l.fecha_lectura) return false;
+                const f = new Date(l.fecha_lectura.replace(' ', 'T'));
+                if (isNaN(f.getTime()) || f < sieteDiasAtras) return false;
+            } else if (periodoFiltro === 'activas') {
+                if (l.fecha_fin) return false;
+            } else if (periodoFiltro === 'concluidas') {
+                if (!l.fecha_fin) return false;
+            }
+
+            return true;
+        });
+
+        if (lblContador) {
+            lblContador.textContent = `Mostrando ${filtrados.length} de ${bitacoraLecturasGlobal.length} registros`;
+        }
+
+        if (filtrados.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="text-center py-5 text-secondary">
+                        <i class="bi bi-search fs-2 d-block mb-2 text-warning opacity-75"></i>
+                        No se encontraron registros que coincidan con los filtros aplicados.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        filtrados.forEach(l => {
+            const ingr = formatearFechaHora(l.fecha_lectura);
+            const sal = formatearFechaHora(l.fecha_fin);
+
+            let celdaSalida = '';
+            let celdaPermanencia = '';
+
+            if (l.fecha_fin) {
+                celdaSalida = `
+                    <div>
+                        <span class="font-monospace fw-bold" style="color: var(--gold-accent-light);">
+                            <i class="bi bi-box-arrow-right text-warning me-1"></i>${escapeHtml(sal.hora || l.fecha_fin)}
+                        </span>
+                        <div class="text-secondary small font-monospace">${escapeHtml(sal.fecha)}</div>
+                    </div>
+                `;
+                celdaPermanencia = `
+                    <span class="badge rounded-pill bg-dark border font-monospace" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                        <i class="bi bi-stopwatch text-warning me-1"></i>${formatearDuracion(l.duracion_segundos)}
+                    </span>
+                `;
+            } else {
+                // Cálculo si es lectura reciente o no cerrada
+                let esReciente = false;
+                if (l.fecha_lectura) {
+                    const fIngreso = new Date(l.fecha_lectura.replace(' ', 'T'));
+                    if (!isNaN(fIngreso.getTime())) {
+                        const difMins = (ahora.getTime() - fIngreso.getTime()) / (1000 * 60);
+                        if (difMins <= 30) esReciente = true;
+                    }
+                }
+
+                if (esReciente) {
+                    celdaSalida = `
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">
+                            <span class="spinner-grow spinner-grow-sm me-1" style="width: 7px; height: 7px;"></span>En visualización
+                        </span>
+                    `;
+                    celdaPermanencia = `
+                        <span class="text-success small font-monospace">
+                            <i class="bi bi-hourglass-split me-1"></i>En curso...
+                        </span>
+                    `;
+                } else {
+                    celdaSalida = `
+                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-25">
+                            Cierre no registrado
+                        </span>
+                    `;
+                    celdaPermanencia = `<span class="text-secondary small font-monospace">--</span>`;
+                }
+            }
+
+            const esInspeccionBitacora = (parseInt(l.politica_id, 10) === 0 || (l.politica_titulo || '').includes('Bitácora'));
+            const badgeTipo = esInspeccionBitacora 
+                ? `<span class="badge bg-warning bg-opacity-15 text-warning border border-warning border-opacity-50 mb-1 d-inline-block small"><i class="bi bi-shield-check me-1"></i>Auditoría Forense</span>`
+                : `<span class="badge bg-info bg-opacity-15 text-info border border-info border-opacity-50 mb-1 d-inline-block small"><i class="bi bi-file-earmark-lock2 me-1"></i>Normativa Institucional</span>`;
+
+            html += `
+                <tr>
+                    <td>
+                        <div>
+                            <span class="font-monospace text-white fw-bold">
+                                <i class="bi bi-box-arrow-in-right text-success me-1"></i>${escapeHtml(ingr.hora || l.fecha_lectura)}
+                            </span>
+                            <div class="text-secondary small font-monospace">${escapeHtml(ingr.fecha)}</div>
+                        </div>
+                    </td>
+                    <td>${celdaSalida}</td>
+                    <td>${celdaPermanencia}</td>
+                    <td>
+                        ${badgeTipo}
+                        <div class="fw-bold text-white">${escapeHtml(l.politica_titulo)}</div>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-1.5">
+                            <i class="bi bi-person-fill text-info"></i>
+                            <div>
+                                <span class="fw-semibold text-white">${escapeHtml(l.usuario_nombre)}</span>
+                                <div class="text-secondary small font-monospace">(${escapeHtml(l.usuario_login)})</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-dark border" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                            ${escapeHtml(l.agencia)}
+                        </span>
+                    </td>
+                    <td class="font-monospace small text-secondary">${escapeHtml(l.ip)}</td>
+                    <td>
+                        <span class="badge bg-secondary bg-opacity-25 text-light">${escapeHtml(l.origen)}</span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+    }
+
+    function limpiarFiltroBitacora() {
+        const inp = document.getElementById('filtroBitacoraTexto');
+        const selAg = document.getElementById('filtroBitacoraAgencia');
+        const selPol = document.getElementById('filtroBitacoraPolitica');
+        const selPer = document.getElementById('filtroBitacoraPeriodo');
+        if (inp) inp.value = '';
+        if (selAg) selAg.value = '';
+        if (selPol) selPol.value = '';
+        if (selPer) selPer.value = 'todos';
+        filtrarBitacora();
+    }
+
+    function exportarBitacoraCSV() {
+        if (!bitacoraLecturasGlobal || bitacoraLecturasGlobal.length === 0) {
+            alert('No hay registros en la bitácora para exportar.');
+            return;
+        }
+
+        const encabezados = [
+            'ID',
+            'Fecha Ingreso',
+            'Hora Ingreso',
+            'Fecha Salida',
+            'Hora Salida',
+            'Duracion Segundos',
+            'Duracion Formateada',
+            'Documento / Actividad',
+            'Colaborador',
+            'Usuario Login',
+            'Agencia',
+            'Direccion IP',
+            'Origen'
+        ];
+
+        const filas = [encabezados.join(',')];
+
+        bitacoraLecturasGlobal.forEach(l => {
+            const ingr = formatearFechaHora(l.fecha_lectura);
+            const sal = formatearFechaHora(l.fecha_fin);
+            const durFormateada = formatearDuracion(l.duracion_segundos);
+
+            const valores = [
+                l.id || '',
+                `"${ingr.fecha || ''}"`,
+                `"${ingr.hora || ''}"`,
+                `"${sal.fecha || ''}"`,
+                `"${sal.hora || ''}"`,
+                l.duracion_segundos || 0,
+                `"${durFormateada}"`,
+                `"${(l.politica_titulo || '').replace(/"/g, '""')}"`,
+                `"${(l.usuario_nombre || '').replace(/"/g, '""')}"`,
+                `"${(l.usuario_login || '').replace(/"/g, '""')}"`,
+                `"${(l.agencia || '').replace(/"/g, '""')}"`,
+                `"${(l.ip || '').replace(/"/g, '""')}"`,
+                `"${(l.origen || '').replace(/"/g, '""')}"`
+            ];
+            filas.push(valores.join(','));
+        });
+
+        const csvContent = '\uFEFF' + filas.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const nowStr = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '_');
+        a.href = url;
+        a.download = `bitacora_auditoria_politicas_${nowStr}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     function escapeHtml(text) {
@@ -1519,6 +1931,7 @@ function obtenerIconoArea($nombreArea) {
     let isCursorOverDocument = false;
     let ultimoMouseX = null;
     let ultimoMouseY = null;
+    let activeDocLecturaId = null;
 
     function actualizarEstadoBloqueoPdf(bloquear) {
         if (!isViewerActive || !isPdfRenderCompleted) return;
@@ -1790,6 +2203,10 @@ function obtenerIconoArea($nombreArea) {
     }
 
     function cerrarVisorBlindado() {
+        if (activeDocLecturaId) {
+            finalizarLecturaAuditoria(activeDocLecturaId);
+            activeDocLecturaId = null;
+        }
         const modal = document.getElementById('visorModalOverlay');
         if (modal) modal.style.display = 'none';
         document.body.style.overflow = '';
@@ -1826,9 +2243,45 @@ function obtenerIconoArea($nombreArea) {
             fetch('api_politicas.php', {
                 method: 'POST',
                 body: formData
-            }).catch(e => console.warn('Audit log notice:', e));
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.exito && data.lectura_id) {
+                    activeDocLecturaId = data.lectura_id;
+                }
+            })
+            .catch(e => console.warn('Audit log notice:', e));
         } catch(err) {}
     }
+
+    function finalizarLecturaAuditoria(lecturaId) {
+        if (!lecturaId) return;
+        try {
+            const formData = new FormData();
+            formData.append('action', 'finalizar_lectura');
+            formData.append('lectura_id', lecturaId);
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('api_politicas.php?action=finalizar_lectura&lectura_id=' + encodeURIComponent(lecturaId));
+            } else {
+                fetch('api_politicas.php', {
+                    method: 'POST',
+                    body: formData,
+                    keepalive: true
+                }).catch(() => {});
+            }
+        } catch(err) {}
+    }
+
+    window.addEventListener('pagehide', function() {
+        if (activeDocLecturaId) {
+            finalizarLecturaAuditoria(activeDocLecturaId);
+            activeDocLecturaId = null;
+        }
+        if (activeBitacoraLecturaId) {
+            finalizarLecturaAuditoria(activeBitacoraLecturaId);
+            activeBitacoraLecturaId = null;
+        }
+    });
 </script>
 </body>
 </html>
