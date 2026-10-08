@@ -1,5 +1,6 @@
 <?php
 // API Central y Gestor de Políticas Corporativas Protegidas
+date_default_timezone_set('America/Mexico_City');
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -196,14 +197,17 @@ if ($action === 'registrar_lectura') {
     }
 
     $localLecturaId = 0;
+    date_default_timezone_set('America/Mexico_City');
+    $fechaLecturaMexico = date('Y-m-d H:i:s');
+
     // A. Guardar en base de datos local de la agencia si está disponible
     if ($pdo) {
         try {
             $stmt = $pdo->prepare("
                 INSERT INTO politicas_lecturas (politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, 0)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)
             ");
-            $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen]);
+            $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $fechaLecturaMexico]);
             $localLecturaId = (int)$pdo->lastInsertId();
         } catch (Throwable $e) {}
     }
@@ -219,7 +223,8 @@ if ($action === 'registrar_lectura') {
         'usuario_login' => $usuarioLogin,
         'agencia' => $agencia,
         'ip' => $ip,
-        'origen' => $origen
+        'origen' => $origen,
+        'fecha_lectura' => $fechaLecturaMexico
     ]);
 
     $ctxLog = stream_context_create([
@@ -237,7 +242,8 @@ if ($action === 'registrar_lectura') {
     echo json_encode([
         'exito' => true, 
         'mensaje' => 'Lectura registrada y notificada al corporativo',
-        'lectura_id' => $localLecturaId
+        'lectura_id' => $localLecturaId,
+        'fecha_lectura' => $fechaLecturaMexico
     ]);
     exit();
 }
@@ -254,6 +260,7 @@ if ($action === 'finalizar_lectura') {
     $lecturaId = intval($_POST['lectura_id'] ?? ($_GET['lectura_id'] ?? 0));
     if ($lecturaId > 0 && $pdo) {
         try {
+            date_default_timezone_set('America/Mexico_City');
             $stmt = $pdo->prepare("SELECT fecha_lectura FROM politicas_lecturas WHERE id = ?");
             $stmt->execute([$lecturaId]);
             $fila = $stmt->fetch(PDO::FETCH_ASSOC);

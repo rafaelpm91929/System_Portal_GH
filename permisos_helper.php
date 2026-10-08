@@ -531,6 +531,30 @@ function asegurarTablaPoliticas($pdo = null) {
             try { $pdo->exec("ALTER TABLE `politicas_lecturas` ADD COLUMN `fecha_fin` DATETIME NULL"); } catch (Throwable $t) {}
             try { $pdo->exec("ALTER TABLE `politicas_lecturas` ADD COLUMN `duracion_segundos` INT DEFAULT 0"); } catch (Throwable $t) {}
         }
+
+        // Auto-ajuste de zona horaria única vez para registros históricos guardados previamente en UTC (+00:00 -> -06:00 CDMX)
+        $flagFileTz = __DIR__ . '/.tz_migrated_mx_2026';
+        if (!file_exists($flagFileTz)) {
+            try {
+                $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+                if ($driver === 'mysql') {
+                    $pdo->exec("
+                        UPDATE politicas_lecturas 
+                        SET fecha_lectura = DATE_SUB(fecha_lectura, INTERVAL 6 HOUR),
+                            fecha_fin = CASE WHEN fecha_fin IS NOT NULL THEN DATE_SUB(fecha_fin, INTERVAL 6 HOUR) ELSE NULL END
+                        WHERE fecha_lectura IS NOT NULL
+                    ");
+                } else {
+                    $pdo->exec("
+                        UPDATE politicas_lecturas 
+                        SET fecha_lectura = datetime(fecha_lectura, '-6 hours'),
+                            fecha_fin = CASE WHEN fecha_fin IS NOT NULL THEN datetime(fecha_fin, '-6 hours') ELSE NULL END
+                        WHERE fecha_lectura IS NOT NULL
+                    ");
+                }
+                @file_put_contents($flagFileTz, date('Y-m-d H:i:s'));
+            } catch (Throwable $tzMig) {}
+        }
     } catch (Throwable $e) {}
 }
 

@@ -1,5 +1,6 @@
 <?php
 // Configuración de Conexión PDO (MySQL para cPanel / SQLite Automático para Desarrollo Local)
+date_default_timezone_set('America/Mexico_City');
 $pdo = null;
 $conexion_error = null;
 
@@ -41,6 +42,7 @@ foreach ($candidates_hosts as $h) {
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
                 PDO::ATTR_EMULATE_PREPARES => false,
             ]);
+            try { $pdo->exec("SET time_zone = '-06:00'"); } catch (Throwable $tzE) {}
             $conexion_error = null;
             break;
         }
