@@ -190,19 +190,21 @@ if ($action === 'registrar_lectura') {
     $ip = trim($_POST['ip'] ?? ($_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
     $origen = 'Portal ' . $agencia;
 
-    if ($politicaId <= 0) {
-        echo json_encode(['exito' => false, 'error' => 'ID de política requerido']);
+    if ($politicaId < 0 || empty($politicaTitulo)) {
+        echo json_encode(['exito' => false, 'error' => 'Información de política requerida']);
         exit();
     }
 
+    $localLecturaId = 0;
     // A. Guardar en base de datos local de la agencia si está disponible
     if ($pdo) {
         try {
             $stmt = $pdo->prepare("
-                INSERT INTO politicas_lecturas (politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO politicas_lecturas (politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, NULL, 0)
             ");
             $stmt->execute([$politicaId, $politicaTitulo, $usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen]);
+            $localLecturaId = (int)$pdo->lastInsertId();
         } catch (Throwable $e) {}
     }
 
@@ -232,6 +234,103 @@ if ($action === 'registrar_lectura') {
 
     @file_get_contents($urlCentralLog, false, $ctxLog);
 
-    echo json_encode(['exito' => true, 'mensaje' => 'Lectura registrada y notificada al corporativo']);
+    echo json_encode([
+        'exito' => true, 
+        'mensaje' => 'Lectura registrada y notificada al corporativo',
+        'lectura_id' => $localLecturaId
+    ]);
     exit();
+}
+
+// 4.1 FINALIZAR LECTURA Y REGISTRAR HORA DE SALIDA Y DURACIÓN
+if ($action === 'finalizar_lectura') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!isset($_SESSION['usuario_id'])) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso no autorizado']);
+        exit();
+    }
+
+    $lecturaId = intval($_POST['lectura_id'] ?? ($_GET['lectura_id'] ?? 0));
+    if ($lecturaId > 0 && $pdo) {
+        try {
+            $stmt = $pdo->prepare("SELECT fecha_lectura FROM politicas_lecturas WHERE id = ?");
+            $stmt->execute([$lecturaId]);
+            $fila = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($fila && !empty($fila['fecha_lectura'])) {
+                $inicio = strtotime($fila['fecha_lectura']);
+                $fin = time();
+                $duracion = max(1, $fin - $inicio);
+                $fechaFinStr = date('Y-m-d H:i:s', $fin);
+
+                $updateStmt = $pdo->prepare("
+                    UPDATE politicas_lecturas 
+                    SET fecha_fin = ?, duracion_segundos = ? 
+                    WHERE id = ?
+                ");
+                $updateStmt->execute([$fechaFinStr, $duracion, $lecturaId]);
+
+                echo json_encode([
+                    'exito' => true, 
+                    'mensaje' => 'Lectura finalizada',
+                    'fecha_fin' => $fechaFinStr,
+                    'duracion_segundos' => $duracion
+                ]);
+                exit();
+            }
+        } catch (Throwable $e) {
+            echo json_encode(['exito' => false, 'error' => $e->getMessage()]);
+            exit();
+        }
+    }
+
+    echo json_encode(['exito' => false, 'error' => 'ID inválido']);
+    exit();
+}
+
+// 5. OBTENER BITÁCORA AUDITABLE DE LECTURAS (ADMINISTRADORES)
+if ($action === 'obtener_lecturas') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? '');
+    if (!in_array($rol, ['superadmin', 'admin'])) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso denegado. Se requieren permisos de administrador.']);
+        exit();
+    }
+
+    if (!$pdo) {
+        echo json_encode(['exito' => false, 'error' => 'Sin conexión a base de datos', 'lecturas' => []]);
+        exit();
+    }
+
+    try {
+        $sql = "SELECT id, politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos 
+                FROM politicas_lecturas 
+                ORDER BY fecha_lectura DESC LIMIT 500";
+        $stmt = $pdo->query($sql);
+        $lecturas = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+
+        // Resumen y KPIs
+        $stmtStats = $pdo->query("
+            SELECT 
+                COUNT(*) as total_lecturas, 
+                COUNT(DISTINCT usuario_login) as usuarios_unicos, 
+                COUNT(DISTINCT agencia) as agencias_activas,
+                ROUND(AVG(CASE WHEN duracion_segundos > 0 THEN duracion_segundos ELSE NULL END)) as promedio_duracion_seg
+            FROM politicas_lecturas
+        ");
+        $stats = $stmtStats ? $stmtStats->fetch(PDO::FETCH_ASSOC) : ['total_lecturas' => 0, 'usuarios_unicos' => 0, 'agencias_activas' => 0, 'promedio_duracion_seg' => 0];
+
+        echo json_encode([
+            'exito' => true,
+            'stats' => $stats,
+            'total' => count($lecturas),
+            'lecturas' => $lecturas
+        ], JSON_UNESCAPED_UNICODE);
+        exit();
+    } catch (Throwable $e) {
+        echo json_encode(['exito' => false, 'error' => $e->getMessage(), 'lecturas' => []]);
+        exit();
+    }
 }
