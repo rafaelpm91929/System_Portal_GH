@@ -296,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 // ====================================================================
 if (isset($_GET['descargar_conector_local'])) {
     $hostLocal  = !empty($agenciaData['local_db_host']) ? $agenciaData['local_db_host'] : '127.0.0.1';
-    $portLocal  = !empty($agenciaData['local_db_port']) ? intval($agenciaData['local_db_port']) : 3306;
+    $portLocal  = !empty($agenciaData['local_db_port']) ? intval($agenciaData['local_db_port']) : (($tipoLocal === 'sqlserver') ? 1433 : 3306);
     $dbLocal    = !empty($agenciaData['local_db_name']) ? $agenciaData['local_db_name'] : 'dms_agencia';
     $userLocal  = !empty($agenciaData['local_db_user']) ? $agenciaData['local_db_user'] : 'root';
     $passLocal  = !empty($agenciaData['local_db_pass']) ? $agenciaData['local_db_pass'] : '';
