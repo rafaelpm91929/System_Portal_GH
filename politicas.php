@@ -1517,6 +1517,7 @@ function obtenerIconoArea($nombreArea) {
         }
     }
 
+    <?php if ($esAdmin): ?>
     // =========================================================================
     // 3. CONSULTAR BITÁCORA AUDITABLE DE LECTURAS, FILTROS Y BÚSQUEDA (ADMIN)
     // =========================================================================
@@ -1920,6 +1921,7 @@ function obtenerIconoArea($nombreArea) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return text.toString().replace(/[&<>"']/g, m => map[m]);
     }
+    <?php endif; ?>
 
     // =========================================================================
     // VISOR BLINDADO Y PROTECCIÓN DLP POR CURSOR
@@ -2278,7 +2280,7 @@ function obtenerIconoArea($nombreArea) {
             finalizarLecturaAuditoria(activeDocLecturaId);
             activeDocLecturaId = null;
         }
-        if (activeBitacoraLecturaId) {
+        if (typeof activeBitacoraLecturaId !== 'undefined' && activeBitacoraLecturaId) {
             finalizarLecturaAuditoria(activeBitacoraLecturaId);
             activeBitacoraLecturaId = null;
         }
