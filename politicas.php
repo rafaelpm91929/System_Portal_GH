@@ -674,13 +674,6 @@ function obtenerIconoArea($nombreArea) {
     </div>
 
     <div class="d-flex align-items-center gap-2 flex-wrap">
-        <?php if ($esAdmin): ?>
-            <!-- BOTÓN BITÁCORA DE AUDITORÍA -->
-            <button type="button" class="btn btn-outline-secondary btn-sm rounded-3 py-1.5 px-3 text-light d-flex align-items-center gap-1.5" style="border-color: var(--gold-border);" onclick="abrirModalAuditoriaLecturas()">
-                <i class="bi bi-journal-check" style="color: var(--gold-accent);"></i> <span class="d-none d-md-inline">Bitácora</span>
-            </button>
-        <?php endif; ?>
-
         <span class="badge bg-dark border text-light px-3 py-1.5 rounded-pill small d-none d-sm-inline-flex align-items-center gap-2 font-monospace" style="border-color: var(--gold-border) !important;">
             <span class="pulsing-dot"></span> Sincronizado Central GH
         </span>
@@ -909,7 +902,7 @@ function obtenerIconoArea($nombreArea) {
 
 </div>
 
-<?php if ($esAdmin): ?>
+<?php if (false): // En rama main ningún rol puede ver la bitácora ?>
 <!-- ========================================================================= -->
 <!-- MODAL: BITÁCORA AUDITABLE DE LECTURAS (SOLO ADMINISTRADORES) -->
 <!-- ========================================================================= -->
@@ -1237,6 +1230,7 @@ function obtenerIconoArea($nombreArea) {
         }
     }
 
+    <?php if (false): // En rama main ningún rol puede ver la bitácora ?>
     // =========================================================================
     // 3. CONSULTAR BITÁCORA AUDITABLE DE LECTURAS, FILTROS Y BÚSQUEDA (ADMIN)
     // =========================================================================
@@ -1633,6 +1627,7 @@ function obtenerIconoArea($nombreArea) {
         const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
         return text.toString().replace(/[&<>"']/g, m => map[m]);
     }
+    <?php endif; ?>
 
     // =========================================================================
     // VISOR BLINDADO Y PROTECCIÓN DLP POR CURSOR
@@ -1991,7 +1986,7 @@ function obtenerIconoArea($nombreArea) {
             finalizarLecturaAuditoria(activeDocLecturaId);
             activeDocLecturaId = null;
         }
-        if (activeBitacoraLecturaId) {
+        if (typeof activeBitacoraLecturaId !== 'undefined' && activeBitacoraLecturaId) {
             finalizarLecturaAuditoria(activeBitacoraLecturaId);
             activeBitacoraLecturaId = null;
         }

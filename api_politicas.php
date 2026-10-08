@@ -296,48 +296,9 @@ if ($action === 'finalizar_lectura') {
     exit();
 }
 
-// 5. OBTENER BITÁCORA AUDITABLE DE LECTURAS (ADMINISTRADORES)
+// 5. OBTENER BITÁCORA AUDITABLE DE LECTURAS (NO DISPONIBLE EN RAMA MAIN / SUCURSALES)
 if ($action === 'obtener_lecturas') {
     header('Content-Type: application/json; charset=utf-8');
-
-    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? '');
-    if (!in_array($rol, ['superadmin', 'admin'])) {
-        echo json_encode(['exito' => false, 'error' => 'Acceso denegado. Se requieren permisos de administrador.']);
-        exit();
-    }
-
-    if (!$pdo) {
-        echo json_encode(['exito' => false, 'error' => 'Sin conexión a base de datos', 'lecturas' => []]);
-        exit();
-    }
-
-    try {
-        $sql = "SELECT id, politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos 
-                FROM politicas_lecturas 
-                ORDER BY fecha_lectura DESC LIMIT 500";
-        $stmt = $pdo->query($sql);
-        $lecturas = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
-
-        // Resumen y KPIs
-        $stmtStats = $pdo->query("
-            SELECT 
-                COUNT(*) as total_lecturas, 
-                COUNT(DISTINCT usuario_login) as usuarios_unicos, 
-                COUNT(DISTINCT agencia) as agencias_activas,
-                ROUND(AVG(CASE WHEN duracion_segundos > 0 THEN duracion_segundos ELSE NULL END)) as promedio_duracion_seg
-            FROM politicas_lecturas
-        ");
-        $stats = $stmtStats ? $stmtStats->fetch(PDO::FETCH_ASSOC) : ['total_lecturas' => 0, 'usuarios_unicos' => 0, 'agencias_activas' => 0, 'promedio_duracion_seg' => 0];
-
-        echo json_encode([
-            'exito' => true,
-            'stats' => $stats,
-            'total' => count($lecturas),
-            'lecturas' => $lecturas
-        ], JSON_UNESCAPED_UNICODE);
-        exit();
-    } catch (Throwable $e) {
-        echo json_encode(['exito' => false, 'error' => $e->getMessage(), 'lecturas' => []]);
-        exit();
-    }
+    echo json_encode(['exito' => false, 'error' => 'Acceso no permitido: La bitácora de auditoría forense únicamente está disponible en el Portal Central GH.', 'lecturas' => []]);
+    exit();
 }
