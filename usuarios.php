@@ -11,6 +11,7 @@ if (!isset($_SESSION['usuario_id'])) {
 }
 
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+$esSuperAdmin = ($rolActual === 'superadmin');
 if (!in_array($rolActual, ['superadmin', 'admin'])) {
     requerirPermiso('usuarios', 'puede_ver');
 }
@@ -41,7 +42,8 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'exportar_excel') {
     $agenciaLimpia = preg_replace('/[^a-zA-Z0-9_-]/', '_', $agenciaInfo['nombre']);
     $fileName = "Usuarios_{$agenciaLimpia}_" . date('Ymd_His') . ".xls";
 
-    $stmtUsersExp = $pdo->query("SELECT * FROM usuarios ORDER BY nombre ASC");
+    $sqlUsersExp = (!$esSuperAdmin) ? "SELECT * FROM usuarios WHERE LOWER(rol) != 'superadmin' ORDER BY nombre ASC" : "SELECT * FROM usuarios ORDER BY nombre ASC";
+    $stmtUsersExp = $pdo->query($sqlUsersExp);
     $usersDb = $stmtUsersExp ? $stmtUsersExp->fetchAll(PDO::FETCH_ASSOC) : [];
 
     $columnasExcel = [
@@ -115,118 +117,134 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if (empty($nombre) || empty($email)) {
             $error = "Por favor completa los campos obligatorios: Nombre Completo y Correo Electrónico.";
+        } elseif (strtolower($rol) === 'superadmin' && !$esSuperAdmin) {
+            $error = "Acceso denegado: Solo un usuario con rol SuperAdmin puede crear o asignar el rol SuperAdmin.";
         } else {
             try {
-                // Procesar subida o recorte de Fotografía de Perfil
-                $fotoUrl = '';
-                $uploadDir = 'uploads/usuarios/';
-                if (!file_exists($uploadDir)) {
-                    mkdir($uploadDir, 0777, true);
+                // Si es edición, validar que un no-SuperAdmin no pueda editar a un SuperAdmin
+                if ($id > 0) {
+                    $stmtTargetRol = $pdo->prepare("SELECT rol FROM usuarios WHERE id = ?");
+                    $stmtTargetRol->execute([$id]);
+                    $targetRolDb = strtolower($stmtTargetRol->fetchColumn() ?: '');
+                    if ($targetRolDb === 'superadmin' && !$esSuperAdmin) {
+                        $error = "Acceso denegado: Solo un usuario SuperAdmin puede modificar a otro SuperAdmin.";
+                    }
                 }
 
-                $croppedBase64 = $_POST['foto_cropped_base64'] ?? '';
-                if (!empty($croppedBase64)) {
-                    if (preg_match('/^data:image\/(\w+);base64,/', $croppedBase64, $typeMatch)) {
-                        $imgData = substr($croppedBase64, strpos($croppedBase64, ',') + 1);
-                        $ext = strtolower($typeMatch[1]);
-                        $imgData = base64_decode($imgData);
-                        if ($imgData !== false) {
+                if (empty($error)) {
+                    // Procesar subida o recorte de Fotografía de Perfil
+                    $fotoUrl = '';
+                    $uploadDir = 'uploads/usuarios/';
+                    if (!file_exists($uploadDir)) {
+                        mkdir($uploadDir, 0777, true);
+                    }
+
+                    $croppedBase64 = $_POST['foto_cropped_base64'] ?? '';
+                    if (!empty($croppedBase64)) {
+                        if (preg_match('/^data:image\/(\w+);base64,/', $croppedBase64, $typeMatch)) {
+                            $imgData = substr($croppedBase64, strpos($croppedBase64, ',') + 1);
+                            $ext = strtolower($typeMatch[1]);
+                            $imgData = base64_decode($imgData);
+                            if ($imgData !== false) {
+                                $destFoto = $uploadDir . 'usr_' . ($id > 0 ? $id : time()) . '_' . time() . '.' . $ext;
+                                if (file_put_contents($destFoto, $imgData)) {
+                                    $fotoUrl = $destFoto;
+                                }
+                            }
+                        }
+                    } elseif (isset($_FILES['foto_file']) && $_FILES['foto_file']['error'] === UPLOAD_ERR_OK) {
+                        $ext = strtolower(pathinfo($_FILES['foto_file']['name'], PATHINFO_EXTENSION));
+                        if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
                             $destFoto = $uploadDir . 'usr_' . ($id > 0 ? $id : time()) . '_' . time() . '.' . $ext;
-                            if (file_put_contents($destFoto, $imgData)) {
+                            if (move_uploaded_file($_FILES['foto_file']['tmp_name'], $destFoto)) {
                                 $fotoUrl = $destFoto;
                             }
                         }
                     }
-                } elseif (isset($_FILES['foto_file']) && $_FILES['foto_file']['error'] === UPLOAD_ERR_OK) {
-                    $ext = strtolower(pathinfo($_FILES['foto_file']['name'], PATHINFO_EXTENSION));
-                    if (in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
-                        $destFoto = $uploadDir . 'usr_' . ($id > 0 ? $id : time()) . '_' . time() . '.' . $ext;
-                        if (move_uploaded_file($_FILES['foto_file']['tmp_name'], $destFoto)) {
-                            $fotoUrl = $destFoto;
+
+                    if ($id > 0) {
+                        // Actualizar usuario existente
+                        $sqlUpd = "UPDATE usuarios SET usuario=?, nombre=?, email=?, agencia=?, area=?, puesto=?, telefono=?, rol=?, activo=?, acceso_portal=?";
+                        $params = [$usuario, $nombre, $email, $agencia, $area, $puesto, $telefono, $rol, $activo, $acceso_portal];
+
+                        if (!empty($password)) {
+                            $sqlUpd .= ", password=?";
+                            $params[] = password_hash($password, PASSWORD_DEFAULT);
                         }
-                    }
-                }
-
-                if ($id > 0) {
-                    // Actualizar usuario existente
-                    $sqlUpd = "UPDATE usuarios SET usuario=?, nombre=?, email=?, agencia=?, area=?, puesto=?, telefono=?, rol=?, activo=?, acceso_portal=?";
-                    $params = [$usuario, $nombre, $email, $agencia, $area, $puesto, $telefono, $rol, $activo, $acceso_portal];
-
-                    if (!empty($password)) {
-                        $sqlUpd .= ", password=?";
-                        $params[] = password_hash($password, PASSWORD_DEFAULT);
-                    }
-                    if (!empty($fotoUrl)) {
-                        $sqlUpd .= ", foto_url=?";
-                        $params[] = $fotoUrl;
-                    }
-
-                    $sqlUpd .= " WHERE id=?";
-                    $params[] = $id;
-
-                    $stmt = $pdo->prepare($sqlUpd);
-                    $stmt->execute($params);
-
-                    $mensaje = "Usuario <strong>".htmlspecialchars($nombre)."</strong> ($email) actualizado correctamente.";
-                    $nuevo_user_id = $id;
-                } else {
-                    // Crear nuevo usuario
-                    if ($acceso_portal === 1 && empty($password)) {
-                        $error = "La contraseña es obligatoria para registrar un nuevo usuario con acceso al portal.";
-                    } else {
-                        if (empty($password)) {
-                            $password = bin2hex(random_bytes(12));
+                        if (!empty($fotoUrl)) {
+                            $sqlUpd .= ", foto_url=?";
+                            $params[] = $fotoUrl;
                         }
-                        $hash = password_hash($password, PASSWORD_DEFAULT);
 
-                        $stmt = $pdo->prepare("
-                            INSERT INTO usuarios (usuario, nombre, email, password, agencia, area, puesto, telefono, foto_url, rol, activo, acceso_portal)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ");
-                        $stmt->execute([$usuario, $nombre, $email, $hash, $agencia, $area, $puesto, $telefono, $fotoUrl, $rol, $activo, $acceso_portal]);
-                        $nuevo_user_id = $pdo->lastInsertId();
+                        $sqlUpd .= " WHERE id=?";
+                        $params[] = $id;
 
-                        $tipoAccesoStr = ($acceso_portal === 1) ? "con acceso al portal y rol <strong>$rol</strong>" : "como información de personal (sin acceso al portal)";
-                        $mensaje = "¡Usuario <strong>".htmlspecialchars($nombre)."</strong> ($email) registrado exitosamente $tipoAccesoStr!";
-                    }
-                }
+                        $stmt = $pdo->prepare($sqlUpd);
+                        $stmt->execute($params);
 
-                // Asignación automática de permisos por defecto según el rol seleccionado (si tiene acceso)
-                if ($acceso_portal === 1 && isset($nuevo_user_id) && $nuevo_user_id > 0) {
-                    $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
-                    $modulos = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
-
-                    $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                    if ($driver === 'sqlite') {
-                        $stmtPerm = $pdo->prepare("
-                            INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            ON CONFLICT(usuario_id, modulo_clave) DO UPDATE SET
-                                puede_ver = excluded.puede_ver,
-                                puede_crear = excluded.puede_crear,
-                                puede_editar = excluded.puede_editar,
-                                puede_exportar = excluded.puede_exportar
-                        ");
+                        $mensaje = "Usuario <strong>".htmlspecialchars($nombre)."</strong> ($email) actualizado correctamente.";
+                        $nuevo_user_id = $id;
                     } else {
-                        $stmtPerm = $pdo->prepare("
-                            INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            ON DUPLICATE KEY UPDATE
-                                puede_ver = VALUES(puede_ver),
-                                puede_crear = VALUES(puede_crear),
-                                puede_editar = VALUES(puede_editar),
-                                puede_exportar = VALUES(puede_exportar)
-                        ");
-                    }
-
-                    foreach ($modulos as $modClave) {
-                        if (in_array(strtolower($rol), ['superadmin', 'admin'])) {
-                            // Admins tienen permisos totales habilitados por defecto
-                            $stmtPerm->execute([$nuevo_user_id, $modClave, 1, 1, 1, 1, 1]);
+                        // Crear nuevo usuario
+                        if ($acceso_portal === 1 && empty($password)) {
+                            $error = "La contraseña es obligatoria para registrar un nuevo usuario con acceso al portal.";
                         } else {
-                            // Rol Usuario: Acceso a consulta de Órdenes e Inventario de Equipos
-                            $puedeVer = in_array($modClave, ['ordenes_servicio', 'equipos']) ? 1 : 0;
-                            $stmtPerm->execute([$nuevo_user_id, $modClave, $puedeVer, 0, 0, 0, 0]);
+                            if (empty($password)) {
+                                $password = bin2hex(random_bytes(12));
+                            }
+                            $hash = password_hash($password, PASSWORD_DEFAULT);
+
+                            $stmt = $pdo->prepare("
+                                INSERT INTO usuarios (usuario, nombre, email, password, agencia, area, puesto, telefono, foto_url, rol, activo, acceso_portal)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ");
+                            $stmt->execute([$usuario, $nombre, $email, $hash, $agencia, $area, $puesto, $telefono, $fotoUrl, $rol, $activo, $acceso_portal]);
+                            $nuevo_user_id = $pdo->lastInsertId();
+
+                            $tipoAccesoStr = ($acceso_portal === 1) ? "con acceso al portal y rol <strong>$rol</strong>" : "como información de personal (sin acceso al portal)";
+                            $mensaje = "¡Usuario <strong>".htmlspecialchars($nombre)."</strong> ($email) registrado exitosamente $tipoAccesoStr!";
+                        }
+                    }
+
+                    // Asignación automática de permisos por defecto según el rol seleccionado (si tiene acceso)
+                    if ($acceso_portal === 1 && isset($nuevo_user_id) && $nuevo_user_id > 0) {
+                        $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
+                        $modulos = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
+
+                        $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+                        if ($driver === 'sqlite') {
+                            $stmtPerm = $pdo->prepare("
+                                INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(usuario_id, modulo_clave) DO UPDATE SET
+                                    puede_ver = excluded.puede_ver,
+                                    puede_crear = excluded.puede_crear,
+                                    puede_editar = excluded.puede_editar,
+                                    puede_eliminar = excluded.puede_eliminar,
+                                    puede_exportar = excluded.puede_exportar
+                            ");
+                        } else {
+                            $stmtPerm = $pdo->prepare("
+                                INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                                ON DUPLICATE KEY UPDATE
+                                    puede_ver = VALUES(puede_ver),
+                                    puede_crear = VALUES(puede_crear),
+                                    puede_editar = VALUES(puede_editar),
+                                    puede_eliminar = VALUES(puede_eliminar),
+                                    puede_exportar = VALUES(puede_exportar)
+                            ");
+                        }
+
+                        foreach ($modulos as $modClave) {
+                            if (in_array(strtolower($rol), ['superadmin', 'admin'])) {
+                                // Admins tienen permisos totales habilitados por defecto
+                                $stmtPerm->execute([$nuevo_user_id, $modClave, 1, 1, 1, 1, 1]);
+                            } else {
+                                // Rol Usuario: Acceso a consulta de Órdenes e Inventario de Equipos
+                                $puedeVer = in_array($modClave, ['ordenes_servicio', 'equipos']) ? 1 : 0;
+                                $stmtPerm->execute([$nuevo_user_id, $modClave, $puedeVer, 0, 0, 0, 0]);
+                            }
                         }
                     }
                 }
@@ -243,50 +261,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($targetUserId > 0) {
             try {
-                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                if ($driver === 'sqlite') {
-                    $stmtPerm = $pdo->prepare("
-                        INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(usuario_id, modulo_clave) DO UPDATE SET
-                            puede_ver = excluded.puede_ver,
-                            puede_crear = excluded.puede_crear,
-                            puede_editar = excluded.puede_editar,
-                            puede_eliminar = excluded.puede_eliminar,
-                            puede_exportar = excluded.puede_exportar
-                    ");
+                $stmtTargetRol = $pdo->prepare("SELECT rol FROM usuarios WHERE id = ?");
+                $stmtTargetRol->execute([$targetUserId]);
+                $targetRolDb = strtolower($stmtTargetRol->fetchColumn() ?: '');
+
+                if ($targetRolDb === 'superadmin' && !$esSuperAdmin) {
+                    $error = "Acceso denegado: Solo un usuario SuperAdmin puede modificar los permisos de un SuperAdmin.";
                 } else {
-                    $stmtPerm = $pdo->prepare("
-                        INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ON DUPLICATE KEY UPDATE
-                            puede_ver = VALUES(puede_ver),
-                            puede_crear = VALUES(puede_crear),
-                            puede_editar = VALUES(puede_editar),
-                            puede_eliminar = VALUES(puede_eliminar),
-                            puede_exportar = VALUES(puede_exportar)
-                    ");
+                    $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+                    if ($driver === 'sqlite') {
+                        $stmtPerm = $pdo->prepare("
+                            INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON CONFLICT(usuario_id, modulo_clave) DO UPDATE SET
+                                puede_ver = excluded.puede_ver,
+                                puede_crear = excluded.puede_crear,
+                                puede_editar = excluded.puede_editar,
+                                puede_eliminar = excluded.puede_eliminar,
+                                puede_exportar = excluded.puede_exportar
+                        ");
+                    } else {
+                        $stmtPerm = $pdo->prepare("
+                            INSERT INTO usuario_permisos (usuario_id, modulo_clave, puede_ver, puede_crear, puede_editar, puede_eliminar, puede_exportar)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE
+                                puede_ver = VALUES(puede_ver),
+                                puede_crear = VALUES(puede_crear),
+                                puede_editar = VALUES(puede_editar),
+                                puede_eliminar = VALUES(puede_eliminar),
+                                puede_exportar = VALUES(puede_exportar)
+                        ");
+                    }
+
+                    $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
+                    $modulos = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
+
+                    foreach ($modulos as $modClave) {
+                        $modPerms = $permisosEnviados[$modClave] ?? [];
+                        $pVer = isset($modPerms['puede_ver']) ? 1 : 0;
+                        $pCrear = isset($modPerms['puede_crear']) ? 1 : 0;
+                        $pEditar = isset($modPerms['puede_editar']) ? 1 : 0;
+                        $pEliminar = isset($modPerms['puede_eliminar']) ? 1 : 0;
+                        $pExportar = isset($modPerms['puede_exportar']) ? 1 : 0;
+
+                        $stmtPerm->execute([$targetUserId, $modClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                    }
+
+                    if ($targetUserId === (int)($_SESSION['usuario_id'] ?? 0)) {
+                        cargarPermisosSesion($pdo, $targetUserId);
+                    }
+
+                    $mensaje = "Permisos actualizados correctamente para el usuario #$targetUserId.";
                 }
-
-                $stmtMod = $pdo->query("SELECT clave FROM modulos WHERE estatus = 1");
-                $modulos = $stmtMod->fetchAll(PDO::FETCH_COLUMN);
-
-                foreach ($modulos as $modClave) {
-                    $modPerms = $permisosEnviados[$modClave] ?? [];
-                    $pVer = isset($modPerms['puede_ver']) ? 1 : 0;
-                    $pCrear = isset($modPerms['puede_crear']) ? 1 : 0;
-                    $pEditar = isset($modPerms['puede_editar']) ? 1 : 0;
-                    $pEliminar = isset($modPerms['puede_eliminar']) ? 1 : 0;
-                    $pExportar = isset($modPerms['puede_exportar']) ? 1 : 0;
-
-                    $stmtPerm->execute([$targetUserId, $modClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
-                }
-
-                if ($targetUserId === (int)($_SESSION['usuario_id'] ?? 0)) {
-                    cargarPermisosSesion($pdo, $targetUserId);
-                }
-
-                $mensaje = "Permisos actualizados correctamente para el usuario #$targetUserId.";
             } catch (PDOException $e) {
                 $error = "Error al actualizar permisos: " . $e->getMessage();
             }
@@ -300,9 +326,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($userId > 0) {
             try {
-                $stmt = $pdo->prepare("UPDATE usuarios SET rol = ? WHERE id = ?");
-                $stmt->execute([$nuevoRol, $userId]);
-                $mensaje = "Rol del usuario actualizado a <strong>" . htmlspecialchars($nuevoRol) . "</strong>.";
+                $stmtTargetRol = $pdo->prepare("SELECT rol FROM usuarios WHERE id = ?");
+                $stmtTargetRol->execute([$userId]);
+                $targetRolDb = strtolower($stmtTargetRol->fetchColumn() ?: '');
+
+                if (($targetRolDb === 'superadmin' || strtolower($nuevoRol) === 'superadmin') && !$esSuperAdmin) {
+                    $error = "Acceso denegado: Solo un usuario SuperAdmin puede asignar o modificar usuarios SuperAdmin.";
+                } else {
+                    $stmt = $pdo->prepare("UPDATE usuarios SET rol = ? WHERE id = ?");
+                    $stmt->execute([$nuevoRol, $userId]);
+                    $mensaje = "Rol del usuario actualizado a <strong>" . htmlspecialchars($nuevoRol) . "</strong>.";
+                }
             } catch (PDOException $e) {
                 $error = "Error al cambiar el rol: " . $e->getMessage();
             }
@@ -316,9 +350,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($userId > 0) {
             try {
-                $stmt = $pdo->prepare("UPDATE usuarios SET activo = ? WHERE id = ?");
-                $stmt->execute([$nuevoEstatus, $userId]);
-                $mensaje = "Estatus del usuario actualizado correctamente.";
+                $stmtTargetRol = $pdo->prepare("SELECT rol FROM usuarios WHERE id = ?");
+                $stmtTargetRol->execute([$userId]);
+                $targetRolDb = strtolower($stmtTargetRol->fetchColumn() ?: '');
+
+                if ($targetRolDb === 'superadmin' && !$esSuperAdmin) {
+                    $error = "Acceso denegado: Solo un usuario SuperAdmin puede modificar a otro SuperAdmin.";
+                } else {
+                    $stmt = $pdo->prepare("UPDATE usuarios SET activo = ? WHERE id = ?");
+                    $stmt->execute([$nuevoEstatus, $userId]);
+                    $mensaje = "Estatus del usuario actualizado correctamente.";
+                }
             } catch (PDOException $e) {
                 $error = "Error al actualizar estatus: " . $e->getMessage();
             }
@@ -332,12 +374,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
         if ($userId > 0) {
             try {
-                $stmt = $pdo->prepare("UPDATE usuarios SET acceso_portal = ? WHERE id = ?");
-                $stmt->execute([$nuevoAcceso, $userId]);
-                $estadoTexto = ($nuevoAcceso === 1) ? "con acceso al portal" : "registrado solo como información de personal";
-                $mensaje = "Acceso al portal actualizado: El usuario ahora está $estadoTexto.";
+                $stmtTargetRol = $pdo->prepare("SELECT rol FROM usuarios WHERE id = ?");
+                $stmtTargetRol->execute([$userId]);
+                $targetRolDb = strtolower($stmtTargetRol->fetchColumn() ?: '');
+
+                if ($targetRolDb === 'superadmin' && !$esSuperAdmin) {
+                    $error = "Acceso denegado: Solo un usuario SuperAdmin puede modificar a otro SuperAdmin.";
+                } else {
+                    $stmt = $pdo->prepare("UPDATE usuarios SET acceso_portal = ? WHERE id = ?");
+                    $stmt->execute([$nuevoAcceso, $userId]);
+                    $estadoTexto = ($nuevoAcceso === 1) ? "con acceso al portal" : "registrado solo como información de personal";
+                    $mensaje = "Acceso al portal actualizado: El usuario ahora está $estadoTexto.";
+                }
             } catch (PDOException $e) {
                 $error = "Error al cambiar acceso al portal: " . $e->getMessage();
+            }
+        }
+    }
+
+    // 6. ELIMINAR USUARIO
+    elseif ($accion === 'eliminar_usuario') {
+        $userId = intval($_POST['user_id'] ?? 0);
+
+        if ($userId <= 0) {
+            $error = "ID de usuario inválido para eliminar.";
+        } elseif ($userId === (int)($_SESSION['usuario_id'] ?? 0)) {
+            $error = "No puedes eliminar tu propia cuenta de usuario.";
+        } else {
+            try {
+                $stmtTarget = $pdo->prepare("SELECT id, rol, nombre FROM usuarios WHERE id = ?");
+                $stmtTarget->execute([$userId]);
+                $targetUsr = $stmtTarget->fetch(PDO::FETCH_ASSOC);
+
+                if (!$targetUsr) {
+                    $error = "El usuario seleccionado no existe.";
+                } else {
+                    $targetRol = strtolower($targetUsr['rol'] ?? '');
+                    if ($targetRol === 'superadmin' && !$esSuperAdmin) {
+                        $error = "Acceso denegado: Solo un usuario SuperAdmin puede eliminar a otro SuperAdmin.";
+                    } else {
+                        // Eliminar permisos
+                        $stmtDelP = $pdo->prepare("DELETE FROM usuario_permisos WHERE usuario_id = ?");
+                        $stmtDelP->execute([$userId]);
+
+                        // Eliminar usuario
+                        $stmtDelU = $pdo->prepare("DELETE FROM usuarios WHERE id = ?");
+                        $stmtDelU->execute([$userId]);
+
+                        $mensaje = "El usuario <strong>" . htmlspecialchars($targetUsr['nombre']) . "</strong> ha sido eliminado exitosamente.";
+                    }
+                }
+            } catch (PDOException $eDel) {
+                $error = "Error al eliminar el usuario: " . $eDel->getMessage();
             }
         }
     }
@@ -355,7 +443,8 @@ $equiposPorUsuarioMap = [];
 
 if ($pdo) {
     try {
-        $stmtU = $pdo->query("SELECT * FROM usuarios ORDER BY id DESC");
+        $sqlU = (!$esSuperAdmin) ? "SELECT * FROM usuarios WHERE LOWER(rol) != 'superadmin' ORDER BY id DESC" : "SELECT * FROM usuarios ORDER BY id DESC";
+        $stmtU = $pdo->query($sqlU);
         $usuarios = $stmtU->fetchAll(PDO::FETCH_ASSOC);
 
         $stmtM = $pdo->query("SELECT * FROM modulos WHERE estatus = 1 ORDER BY orden ASC");
@@ -932,10 +1021,19 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
                                     <input type="hidden" name="accion" value="toggle_status">
                                     <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                     <input type="hidden" name="nuevo_estatus" value="<?php echo $u['activo'] ? 0 : 1; ?>">
-                                    <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2">
+                                    <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2" title="<?php echo $u['activo'] ? 'Desactivar Usuario' : 'Activar Usuario'; ?>">
                                         <i class="bi <?php echo $u['activo'] ? 'bi-person-x-fill' : 'bi-person-check-fill'; ?>"></i>
                                     </button>
                                 </form>
+                                <?php if ($u['id'] != ($_SESSION['usuario_id'] ?? 0) && ($esSuperAdmin || strtolower($u['rol'] ?? '') !== 'superadmin')): ?>
+                                <form method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que deseas eliminar permanentemente al usuario \'<?php echo addslashes(htmlspecialchars($u['nombre'])); ?>\'? Esta acción no se puede deshacer.');">
+                                    <input type="hidden" name="accion" value="eliminar_usuario">
+                                    <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Eliminar Usuario">
+                                        <i class="bi bi-trash3-fill"></i>
+                                    </button>
+                                </form>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -1088,10 +1186,19 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
                                                 <input type="hidden" name="accion" value="toggle_status">
                                                 <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                                 <input type="hidden" name="nuevo_estatus" value="<?php echo $u['activo'] ? 0 : 1; ?>">
-                                                <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2">
+                                                <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2" title="<?php echo $u['activo'] ? 'Desactivar Usuario' : 'Activar Usuario'; ?>">
                                                     <i class="bi <?php echo $u['activo'] ? 'bi-person-x-fill' : 'bi-person-check-fill'; ?>"></i>
                                                 </button>
                                             </form>
+                                            <?php if ($u['id'] != ($_SESSION['usuario_id'] ?? 0) && ($esSuperAdmin || strtolower($u['rol'] ?? '') !== 'superadmin')): ?>
+                                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que deseas eliminar permanentemente al usuario \'<?php echo addslashes(htmlspecialchars($u['nombre'])); ?>\'? Esta acción no se puede deshacer.');">
+                                                <input type="hidden" name="accion" value="eliminar_usuario">
+                                                <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Eliminar Usuario">
+                                                    <i class="bi bi-trash3-fill"></i>
+                                                </button>
+                                            </form>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -1217,9 +1324,26 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
                                                 <i class="bi bi-shield-lock-fill"></i>
                                             </button>
                                         <?php endif; ?>
-                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2" onclick='abrirModalEditarUsuario(<?php echo json_encode($u); ?>)'>
+                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2" onclick='abrirModalEditarUsuario(<?php echo json_encode($u); ?>)' title="Editar Usuario">
                                             <i class="bi bi-pencil-square"></i>
                                         </button>
+                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Deseas cambiar el estatus de este usuario?');">
+                                            <input type="hidden" name="accion" value="toggle_status">
+                                            <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+                                            <input type="hidden" name="nuevo_estatus" value="<?php echo $u['activo'] ? 0 : 1; ?>">
+                                            <button type="submit" class="btn btn-sm <?php echo $u['activo'] ? 'btn-outline-danger' : 'btn-outline-success'; ?> rounded-2" title="<?php echo $u['activo'] ? 'Desactivar Usuario' : 'Activar Usuario'; ?>">
+                                                <i class="bi <?php echo $u['activo'] ? 'bi-person-x' : 'bi-person-check'; ?>"></i>
+                                            </button>
+                                        </form>
+                                        <?php if ($u['id'] != ($_SESSION['usuario_id'] ?? 0) && ($esSuperAdmin || strtolower($u['rol'] ?? '') !== 'superadmin')): ?>
+                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Estás seguro de que deseas eliminar permanentemente al usuario \'<?php echo addslashes(htmlspecialchars($u['nombre'])); ?>\'? Esta acción no se puede deshacer.');">
+                                            <input type="hidden" name="accion" value="eliminar_usuario">
+                                            <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Eliminar Usuario">
+                                                <i class="bi bi-trash3"></i>
+                                            </button>
+                                        </form>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -1470,7 +1594,9 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
                                     <select name="rol" id="form_rol" class="form-select border-primary fw-bold">
                                         <option value="Usuario">👤 Usuario (Acceso limitado por módulo)</option>
                                         <option value="Admin">🛡️ Admin (Acceso total a la agencia)</option>
+                                        <?php if ($esSuperAdmin): ?>
                                         <option value="SuperAdmin">👑 SuperAdmin (Administrador Central)</option>
+                                        <?php endif; ?>
                                     </select>
                                 </div>
                             </div>
