@@ -170,6 +170,28 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
             border-radius: 12px;
             border: 1px solid rgba(34, 197, 94, 0.3);
         }
+        .module-gh-tag {
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            text-transform: uppercase;
+            line-height: 1.2;
+            transition: all 0.2s ease;
+        }
+        .module-card:hover .module-gh-tag {
+            color: #f1f5f9;
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(56, 189, 248, 0.12);
+        }
     </style>
 </head>
 <body>
@@ -282,6 +304,7 @@ $modulosVisibles = 0;
             Consulta oficial y centralizada de políticas y lineamientos con visor blindado anti-captura y sincronización central.
         </div>
         <a href="politicas.php" class="btn-ingresar" style="background: #9333ea; border-color: #9333ea;">Ingresar</a>
+        <span class="module-gh-tag" title="Módulo conectado con Dirección Central GH">GH</span>
     </div>
     <?php endif; ?>
 
@@ -297,6 +320,7 @@ $modulosVisibles = 0;
             Formatos oficiales, manuales de procedimientos y avisos institucionales de cumplimiento con menú lateral interactivo.
         </div>
         <a href="compliance.php" class="btn-ingresar" style="background: linear-gradient(135deg, #b8972e 0%, #8c711e 100%); border-color: rgba(245, 223, 158, 0.4); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);">Ingresar</a>
+        <span class="module-gh-tag" title="Módulo conectado con Dirección Central GH">GH</span>
     </div>
     <?php endif; ?>
 
@@ -312,6 +336,7 @@ $modulosVisibles = 0;
             Registro, canalización y seguimiento de requerimientos para Desarrollo, Ciberseguridad, Infraestructura, Redes Sociales, Auditoría y Corporativo.
         </div>
         <a href="tickets.php" class="btn-ingresar" style="background: #0284c7; border-color: #0284c7;">Ingresar</a>
+        <span class="module-gh-tag" title="Módulo conectado con Dirección Central GH">GH</span>
     </div>
     <?php endif; ?>
 
