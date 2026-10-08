@@ -86,6 +86,11 @@ $tipoGeneral = trim($data['tipo_reporte'] ?? 'general');
 $totalProcesados = 0;
 
 if (!empty($reportes) && is_array($reportes)) {
+    // Purgar datos demo y registros de prueba para conservar ÚNICAMENTE datos reales de la API
+    try {
+        $pdo->exec("DELETE FROM reportes_inventario_autos WHERE inventario LIKE 'SEM-2026-%' OR chasis LIKE 'TEST%' OR chasis = 'TEST1234567890' OR descripcion = 'Auto de Prueba'");
+    } catch (Throwable $tClean) {}
+
     $stmtIns = $pdo->prepare("
         INSERT INTO reportes_agencia_datos 
         (tipo_reporte, folio_referencia, titulo, datos_json, resumen, monto, fecha_documento, estatus, sincronizado_en)
