@@ -675,11 +675,6 @@ if ($reporteActivo === 'ordenes_servicio') {
         </div>
     </div>
     <div class="d-flex align-items-center gap-2">
-        <?php if ($esAdmin): ?>
-            <a href="agencia.php#servidor_local" class="btn btn-outline-success btn-sm rounded-3 px-3 text-white">
-                <i class="bi bi-sliders me-1 text-success"></i> Parámetros Servidor Local
-            </a>
-        <?php endif; ?>
         <span class="badge bg-dark border border-secondary text-secondary p-2 small font-monospace">
             <i class="bi bi-building me-1"></i> <?php echo htmlspecialchars($agenciaNombre); ?>
         </span>
