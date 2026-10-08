@@ -86,6 +86,12 @@
     100% { transform: translate(-50%, -50%) scale(1); }
 }
 
+/* CONTENEDOR WRAPPER */
+.notif-dropdown-wrapper {
+    position: relative;
+    z-index: 99999;
+}
+
 /* MENÚ DROPDOWN */
 .notif-dropdown-menu {
     width: 360px;
@@ -97,6 +103,7 @@
     backdrop-filter: blur(14px);
     margin-top: 10px !important;
     animation: fadeInNotif 0.2s ease;
+    z-index: 999999 !important;
 }
 @keyframes fadeInNotif {
     from { opacity: 0; transform: translateY(-8px); }

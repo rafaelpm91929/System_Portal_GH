@@ -560,6 +560,35 @@ function obtenerIconoArea($nombreArea) {
             letter-spacing: 0.5px;
         }
 
+        .watermark-gh-logo {
+            max-width: 56px;
+            height: auto;
+            opacity: 0.85;
+            margin-bottom: 3px;
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
+        }
+
+        .central-gh-watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 50%;
+            max-width: 320px;
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: 4;
+            text-align: center;
+        }
+
+        .central-gh-watermark img {
+            width: 100%;
+            height: auto;
+        }
+
         /* OVERLAY DE BLOQUEO POR CURSOR */
         #pdfLockOverlay {
             position: absolute;
@@ -879,6 +908,7 @@ function obtenerIconoArea($nombreArea) {
     <!-- BARRA SUPERIOR DEL VISOR -->
     <div class="visor-header">
         <div class="d-flex align-items-center gap-2">
+            <img src="uploads/logo_gh.png" alt="Grupo Huerta" style="height: 28px; width: auto; object-fit: contain; margin-right: 2px;">
             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2.5 py-1 rounded-pill small font-monospace">
                 <i class="bi bi-shield-fill-x me-1"></i> LECTURA PROTEGIDA
             </span>
@@ -1286,11 +1316,16 @@ function obtenerIconoArea($nombreArea) {
                         securityPattern.className = 'banknote-security-pattern';
                         wrapper.appendChild(securityPattern);
 
+                        const centralLogo = document.createElement('div');
+                        centralLogo.className = 'central-gh-watermark';
+                        centralLogo.innerHTML = '<img src="uploads/logo_gh.png" alt="Grupo Huerta">';
+                        wrapper.appendChild(centralLogo);
+
                         const watermarkLayer = document.createElement('div');
                         watermarkLayer.className = 'forensic-watermark-overlay';
 
                         const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'medium' });
-                        const textoSello = `<span style="font-size:0.62rem; color:#dc2626; font-weight:900; letter-spacing:1px;">DOCUMENTO PROTEGIDO</span><br><b style="color:#0f172a;">${FORENSIC_USER_NAME}</b><br>${FORENSIC_AGENCIA}<br>${ahora}`;
+                        const textoSello = `<img src="uploads/logo_gh.png" alt="GH" class="watermark-gh-logo"><span style="font-size:0.62rem; color:#dc2626; font-weight:900; letter-spacing:1px;">DOCUMENTO PROTEGIDO</span><br><b style="color:#0f172a;">${FORENSIC_USER_NAME}</b><br>${FORENSIC_AGENCIA}<br>${ahora}`;
 
                         const numSellos = Math.max(8, Math.floor((w * h) / 40000));
                         for (let s = 0; s < numSellos; s++) {

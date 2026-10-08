@@ -53,10 +53,13 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
             padding-bottom: 50px;
         }
         .top-navbar {
-            background: rgba(6, 19, 37, 0.85);
+            background: rgba(6, 19, 37, 0.95);
             backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             padding: 15px 40px;
+            position: sticky;
+            top: 0;
+            z-index: 9999;
         }
         .header-section {
             padding: 40px 40px 20px 40px;
