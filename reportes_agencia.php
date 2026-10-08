@@ -192,6 +192,7 @@ if ($reporteActivo === 'inventario_seminuevos') {
 if ($reporteActivo === 'ordenes_servicio') {
 
     $filtroQ          = trim($_GET['q'] ?? '');
+    $filtroAlmacen    = trim($_GET['almacen'] ?? '');
     $filtroEstatus    = trim($_GET['estatus'] ?? '');
     $filtroTipo       = trim($_GET['tipo'] ?? '');
     $filtroAsesor     = trim($_GET['asesor'] ?? '');
@@ -206,6 +207,10 @@ if ($reporteActivo === 'ordenes_servicio') {
         $where[] = "(no_orden LIKE ? OR cliente LIKE ? OR vin_chasis LIKE ? OR placas LIKE ? OR modelo LIKE ? OR nombre_asesor LIKE ? OR rfc LIKE ?)";
         $qParam = "%$filtroQ%";
         for ($i = 0; $i < 7; $i++) $params[] = $qParam;
+    }
+    if (!empty($filtroAlmacen)) {
+        $where[] = "almacen = ?";
+        $params[] = $filtroAlmacen;
     }
     if (!empty($filtroEstatus)) {
         if ($filtroEstatus === 'AB' || $filtroEstatus === 'ABIERTA') {
@@ -240,7 +245,7 @@ if ($reporteActivo === 'ordenes_servicio') {
         } elseif ($filtroAntiguedad === 'normal') {
             $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta <= 3";
         } elseif ($filtroAntiguedad === 'vencida') {
-            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa < CURRENT_TIMESTAMP";
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa > '2000-01-01' AND fecha_promesa < CURRENT_TIMESTAMP";
         }
     }
     if (!empty($filtroFechaI)) {
@@ -316,6 +321,7 @@ if ($reporteActivo === 'ordenes_servicio') {
     $chartEstatus = [];
     $chartTipos = [];
     $chartAging = [];
+    $catalogoAlmacenesOrd = [];
     $catalogoEstatus = [];
     $catalogoTipos = [];
     $catalogoAsesores = [];
@@ -327,7 +333,7 @@ if ($reporteActivo === 'ordenes_servicio') {
                 SELECT 
                     COUNT(*) as total_ordenes,
                     SUM(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN 1 ELSE 0 END) as abiertas,
-                    SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa < CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as vencidas,
+                    SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa > '2000-01-01' AND fecha_promesa < CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as vencidas,
                     SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta > 15 THEN 1 ELSE 0 END) as criticas,
                     AVG(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN dias_abierta ELSE NULL END) as avg_dias_abiertas
                 FROM reportes_ordenes_servicio
@@ -401,6 +407,9 @@ if ($reporteActivo === 'ordenes_servicio') {
             $chartAging = $stmtAging ? $stmtAging->fetch(PDO::FETCH_ASSOC) : [];
 
             // Catálogos para filtros
+            $stmtCatAlm = $pdo->query("SELECT DISTINCT almacen FROM reportes_ordenes_servicio WHERE almacen IS NOT NULL AND almacen != '' ORDER BY almacen ASC");
+            $catalogoAlmacenesOrd = $stmtCatAlm ? $stmtCatAlm->fetchAll(PDO::FETCH_COLUMN) : [];
+
             $stmtCatStat = $pdo->query("SELECT DISTINCT cve_estatus, descripcion_estatus FROM reportes_ordenes_servicio WHERE cve_estatus IS NOT NULL ORDER BY descripcion_estatus ASC");
             $catalogoEstatus = $stmtCatStat ? $stmtCatStat->fetchAll(PDO::FETCH_ASSOC) : [];
 
@@ -535,19 +544,25 @@ if ($reporteActivo === 'ordenes_servicio') {
             box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5), 0 0 20px rgba(16, 185, 129, 0.15);
             background: #0a1c36;
         }
-        .table-custom {
-            background: #071324 !important;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+        .table-custom, .table-custom-container {
+            background: #081528 !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
             border-radius: 16px;
             overflow: hidden;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
         }
-        .table-custom table {
+        .table-custom table, .table-custom-container table {
             margin-bottom: 0;
             color: #ffffff !important;
-            background: transparent !important;
+            background: #081528 !important;
+            --bs-table-bg: #081528 !important;
+            --bs-table-accent-bg: #081528 !important;
+            --bs-table-striped-bg: #081528 !important;
+            --bs-table-color: #ffffff !important;
+            --bs-table-hover-bg: #0d2240 !important;
+            --bs-table-hover-color: #ffffff !important;
         }
-        .table-custom th {
+        .table-custom th, .table-custom-container th {
             background: #040d1a !important;
             color: #94a3b8 !important;
             font-size: 0.75rem;
@@ -555,22 +570,24 @@ if ($reporteActivo === 'ordenes_servicio') {
             letter-spacing: 0.06em;
             text-transform: uppercase;
             padding: 15px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
             white-space: nowrap;
         }
-        .table-custom td {
-            background: transparent !important;
-            color: #f1f5f9 !important;
+        .table-custom td, .table-custom-container td {
+            background: #081528 !important;
+            color: #ffffff !important;
             padding: 14px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
             vertical-align: middle;
             font-size: 0.88rem;
         }
-        .table-custom tbody tr {
+        .table-custom tbody tr, .table-custom-container tbody tr {
+            background: #081528 !important;
             transition: background-color 0.18s ease;
         }
-        .table-custom tbody tr:hover td {
-            background: #0b1f38 !important;
+        .table-custom tbody tr:hover td, .table-custom-container tbody tr:hover td {
+            background: #0e2444 !important;
+            color: #ffffff !important;
         }
         .form-control, .form-select {
             background: #050f1c !important;
@@ -1147,6 +1164,7 @@ if ($reporteActivo === 'ordenes_servicio') {
                         'reporte'     => 'ordenes_servicio',
                         'exportar'    => 'excel',
                         'q'           => $filtroQ,
+                        'almacen'     => $filtroAlmacen,
                         'estatus'     => $filtroEstatus,
                         'tipo'        => $filtroTipo,
                         'asesor'      => $filtroAsesor,
@@ -1305,6 +1323,19 @@ if ($reporteActivo === 'ordenes_servicio') {
                 </div>
             </div>
 
+            <!-- Almacén -->
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label text-secondary small fw-bold mb-1">Almacén</label>
+                <select name="almacen" class="form-select form-select-sm bg-dark border-secondary text-white">
+                    <option value="">Todos los Almacenes</option>
+                    <?php foreach ($catalogoAlmacenesOrd as $alm): ?>
+                        <option value="<?php echo htmlspecialchars($alm); ?>" <?php echo ($filtroAlmacen === $alm) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($alm); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
             <!-- Estatus -->
             <div class="col-sm-6 col-md-2">
                 <label class="form-label text-secondary small fw-bold mb-1">Estatus</label>
@@ -1330,7 +1361,7 @@ if ($reporteActivo === 'ordenes_servicio') {
             </div>
 
             <!-- Antigüedad / Retraso -->
-            <div class="col-sm-6 col-md-2">
+            <div class="col-sm-6 col-md-3">
                 <label class="form-label text-secondary small fw-bold mb-1">Antigüedad (Abiertas)</label>
                 <select name="antiguedad" class="form-select form-select-sm bg-dark border-secondary text-white">
                     <option value="">Cualquier Antigüedad</option>
@@ -1343,7 +1374,7 @@ if ($reporteActivo === 'ordenes_servicio') {
             </div>
 
             <!-- Asesor -->
-            <div class="col-sm-6 col-md-3">
+            <div class="col-sm-6 col-md-3 mt-2">
                 <label class="form-label text-secondary small fw-bold mb-1">Asesor de Servicio</label>
                 <select name="asesor" class="form-select form-select-sm bg-dark border-secondary text-white">
                     <option value="">Todos los Asesores</option>
@@ -1355,53 +1386,54 @@ if ($reporteActivo === 'ordenes_servicio') {
                 </select>
             </div>
 
-            <!-- Fechas y Botones -->
-            <div class="col-12 mt-2 pt-2 border-top border-secondary border-opacity-25 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <!-- Rango Fecha Alta -->
+            <div class="col-sm-6 col-md-4 mt-2">
+                <label class="form-label text-secondary small fw-bold mb-1">Rango Fecha Alta</label>
                 <div class="d-flex align-items-center gap-2">
-                    <span class="text-secondary small fw-bold">Fecha Alta:</span>
-                    <input type="date" name="fecha_desde" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 140px;" value="<?php echo htmlspecialchars($filtroFechaI); ?>">
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm bg-dark border-secondary text-white" value="<?php echo htmlspecialchars($filtroFechaI); ?>">
                     <span class="text-secondary small">a</span>
-                    <input type="date" name="fecha_hasta" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 140px;" value="<?php echo htmlspecialchars($filtroFechaF); ?>">
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm bg-dark border-secondary text-white" value="<?php echo htmlspecialchars($filtroFechaF); ?>">
                 </div>
+            </div>
 
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-3">
-                        <i class="bi bi-funnel-fill me-1"></i> Aplicar Filtros
+            <!-- Botones de Acción -->
+            <div class="col-md-5 mt-2 d-flex flex-wrap justify-content-end align-items-end gap-2">
+                <button type="submit" class="btn btn-primary btn-sm rounded-3 px-3 fw-bold">
+                    <i class="bi bi-funnel-fill me-1"></i> Aplicar Filtros
+                </button>
+                <?php if ($puedeExportar): ?>
+                    <button type="submit" name="exportar" value="excel" class="btn btn-outline-success btn-sm rounded-3 px-3 text-white fw-bold">
+                        <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel
                     </button>
-                    <?php if ($puedeExportar): ?>
-                        <button type="submit" name="exportar" value="excel" class="btn btn-outline-success btn-sm rounded-3 px-3 text-white">
-                            <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel
-                        </button>
-                    <?php endif; ?>
-                    <a href="reportes_agencia.php?reporte=ordenes_servicio" class="btn btn-outline-secondary btn-sm text-secondary rounded-3">
-                        <i class="bi bi-x-circle me-1"></i> Limpiar
-                    </a>
-                </div>
+                <?php endif; ?>
+                <a href="reportes_agencia.php?reporte=ordenes_servicio" class="btn btn-outline-secondary btn-sm text-secondary rounded-3">
+                    <i class="bi bi-x-circle me-1"></i> Limpiar
+                </a>
             </div>
         </form>
     </div>
 
     <!-- TABLA DE ÓRDENES DE SERVICIO -->
-    <div class="table-custom-container">
+    <div class="table-custom-container" style="background: #081528 !important; border: 1px solid rgba(255, 255, 255, 0.1) !important;">
         <div class="table-responsive" style="max-height: 650px;">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="sticky-top">
-                    <tr>
-                        <th>No. Orden</th>
-                        <th>Estatus</th>
-                        <th>Tiempo sin Cerrar</th>
-                        <th>Tipo Orden</th>
-                        <th>Vehículo</th>
-                        <th>Cliente</th>
-                        <th>Asesor</th>
-                        <th>Fecha Alta / Promesa</th>
-                        <th class="text-center">Acción</th>
+            <table class="table table-dark table-hover align-middle mb-0" style="background: #081528 !important; --bs-table-bg: #081528 !important; color: #ffffff !important;">
+                <thead class="sticky-top" style="background: #040d1a !important;">
+                    <tr style="background: #040d1a !important;">
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">No. Orden / Alm.</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Estatus</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Tiempo sin Cerrar</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Tipo Orden</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Vehículo</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Cliente</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Asesor</th>
+                        <th style="background: #040d1a !important; color: #94a3b8 !important;">Fecha Alta / Promesa</th>
+                        <th class="text-center" style="background: #040d1a !important; color: #94a3b8 !important;">Acción</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($ordenesServicio)): ?>
                         <tr>
-                            <td colspan="9" class="text-center py-5 text-secondary">
+                            <td colspan="9" class="text-center py-5 text-secondary" style="background: #081528 !important;">
                                 <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary opacity-50"></i>
                                 <span>No se encontraron órdenes de servicio con los filtros aplicados.</span>
                             </td>
@@ -1411,24 +1443,23 @@ if ($reporteActivo === 'ordenes_servicio') {
                             $esAbierta = ($ord['cve_estatus'] === 'AB' || stripos($ord['descripcion_estatus'], 'ABIERTA') !== false);
                             $esCerrada = ($ord['cve_estatus'] === 'CE' || stripos($ord['descripcion_estatus'], 'CERRADA') !== false);
                             $dias = intval($ord['dias_abierta'] ?? 0);
-                            $esVencida = false;
-                            if ($esAbierta && !empty($ord['fecha_promesa'])) {
-                                $esVencida = (strtotime($ord['fecha_promesa']) < time());
-                            }
+                            $timeProm = !empty($ord['fecha_promesa']) ? strtotime($ord['fecha_promesa']) : 0;
+                            $tienePromValida = ($timeProm > strtotime('2000-01-01'));
+                            $esVencida = ($esAbierta && $tienePromValida && $timeProm < time());
                         ?>
-                            <tr>
+                            <tr style="background: #081528 !important;">
                                 <!-- No. Orden -->
-                                <td>
-                                    <span class="fw-bold text-white fs-6 font-monospace cursor-pointer" style="cursor: pointer;" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
+                                <td style="background: #081528 !important;">
+                                    <span class="fw-bold text-white fs-6 font-monospace" style="cursor: pointer; color: #ffffff !important;" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
                                         <?php echo htmlspecialchars($ord['no_orden']); ?>
                                     </span>
                                     <?php if (!empty($ord['almacen'])): ?>
-                                        <div class="small text-secondary font-monospace">Alm: <?php echo htmlspecialchars($ord['almacen']); ?></div>
+                                        <div class="small font-monospace" style="color: #38bdf8 !important;">Alm: <?php echo htmlspecialchars($ord['almacen']); ?></div>
                                     <?php endif; ?>
                                 </td>
 
                                 <!-- Estatus -->
-                                <td>
+                                <td style="background: #081528 !important;">
                                     <?php if ($esAbierta): ?>
                                         <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2 py-1 rounded-pill d-inline-flex align-items-center gap-1 font-monospace">
                                             <span class="dot-pulse" style="background: #f59e0b; width: 6px; height: 6px;"></span>
@@ -1439,14 +1470,14 @@ if ($reporteActivo === 'ordenes_servicio') {
                                             <i class="bi bi-check2 me-1"></i> CERRADA
                                         </span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-2 py-1 rounded-pill font-monospace">
+                                        <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary px-2 py-1 rounded-pill font-monospace">
                                             <?php echo htmlspecialchars($ord['descripcion_estatus'] ?: $ord['cve_estatus']); ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>
 
                                 <!-- Tiempo sin Cerrar -->
-                                <td>
+                                <td style="background: #081528 !important;">
                                     <?php if ($esAbierta): ?>
                                         <?php if ($dias > 15): ?>
                                             <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2 py-1 rounded-2">
@@ -1481,22 +1512,23 @@ if ($reporteActivo === 'ordenes_servicio') {
                                 </td>
 
                                 <!-- Tipo Orden -->
-                                <td>
+                                <td style="background: #081528 !important;">
                                     <span class="badge bg-dark border border-secondary text-light px-2 py-1">
                                         <?php echo htmlspecialchars($ord['tipo_orden'] ?: $ord['cve_tipo_orden']); ?>
                                     </span>
                                 </td>
 
                                 <!-- Vehículo -->
-                                <td>
-                                    <div class="fw-semibold text-white">
+                                <td style="background: #081528 !important;">
+                                    <div class="fw-bold text-white" style="color: #ffffff !important;">
                                         <?php echo htmlspecialchars($ord['modelo'] ?: 'Sin Modelo'); ?> 
-                                        <span class="text-secondary small">(<?php echo htmlspecialchars($ord['ano'] ?: '---'); ?>)</span>
+                                        <span class="text-secondary small ms-1">(<?php echo htmlspecialchars($ord['ano'] ?: '---'); ?>)</span>
                                     </div>
-                                    <div class="small font-monospace text-secondary d-flex align-items-center gap-1">
-                                        <span>VIN: <?php echo htmlspecialchars($ord['vin_chasis'] ?: '---'); ?></span>
+                                    <div class="small font-monospace text-secondary d-flex align-items-center gap-1 mt-1">
+                                        <span>VIN:</span>
+                                        <code class="text-warning fw-bold font-monospace" style="background: transparent; color: #facc15 !important;"><?php echo htmlspecialchars($ord['vin_chasis'] ?: '---'); ?></code>
                                         <?php if (!empty($ord['vin_chasis'])): ?>
-                                            <button type="button" class="btn-copy-vin" title="Copiar VIN" onclick="copiarVIN('<?php echo htmlspecialchars($ord['vin_chasis']); ?>', this)">
+                                            <button type="button" class="btn-copy-vin text-secondary" title="Copiar VIN" onclick="copiarVIN('<?php echo htmlspecialchars($ord['vin_chasis']); ?>', this)">
                                                 <i class="bi bi-clipboard"></i>
                                             </button>
                                         <?php endif; ?>
@@ -1507,33 +1539,35 @@ if ($reporteActivo === 'ordenes_servicio') {
                                 </td>
 
                                 <!-- Cliente -->
-                                <td>
-                                    <div class="text-light fw-medium"><?php echo htmlspecialchars($ord['cliente'] ?: '---'); ?></div>
+                                <td style="background: #081528 !important;">
+                                    <div class="fw-bold text-white" style="color: #ffffff !important;"><?php echo htmlspecialchars($ord['cliente'] ?: '---'); ?></div>
                                     <?php if (!empty($ord['telefono'])): ?>
-                                        <div class="small text-secondary"><i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($ord['telefono']); ?></div>
+                                        <div class="small text-info mt-1"><i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($ord['telefono']); ?></div>
                                     <?php endif; ?>
                                 </td>
 
                                 <!-- Asesor -->
-                                <td>
-                                    <div class="text-white small fw-medium"><?php echo htmlspecialchars($ord['nombre_asesor'] ?: 'Sin Asignar'); ?></div>
+                                <td style="background: #081528 !important;">
+                                    <div class="text-light small fw-medium" style="color: #f1f5f9 !important;"><?php echo htmlspecialchars($ord['nombre_asesor'] ?: 'Sin Asignar'); ?></div>
                                 </td>
 
                                 <!-- Fechas -->
-                                <td>
+                                <td style="background: #081528 !important;">
                                     <div class="small text-white">
                                         <span class="text-secondary">Alta:</span> <?php echo !empty($ord['fecha_alta']) ? date('d/m/Y', strtotime($ord['fecha_alta'])) : '---'; ?>
                                     </div>
-                                    <?php if (!empty($ord['fecha_promesa'])): ?>
-                                        <div class="small <?php echo ($esVencida) ? 'text-danger fw-bold' : 'text-secondary'; ?>">
-                                            <span>Promesa:</span> <?php echo date('d/m/Y', strtotime($ord['fecha_promesa'])); ?>
+                                    <?php if ($tienePromValida): ?>
+                                        <div class="small <?php echo ($esVencida) ? 'text-danger fw-bold' : 'text-info'; ?>">
+                                            <span>Promesa:</span> <?php echo date('d/m/Y', $timeProm); ?>
                                         </div>
+                                    <?php else: ?>
+                                        <div class="small text-secondary opacity-75">Sin promesa</div>
                                     <?php endif; ?>
                                 </td>
 
                                 <!-- Acciones -->
-                                <td class="text-center">
-                                    <button type="button" class="btn btn-outline-info btn-sm rounded-3 px-2 py-1 text-white" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
+                                <td class="text-center" style="background: #081528 !important;">
+                                    <button type="button" class="btn btn-primary btn-sm rounded-3 px-3 py-1 text-white fw-bold shadow-sm" style="background: #2563eb !important; border-color: #1d4ed8 !important;" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
                                         <i class="bi bi-eye-fill me-1"></i> Detalle
                                     </button>
                                 </td>
@@ -1680,7 +1714,11 @@ function abrirFichaOrden(item) {
 
     document.getElementById('fo_fecha_alta').textContent = item.fecha_alta || '---';
     document.getElementById('fo_hora_ini').textContent = item.hora_inicio || '---';
-    document.getElementById('fo_fecha_promesa').textContent = item.fecha_promesa || '---';
+    let fProm = item.fecha_promesa || '---';
+    if (fProm.startsWith('1753-') || fProm.startsWith('1900-') || fProm === '01/01/1753') {
+        fProm = 'Sin promesa registrada';
+    }
+    document.getElementById('fo_fecha_promesa').textContent = fProm;
     document.getElementById('fo_fecha_entrega').textContent = item.fecha_entrega || '---';
     document.getElementById('fo_hora_fin').textContent = item.hora_fin || '---';
 
