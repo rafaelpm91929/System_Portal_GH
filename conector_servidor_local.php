@@ -401,15 +401,132 @@ try {
     echo "[" . date('Y-m-d H:i:s') . "] ❌ Error al extraer de GEDAS: " . $eSql->getMessage() . "\n";
 }
 
-// 7. Enviar a cPanel
-echo "[" . date('Y-m-d H:i:s') . "] Transmitiendo " . count($reportesAEnviar) . " reporte(s) a cPanel ($CPANEL_RECEPTOR_URL)...\n";
-$resCpanel = enviarACpanel($CPANEL_RECEPTOR_URL, $LOCAL_API_TOKEN, [
-    'tipo_reporte' => 'operativo_local',
-    'reportes'     => $reportesAEnviar
-]);
+// 7. Enviar Inventario de Seminuevos a cPanel
+if (!empty($reportesAEnviar)) {
+    echo "[" . date('Y-m-d H:i:s') . "] Transmitiendo " . count($reportesAEnviar) . " auto(s) seminuevo(s) a cPanel ($CPANEL_RECEPTOR_URL)...\n";
+    $resCpanel = enviarACpanel($CPANEL_RECEPTOR_URL, $LOCAL_API_TOKEN, [
+        'tipo_reporte' => 'operativo_local',
+        'reportes'     => $reportesAEnviar
+    ]);
 
-if ($resCpanel['http_code'] === 200) {
-    echo "[" . date('Y-m-d H:i:s') . "] ✅ Sincronización exitosa: " . ($resCpanel['json']['mensaje'] ?? 'OK') . "\n";
-} else {
-    echo "[" . date('Y-m-d H:i:s') . "] ⚠️ Falló el envío a cPanel (HTTP " . $resCpanel['http_code'] . "): " . ($resCpanel['curl_error'] ?: $resCpanel['response']) . "\n";
+    if ($resCpanel['http_code'] === 200) {
+        echo "[" . date('Y-m-d H:i:s') . "] ✅ Inventario sincronizado: " . ($resCpanel['json']['mensaje'] ?? 'OK') . "\n";
+    } else {
+        echo "[" . date('Y-m-d H:i:s') . "] ⚠️ Falló el envío de inventario (HTTP " . $resCpanel['http_code'] . "): " . ($resCpanel['curl_error'] ?: $resCpanel['response']) . "\n";
+    }
 }
+
+// 8. EXTRACCIÓN Y ENVÍO DE ÓRDENES DE SERVICIO (TALLER MECÁNICO)
+echo "[" . date('Y-m-d H:i:s') . "] Iniciando extracción de Órdenes de Servicio desde GEDAS / Servidor Local...\n";
+
+$sqlOrdenes = "SELECT 
+    O.OrAlmCve                              AS [Almacen],
+    O.OROrden                               AS [NoOrden],
+    O.ORStatus                              AS [CveEstatus],
+    CASE O.ORStatus
+        WHEN 'AB' THEN 'ABIERTA'
+        WHEN 'CE' THEN 'CERRADA / FACTURADA'
+        WHEN 'CA' THEN 'CANCELADA'
+        WHEN 'CN' THEN 'CANCELADA'
+        ELSE O.ORStatus
+    END                                     AS [DescripcionEstatus],
+    O.ORTipOrd                              AS [CveTipoOrden],
+    CASE O.ORTipOrd
+        WHEN 'P' THEN 'PUBLICO / PARTICULAR'
+        WHEN 'G' THEN 'GARANTIA'
+        WHEN 'I' THEN 'INTERNA'
+        WHEN 'H' THEN 'HOJALATERIA Y PINTURA'
+        WHEN 'A' THEN 'ASEGURADORA'
+        ELSE O.ORTipOrd
+    END                                     AS [TipoOrden],
+    O.ORTipPag                              AS [TipoPago],
+    O.ORFactura                             AS [NoFactura],
+    O.ORFecAlta                             AS [FechaAlta],
+    O.ORHoraIni                             AS [HoraInicio],
+    O.ORFecProm                             AS [FechaPromesa],
+    O.ORFecEnt                              AS [FechaEntrega],
+    O.ORHoraFin                             AS [HoraFin],
+    O.ORCliente                             AS [NumCliente],
+    LTRIM(RTRIM(ISNULL(C.CliNombre, O.ORNombre))) AS [Cliente],
+    C.CliRFC                                AS [RFC],
+    C.CliTel1                               AS [Telefono],
+    LTRIM(RTRIM(O.ORChasis))                AS [VIN_Chasis],
+    O.ORPlacas                              AS [Placas],
+    O.Modelo                                AS [Modelo],
+    O.ORAno                                 AS [Ano],
+    O.ORColUni                              AS [Color],
+    O.ORKmts                                AS [Kilometraje],
+    O.OPCveOpe                              AS [CveAsesor],
+    LTRIM(RTRIM(T.TraNom)) + ' ' + 
+    LTRIM(RTRIM(T.TraApPat))                AS [NombreAsesor],
+    O.ORUser                                AS [UsuarioRegistro]
+FROM SEORDSER O WITH (NOLOCK)
+LEFT JOIN CCCLIEN C WITH (NOLOCK) 
+    ON C.CliNum = O.ORCliente
+LEFT JOIN NRCATTRA T WITH (NOLOCK) 
+    ON T.TraCod = O.OPCveOpe
+WHERE O.ORStatus = 'AB' OR O.ORFecAlta >= DATEADD(month, -3, GETDATE())
+ORDER BY O.ORFecAlta DESC";
+
+$ordenesAEnviar = [];
+try {
+    $rowsOrd = ejecutarConsultaGedasUniversal($pdoLocal, $odbcConn, $driverUsado, $LOCAL_DB_HOST, $LOCAL_DB_PORT, $LOCAL_DB_NAME, $LOCAL_DB_USER, $LOCAL_DB_PASS, $sqlOrdenes);
+    foreach ($rowsOrd as $r) {
+        $ordenesAEnviar[] = [
+            'almacen'             => trim($r['Almacen'] ?? ''),
+            'no_orden'            => trim($r['NoOrden'] ?? ''),
+            'cve_estatus'         => trim($r['CveEstatus'] ?? ''),
+            'descripcion_estatus' => trim($r['DescripcionEstatus'] ?? ''),
+            'cve_tipo_orden'      => trim($r['CveTipoOrden'] ?? ''),
+            'tipo_orden'          => trim($r['TipoOrden'] ?? ''),
+            'tipo_pago'           => trim($r['TipoPago'] ?? ''),
+            'no_factura'          => trim($r['NoFactura'] ?? ''),
+            'fecha_alta'          => trim($r['FechaAlta'] ?? ''),
+            'hora_inicio'         => trim($r['HoraInicio'] ?? ''),
+            'fecha_promesa'       => trim($r['FechaPromesa'] ?? ''),
+            'fecha_entrega'       => trim($r['FechaEntrega'] ?? ''),
+            'hora_fin'            => trim($r['HoraFin'] ?? ''),
+            'num_cliente'         => trim($r['NumCliente'] ?? ''),
+            'cliente'             => trim($r['Cliente'] ?? ''),
+            'rfc'                 => trim($r['RFC'] ?? ''),
+            'telefono'            => trim($r['Telefono'] ?? ''),
+            'vin_chasis'          => trim($r['VIN_Chasis'] ?? ''),
+            'placas'              => trim($r['Placas'] ?? ''),
+            'modelo'              => trim($r['Modelo'] ?? ''),
+            'ano'                 => trim($r['Ano'] ?? ''),
+            'color'               => trim($r['Color'] ?? ''),
+            'kilometraje'         => trim($r['Kilometraje'] ?? ''),
+            'cve_asesor'          => trim($r['CveAsesor'] ?? ''),
+            'nombre_asesor'       => trim($r['NombreAsesor'] ?? ''),
+            'usuario_registro'    => trim($r['UsuarioRegistro'] ?? ''),
+            'datos_json'          => $r
+        ];
+    }
+    echo "[" . date('Y-m-d H:i:s') . "] ✅ " . count($ordenesAEnviar) . " órdenes de servicio extraídas de GEDAS con éxito.\n";
+} catch (Throwable $eOrdSql) {
+    echo "[" . date('Y-m-d H:i:s') . "] ❌ Error al extraer órdenes de GEDAS: " . $eOrdSql->getMessage() . "\n";
+}
+
+if (!empty($ordenesAEnviar)) {
+    $lotes = array_chunk($ordenesAEnviar, 500);
+    $totalLotes = count($lotes);
+    $totalOrdExito = 0;
+
+    echo "[" . date('Y-m-d H:i:s') . "] Transmitiendo " . count($ordenesAEnviar) . " órdenes en $totalLotes lote(s) a cPanel...\n";
+    foreach ($lotes as $idx => $lote) {
+        $numLote = $idx + 1;
+        $resOrd = enviarACpanel($CPANEL_RECEPTOR_URL, $LOCAL_API_TOKEN, [
+            'tipo_reporte' => 'ordenes_servicio',
+            'reportes'     => $lote
+        ]);
+
+        if ($resOrd['http_code'] === 200) {
+            $totalOrdExito += count($lote);
+            echo "[" . date('Y-m-d H:i:s') . "]   - Lote $numLote/$totalLotes (" . count($lote) . " órdenes) sincronizado exitosamente.\n";
+        } else {
+            echo "[" . date('Y-m-d H:i:s') . "]   - ⚠️ Error en Lote $numLote/$totalLotes (HTTP " . $resOrd['http_code'] . "): " . ($resOrd['curl_error'] ?: $resOrd['response']) . "\n";
+        }
+    }
+    echo "[" . date('Y-m-d H:i:s') . "] 🏁 Sincronización de Órdenes completada: $totalOrdExito/" . count($ordenesAEnviar) . " enviadas.\n";
+}
+

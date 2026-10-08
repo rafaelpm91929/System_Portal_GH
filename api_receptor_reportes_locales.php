@@ -154,6 +154,100 @@ if (!empty($reportes) && is_array($reportes)) {
             } catch (Throwable $eAut) {}
         }
 
+        // C. Almacenar en tabla especializada de Órdenes de Servicio si cuenta con NoOrden
+        $noOrden = trim($rep['no_orden'] ?? ($rep['NoOrden'] ?? ($rep['OROrden'] ?? '')));
+        if (!empty($noOrden)) {
+            $almOrd     = trim($rep['almacen'] ?? ($rep['Almacen'] ?? ($rep['OrAlmCve'] ?? '')));
+            $cveStatOrd = trim($rep['cve_estatus'] ?? ($rep['CveEstatus'] ?? ($rep['ORStatus'] ?? '')));
+            $descStatOrd= trim($rep['descripcion_estatus'] ?? ($rep['DescripcionEstatus'] ?? ''));
+            if (empty($descStatOrd)) {
+                if ($cveStatOrd === 'AB') $descStatOrd = 'ABIERTA';
+                elseif ($cveStatOrd === 'CE') $descStatOrd = 'CERRADA / FACTURADA';
+                elseif ($cveStatOrd === 'CA' || $cveStatOrd === 'CN') $descStatOrd = 'CANCELADA';
+                else $descStatOrd = $cveStatOrd;
+            }
+
+            $cveTipOrd  = trim($rep['cve_tipo_orden'] ?? ($rep['CveTipoOrden'] ?? ($rep['ORTipOrd'] ?? '')));
+            $tipOrd     = trim($rep['tipo_orden'] ?? ($rep['TipoOrden'] ?? ''));
+            if (empty($tipOrd)) {
+                if ($cveTipOrd === 'P') $tipOrd = 'PUBLICO / PARTICULAR';
+                elseif ($cveTipOrd === 'G') $tipOrd = 'GARANTIA';
+                elseif ($cveTipOrd === 'I') $tipOrd = 'INTERNA';
+                elseif ($cveTipOrd === 'H') $tipOrd = 'HOJALATERIA Y PINTURA';
+                elseif ($cveTipOrd === 'A') $tipOrd = 'ASEGURADORA';
+                else $tipOrd = $cveTipOrd;
+            }
+
+            $tipPagOrd  = trim($rep['tipo_pago'] ?? ($rep['TipoPago'] ?? ($rep['ORTipPag'] ?? '')));
+            $noFactOrd  = trim($rep['no_factura'] ?? ($rep['NoFactura'] ?? ($rep['ORFactura'] ?? '')));
+            $fecAltaOrd = trim($rep['fecha_alta'] ?? ($rep['FechaAlta'] ?? ($rep['ORFecAlta'] ?? '')));
+            $horIniOrd  = trim($rep['hora_inicio'] ?? ($rep['HoraInicio'] ?? ($rep['ORHoraIni'] ?? '')));
+            $fecPromOrd = trim($rep['fecha_promesa'] ?? ($rep['FechaPromesa'] ?? ($rep['ORFecProm'] ?? '')));
+            $fecEntOrd  = trim($rep['fecha_entrega'] ?? ($rep['FechaEntrega'] ?? ($rep['ORFecEnt'] ?? '')));
+            $horFinOrd  = trim($rep['hora_fin'] ?? ($rep['HoraFin'] ?? ($rep['ORHoraFin'] ?? '')));
+            $numCliOrd  = trim($rep['num_cliente'] ?? ($rep['NumCliente'] ?? ($rep['ORCliente'] ?? '')));
+            $cliOrd     = trim($rep['cliente'] ?? ($rep['Cliente'] ?? ''));
+            $rfcOrd     = trim($rep['rfc'] ?? ($rep['RFC'] ?? ''));
+            $telOrd     = trim($rep['telefono'] ?? ($rep['Telefono'] ?? ''));
+            $vinOrd     = trim($rep['vin_chasis'] ?? ($rep['VIN_Chasis'] ?? ($rep['ORChasis'] ?? '')));
+            $plaOrd     = trim($rep['placas'] ?? ($rep['Placas'] ?? ($rep['ORPlacas'] ?? '')));
+            $modOrd     = trim($rep['modelo'] ?? ($rep['Modelo'] ?? ''));
+            $anoOrd     = trim($rep['ano'] ?? ($rep['Ano'] ?? ($rep['ORAno'] ?? '')));
+            $colOrd     = trim($rep['color'] ?? ($rep['Color'] ?? ($rep['ORColUni'] ?? '')));
+            $kmtsOrd    = trim($rep['kilometraje'] ?? ($rep['Kilometraje'] ?? ($rep['ORKmts'] ?? '')));
+            $cveAseOrd  = trim($rep['cve_asesor'] ?? ($rep['CveAsesor'] ?? ($rep['OPCveOpe'] ?? '')));
+            $nomAseOrd  = trim($rep['nombre_asesor'] ?? ($rep['NombreAsesor'] ?? ''));
+            $userRegOrd = trim($rep['usuario_registro'] ?? ($rep['UsuarioRegistro'] ?? ($rep['ORUser'] ?? '')));
+
+            // Días de antigüedad y clasificación
+            $diasAbierta = 0;
+            $timeAlta = !empty($fecAltaOrd) ? strtotime($fecAltaOrd) : 0;
+            if ($cveStatOrd === 'AB' || stripos($descStatOrd, 'ABIERTA') !== false) {
+                if ($timeAlta > 0) {
+                    $diasAbierta = max(0, (int) floor((time() - $timeAlta) / 86400));
+                }
+                if ($diasAbierta > 15) {
+                    $estatusTiempo = 'Crítica (+15d)';
+                } elseif ($diasAbierta >= 8) {
+                    $estatusTiempo = 'Retrasada (8-15d)';
+                } elseif ($diasAbierta >= 4) {
+                    $estatusTiempo = 'En atención (4-7d)';
+                } else {
+                    $estatusTiempo = 'Normal (0-3d)';
+                }
+            } elseif ($cveStatOrd === 'CE' || stripos($descStatOrd, 'CERRADA') !== false) {
+                $timeEnt = !empty($fecEntOrd) ? strtotime($fecEntOrd) : 0;
+                if ($timeAlta > 0 && $timeEnt > 0 && $timeEnt >= $timeAlta) {
+                    $diasAbierta = max(0, (int) round(($timeEnt - $timeAlta) / 86400));
+                }
+                $estatusTiempo = 'Cerrada';
+            } else {
+                $estatusTiempo = 'Cancelada';
+            }
+
+            try {
+                $stmtExOrd = $pdo->prepare("SELECT id FROM reportes_ordenes_servicio WHERE no_orden = ? LIMIT 1");
+                $stmtExOrd->execute([$noOrden]);
+                $ordId = intval($stmtExOrd->fetchColumn());
+
+                if ($ordId > 0) {
+                    $stmtUpOrd = $pdo->prepare("
+                        UPDATE reportes_ordenes_servicio 
+                        SET almacen=?, cve_estatus=?, descripcion_estatus=?, cve_tipo_orden=?, tipo_orden=?, tipo_pago=?, no_factura=?, fecha_alta=?, hora_inicio=?, fecha_promesa=?, fecha_entrega=?, hora_fin=?, num_cliente=?, cliente=?, rfc=?, telefono=?, vin_chasis=?, placas=?, modelo=?, ano=?, color=?, kilometraje=?, cve_asesor=?, nombre_asesor=?, usuario_registro=?, dias_abierta=?, estatus_tiempo=?, datos_json=?, sincronizado_en=CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ");
+                    $stmtUpOrd->execute([$almOrd, $cveStatOrd, $descStatOrd, $cveTipOrd, $tipOrd, $tipPagOrd, $noFactOrd, $fecAltaOrd, $horIniOrd, $fecPromOrd, $fecEntOrd, $horFinOrd, $numCliOrd, $cliOrd, $rfcOrd, $telOrd, $vinOrd, $plaOrd, $modOrd, $anoOrd, $colOrd, $kmtsOrd, $cveAseOrd, $nomAseOrd, $userRegOrd, $diasAbierta, $estatusTiempo, $datosJson, $ordId]);
+                } else {
+                    $stmtInsOrd = $pdo->prepare("
+                        INSERT INTO reportes_ordenes_servicio 
+                        (almacen, no_orden, cve_estatus, descripcion_estatus, cve_tipo_orden, tipo_orden, tipo_pago, no_factura, fecha_alta, hora_inicio, fecha_promesa, fecha_entrega, hora_fin, num_cliente, cliente, rfc, telefono, vin_chasis, placas, modelo, ano, color, kilometraje, cve_asesor, nombre_asesor, usuario_registro, dias_abierta, estatus_tiempo, datos_json, sincronizado_en)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ");
+                    $stmtInsOrd->execute([$almOrd, $noOrden, $cveStatOrd, $descStatOrd, $cveTipOrd, $tipOrd, $tipPagOrd, $noFactOrd, $fecAltaOrd, $horIniOrd, $fecPromOrd, $fecEntOrd, $horFinOrd, $numCliOrd, $cliOrd, $rfcOrd, $telOrd, $vinOrd, $plaOrd, $modOrd, $anoOrd, $colOrd, $kmtsOrd, $cveAseOrd, $nomAseOrd, $userRegOrd, $diasAbierta, $estatusTiempo, $datosJson]);
+                }
+            } catch (Throwable $eOrd) {}
+        }
+
         try {
             // Si viene con folio, comprobar si ya existe para actualizar o insertar
             $idExistente = 0;

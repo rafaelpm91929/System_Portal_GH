@@ -185,15 +185,231 @@ if ($reporteActivo === 'inventario_seminuevos') {
         } catch (Throwable $e) {}
     }
 }
+
+// =========================================================================
+// LÓGICA ESPECÍFICA PARA EL REPORTE: ÓRDENES DE SERVICIO
+// =========================================================================
+if ($reporteActivo === 'ordenes_servicio') {
+
+    $filtroQ          = trim($_GET['q'] ?? '');
+    $filtroEstatus    = trim($_GET['estatus'] ?? '');
+    $filtroTipo       = trim($_GET['tipo'] ?? '');
+    $filtroAsesor     = trim($_GET['asesor'] ?? '');
+    $filtroAntiguedad = trim($_GET['antiguedad'] ?? '');
+    $filtroFechaI     = trim($_GET['fecha_desde'] ?? '');
+    $filtroFechaF     = trim($_GET['fecha_hasta'] ?? '');
+
+    $where = ["1=1"];
+    $params = [];
+
+    if (!empty($filtroQ)) {
+        $where[] = "(no_orden LIKE ? OR cliente LIKE ? OR vin_chasis LIKE ? OR placas LIKE ? OR modelo LIKE ? OR nombre_asesor LIKE ? OR rfc LIKE ?)";
+        $qParam = "%$filtroQ%";
+        for ($i = 0; $i < 7; $i++) $params[] = $qParam;
+    }
+    if (!empty($filtroEstatus)) {
+        if ($filtroEstatus === 'AB' || $filtroEstatus === 'ABIERTA') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%')";
+        } elseif ($filtroEstatus === 'CE' || $filtroEstatus === 'CERRADA') {
+            $where[] = "(cve_estatus = 'CE' OR descripcion_estatus LIKE '%CERRADA%')";
+        } elseif ($filtroEstatus === 'CA' || $filtroEstatus === 'CANCELADA') {
+            $where[] = "(cve_estatus IN ('CA','CN') OR descripcion_estatus LIKE '%CANCELADA%')";
+        } else {
+            $where[] = "(cve_estatus = ? OR descripcion_estatus = ?)";
+            $params[] = $filtroEstatus;
+            $params[] = $filtroEstatus;
+        }
+    }
+    if (!empty($filtroTipo)) {
+        $where[] = "(cve_tipo_orden = ? OR tipo_orden = ?)";
+        $params[] = $filtroTipo;
+        $params[] = $filtroTipo;
+    }
+    if (!empty($filtroAsesor)) {
+        $where[] = "(cve_asesor = ? OR nombre_asesor = ?)";
+        $params[] = $filtroAsesor;
+        $params[] = $filtroAsesor;
+    }
+    if (!empty($filtroAntiguedad)) {
+        if ($filtroAntiguedad === 'critica') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta > 15";
+        } elseif ($filtroAntiguedad === 'retrasada') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta BETWEEN 8 AND 15";
+        } elseif ($filtroAntiguedad === 'atencion') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta BETWEEN 4 AND 7";
+        } elseif ($filtroAntiguedad === 'normal') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta <= 3";
+        } elseif ($filtroAntiguedad === 'vencida') {
+            $where[] = "(cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa < CURRENT_TIMESTAMP";
+        }
+    }
+    if (!empty($filtroFechaI)) {
+        $where[] = "fecha_alta >= ?";
+        $params[] = $filtroFechaI . ' 00:00:00';
+    }
+    if (!empty($filtroFechaF)) {
+        $where[] = "fecha_alta <= ?";
+        $params[] = $filtroFechaF . ' 23:59:59';
+    }
+
+    $whereSql = implode(" AND ", $where);
+
+    // EXPORTACIÓN A EXCEL
+    if (isset($_GET['exportar']) && $_GET['exportar'] === 'excel' && $puedeExportar && $pdo) {
+        $sqlExp = "SELECT * FROM reportes_ordenes_servicio WHERE $whereSql ORDER BY (CASE WHEN cve_estatus = 'AB' THEN 1 ELSE 2 END) ASC, dias_abierta DESC, fecha_alta DESC";
+        $stmtExp = $pdo->prepare($sqlExp);
+        $stmtExp->execute($params);
+        $rowsExp = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
+
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="Ordenes_Servicio_' . date('Ymd_His') . '.xls"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        echo '<head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Órdenes de Servicio</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body>';
+        echo '<table border="1" style="font-family: Arial, sans-serif; border-collapse: collapse;">';
+        echo '<tr style="background: #0b1a30; color: #ffffff; font-weight: bold; text-align: center;">';
+        echo '<th>No. Orden</th><th>Almacen</th><th>Estatus</th><th>Dias Abierta</th><th>Clasificacion Tiempo</th><th>Tipo Orden</th><th>Tipo Pago</th><th>No. Factura</th><th>Fecha Alta</th><th>Hora Inicio</th><th>Fecha Promesa</th><th>Fecha Entrega</th><th>Hora Fin</th><th>Num Cliente</th><th>Cliente</th><th>RFC</th><th>Telefono</th><th>VIN / Chasis</th><th>Placas</th><th>Modelo</th><th>Año</th><th>Color</th><th>Kilometraje</th><th>Asesor</th><th>Usuario Registro</th>';
+        echo '</tr>';
+
+        foreach ($rowsExp as $r) {
+            echo '<tr>';
+            echo '<td align="center"><b>' . htmlspecialchars($r['no_orden'] ?? '') . '</b></td>';
+            echo '<td align="center">' . htmlspecialchars($r['almacen'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['descripcion_estatus'] ?? $r['cve_estatus'] ?? '') . '</td>';
+            echo '<td align="center">' . intval($r['dias_abierta'] ?? 0) . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['estatus_tiempo'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['tipo_orden'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['tipo_pago'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['no_factura'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['fecha_alta'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['hora_inicio'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['fecha_promesa'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['fecha_entrega'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['hora_fin'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['num_cliente'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['cliente'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['rfc'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['telefono'] ?? '') . '</td>';
+            echo '<td align="center"><code>' . htmlspecialchars($r['vin_chasis'] ?? '') . '</code></td>';
+            echo '<td align="center">' . htmlspecialchars($r['placas'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['modelo'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['ano'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['color'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['kilometraje'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['nombre_asesor'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['usuario_registro'] ?? '') . '</td>';
+            echo '</tr>';
+        }
+        echo '</table></body></html>';
+        exit();
+    }
+
+    // Consultas para KPIs y Gráficas
+    $ordenesServicio = [];
+    $totalOrdenes = 0;
+    $totalAbiertas = 0;
+    $totalVencidas = 0;
+    $totalCriticas = 0;
+    $promedioDiasAbiertas = 0.0;
+    $chartEstatus = [];
+    $chartTipos = [];
+    $chartAging = [];
+    $catalogoEstatus = [];
+    $catalogoTipos = [];
+    $catalogoAsesores = [];
+
+    if ($pdo) {
+        try {
+            $stmtKpiOrd = $pdo->query("
+                SELECT 
+                    COUNT(*) as total_ordenes,
+                    SUM(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN 1 ELSE 0 END) as abiertas,
+                    SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND fecha_promesa IS NOT NULL AND fecha_promesa < CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as vencidas,
+                    SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta > 15 THEN 1 ELSE 0 END) as criticas,
+                    AVG(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN dias_abierta ELSE NULL END) as avg_dias_abiertas
+                FROM reportes_ordenes_servicio
+            ");
+            $kpisOrd = $stmtKpiOrd ? $stmtKpiOrd->fetch(PDO::FETCH_ASSOC) : [];
+            $totalOrdenes = intval($kpisOrd['total_ordenes'] ?? 0);
+            $totalAbiertas = intval($kpisOrd['abiertas'] ?? 0);
+            $totalVencidas = intval($kpisOrd['vencidas'] ?? 0);
+            $totalCriticas = intval($kpisOrd['criticas'] ?? 0);
+            $promedioDiasAbiertas = round(floatval($kpisOrd['avg_dias_abiertas'] ?? 0), 1);
+
+            // Chart 1: Distribución por Estatus
+            $stmtStatChart = $pdo->query("
+                SELECT 
+                    CASE 
+                        WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN 'Abierta'
+                        WHEN cve_estatus = 'CE' OR descripcion_estatus LIKE '%CERRADA%' THEN 'Cerrada / Facturada'
+                        WHEN cve_estatus IN ('CA','CN') OR descripcion_estatus LIKE '%CANCELADA%' THEN 'Cancelada'
+                        ELSE 'Otras'
+                    END as grupo_estatus,
+                    COUNT(*) as total
+                FROM reportes_ordenes_servicio
+                GROUP BY grupo_estatus
+                ORDER BY total DESC
+            ");
+            $chartEstatus = $stmtStatChart ? $stmtStatChart->fetchAll(PDO::FETCH_ASSOC) : [];
+
+            // Chart 2: Distribución por Tipo de Orden
+            $stmtTipoChart = $pdo->query("
+                SELECT 
+                    COALESCE(NULLIF(tipo_orden, ''), 'Sin clasificar') as tipo,
+                    COUNT(*) as total
+                FROM reportes_ordenes_servicio
+                GROUP BY tipo
+                ORDER BY total DESC
+            ");
+            $chartTipos = $stmtTipoChart ? $stmtTipoChart->fetchAll(PDO::FETCH_ASSOC) : [];
+
+            // Chart 3: Antigüedad de Órdenes Abiertas (Brackets)
+            $stmtAging = $pdo->query("
+                SELECT 
+                    SUM(CASE WHEN dias_abierta <= 3 THEN 1 ELSE 0 END) as normal_0_3,
+                    SUM(CASE WHEN dias_abierta BETWEEN 4 AND 7 THEN 1 ELSE 0 END) as atencion_4_7,
+                    SUM(CASE WHEN dias_abierta BETWEEN 8 AND 15 THEN 1 ELSE 0 END) as retraso_8_15,
+                    SUM(CASE WHEN dias_abierta > 15 THEN 1 ELSE 0 END) as critica_mas_15
+                FROM reportes_ordenes_servicio
+                WHERE cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%'
+            ");
+            $chartAging = $stmtAging ? $stmtAging->fetch(PDO::FETCH_ASSOC) : [];
+
+            // Catálogos para filtros
+            $stmtCatStat = $pdo->query("SELECT DISTINCT cve_estatus, descripcion_estatus FROM reportes_ordenes_servicio WHERE cve_estatus IS NOT NULL ORDER BY descripcion_estatus ASC");
+            $catalogoEstatus = $stmtCatStat ? $stmtCatStat->fetchAll(PDO::FETCH_ASSOC) : [];
+
+            $stmtCatTip = $pdo->query("SELECT DISTINCT tipo_orden FROM reportes_ordenes_servicio WHERE tipo_orden IS NOT NULL AND tipo_orden != '' ORDER BY tipo_orden ASC");
+            $catalogoTipos = $stmtCatTip ? $stmtCatTip->fetchAll(PDO::FETCH_COLUMN) : [];
+
+            $stmtCatAse = $pdo->query("SELECT DISTINCT nombre_asesor FROM reportes_ordenes_servicio WHERE nombre_asesor IS NOT NULL AND nombre_asesor != '' ORDER BY nombre_asesor ASC");
+            $catalogoAsesores = $stmtCatAse ? $stmtCatAse->fetchAll(PDO::FETCH_COLUMN) : [];
+
+            // Consulta de lista filtrada
+            $sqlOrdList = "SELECT * FROM reportes_ordenes_servicio WHERE $whereSql ORDER BY (CASE WHEN cve_estatus = 'AB' THEN 1 ELSE 2 END) ASC, dias_abierta DESC, fecha_alta DESC LIMIT 400";
+            $stmtOrdList = $pdo->prepare($sqlOrdList);
+            $stmtOrdList->execute($params);
+            $ordenesServicio = $stmtOrdList->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Throwable $e) {}
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Módulo de Reportes de Agencia'; ?> - PORTAL <?php echo htmlspecialchars(strtoupper($agenciaNombre)); ?></title>
+    <title><?php 
+        if ($reporteActivo === 'inventario_seminuevos') echo 'Inventario de Seminuevos';
+        elseif ($reporteActivo === 'ordenes_servicio') echo 'Órdenes de Servicio';
+        else echo 'Módulo de Reportes de Agencia';
+    ?> - PORTAL <?php echo htmlspecialchars(strtoupper($agenciaNombre)); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <?php include_once 'pwa_head.php'; ?>
     <style>
         :root {
@@ -408,8 +624,12 @@ if ($reporteActivo === 'inventario_seminuevos') {
             <?php endif; ?>
             <span class="fw-bold fs-5">
                 PORTAL <span class="text-white"><?php echo htmlspecialchars(strtoupper($agenciaNombre)); ?></span> 
-                <span class="text-success">
-                    | <?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Reportes Agencia'; ?>
+                <span class="text-<?php echo ($reporteActivo === 'ordenes_servicio') ? 'primary' : 'success'; ?>">
+                    | <?php 
+                        if ($reporteActivo === 'inventario_seminuevos') echo 'Inventario de Seminuevos';
+                        elseif ($reporteActivo === 'ordenes_servicio') echo 'Órdenes de Servicio';
+                        else echo 'Reportes Agencia';
+                    ?>
                 </span>
             </span>
         </div>
@@ -485,27 +705,27 @@ if ($reporteActivo === 'inventario_seminuevos') {
             </div>
         </div>
 
-        <!-- RECUADRO 2: ÓRDENES DE SERVICIO & TALLER (PRÓXIMAMENTE) -->
+        <!-- RECUADRO 2: ÓRDENES DE SERVICIO -->
         <div class="col-md-6 col-lg-4">
-            <div class="report-box-card" style="opacity: 0.85;">
+            <div class="report-box-card" style="border-color: rgba(59, 130, 246, 0.45);">
                 <div>
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="p-3 rounded-3" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 1.8rem;">
                             <i class="bi bi-tools"></i>
                         </div>
-                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-3 py-1 rounded-pill">
-                            <i class="bi bi-hourglass-split me-1"></i> PRÓXIMAMENTE
+                        <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-3 py-1 rounded-pill">
+                            <i class="bi bi-check-circle-fill me-1"></i> DISPONIBLE
                         </span>
                     </div>
                     <h4 class="fw-bold text-white mb-2">Órdenes de Servicio</h4>
-                    <p class="text-secondary small mb-3">
-                        Monitoreo de citas, autos en rampa, diagnósticos, paquetes de mantenimiento y estatus de entrega en taller mecánico.
+                    <p class="text-secondary small mb-4">
+                        Monitoreo en tiempo real de órdenes de taller, análisis de órdenes abiertas, días de retraso y distribución por estatus y tipo.
                     </p>
                 </div>
                 <div>
-                    <button type="button" class="btn btn-outline-secondary w-100 rounded-3 py-2 text-secondary" disabled>
-                        En proceso de integración
-                    </button>
+                    <a href="reportes_agencia.php?reporte=ordenes_servicio" class="btn btn-primary text-white fw-bold w-100 rounded-3 py-2 shadow-sm d-flex align-items-center justify-content-center gap-2">
+                        <span>Ingresar al Reporte</span> <i class="bi bi-arrow-right"></i>
+                    </a>
                 </div>
             </div>
         </div>
@@ -537,7 +757,7 @@ if ($reporteActivo === 'inventario_seminuevos') {
 
     </div>
 
-    <?php else: ?>
+    <?php elseif ($reporteActivo === 'inventario_seminuevos'): ?>
     <!-- ===================================================================== -->
     <!-- VISTA 2: REPORTE EN DETALLE (INVENTARIO DE SEMINUEVOS)                 -->
     <!-- ===================================================================== -->
@@ -875,6 +1095,502 @@ if ($reporteActivo === 'inventario_seminuevos') {
         </div>
     </div>
 
+    <?php elseif ($reporteActivo === 'ordenes_servicio'): ?>
+    <!-- ===================================================================== -->
+    <!-- VISTA 3: REPORTE EN DETALLE (ÓRDENES DE SERVICIO)                     -->
+    <!-- ===================================================================== -->
+
+    <!-- HERO PANEL REPORTE DETALLE -->
+    <div class="hero-panel" style="background: linear-gradient(135deg, rgba(8, 21, 40, 0.95) 0%, rgba(14, 42, 77, 0.6) 100%); border-color: rgba(59, 130, 246, 0.35);">
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-3 py-1 rounded-pill small">
+                        <i class="bi bi-tools me-1"></i> TALLER & SERVICIO
+                    </span>
+                    <span class="badge bg-dark border border-secondary text-secondary small">
+                        <?php echo count($ordenesServicio); ?> registros mostrados
+                    </span>
+                </div>
+                <h2 class="fw-bold text-white mb-1">Órdenes de Servicio</h2>
+                <p class="text-secondary small mb-0">
+                    Control de órdenes de taller en tiempo real, análisis de tiempo transcurrido sin cerrar y distribución operativa.
+                </p>
+            </div>
+
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <?php if ($puedeExportar): ?>
+                    <a href="?reporte=ordenes_servicio&exportar=excel&<?php echo http_build_query(array_filter(['q'=>$filtroQ, 'estatus'=>$filtroEstatus, 'tipo'=>$filtroTipo, 'asesor'=>$filtroAsesor, 'antiguedad'=>$filtroAntiguedad, 'fecha_desde'=>$filtroFechaI, 'fecha_hasta'=>$filtroFechaF])); ?>" class="btn btn-outline-success btn-sm rounded-3 px-3 py-2 text-white">
+                        <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel
+                    </a>
+                <?php endif; ?>
+
+                <div class="d-flex flex-column align-items-lg-end gap-1">
+                    <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-warning bg-opacity-25 text-warning border border-warning'; ?>">
+                        <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
+                        <?php echo (!empty($ultimaSync)) ? 'Sincronizado' : 'Esperando Conexión'; ?>
+                    </span>
+                    <div class="text-secondary small font-monospace">
+                        Última Sincronización: <span class="text-info fw-semibold"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TARJETAS DE KPIs -->
+    <div class="row g-3 mb-4">
+        <!-- Total Órdenes -->
+        <div class="col-sm-6 col-lg">
+            <div class="card-kpi" style="--kpi-accent: #38bdf8;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Total Órdenes</span>
+                    <div class="p-2 rounded-3 bg-info bg-opacity-15 text-info fs-5">
+                        <i class="bi bi-folder-check"></i>
+                    </div>
+                </div>
+                <div class="fs-2 fw-bold text-white"><?php echo number_format($totalOrdenes); ?></div>
+                <small class="text-secondary">Órdenes analizadas</small>
+            </div>
+        </div>
+
+        <!-- Órdenes Abiertas -->
+        <div class="col-sm-6 col-lg">
+            <div class="card-kpi" style="--kpi-accent: #f59e0b; border-color: rgba(245, 158, 11, 0.35);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-warning small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Órdenes Abiertas</span>
+                    <div class="p-2 rounded-3 bg-warning bg-opacity-15 text-warning fs-5">
+                        <i class="bi bi-clock-history"></i>
+                    </div>
+                </div>
+                <div class="fs-2 fw-bold text-warning d-flex align-items-center gap-2">
+                    <?php echo number_format($totalAbiertas); ?>
+                    <span class="dot-pulse" style="background: #f59e0b; box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);"></span>
+                </div>
+                <small class="text-secondary">Actualmente en proceso en taller</small>
+            </div>
+        </div>
+
+        <!-- Órdenes Vencidas vs Promesa -->
+        <div class="col-sm-6 col-lg">
+            <div class="card-kpi" style="--kpi-accent: #ef4444; border-color: rgba(239, 68, 68, 0.35);">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-danger small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Vencidas vs Promesa</span>
+                    <div class="p-2 rounded-3 bg-danger bg-opacity-15 text-danger fs-5">
+                        <i class="bi bi-alarm-fill"></i>
+                    </div>
+                </div>
+                <div class="fs-2 fw-bold text-danger"><?php echo number_format($totalVencidas); ?></div>
+                <small class="text-secondary">Superaron fecha pactada</small>
+            </div>
+        </div>
+
+        <!-- Promedio Días Abiertas -->
+        <div class="col-sm-6 col-lg">
+            <div class="card-kpi" style="--kpi-accent: #a855f7;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Promedio Abiertas</span>
+                    <div class="p-2 rounded-3 bg-primary bg-opacity-15 text-primary fs-5" style="color: #c084fc !important;">
+                        <i class="bi bi-hourglass-split"></i>
+                    </div>
+                </div>
+                <div class="fs-2 fw-bold text-white"><?php echo $promedioDiasAbiertas; ?> <span class="fs-5 text-secondary">días</span></div>
+                <small class="text-secondary">Tiempo medio sin cerrar</small>
+            </div>
+        </div>
+
+        <!-- Órdenes Críticas (+15 días) -->
+        <div class="col-sm-6 col-lg">
+            <div class="card-kpi" style="--kpi-accent: #dc2626;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Críticas (+15 Días)</span>
+                    <div class="p-2 rounded-3 bg-danger bg-opacity-15 text-danger fs-5">
+                        <i class="bi bi-exclamation-octagon-fill"></i>
+                    </div>
+                </div>
+                <div class="fs-2 fw-bold text-white"><?php echo number_format($totalCriticas); ?></div>
+                <small class="text-secondary">Abiertas con alto retraso</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- SECCIÓN DE GRÁFICAS INTERACTIVAS -->
+    <div class="row g-3 mb-4">
+        <!-- Gráfica 1: Distribución por Estatus -->
+        <div class="col-lg-4">
+            <div class="card-kpi h-100 p-3" style="--kpi-accent: #3b82f6;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-white mb-0"><i class="bi bi-pie-chart-fill text-info me-2"></i>Distribución por Estatus</h6>
+                    <span class="badge bg-dark border border-secondary text-secondary small">Total Órdenes</span>
+                </div>
+                <div style="position: relative; height: 230px;">
+                    <canvas id="chartEstatusCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfica 2: Distribución por Tipo de Orden -->
+        <div class="col-lg-4">
+            <div class="card-kpi h-100 p-3" style="--kpi-accent: #10b981;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-white mb-0"><i class="bi bi-bar-chart-fill text-success me-2"></i>Tipo de Orden</h6>
+                    <span class="badge bg-dark border border-secondary text-secondary small">Clasificación</span>
+                </div>
+                <div style="position: relative; height: 230px;">
+                    <canvas id="chartTiposCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gráfica 3: Antigüedad de Órdenes Abiertas (Aging) -->
+        <div class="col-lg-4">
+            <div class="card-kpi h-100 p-3" style="--kpi-accent: #f59e0b;">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-white mb-0"><i class="bi bi-hourglass-top text-warning me-2"></i>Antigüedad Órdenes Abiertas</h6>
+                    <span class="badge bg-warning bg-opacity-25 text-warning border border-warning small">Tiempo sin cerrar</span>
+                </div>
+                <div style="position: relative; height: 230px;">
+                    <canvas id="chartAgingCanvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PANEL DE FILTROS AVANZADOS -->
+    <div class="card-kpi mb-4 p-3" style="--kpi-accent: #6366f1;">
+        <form method="GET" action="reportes_agencia.php" class="row g-2 align-items-end">
+            <input type="hidden" name="reporte" value="ordenes_servicio">
+
+            <!-- Búsqueda rápida -->
+            <div class="col-md-3">
+                <label class="form-label text-secondary small fw-bold mb-1">Búsqueda Rápida</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                    <input type="text" name="q" class="form-control bg-dark border-secondary text-white" placeholder="No. Orden, Cliente, VIN, Placas, Modelo..." value="<?php echo htmlspecialchars($filtroQ); ?>">
+                </div>
+            </div>
+
+            <!-- Estatus -->
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label text-secondary small fw-bold mb-1">Estatus</label>
+                <select name="estatus" class="form-select form-select-sm bg-dark border-secondary text-white">
+                    <option value="">Todos los Estatus</option>
+                    <option value="AB" <?php echo ($filtroEstatus === 'AB') ? 'selected' : ''; ?>>Solo Abiertas (AB)</option>
+                    <option value="CE" <?php echo ($filtroEstatus === 'CE') ? 'selected' : ''; ?>>Cerradas / Facturadas (CE)</option>
+                    <option value="CA" <?php echo ($filtroEstatus === 'CA') ? 'selected' : ''; ?>>Canceladas (CA/CN)</option>
+                </select>
+            </div>
+
+            <!-- Tipo de Orden -->
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label text-secondary small fw-bold mb-1">Tipo de Orden</label>
+                <select name="tipo" class="form-select form-select-sm bg-dark border-secondary text-white">
+                    <option value="">Todos los Tipos</option>
+                    <?php foreach ($catalogoTipos as $tipo): ?>
+                        <option value="<?php echo htmlspecialchars($tipo); ?>" <?php echo ($filtroTipo === $tipo) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($tipo); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- Antigüedad / Retraso -->
+            <div class="col-sm-6 col-md-2">
+                <label class="form-label text-secondary small fw-bold mb-1">Antigüedad (Abiertas)</label>
+                <select name="antiguedad" class="form-select form-select-sm bg-dark border-secondary text-white">
+                    <option value="">Cualquier Antigüedad</option>
+                    <option value="critica" <?php echo ($filtroAntiguedad === 'critica') ? 'selected' : ''; ?>>🔴 Críticas (> 15 días)</option>
+                    <option value="retrasada" <?php echo ($filtroAntiguedad === 'retrasada') ? 'selected' : ''; ?>>🟠 Retrasadas (8 a 15 días)</option>
+                    <option value="atencion" <?php echo ($filtroAntiguedad === 'atencion') ? 'selected' : ''; ?>>🟡 En atención (4 a 7 días)</option>
+                    <option value="normal" <?php echo ($filtroAntiguedad === 'normal') ? 'selected' : ''; ?>>🟢 Normales (0 a 3 días)</option>
+                    <option value="vencida" <?php echo ($filtroAntiguedad === 'vencida') ? 'selected' : ''; ?>>⚠️ Vencidas vs Promesa</option>
+                </select>
+            </div>
+
+            <!-- Asesor -->
+            <div class="col-sm-6 col-md-3">
+                <label class="form-label text-secondary small fw-bold mb-1">Asesor de Servicio</label>
+                <select name="asesor" class="form-select form-select-sm bg-dark border-secondary text-white">
+                    <option value="">Todos los Asesores</option>
+                    <?php foreach ($catalogoAsesores as $ase): ?>
+                        <option value="<?php echo htmlspecialchars($ase); ?>" <?php echo ($filtroAsesor === $ase) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($ase); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <!-- Fechas y Botones -->
+            <div class="col-12 mt-2 pt-2 border-top border-secondary border-opacity-25 d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-secondary small fw-bold">Fecha Alta:</span>
+                    <input type="date" name="fecha_desde" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 140px;" value="<?php echo htmlspecialchars($filtroFechaI); ?>">
+                    <span class="text-secondary small">a</span>
+                    <input type="date" name="fecha_hasta" class="form-control form-control-sm bg-dark border-secondary text-white" style="width: 140px;" value="<?php echo htmlspecialchars($filtroFechaF); ?>">
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-3">
+                        <i class="bi bi-funnel-fill me-1"></i> Aplicar Filtros
+                    </button>
+                    <a href="reportes_agencia.php?reporte=ordenes_servicio" class="btn btn-outline-secondary btn-sm text-secondary rounded-3">
+                        <i class="bi bi-x-circle me-1"></i> Limpiar
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- TABLA DE ÓRDENES DE SERVICIO -->
+    <div class="table-custom-container">
+        <div class="table-responsive" style="max-height: 650px;">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="sticky-top">
+                    <tr>
+                        <th>No. Orden</th>
+                        <th>Estatus</th>
+                        <th>Tiempo sin Cerrar</th>
+                        <th>Tipo Orden</th>
+                        <th>Vehículo</th>
+                        <th>Cliente</th>
+                        <th>Asesor</th>
+                        <th>Fecha Alta / Promesa</th>
+                        <th class="text-center">Acción</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($ordenesServicio)): ?>
+                        <tr>
+                            <td colspan="9" class="text-center py-5 text-secondary">
+                                <i class="bi bi-inbox fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                                <span>No se encontraron órdenes de servicio con los filtros aplicados.</span>
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($ordenesServicio as $ord): 
+                            $esAbierta = ($ord['cve_estatus'] === 'AB' || stripos($ord['descripcion_estatus'], 'ABIERTA') !== false);
+                            $esCerrada = ($ord['cve_estatus'] === 'CE' || stripos($ord['descripcion_estatus'], 'CERRADA') !== false);
+                            $dias = intval($ord['dias_abierta'] ?? 0);
+                            $esVencida = false;
+                            if ($esAbierta && !empty($ord['fecha_promesa'])) {
+                                $esVencida = (strtotime($ord['fecha_promesa']) < time());
+                            }
+                        ?>
+                            <tr>
+                                <!-- No. Orden -->
+                                <td>
+                                    <span class="fw-bold text-white fs-6 font-monospace cursor-pointer" style="cursor: pointer;" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
+                                        <?php echo htmlspecialchars($ord['no_orden']); ?>
+                                    </span>
+                                    <?php if (!empty($ord['almacen'])): ?>
+                                        <div class="small text-secondary font-monospace">Alm: <?php echo htmlspecialchars($ord['almacen']); ?></div>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- Estatus -->
+                                <td>
+                                    <?php if ($esAbierta): ?>
+                                        <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2 py-1 rounded-pill d-inline-flex align-items-center gap-1 font-monospace">
+                                            <span class="dot-pulse" style="background: #f59e0b; width: 6px; height: 6px;"></span>
+                                            ABIERTA
+                                        </span>
+                                    <?php elseif ($esCerrada): ?>
+                                        <span class="badge bg-success bg-opacity-25 text-success border border-success px-2 py-1 rounded-pill font-monospace">
+                                            <i class="bi bi-check2 me-1"></i> CERRADA
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-2 py-1 rounded-pill font-monospace">
+                                            <?php echo htmlspecialchars($ord['descripcion_estatus'] ?: $ord['cve_estatus']); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- Tiempo sin Cerrar -->
+                                <td>
+                                    <?php if ($esAbierta): ?>
+                                        <?php if ($dias > 15): ?>
+                                            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger px-2 py-1 rounded-2">
+                                                <i class="bi bi-exclamation-octagon-fill me-1"></i> <?php echo $dias; ?> días (Crítica)
+                                            </span>
+                                        <?php elseif ($dias >= 8): ?>
+                                            <span class="badge bg-warning bg-opacity-25 text-warning border border-warning px-2 py-1 rounded-2">
+                                                <i class="bi bi-exclamation-triangle-fill me-1"></i> <?php echo $dias; ?> días (Retraso)
+                                            </span>
+                                        <?php elseif ($dias >= 4): ?>
+                                            <span class="badge bg-info bg-opacity-25 text-info border border-info px-2 py-1 rounded-2">
+                                                <i class="bi bi-clock-history me-1"></i> <?php echo $dias; ?> días (Atención)
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="badge bg-success bg-opacity-25 text-success border border-success px-2 py-1 rounded-2">
+                                                <i class="bi bi-check2-circle me-1"></i> <?php echo $dias; ?> días (Al día)
+                                            </span>
+                                        <?php endif; ?>
+
+                                        <?php if ($esVencida): ?>
+                                            <div class="small text-danger mt-1 fw-bold">
+                                                <i class="bi bi-alarm-fill me-1"></i> Vencida vs Promesa
+                                            </div>
+                                        <?php endif; ?>
+                                    <?php elseif ($esCerrada): ?>
+                                        <span class="badge bg-dark border border-secondary text-secondary px-2 py-1 rounded-2">
+                                            <i class="bi bi-check-all text-success me-1"></i> <?php echo $dias; ?> días ciclo
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="text-secondary small">---</span>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- Tipo Orden -->
+                                <td>
+                                    <span class="badge bg-dark border border-secondary text-light px-2 py-1">
+                                        <?php echo htmlspecialchars($ord['tipo_orden'] ?: $ord['cve_tipo_orden']); ?>
+                                    </span>
+                                </td>
+
+                                <!-- Vehículo -->
+                                <td>
+                                    <div class="fw-semibold text-white">
+                                        <?php echo htmlspecialchars($ord['modelo'] ?: 'Sin Modelo'); ?> 
+                                        <span class="text-secondary small">(<?php echo htmlspecialchars($ord['ano'] ?: '---'); ?>)</span>
+                                    </div>
+                                    <div class="small font-monospace text-secondary d-flex align-items-center gap-1">
+                                        <span>VIN: <?php echo htmlspecialchars($ord['vin_chasis'] ?: '---'); ?></span>
+                                        <?php if (!empty($ord['vin_chasis'])): ?>
+                                            <button type="button" class="btn-copy-vin" title="Copiar VIN" onclick="copiarVIN('<?php echo htmlspecialchars($ord['vin_chasis']); ?>', this)">
+                                                <i class="bi bi-clipboard"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        <?php if (!empty($ord['placas'])): ?>
+                                            <span class="ms-1 badge bg-secondary bg-opacity-25 text-info px-1 py-0"><?php echo htmlspecialchars($ord['placas']); ?></span>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+
+                                <!-- Cliente -->
+                                <td>
+                                    <div class="text-light fw-medium"><?php echo htmlspecialchars($ord['cliente'] ?: '---'); ?></div>
+                                    <?php if (!empty($ord['telefono'])): ?>
+                                        <div class="small text-secondary"><i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($ord['telefono']); ?></div>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- Asesor -->
+                                <td>
+                                    <div class="text-white small fw-medium"><?php echo htmlspecialchars($ord['nombre_asesor'] ?: 'Sin Asignar'); ?></div>
+                                </td>
+
+                                <!-- Fechas -->
+                                <td>
+                                    <div class="small text-white">
+                                        <span class="text-secondary">Alta:</span> <?php echo !empty($ord['fecha_alta']) ? date('d/m/Y', strtotime($ord['fecha_alta'])) : '---'; ?>
+                                    </div>
+                                    <?php if (!empty($ord['fecha_promesa'])): ?>
+                                        <div class="small <?php echo ($esVencida) ? 'text-danger fw-bold' : 'text-secondary'; ?>">
+                                            <span>Promesa:</span> <?php echo date('d/m/Y', strtotime($ord['fecha_promesa'])); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+
+                                <!-- Acciones -->
+                                <td class="text-center">
+                                    <button type="button" class="btn btn-outline-info btn-sm rounded-3 px-2 py-1 text-white" onclick='abrirFichaOrden(<?php echo json_encode($ord, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
+                                        <i class="bi bi-eye-fill me-1"></i> Detalle
+                                    </button>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- MODAL DE DETALLE DE ORDEN DE SERVICIO -->
+    <div class="modal fade" id="modalFichaOrden" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content" style="background: #081528; border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 18px; color: #fff;">
+                <div class="modal-header border-secondary border-opacity-25 pb-2">
+                    <div>
+                        <span class="badge bg-primary bg-opacity-25 text-primary border border-primary px-3 py-1 rounded-pill small mb-1">
+                            Orden de Servicio
+                        </span>
+                        <h4 class="modal-title fw-bold text-white mb-0" id="fo_orden">No. Orden</h4>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Resumen rápido -->
+                    <div class="row g-3 p-3 rounded-3 mb-4" style="background: #050d1a; border: 1px solid rgba(255,255,255,0.06);">
+                        <div class="col-sm-4">
+                            <span class="text-secondary small d-block">Estatus Actual</span>
+                            <span class="fs-5 fw-bold text-warning" id="fo_estatus">---</span>
+                        </div>
+                        <div class="col-sm-4">
+                            <span class="text-secondary small d-block">Tiempo Transcurrido</span>
+                            <span class="fs-5 fw-bold text-white" id="fo_dias">---</span>
+                        </div>
+                        <div class="col-sm-4">
+                            <span class="text-secondary small d-block">Tipo de Orden</span>
+                            <span class="fs-5 fw-bold text-info" id="fo_tipo">---</span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <!-- Vehículo -->
+                        <div class="col-md-6">
+                            <div class="p-3 rounded-3 h-100" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h6 class="fw-bold text-info mb-3"><i class="bi bi-car-front me-2"></i>Datos del Vehículo</h6>
+                                <div class="mb-2"><strong>Modelo:</strong> <span class="text-white" id="fo_modelo">---</span></div>
+                                <div class="mb-2"><strong>Año / Color:</strong> <span class="text-white" id="fo_ano_color">---</span></div>
+                                <div class="mb-2"><strong>Placas:</strong> <span class="text-white" id="fo_placas">---</span></div>
+                                <div class="mb-2"><strong>Kilometraje:</strong> <span class="text-white" id="fo_kmts">---</span></div>
+                                <div class="mb-0"><strong>Chasis (VIN):</strong> <code class="text-warning" id="fo_vin">---</code></div>
+                            </div>
+                        </div>
+
+                        <!-- Cliente -->
+                        <div class="col-md-6">
+                            <div class="p-3 rounded-3 h-100" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h6 class="fw-bold text-success mb-3"><i class="bi bi-person-badge me-2"></i>Datos del Cliente</h6>
+                                <div class="mb-2"><strong>Nombre:</strong> <span class="text-white" id="fo_cliente">---</span></div>
+                                <div class="mb-2"><strong>No. Cliente:</strong> <span class="text-white" id="fo_num_cliente">---</span></div>
+                                <div class="mb-2"><strong>RFC:</strong> <span class="text-white" id="fo_rfc">---</span></div>
+                                <div class="mb-0"><strong>Teléfono:</strong> <span class="text-white" id="fo_telefono">---</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Fechas y Tiempos -->
+                        <div class="col-md-6">
+                            <div class="p-3 rounded-3 h-100" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h6 class="fw-bold text-warning mb-3"><i class="bi bi-calendar-event me-2"></i>Fechas y Tiempos</h6>
+                                <div class="mb-2"><strong>Fecha Alta:</strong> <span class="text-white" id="fo_fecha_alta">---</span></div>
+                                <div class="mb-2"><strong>Hora Inicio:</strong> <span class="text-white" id="fo_hora_ini">---</span></div>
+                                <div class="mb-2"><strong>Fecha Promesa:</strong> <span class="text-white" id="fo_fecha_promesa">---</span></div>
+                                <div class="mb-2"><strong>Fecha Entrega:</strong> <span class="text-white" id="fo_fecha_entrega">---</span></div>
+                                <div class="mb-0"><strong>Hora Fin:</strong> <span class="text-white" id="fo_hora_fin">---</span></div>
+                            </div>
+                        </div>
+
+                        <!-- Asesor y Operación -->
+                        <div class="col-md-6">
+                            <div class="p-3 rounded-3 h-100" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);">
+                                <h6 class="fw-bold text-primary mb-3"><i class="bi bi-briefcase me-2"></i>Asesor y Operación</h6>
+                                <div class="mb-2"><strong>Asesor de Servicio:</strong> <span class="text-white" id="fo_asesor">---</span></div>
+                                <div class="mb-2"><strong>Tipo de Pago:</strong> <span class="text-white" id="fo_tipo_pago">---</span></div>
+                                <div class="mb-2"><strong>No. Factura:</strong> <span class="text-white" id="fo_factura">---</span></div>
+                                <div class="mb-2"><strong>Almacén:</strong> <span class="text-white" id="fo_almacen">---</span></div>
+                                <div class="mb-0"><strong>Usuario Registro:</strong> <span class="text-white" id="fo_usuario">---</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <?php endif; ?>
 
 </div>
@@ -905,6 +1621,39 @@ function abrirFichaAuto(item) {
     modal.show();
 }
 
+function abrirFichaOrden(item) {
+    document.getElementById('fo_orden').textContent = 'Orden #' + (item.no_orden || '---');
+    document.getElementById('fo_estatus').textContent = item.descripcion_estatus || item.cve_estatus || '---';
+    document.getElementById('fo_dias').textContent = (item.dias_abierta || 0) + ' días (' + (item.estatus_tiempo || '---') + ')';
+    document.getElementById('fo_tipo').textContent = item.tipo_orden || item.cve_tipo_orden || '---';
+    
+    document.getElementById('fo_modelo').textContent = item.modelo || '---';
+    document.getElementById('fo_ano_color').textContent = (item.ano || '---') + ' / ' + (item.color || '---');
+    document.getElementById('fo_placas').textContent = item.placas || '---';
+    document.getElementById('fo_kmts').textContent = item.kilometraje ? (item.kilometraje + ' km') : '---';
+    document.getElementById('fo_vin').textContent = item.vin_chasis || '---';
+
+    document.getElementById('fo_cliente').textContent = item.cliente || '---';
+    document.getElementById('fo_num_cliente').textContent = item.num_cliente || '---';
+    document.getElementById('fo_rfc').textContent = item.rfc || '---';
+    document.getElementById('fo_telefono').textContent = item.telefono || '---';
+
+    document.getElementById('fo_fecha_alta').textContent = item.fecha_alta || '---';
+    document.getElementById('fo_hora_ini').textContent = item.hora_inicio || '---';
+    document.getElementById('fo_fecha_promesa').textContent = item.fecha_promesa || '---';
+    document.getElementById('fo_fecha_entrega').textContent = item.fecha_entrega || '---';
+    document.getElementById('fo_hora_fin').textContent = item.hora_fin || '---';
+
+    document.getElementById('fo_asesor').textContent = item.nombre_asesor || '---';
+    document.getElementById('fo_tipo_pago').textContent = item.tipo_pago || '---';
+    document.getElementById('fo_factura').textContent = item.no_factura || '---';
+    document.getElementById('fo_almacen').textContent = item.almacen || '---';
+    document.getElementById('fo_usuario').textContent = item.usuario_registro || '---';
+
+    const modal = new bootstrap.Modal(document.getElementById('modalFichaOrden'));
+    modal.show();
+}
+
 function copiarVIN(vin, btn) {
     if (!navigator.clipboard) {
         const temp = document.createElement('input');
@@ -922,6 +1671,134 @@ function copiarVIN(vin, btn) {
         setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 1500);
     }
 }
+
+<?php if ($reporteActivo === 'ordenes_servicio'): ?>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Chart Estatus
+    const ctxStat = document.getElementById('chartEstatusCanvas');
+    if (ctxStat) {
+        const dataStat = <?php echo json_encode($chartEstatus, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?> || [];
+        const labelsStat = dataStat.map(d => d.grupo_estatus);
+        const valuesStat = dataStat.map(d => Number(d.total));
+        const colorsStat = labelsStat.map(l => {
+            if (l.includes('Abierta')) return '#f59e0b';
+            if (l.includes('Cerrada')) return '#10b981';
+            if (l.includes('Cancelada')) return '#ef4444';
+            return '#64748b';
+        });
+
+        new Chart(ctxStat, {
+            type: 'doughnut',
+            data: {
+                labels: labelsStat,
+                datasets: [{
+                    data: valuesStat,
+                    backgroundColor: colorsStat,
+                    borderColor: '#081528',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { color: '#94a3b8', font: { size: 11 }, padding: 10 }
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Chart Tipos de Orden
+    const ctxTip = document.getElementById('chartTiposCanvas');
+    if (ctxTip) {
+        const dataTip = <?php echo json_encode($chartTipos, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?> || [];
+        const labelsTip = dataTip.map(d => d.tipo);
+        const valuesTip = dataTip.map(d => Number(d.total));
+
+        new Chart(ctxTip, {
+            type: 'bar',
+            data: {
+                labels: labelsTip,
+                datasets: [{
+                    label: 'Órdenes',
+                    data: valuesTip,
+                    backgroundColor: 'rgba(56, 189, 248, 0.75)',
+                    borderColor: '#38bdf8',
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 25 },
+                        grid: { display: false }
+                    },
+                    y: {
+                        ticks: { color: '#94a3b8', font: { size: 10 } },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Chart Aging (Antigüedad de órdenes abiertas)
+    const ctxAging = document.getElementById('chartAgingCanvas');
+    if (ctxAging) {
+        const agingData = <?php echo json_encode($chartAging, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?> || {};
+        new Chart(ctxAging, {
+            type: 'bar',
+            data: {
+                labels: ['0-3 días', '4-7 días', '8-15 días', '+15 días'],
+                datasets: [{
+                    label: 'Órdenes Abiertas',
+                    data: [
+                        Number(agingData.normal_0_3 || 0),
+                        Number(agingData.atencion_4_7 || 0),
+                        Number(agingData.retraso_8_15 || 0),
+                        Number(agingData.critica_mas_15 || 0)
+                    ],
+                    backgroundColor: [
+                        'rgba(16, 185, 129, 0.85)',
+                        'rgba(245, 158, 11, 0.85)',
+                        'rgba(249, 115, 22, 0.85)',
+                        'rgba(239, 68, 68, 0.85)'
+                    ],
+                    borderColor: ['#10b981', '#f59e0b', '#f97316', '#ef4444'],
+                    borderWidth: 1,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#94a3b8', font: { size: 10 } },
+                        grid: { display: false }
+                    },
+                    y: {
+                        ticks: { color: '#94a3b8', font: { size: 10 } },
+                        grid: { color: 'rgba(255,255,255,0.05)' }
+                    }
+                }
+            }
+        });
+    }
+});
+<?php endif; ?>
 </script>
 </body>
 </html>

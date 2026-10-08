@@ -1357,6 +1357,40 @@ function asegurarTablasReportesAgencia($pdo = null) {
                     datos_json TEXT,
                     sincronizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS reportes_ordenes_servicio (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    almacen TEXT,
+                    no_orden TEXT UNIQUE,
+                    cve_estatus TEXT,
+                    descripcion_estatus TEXT,
+                    cve_tipo_orden TEXT,
+                    tipo_orden TEXT,
+                    tipo_pago TEXT,
+                    no_factura TEXT,
+                    fecha_alta DATETIME,
+                    hora_inicio TEXT,
+                    fecha_promesa DATETIME,
+                    fecha_entrega DATETIME,
+                    hora_fin TEXT,
+                    num_cliente TEXT,
+                    cliente TEXT,
+                    rfc TEXT,
+                    telefono TEXT,
+                    vin_chasis TEXT,
+                    placas TEXT,
+                    modelo TEXT,
+                    ano TEXT,
+                    color TEXT,
+                    kilometraje TEXT,
+                    cve_asesor TEXT,
+                    nombre_asesor TEXT,
+                    usuario_registro TEXT,
+                    dias_abierta INTEGER DEFAULT 0,
+                    estatus_tiempo TEXT,
+                    datos_json TEXT,
+                    sincronizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             $pdo->exec("
@@ -1400,6 +1434,47 @@ function asegurarTablasReportesAgencia($pdo = null) {
                     INDEX `idx_inv_marca` (`marca`),
                     INDEX `idx_inv_anio` (`anio`),
                     INDEX `idx_inv_status` (`status`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `reportes_ordenes_servicio` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `almacen` VARCHAR(50) NULL,
+                    `no_orden` VARCHAR(50) NOT NULL,
+                    `cve_estatus` VARCHAR(20) NULL,
+                    `descripcion_estatus` VARCHAR(100) NULL,
+                    `cve_tipo_orden` VARCHAR(20) NULL,
+                    `tipo_orden` VARCHAR(100) NULL,
+                    `tipo_pago` VARCHAR(50) NULL,
+                    `no_factura` VARCHAR(50) NULL,
+                    `fecha_alta` DATETIME NULL,
+                    `hora_inicio` VARCHAR(20) NULL,
+                    `fecha_promesa` DATETIME NULL,
+                    `fecha_entrega` DATETIME NULL,
+                    `hora_fin` VARCHAR(20) NULL,
+                    `num_cliente` VARCHAR(50) NULL,
+                    `cliente` VARCHAR(255) NULL,
+                    `rfc` VARCHAR(30) NULL,
+                    `telefono` VARCHAR(50) NULL,
+                    `vin_chasis` VARCHAR(100) NULL,
+                    `placas` VARCHAR(50) NULL,
+                    `modelo` VARCHAR(150) NULL,
+                    `ano` VARCHAR(20) NULL,
+                    `color` VARCHAR(50) NULL,
+                    `kilometraje` VARCHAR(50) NULL,
+                    `cve_asesor` VARCHAR(50) NULL,
+                    `nombre_asesor` VARCHAR(200) NULL,
+                    `usuario_registro` VARCHAR(100) NULL,
+                    `dias_abierta` INT DEFAULT 0,
+                    `estatus_tiempo` VARCHAR(50) NULL,
+                    `datos_json` LONGTEXT NULL,
+                    `sincronizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uk_no_orden` (`no_orden`),
+                    INDEX `idx_ord_alm` (`almacen`),
+                    INDEX `idx_ord_status` (`cve_estatus`),
+                    INDEX `idx_ord_tipo` (`cve_tipo_orden`),
+                    INDEX `idx_ord_fecha` (`fecha_alta`),
+                    INDEX `idx_ord_asesor` (`cve_asesor`),
+                    INDEX `idx_ord_dias` (`dias_abierta`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
