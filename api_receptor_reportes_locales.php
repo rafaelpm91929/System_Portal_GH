@@ -35,6 +35,9 @@ if (empty($tokenEnviado) && !empty($data['token'])) {
 if (empty($tokenEnviado) && !empty($_POST['token'])) {
     $tokenEnviado = trim($_POST['token']);
 }
+if (empty($tokenEnviado) && !empty($_GET['token'])) {
+    $tokenEnviado = trim($_GET['token']);
+}
 
 // 2. Consultar Token Autorizado en la Ficha de la Agencia
 $stmtAg = $pdo->query("SELECT id, nombre, local_api_token FROM agencias ORDER BY id ASC LIMIT 1");

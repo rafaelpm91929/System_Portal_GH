@@ -128,20 +128,40 @@ if ($LOCAL_DB_TYPE === 'sqlserver') {
 }
 
 // --- 4. FUNCIÓN PARA ENVIAR PAYLOAD HACIA CPANEL ---
+function limpiarUtf8Universal($data) {
+    if (is_array($data)) {
+        $clean = [];
+        foreach ($data as $k => $v) {
+            $cleanKey = is_string($k) ? mb_convert_encoding($k, 'UTF-8', 'ISO-8859-1, Windows-1252, UTF-8') : $k;
+            $clean[$cleanKey] = limpiarUtf8Universal($v);
+        }
+        return $clean;
+    }
+    if (is_string($data)) {
+        return mb_convert_encoding($data, 'UTF-8', 'ISO-8859-1, Windows-1252, UTF-8');
+    }
+    return $data;
+}
+
 function enviarACpanel($url, $token, $payload) {
     $payload['token'] = $token;
-    $json = json_encode($payload, JSON_UNESCAPED_UNICODE);
+    $payloadLimpio = limpiarUtf8Universal($payload);
+    $json = json_encode($payloadLimpio, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
-    $ch = curl_init($url);
+    $urlConToken = (strpos($url, '?') !== false) 
+        ? $url . '&token=' . urlencode($token) 
+        : $url . '?token=' . urlencode($token);
+
+    $ch = curl_init($urlConToken);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $json);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
+        'Content-Type: application/json; charset=utf-8',
         'Authorization: Bearer ' . $token,
         'User-Agent: ConectorAgenciaLocal/2.0'
     ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
 
@@ -157,6 +177,7 @@ function enviarACpanel($url, $token, $payload) {
         'json'      => json_decode($response, true)
     ];
 }
+
 
 // --- FUNCIÓN UNIVERSAL PARA EJECUTAR CONSULTA GEDAS ---
 function ejecutarConsultaGedasUniversal($pdoLocal, $odbcConn, $driverUsado, $host, $port, $db, $user, $pass, $sql) {
