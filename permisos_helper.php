@@ -1492,4 +1492,228 @@ function asegurarTablasReportesAgencia($pdo = null) {
 
     } catch (Throwable $e) {}
 }
+
+/**
+ * Catálogo maestro de paletas y temas obscuros institucionales
+ */
+function obtenerCatalogoTemasOscuros() {
+    return [
+        'azul' => [
+            'clave' => 'azul',
+            'nombre' => 'Azul Obscuro (Medianoche)',
+            'bg_dark' => '#040d1a',
+            'bg_deep' => '#02070e',
+            'bg_card' => '#08162a',
+            'primary' => '#0284c7',
+            'accent' => '#38bdf8',
+            'secondary' => '#2563eb',
+            'glow' => 'rgba(2, 132, 199, 0.45)',
+            'glow_soft' => 'rgba(56, 189, 248, 0.22)',
+            'border' => 'rgba(56, 189, 248, 0.25)',
+            'three_p1' => '0x38bdf8',
+            'three_p2' => '0x2563eb',
+            'three_p3' => '0x818cf8',
+            'hex_swatch' => '#0284c7'
+        ],
+        'rojo' => [
+            'clave' => 'rojo',
+            'nombre' => 'Rojo Obscuro (Borgoña / Carmesí)',
+            'bg_dark' => '#140306',
+            'bg_deep' => '#0a0103',
+            'bg_card' => '#20080e',
+            'primary' => '#e11d48',
+            'accent' => '#fb7185',
+            'secondary' => '#be123c',
+            'glow' => 'rgba(225, 29, 72, 0.45)',
+            'glow_soft' => 'rgba(251, 113, 133, 0.22)',
+            'border' => 'rgba(251, 113, 133, 0.25)',
+            'three_p1' => '0xfb7185',
+            'three_p2' => '0xe11d48',
+            'three_p3' => '0xf43f5e',
+            'hex_swatch' => '#e11d48'
+        ],
+        'verde' => [
+            'clave' => 'verde',
+            'nombre' => 'Verde Obscuro (Esmeralda / Bosque)',
+            'bg_dark' => '#03140c',
+            'bg_deep' => '#010a06',
+            'bg_card' => '#071f14',
+            'primary' => '#059669',
+            'accent' => '#34d399',
+            'secondary' => '#047857',
+            'glow' => 'rgba(5, 150, 105, 0.45)',
+            'glow_soft' => 'rgba(52, 211, 153, 0.22)',
+            'border' => 'rgba(52, 211, 153, 0.25)',
+            'three_p1' => '0x34d399',
+            'three_p2' => '0x10b981',
+            'three_p3' => '0x059669',
+            'hex_swatch' => '#059669'
+        ],
+        'morado' => [
+            'clave' => 'morado',
+            'nombre' => 'Morado Obscuro (Púrpura / Amatista)',
+            'bg_dark' => '#0e041c',
+            'bg_deep' => '#07010e',
+            'bg_card' => '#170a2c',
+            'primary' => '#7c3aed',
+            'accent' => '#a78bfa',
+            'secondary' => '#6d28d9',
+            'glow' => 'rgba(124, 58, 237, 0.45)',
+            'glow_soft' => 'rgba(167, 139, 250, 0.22)',
+            'border' => 'rgba(167, 139, 250, 0.25)',
+            'three_p1' => '0xa78bfa',
+            'three_p2' => '0x8b5cf6',
+            'three_p3' => '0xc084fc',
+            'hex_swatch' => '#7c3aed'
+        ],
+        'ambar' => [
+            'clave' => 'ambar',
+            'nombre' => 'Ámbar Obscuro (Bronce / Oro Ejecutivo)',
+            'bg_dark' => '#140d02',
+            'bg_deep' => '#0a0601',
+            'bg_card' => '#211606',
+            'primary' => '#d97706',
+            'accent' => '#fbbf24',
+            'secondary' => '#b45309',
+            'glow' => 'rgba(217, 119, 6, 0.45)',
+            'glow_soft' => 'rgba(251, 191, 36, 0.22)',
+            'border' => 'rgba(251, 191, 36, 0.25)',
+            'three_p1' => '0xfbbf24',
+            'three_p2' => '0xf59e0b',
+            'three_p3' => '0xd97706',
+            'hex_swatch' => '#d97706'
+        ],
+        'grafito' => [
+            'clave' => 'grafito',
+            'nombre' => 'Grafito Obscuro (Obsidiana / Titanio)',
+            'bg_dark' => '#0a0c10',
+            'bg_deep' => '#040507',
+            'bg_card' => '#13161c',
+            'primary' => '#475569',
+            'accent' => '#94a3b8',
+            'secondary' => '#334155',
+            'glow' => 'rgba(71, 85, 105, 0.45)',
+            'glow_soft' => 'rgba(148, 163, 184, 0.22)',
+            'border' => 'rgba(148, 163, 184, 0.25)',
+            'three_p1' => '0xe2e8f0',
+            'three_p2' => '0x94a3b8',
+            'three_p3' => '0x64748b',
+            'hex_swatch' => '#475569'
+        ]
+    ];
+}
+
+/**
+ * Obtiene el tema activo de la agencia desde BD o sesión
+ */
+function obtenerTemaColorActivo($pdo = null) {
+    if (!$pdo && isset($GLOBALS['pdo'])) {
+        $pdo = $GLOBALS['pdo'];
+    }
+
+    $clave = 'azul';
+    if (!empty($_SESSION['color_tema'])) {
+        $clave = $_SESSION['color_tema'];
+    } elseif ($pdo) {
+        try {
+            try { $pdo->exec("ALTER TABLE agencias ADD COLUMN color_tema VARCHAR(50) DEFAULT 'azul'"); } catch (Throwable $t) {}
+            $stmt = $pdo->query("SELECT color_tema FROM agencias ORDER BY id ASC LIMIT 1");
+            $col = $stmt ? $stmt->fetchColumn() : null;
+            if (!empty($col)) {
+                $clave = strtolower(trim($col));
+                $_SESSION['color_tema'] = $clave;
+            }
+        } catch (Throwable $e) {}
+    }
+
+    $catalogo = obtenerCatalogoTemasOscuros();
+    return $catalogo[$clave] ?? $catalogo['azul'];
+}
+
+/**
+ * Inyecta los estilos CSS dinámicos para teñir el fondo y los componentes de todos los módulos
+ */
+function renderizarEstilosTemaGlobal($pdo = null) {
+    $t = obtenerTemaColorActivo($pdo);
+    ?>
+    <style id="estilos-tema-portal-obscuro">
+        :root {
+            --portal-theme-bg: <?= $t['bg_dark']; ?>;
+            --portal-theme-bg-deep: <?= $t['bg_deep']; ?>;
+            --portal-theme-card-bg: <?= $t['bg_card']; ?>;
+            --portal-theme-primary: <?= $t['primary']; ?>;
+            --portal-theme-accent: <?= $t['accent']; ?>;
+            --portal-theme-secondary: <?= $t['secondary']; ?>;
+            --portal-theme-glow: <?= $t['glow']; ?>;
+            --portal-theme-glow-soft: <?= $t['glow_soft']; ?>;
+            --portal-theme-border: <?= $t['border']; ?>;
+        }
+
+        body {
+            background-color: var(--portal-theme-bg) !important;
+            background-image: radial-gradient(var(--portal-theme-bg-deep) 1px, transparent 1px) !important;
+        }
+
+        .top-navbar, .navbar-custom {
+            background: var(--portal-theme-bg-deep) !important;
+            border-bottom: 1px solid var(--portal-theme-border) !important;
+        }
+
+        .card-custom, .module-card, .portal-card {
+            background: var(--portal-theme-card-bg) !important;
+            border-color: var(--portal-theme-border) !important;
+        }
+
+        .card-custom:hover, .module-card:hover {
+            border-color: var(--portal-theme-accent) !important;
+            box-shadow: 0 10px 30px var(--portal-theme-glow-soft) !important;
+        }
+
+        .hero-banner {
+            background: linear-gradient(135deg, var(--portal-theme-card-bg) 0%, var(--portal-theme-bg-deep) 100%) !important;
+            border-color: var(--portal-theme-border) !important;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 25px var(--portal-theme-glow-soft) !important;
+        }
+
+        .hero-overlay {
+            background: linear-gradient(90deg, var(--portal-theme-bg) 0%, rgba(0, 0, 0, 0.65) 100%) !important;
+        }
+
+        .logo-container {
+            background: var(--portal-theme-bg-deep) !important;
+            border-color: var(--portal-theme-border) !important;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--portal-theme-primary) 0%, var(--portal-theme-secondary) 100%) !important;
+            border-color: var(--portal-theme-secondary) !important;
+            box-shadow: 0 4px 15px var(--portal-theme-glow-soft);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 6px 20px var(--portal-theme-glow);
+        }
+
+        .text-primary, .text-info {
+            color: var(--portal-theme-accent) !important;
+        }
+
+        .badge.bg-primary {
+            background-color: var(--portal-theme-primary) !important;
+        }
+
+        .badge.bg-info.bg-opacity-25 {
+            background-color: var(--portal-theme-glow-soft) !important;
+            color: var(--portal-theme-accent) !important;
+            border-color: var(--portal-theme-accent) !important;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background-color: var(--portal-theme-card-bg) !important;
+            border-color: var(--portal-theme-accent) !important;
+            box-shadow: 0 0 0 0.25rem var(--portal-theme-glow-soft) !important;
+        }
+    </style>
+    <?php
+}
 ?>

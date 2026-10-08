@@ -358,6 +358,12 @@ if ($agenciaData && isset($agenciaData['id'])) {
 $catalogoTemas = function_exists('obtenerCatalogoTemasOscuros') ? obtenerCatalogoTemasOscuros() : [];
 $temaActivo = function_exists('obtenerTemaColorActivo') ? obtenerTemaColorActivo($pdo) : ($catalogoTemas['azul'] ?? []);
 $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul');
+
+// Variables para estado de colapso/despliegue de secciones
+$accionPost = $_SERVER['REQUEST_METHOD'] === 'POST' ? ($_POST['accion'] ?? '') : '';
+$abrirColor = ($accionPost === 'cambiar_color_tema');
+$abrirAreas = in_array($accionPost, ['agregar_area', 'editar_area', 'toggle_area_status', 'eliminar_area']);
+$abrirLocal = ($accionPost === 'guardar_servidor_local' || isset($_GET['servidor_local']));
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -472,6 +478,13 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
             color: #ffffff;
             border-color: #2563eb;
             box-shadow: 0 0 0 0.25rem rgba(37, 99, 235, 0.25);
+        }
+        .btn-collapse-toggle[aria-expanded="true"] .bi-chevron-down {
+            transform: rotate(180deg);
+        }
+        .btn-collapse-toggle .bi-chevron-down {
+            transition: transform 0.25s ease;
+            display: inline-block;
         }
     </style>
 </head>
@@ -672,10 +685,10 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
             </div>
         </div>
 
-        <!-- CARD 4: COLOR DEL PORTAL / TEMA OBSCURO -->
+        <!-- CARD 4: COLOR DEL PORTAL / TEMA OBSCURO (COLAPSABLE) -->
         <div class="col-12">
             <div class="card-custom">
-                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 border-bottom border-secondary border-opacity-25 pb-3 mb-3">
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 <?php echo $abrirColor ? 'border-bottom border-secondary border-opacity-25 pb-3 mb-3' : ''; ?>">
                     <div class="d-flex align-items-center gap-3">
                         <div class="p-3 rounded-3 fs-4" style="background: rgba(255, 255, 255, 0.05); color: var(--portal-theme-accent, #38bdf8);">
                             <i class="bi bi-palette-fill"></i>
@@ -685,37 +698,44 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
                             <small class="text-secondary">Paleta oscura aplicada automáticamente al fondo 3D del login, barras y módulos</small>
                         </div>
                     </div>
-                    <div>
+                    <div class="d-flex align-items-center gap-3 flex-wrap">
                         <span class="badge px-3 py-2 fs-6 rounded-pill d-inline-flex align-items-center gap-2" style="background: <?php echo $temaActivo['bg_deep'] ?? '#02070e'; ?>; border: 1px solid <?php echo $temaActivo['accent'] ?? '#38bdf8'; ?>; color: <?php echo $temaActivo['accent'] ?? '#38bdf8'; ?>;">
                             <span style="display:inline-block; width:12px; height:12px; border-radius:50%; background: <?php echo $temaActivo['hex_swatch'] ?? '#0284c7'; ?>; box-shadow: 0 0 10px <?php echo $temaActivo['hex_swatch'] ?? '#0284c7'; ?>;"></span>
                             <?php echo htmlspecialchars($temaActivo['nombre'] ?? 'Azul Obscuro'); ?>
                         </span>
+                        <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 text-white btn-collapse-toggle shadow-sm" data-bs-toggle="collapse" data-bs-target="#collapseColorPortal" aria-expanded="<?php echo $abrirColor ? 'true' : 'false'; ?>" aria-controls="collapseColorPortal">
+                            <i class="bi bi-palette"></i>
+                            <span>Modificar Color</span>
+                            <i class="bi bi-chevron-down ms-1"></i>
+                        </button>
                     </div>
                 </div>
 
-                <div class="row g-3 align-items-center">
-                    <div class="col-lg-4">
-                        <p class="text-secondary small mb-0">
-                            Haz clic en cualquiera de las tonalidades oscuras para cambiar el color del sistema al instante. Se sincronizará en tiempo real con el fondo del login interactivo y todas las secciones.
-                        </p>
-                    </div>
-                    <div class="col-lg-8">
-                        <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
-                            <?php foreach ($catalogoTemas as $claveT => $infoT): ?>
-                                <?php $esSeleccionado = ($colorClaveActual === $claveT); ?>
-                                <form method="POST" class="d-inline">
-                                    <input type="hidden" name="accion" value="cambiar_color_tema">
-                                    <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 0; ?>">
-                                    <input type="hidden" name="color_tema" value="<?php echo $claveT; ?>">
-                                    <button type="submit" class="btn btn-sm rounded-pill px-3 py-2 d-inline-flex align-items-center gap-2 <?php echo $esSeleccionado ? 'fw-bold shadow' : 'btn-outline-secondary text-white'; ?>" style="<?php echo $esSeleccionado ? ('border: 2px solid ' . $infoT['accent'] . '; background: ' . $infoT['bg_deep'] . '; color: ' . $infoT['accent'] . ' !important;') : 'background: rgba(255,255,255,0.03);'; ?>">
-                                        <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background: <?php echo $infoT['hex_swatch']; ?>; box-shadow: 0 0 8px <?php echo $infoT['hex_swatch']; ?>;"></span>
-                                        <span><?php echo htmlspecialchars($infoT['nombre']); ?></span>
-                                        <?php if ($esSeleccionado): ?>
-                                            <i class="bi bi-check-circle-fill ms-1" style="color: <?php echo $infoT['accent']; ?>;"></i>
-                                        <?php endif; ?>
-                                    </button>
-                                </form>
-                            <?php endforeach; ?>
+                <div class="collapse <?php echo $abrirColor ? 'show' : ''; ?> pt-3" id="collapseColorPortal">
+                    <div class="row g-3 align-items-center">
+                        <div class="col-lg-4">
+                            <p class="text-secondary small mb-0">
+                                Haz clic en cualquiera de las tonalidades oscuras para cambiar el color del sistema al instante. Se sincronizará en tiempo real con el fondo del login interactivo y todas las secciones.
+                            </p>
+                        </div>
+                        <div class="col-lg-8">
+                            <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                                <?php foreach ($catalogoTemas as $claveT => $infoT): ?>
+                                    <?php $esSeleccionado = ($colorClaveActual === $claveT); ?>
+                                    <form method="POST" class="d-inline">
+                                        <input type="hidden" name="accion" value="cambiar_color_tema">
+                                        <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 0; ?>">
+                                        <input type="hidden" name="color_tema" value="<?php echo $claveT; ?>">
+                                        <button type="submit" class="btn btn-sm rounded-pill px-3 py-2 d-inline-flex align-items-center gap-2 <?php echo $esSeleccionado ? 'fw-bold shadow' : 'btn-outline-secondary text-white'; ?>" style="<?php echo $esSeleccionado ? ('border: 2px solid ' . $infoT['accent'] . '; background: ' . $infoT['bg_deep'] . '; color: ' . $infoT['accent'] . ' !important;') : 'background: rgba(255,255,255,0.03);'; ?>">
+                                            <span style="display:inline-block; width:14px; height:14px; border-radius:50%; background: <?php echo $infoT['hex_swatch']; ?>; box-shadow: 0 0 8px <?php echo $infoT['hex_swatch']; ?>;"></span>
+                                            <span><?php echo htmlspecialchars($infoT['nombre']); ?></span>
+                                            <?php if ($esSeleccionado): ?>
+                                                <i class="bi bi-check-circle-fill ms-1" style="color: <?php echo $infoT['accent']; ?>;"></i>
+                                            <?php endif; ?>
+                                        </button>
+                                    </form>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -724,91 +744,109 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
 
     </div>
 
-    <!-- SECCIÓN: ÁREAS Y DEPARTAMENTOS DE LA AGENCIA -->
+    <!-- SECCIÓN: ÁREAS Y DEPARTAMENTOS DE LA AGENCIA (COLAPSABLE) -->
     <div class="row mt-4">
         <div class="col-12">
             <div class="card-custom">
-                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3 gap-3">
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between <?php echo $abrirAreas ? 'border-bottom border-secondary border-opacity-25 pb-3 mb-3' : ''; ?> gap-3">
                     <div class="d-flex align-items-center gap-3">
                         <div class="bg-info bg-opacity-10 text-info p-3 rounded-3 fs-4">
                             <i class="bi bi-diagram-3-fill"></i>
                         </div>
                         <div>
-                            <h5 class="fw-bold mb-0 text-white">Áreas y Departamentos de la Agencia</h5>
+                            <div class="d-flex align-items-center gap-2">
+                                <h5 class="fw-bold mb-0 text-white">Áreas y Departamentos de la Agencia</h5>
+                                <span class="badge bg-info bg-opacity-25 text-info border border-info rounded-pill px-2.5 py-1 small">
+                                    <?php echo count($areasAgencia); ?> Registradas
+                                </span>
+                            </div>
                             <small class="text-secondary">Catálogo oficial de áreas para asignación de equipos y personal de la sucursal</small>
                         </div>
                     </div>
-                    <button type="button" class="btn btn-info text-dark fw-bold rounded-3 px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAgregarArea">
-                        <i class="bi bi-plus-circle me-1"></i> Agregar Nueva Área
-                    </button>
+                    <div class="d-flex align-items-center gap-2">
+                        <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 text-white btn-collapse-toggle shadow-sm" data-bs-toggle="collapse" data-bs-target="#collapseAreasAgencia" aria-expanded="<?php echo $abrirAreas ? 'true' : 'false'; ?>" aria-controls="collapseAreasAgencia">
+                            <i class="bi bi-diagram-3"></i>
+                            <span>Ver y Modificar Áreas</span>
+                            <i class="bi bi-chevron-down ms-1"></i>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- LISTA DE ÁREAS REGISTRADAS -->
-                <div class="row g-3">
-                    <?php if (empty($areasAgencia)): ?>
-                        <div class="col-12 text-center py-4 text-secondary">
-                            <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No hay áreas registradas aún. Haz clic en 'Agregar Nueva Área' para registrar la primera.
-                        </div>
-                    <?php else: ?>
-                        <?php foreach ($areasAgencia as $area): ?>
-                            <div class="col-6 col-sm-4 col-md-3 col-lg-2">
-                                <div class="p-3 rounded-3 text-center h-100 position-relative d-flex flex-column justify-content-between" style="background: #0f223d; border: 1px solid rgba(255, 255, 255, 0.1);">
-                                    <div>
-                                        <?php if ($area['estatus']): ?>
-                                            <span class="position-absolute top-0 end-0 p-1 me-2 mt-2 bg-success rounded-circle" title="Área Activa" style="width: 8px; height: 8px;"></span>
-                                        <?php else: ?>
-                                            <span class="position-absolute top-0 end-0 p-1 me-2 mt-2 bg-secondary rounded-circle" title="Área Inactiva" style="width: 8px; height: 8px;"></span>
-                                        <?php endif; ?>
+                <div class="collapse <?php echo $abrirAreas ? 'show' : ''; ?> pt-3" id="collapseAreasAgencia">
+                    <div class="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3 pb-2 border-bottom border-secondary border-opacity-15">
+                        <span class="text-secondary small">Administra las áreas activas o inactivas para inventarios, puestos y tickets:</span>
+                        <button type="button" class="btn btn-info text-dark fw-bold btn-sm rounded-3 px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#modalAgregarArea">
+                            <i class="bi bi-plus-circle me-1"></i> Agregar Nueva Área
+                        </button>
+                    </div>
 
-                                        <div class="fs-4 text-primary mb-1">
-                                            <i class="bi bi-building-gear"></i>
+                    <!-- LISTA DE ÁREAS REGISTRADAS -->
+                    <div class="row g-3">
+                        <?php if (empty($areasAgencia)): ?>
+                            <div class="col-12 text-center py-4 text-secondary">
+                                <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No hay áreas registradas aún. Haz clic en 'Agregar Nueva Área' para registrar la primera.
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($areasAgencia as $area): ?>
+                                <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+                                    <div class="p-3 rounded-3 text-center h-100 position-relative d-flex flex-column justify-content-between" style="background: #0f223d; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                        <div>
+                                            <?php if ($area['estatus']): ?>
+                                                <span class="position-absolute top-0 end-0 p-1 me-2 mt-2 bg-success rounded-circle" title="Área Activa" style="width: 8px; height: 8px;"></span>
+                                            <?php else: ?>
+                                                <span class="position-absolute top-0 end-0 p-1 me-2 mt-2 bg-secondary rounded-circle" title="Área Inactiva" style="width: 8px; height: 8px;"></span>
+                                            <?php endif; ?>
+
+                                            <div class="fs-4 text-primary mb-1">
+                                                <i class="bi bi-building-gear"></i>
+                                            </div>
+                                            <div class="fw-bold text-white small mb-2 text-truncate" title="<?php echo htmlspecialchars($area['nombre']); ?>">
+                                                <?php echo htmlspecialchars($area['nombre']); ?>
+                                            </div>
                                         </div>
-                                        <div class="fw-bold text-white small mb-2 text-truncate" title="<?php echo htmlspecialchars($area['nombre']); ?>">
-                                            <?php echo htmlspecialchars($area['nombre']); ?>
+
+                                        <div class="d-flex justify-content-center gap-1 pt-2 border-top border-secondary border-opacity-25">
+                                            <!-- Botón Editar Nombre -->
+                                            <button type="button" class="btn btn-sm btn-outline-warning p-1 lh-1" onclick='abrirModalEditarArea(<?php echo json_encode($area); ?>)' title="Editar nombre de área">
+                                                <i class="bi bi-pencil-square" style="font-size: 0.75rem;"></i>
+                                            </button>
+
+                                            <!-- Botón Toggle Activo / Inactivo -->
+                                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Deseas cambiar el estatus de esta área?');">
+                                                <input type="hidden" name="accion" value="toggle_area_status">
+                                                <input type="hidden" name="area_id" value="<?php echo $area['id']; ?>">
+                                                <input type="hidden" name="nuevo_estatus" value="<?php echo $area['estatus'] ? 0 : 1; ?>">
+                                                <button type="submit" class="btn btn-sm <?php echo $area['estatus'] ? 'btn-outline-success' : 'btn-outline-secondary'; ?> p-1 lh-1" title="<?php echo $area['estatus'] ? 'Desactivar área' : 'Activar área'; ?>">
+                                                    <i class="bi <?php echo $area['estatus'] ? 'bi-check-circle-fill' : 'bi-dash-circle'; ?>" style="font-size: 0.75rem;"></i>
+                                                </button>
+                                            </form>
+
+                                            <!-- Botón Eliminar Área -->
+                                            <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar esta área de la agencia?');">
+                                                <input type="hidden" name="accion" value="eliminar_area">
+                                                <input type="hidden" name="area_id" value="<?php echo $area['id']; ?>">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger p-1 lh-1" title="Eliminar área">
+                                                    <i class="bi bi-trash-fill" style="font-size: 0.75rem;"></i>
+                                                </button>
+                                            </form>
                                         </div>
-                                    </div>
-
-                                    <div class="d-flex justify-content-center gap-1 pt-2 border-top border-secondary border-opacity-25">
-                                        <!-- Botón Editar Nombre -->
-                                        <button type="button" class="btn btn-sm btn-outline-warning p-1 lh-1" onclick='abrirModalEditarArea(<?php echo json_encode($area); ?>)' title="Editar nombre de área">
-                                            <i class="bi bi-pencil-square" style="font-size: 0.75rem;"></i>
-                                        </button>
-
-                                        <!-- Botón Toggle Activo / Inactivo -->
-                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Deseas cambiar el estatus de esta área?');">
-                                            <input type="hidden" name="accion" value="toggle_area_status">
-                                            <input type="hidden" name="area_id" value="<?php echo $area['id']; ?>">
-                                            <input type="hidden" name="nuevo_estatus" value="<?php echo $area['estatus'] ? 0 : 1; ?>">
-                                            <button type="submit" class="btn btn-sm <?php echo $area['estatus'] ? 'btn-outline-success' : 'btn-outline-secondary'; ?> p-1 lh-1" title="<?php echo $area['estatus'] ? 'Desactivar área' : 'Activar área'; ?>">
-                                                <i class="bi <?php echo $area['estatus'] ? 'bi-check-circle-fill' : 'bi-dash-circle'; ?>" style="font-size: 0.75rem;"></i>
-                                            </button>
-                                        </form>
-
-                                        <!-- Botón Eliminar Área -->
-                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar esta área de la agencia?');">
-                                            <input type="hidden" name="accion" value="eliminar_area">
-                                            <input type="hidden" name="area_id" value="<?php echo $area['id']; ?>">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger p-1 lh-1" title="Eliminar área">
-                                                <i class="bi bi-trash-fill" style="font-size: 0.75rem;"></i>
-                                            </button>
-                                        </form>
                                     </div>
                                 </div>
-                            </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- ========================================================================= -->
-    <!-- SECCIÓN: CONEXIÓN A SERVIDOR LOCAL / DMS (REPORTES DE AGENCIA)            -->
+    <!-- SECCIÓN: CONEXIÓN A SERVIDOR LOCAL / DMS (COLAPSABLE)                     -->
     <!-- ========================================================================= -->
     <div class="row mt-4" id="servidor_local">
         <div class="col-12">
             <div class="card-custom" style="border-color: rgba(16, 185, 129, 0.35); box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
-                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3 gap-3">
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between <?php echo $abrirLocal ? 'border-bottom border-secondary border-opacity-25 pb-3 mb-3' : ''; ?> gap-3">
                     <div class="d-flex align-items-center gap-3">
                         <div class="p-3 rounded-3 fs-3" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
                             <i class="bi bi-hdd-network-fill"></i>
@@ -824,6 +862,20 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
                         </div>
                     </div>
                     <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge bg-dark border border-secondary text-secondary px-2.5 py-1.5 small font-monospace">
+                            <i class="bi bi-hdd-fill me-1 text-info"></i> <?php echo htmlspecialchars(($agenciaData['local_db_host'] ?? '127.0.0.1') . ':' . ($agenciaData['local_db_port'] ?? 3306)); ?>
+                        </span>
+                        <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5 text-white btn-collapse-toggle shadow-sm" data-bs-toggle="collapse" data-bs-target="#collapseServidorLocal" aria-expanded="<?php echo $abrirLocal ? 'true' : 'false'; ?>" aria-controls="collapseServidorLocal">
+                            <i class="bi bi-gear-fill text-success"></i>
+                            <span>Configurar Conexión</span>
+                            <i class="bi bi-chevron-down ms-1"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="collapse <?php echo $abrirLocal ? 'show' : ''; ?> pt-3" id="collapseServidorLocal">
+                    <!-- Botones de Acción Rápida -->
+                    <div class="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3 pb-2 border-bottom border-secondary border-opacity-15">
                         <a href="agencia.php?descargar_conector_local=1" class="btn btn-outline-success btn-sm rounded-3 px-3 py-2 text-white d-flex align-items-center gap-1.5 shadow-sm">
                             <i class="bi bi-cloud-arrow-down-fill text-success"></i> <span>Descargar API Automática (.php)</span>
                         </a>
@@ -831,125 +883,125 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
                             <i class="bi bi-activity"></i> <span>Hacer prueba de conexión a servidor local</span>
                         </button>
                     </div>
+
+                    <!-- Resumen de Estado de Conexión -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-6 col-md-3">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="label-custom">HOST / IP LOCAL</div>
+                                <div class="val-custom text-info font-monospace fs-6">
+                                    <i class="bi bi-hdd-fill me-1"></i> <?php echo htmlspecialchars(($agenciaData['local_db_host'] ?? '127.0.0.1') . ':' . ($agenciaData['local_db_port'] ?? 3306)); ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-md-3">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="label-custom">BASE DE DATOS</div>
+                                <div class="val-custom text-white font-monospace fs-6">
+                                    <i class="bi bi-database-fill me-1 text-primary"></i> <?php echo htmlspecialchars($agenciaData['local_db_name'] ?? 'dms_agencia'); ?> (<?php echo strtoupper(htmlspecialchars($agenciaData['local_tipo_db'] ?? 'mysql')); ?>)
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-md-3">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="label-custom">TOKEN API LOCAL</div>
+                                <div class="val-custom text-warning font-monospace small">
+                                    <i class="bi bi-key-fill me-1"></i> <?php echo htmlspecialchars(substr($agenciaData['local_api_token'] ?? 'TK_LOCAL_PENDIENTE', 0, 10) . '••••••••'); ?>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-md-3">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="label-custom">ÚLTIMA SINCRONIZACIÓN</div>
+                                <div class="val-custom text-light small">
+                                    <i class="bi bi-clock-history me-1 text-success"></i> <?php echo !empty($agenciaData['local_ultima_sincronizacion']) ? htmlspecialchars($agenciaData['local_ultima_sincronizacion']) : '<span class="text-secondary">Sin sincronizar aún</span>'; ?>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Formulario de Configuración -->
+                    <form method="POST" id="formServidorLocal">
+                        <input type="hidden" name="accion" value="guardar_servidor_local">
+                        <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 1; ?>">
+
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label small fw-bold text-secondary">IP o Host del Servidor Local</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-hdd-network"></i></span>
+                                    <input type="text" name="local_db_host" id="cfg_local_host" class="form-control" placeholder="ej. 192.168.1.100 o 127.0.0.1" value="<?php echo htmlspecialchars($agenciaData['local_db_host'] ?? '127.0.0.1'); ?>" required>
+                                </div>
+                                <small class="text-secondary" style="font-size: 0.73rem;">IP donde está alojado el DMS o base de datos en la agencia.</small>
+                            </div>
+
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold text-secondary">Puerto</label>
+                                <input type="number" name="local_db_port" id="cfg_local_port" class="form-control" placeholder="3306" value="<?php echo htmlspecialchars($agenciaData['local_db_port'] ?? 3306); ?>" required>
+                                <small class="text-secondary" style="font-size: 0.73rem;">3306 (MySQL) o 1433 (SQL Server).</small>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-secondary">Motor de Base de Datos</label>
+                                <select name="local_tipo_db" id="cfg_local_tipo" class="form-select">
+                                    <option value="mysql" <?php echo (($agenciaData['local_tipo_db'] ?? 'mysql') === 'mysql') ? 'selected' : ''; ?>>MySQL / MariaDB</option>
+                                    <option value="sqlserver" <?php echo (($agenciaData['local_tipo_db'] ?? '') === 'sqlserver') ? 'selected' : ''; ?>>Microsoft SQL Server</option>
+                                </select>
+                                <small class="text-secondary" style="font-size: 0.73rem;">Tipo de gestor de base de datos.</small>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-secondary">Nombre de la Base de Datos</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-database"></i></span>
+                                    <input type="text" name="local_db_name" id="cfg_local_dbname" class="form-control" placeholder="ej. dms_agencia, intelisis" value="<?php echo htmlspecialchars($agenciaData['local_db_name'] ?? ''); ?>" required>
+                                </div>
+                                <small class="text-secondary" style="font-size: 0.73rem;">Nombre de la BD local a consultar.</small>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-secondary">Usuario de la BD Local</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-person"></i></span>
+                                    <input type="text" name="local_db_user" id="cfg_local_user" class="form-control" placeholder="ej. root o user_dms" value="<?php echo htmlspecialchars($agenciaData['local_db_user'] ?? ''); ?>" required>
+                                </div>
+                            </div>
+
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold text-secondary">Contraseña de la BD Local</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-lock"></i></span>
+                                    <input type="password" name="local_db_pass" id="cfg_local_pass" class="form-control" placeholder="••••••••" value="<?php echo htmlspecialchars($agenciaData['local_db_pass'] ?? ''); ?>">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordLocal('cfg_local_pass', this)"><i class="bi bi-eye"></i></button>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold text-secondary">Token de Seguridad para la API</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-shield-lock"></i></span>
+                                    <input type="text" name="local_api_token" id="cfg_local_token" class="form-control font-monospace text-warning" placeholder="Token Secreto" value="<?php echo htmlspecialchars($agenciaData['local_api_token'] ?? ''); ?>" required>
+                                    <button type="button" class="btn btn-outline-warning btn-sm" onclick="generarNuevoTokenLocal()"><i class="bi bi-shuffle me-1"></i> Generar</button>
+                                </div>
+                                <small class="text-secondary" style="font-size: 0.73rem;">Clave secreta compartida entre el servidor local y este cPanel para validar cada reporte.</small>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 mt-4 pt-3 border-top border-secondary border-opacity-25">
+                            <div class="text-secondary small">
+                                <i class="bi bi-info-circle-fill text-info me-1"></i> Al guardar, se actualizan los parámetros en la base de datos de la agencia y en el conector descargable.
+                            </div>
+                            <div class="d-flex gap-2 w-100 w-md-auto justify-content-end">
+                                <a href="reportes_agencia.php" class="btn btn-outline-secondary text-white rounded-3 px-3">
+                                    <i class="bi bi-bar-chart-line-fill me-1"></i> Ir a Reportes Agencia
+                                </a>
+                                <button type="submit" class="btn btn-success text-dark fw-bold rounded-3 px-4 shadow">
+                                    <i class="bi bi-check-lg me-1"></i> Guardar Parámetros de Conexión
+                                </button>
+                            </div>
+                        </div>
+                    </form>
                 </div>
-
-                <!-- Resumen de Estado de Conexión -->
-                <div class="row g-3 mb-4">
-                    <div class="col-sm-6 col-md-3">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="label-custom">HOST / IP LOCAL</div>
-                            <div class="val-custom text-info font-monospace fs-6">
-                                <i class="bi bi-hdd-fill me-1"></i> <?php echo htmlspecialchars(($agenciaData['local_db_host'] ?? '127.0.0.1') . ':' . ($agenciaData['local_db_port'] ?? 3306)); ?>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-sm-6 col-md-3">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="label-custom">BASE DE DATOS</div>
-                            <div class="val-custom text-white font-monospace fs-6">
-                                <i class="bi bi-database-fill me-1 text-primary"></i> <?php echo htmlspecialchars($agenciaData['local_db_name'] ?? 'dms_agencia'); ?> (<?php echo strtoupper(htmlspecialchars($agenciaData['local_tipo_db'] ?? 'mysql')); ?>)
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-sm-6 col-md-3">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="label-custom">TOKEN API LOCAL</div>
-                            <div class="val-custom text-warning font-monospace small">
-                                <i class="bi bi-key-fill me-1"></i> <?php echo htmlspecialchars(substr($agenciaData['local_api_token'] ?? 'TK_LOCAL_PENDIENTE', 0, 10) . '••••••••'); ?>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-sm-6 col-md-3">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="label-custom">ÚLTIMA SINCRONIZACIÓN</div>
-                            <div class="val-custom text-light small">
-                                <i class="bi bi-clock-history me-1 text-success"></i> <?php echo !empty($agenciaData['local_ultima_sincronizacion']) ? htmlspecialchars($agenciaData['local_ultima_sincronizacion']) : '<span class="text-secondary">Sin sincronizar aún</span>'; ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Formulario de Configuración -->
-                <form method="POST" id="formServidorLocal">
-                    <input type="hidden" name="accion" value="guardar_servidor_local">
-                    <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 1; ?>">
-
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label small fw-bold text-secondary">IP o Host del Servidor Local</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-hdd-network"></i></span>
-                                <input type="text" name="local_db_host" id="cfg_local_host" class="form-control" placeholder="ej. 192.168.1.100 o 127.0.0.1" value="<?php echo htmlspecialchars($agenciaData['local_db_host'] ?? '127.0.0.1'); ?>" required>
-                            </div>
-                            <small class="text-secondary" style="font-size: 0.73rem;">IP donde está alojado el DMS o base de datos en la agencia.</small>
-                        </div>
-
-                        <div class="col-md-2">
-                            <label class="form-label small fw-bold text-secondary">Puerto</label>
-                            <input type="number" name="local_db_port" id="cfg_local_port" class="form-control" placeholder="3306" value="<?php echo htmlspecialchars($agenciaData['local_db_port'] ?? 3306); ?>" required>
-                            <small class="text-secondary" style="font-size: 0.73rem;">3306 (MySQL) o 1433 (SQL Server).</small>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-secondary">Motor de Base de Datos</label>
-                            <select name="local_tipo_db" id="cfg_local_tipo" class="form-select">
-                                <option value="mysql" <?php echo (($agenciaData['local_tipo_db'] ?? 'mysql') === 'mysql') ? 'selected' : ''; ?>>MySQL / MariaDB</option>
-                                <option value="sqlserver" <?php echo (($agenciaData['local_tipo_db'] ?? '') === 'sqlserver') ? 'selected' : ''; ?>>Microsoft SQL Server</option>
-                            </select>
-                            <small class="text-secondary" style="font-size: 0.73rem;">Tipo de gestor de base de datos.</small>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-secondary">Nombre de la Base de Datos</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-database"></i></span>
-                                <input type="text" name="local_db_name" id="cfg_local_dbname" class="form-control" placeholder="ej. dms_agencia, intelisis" value="<?php echo htmlspecialchars($agenciaData['local_db_name'] ?? ''); ?>" required>
-                            </div>
-                            <small class="text-secondary" style="font-size: 0.73rem;">Nombre de la BD local a consultar.</small>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-secondary">Usuario de la BD Local</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-person"></i></span>
-                                <input type="text" name="local_db_user" id="cfg_local_user" class="form-control" placeholder="ej. root o user_dms" value="<?php echo htmlspecialchars($agenciaData['local_db_user'] ?? ''); ?>" required>
-                            </div>
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label small fw-bold text-secondary">Contraseña de la BD Local</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-lock"></i></span>
-                                <input type="password" name="local_db_pass" id="cfg_local_pass" class="form-control" placeholder="••••••••" value="<?php echo htmlspecialchars($agenciaData['local_db_pass'] ?? ''); ?>">
-                                <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordLocal('cfg_local_pass', this)"><i class="bi bi-eye"></i></button>
-                            </div>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label small fw-bold text-secondary">Token de Seguridad para la API</label>
-                            <div class="input-group">
-                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-shield-lock"></i></span>
-                                <input type="text" name="local_api_token" id="cfg_local_token" class="form-control font-monospace text-warning" placeholder="Token Secreto" value="<?php echo htmlspecialchars($agenciaData['local_api_token'] ?? ''); ?>" required>
-                                <button type="button" class="btn btn-outline-warning btn-sm" onclick="generarNuevoTokenLocal()"><i class="bi bi-shuffle me-1"></i> Generar</button>
-                            </div>
-                            <small class="text-secondary" style="font-size: 0.73rem;">Clave secreta compartida entre el servidor local y este cPanel para validar cada reporte.</small>
-                        </div>
-                    </div>
-
-                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 mt-4 pt-3 border-top border-secondary border-opacity-25">
-                        <div class="text-secondary small">
-                            <i class="bi bi-info-circle-fill text-info me-1"></i> Al guardar, se actualizan los parámetros en la base de datos de la agencia y en el conector descargable.
-                        </div>
-                        <div class="d-flex gap-2 w-100 w-md-auto justify-content-end">
-                            <a href="reportes_agencia.php" class="btn btn-outline-secondary text-white rounded-3 px-3">
-                                <i class="bi bi-bar-chart-line-fill me-1"></i> Ir a Reportes Agencia
-                            </a>
-                            <button type="submit" class="btn btn-success text-dark fw-bold rounded-3 px-4 shadow">
-                                <i class="bi bi-check-lg me-1"></i> Guardar Parámetros de Conexión
-                            </button>
-                        </div>
-                    </div>
-                </form>
             </div>
         </div>
     </div>
@@ -1274,6 +1326,18 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
     function escapeHtml(text) {
         if (!text) return '';
         return text.toString().replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' })[m]);
+    }
+
+    // Auto-desplegar sección si la URL contiene el ancla #servidor_local
+    if (window.location.hash === '#servidor_local') {
+        const elServ = document.getElementById('collapseServidorLocal');
+        if (elServ) {
+            const bsCollapse = bootstrap.Collapse.getOrCreateInstance(elServ);
+            bsCollapse.show();
+            setTimeout(() => {
+                elServ.scrollIntoView({ behavior: 'smooth' });
+            }, 300);
+        }
     }
 </script>
 </body>
