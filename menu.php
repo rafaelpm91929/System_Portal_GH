@@ -182,6 +182,7 @@ $logoAgencia = (!empty($agenciaInfo['logo_url']) && file_exists(__DIR__ . '/' . 
         <span class="fw-bold tracking-wide">PORTAL <span class="text-primary"><?php echo htmlspecialchars($agenciaUsuario); ?></span></span>
     </div>
     <div class="d-flex align-items-center gap-3">
+        <?php include_once __DIR__ . '/componente_notificaciones.php'; ?>
         <div class="text-end d-none d-md-block">
             <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
             <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?></div>

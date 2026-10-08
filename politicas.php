@@ -72,16 +72,45 @@ if ($resp) {
 }
 
 // Fallback: si no hay conexión con Central GH, consultar base de datos local
-if (empty($politicasLista) && $pdo) {
-    try {
-        $stmtList = $pdo->query("
-            SELECT * FROM politicas_corporativas 
-            WHERE estatus = 1 
-            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
-        ");
-        $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
-    } catch (Throwable $e) {}
-}
+    if (empty($politicasLista) && $pdo) {
+        try {
+            $stmtList = $pdo->query("
+                SELECT * FROM politicas_corporativas 
+                WHERE estatus = 1 
+                ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
+            ");
+            $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
+        } catch (Throwable $e) {}
+    }
+
+    // Asegurar notificaciones locales para políticas vigentes
+    if (!empty($politicasLista) && $pdo) {
+        try {
+            asegurarTablaNotificaciones($pdo);
+            foreach ($politicasLista as $pol) {
+                $pId = intval($pol['id'] ?? 0);
+                if ($pId <= 0) continue;
+                $stmtChk = $pdo->prepare("SELECT id FROM notificaciones WHERE modulo = 'politicas' AND referencia_id = ?");
+                $stmtChk->execute([$pId]);
+                if (!$stmtChk->fetch()) {
+                    $fec = !empty($pol['creado_en']) ? $pol['creado_en'] : date('Y-m-d H:i:s');
+                    $tipoN = (floatval($pol['version'] ?? 1.0) > 1.0) ? 'actualizacion_politica' : 'nueva_politica';
+                    $titN = ($tipoN === 'actualizacion_politica') ? 'Actualización de Política' : 'Nueva Política Publicada';
+                    $stmtInsN = $pdo->prepare("
+                        INSERT INTO notificaciones (modulo, tipo, titulo, mensaje, enlace, icono, color, referencia_id, creado_en, estatus)
+                        VALUES ('politicas', ?, ?, ?, 'politicas.php', 'bi-shield-shaded', '#9333ea', ?, ?, 1)
+                    ");
+                    $stmtInsN->execute([
+                        $tipoN,
+                        $titN,
+                        'Se subió nueva política oficial: ' . $pol['titulo'] . ' (' . ($pol['area'] ?? $pol['categoria'] ?? 'General') . ')',
+                        $pId,
+                        $fec
+                    ]);
+                }
+            }
+        } catch (Throwable $eNotifSync) {}
+    }
 
 // =============================================================================
 // 3. ESTRUCTURACIÓN JERÁRQUICA: ÁREAS -> SUBÁREAS -> POLÍTICAS (SOLO LECTURA)

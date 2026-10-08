@@ -971,4 +971,260 @@ function obtenerClaseFondoAviso($aviso) {
 
     return 'swatch-negro';
 }
+
+/**
+ * Auto-Instala o asegura la existencia de la tabla notificaciones y notificaciones_lecturas
+ */
+function asegurarTablaNotificaciones($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: '');
+        } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS notificaciones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    modulo VARCHAR(50) NOT NULL,
+                    tipo VARCHAR(50) NOT NULL,
+                    titulo VARCHAR(255) NOT NULL,
+                    mensaje TEXT NOT NULL,
+                    enlace VARCHAR(255) DEFAULT '',
+                    icono VARCHAR(50) DEFAULT 'bi-bell-fill',
+                    color VARCHAR(30) DEFAULT 'primary',
+                    referencia_id INTEGER NULL,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    estatus INTEGER DEFAULT 1
+                );
+                CREATE TABLE IF NOT EXISTS notificaciones_lecturas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    notificacion_id INTEGER NOT NULL,
+                    usuario_id INTEGER NOT NULL,
+                    leido_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (notificacion_id, usuario_id)
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `notificaciones` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `modulo` VARCHAR(50) NOT NULL,
+                    `tipo` VARCHAR(50) NOT NULL,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `mensaje` TEXT NOT NULL,
+                    `enlace` VARCHAR(255) DEFAULT '',
+                    `icono` VARCHAR(50) DEFAULT 'bi-bell-fill',
+                    `color` VARCHAR(30) DEFAULT 'primary',
+                    `referencia_id` INT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `estatus` TINYINT(1) DEFAULT 1,
+                    INDEX `idx_notif_modulo` (`modulo`),
+                    INDEX `idx_notif_estatus` (`estatus`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `notificaciones_lecturas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `notificacion_id` INT NOT NULL,
+                    `usuario_id` INT NOT NULL,
+                    `leido_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uq_notif_usuario` (`notificacion_id`, `usuario_id`),
+                    INDEX `idx_notif_usr` (`usuario_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+
+        // Sembrar notificaciones iniciales a partir de políticas existentes si no hay registros
+        try {
+            $stmtCount = $pdo->query("SELECT COUNT(*) FROM notificaciones WHERE modulo = 'politicas'");
+            $totalNotifPol = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
+            if ($totalNotifPol === 0) {
+                $stmtPol = $pdo->query("SELECT id, titulo, COALESCE(area, categoria) as area_nom, version, creado_en FROM politicas_corporativas WHERE estatus = 1 ORDER BY id DESC LIMIT 5");
+                if ($stmtPol) {
+                    $pols = $stmtPol->fetchAll(PDO::FETCH_ASSOC);
+                    foreach ($pols as $p) {
+                        $fec = !empty($p['creado_en']) ? $p['creado_en'] : date('Y-m-d H:i:s');
+                        $stmtInsN = $pdo->prepare("
+                            INSERT INTO notificaciones (modulo, tipo, titulo, mensaje, enlace, icono, color, referencia_id, creado_en, estatus)
+                            VALUES ('politicas', 'nueva_politica', 'Nueva Política Publicada', ?, 'politicas.php', 'bi-shield-shaded', '#9333ea', ?, ?, 1)
+                        ");
+                        $stmtInsN->execute([
+                            'Se subió nueva política oficial: ' . $p['titulo'] . ' (' . ($p['area_nom'] ?: 'General') . ')',
+                            $p['id'],
+                            $fec
+                        ]);
+                    }
+                }
+            }
+        } catch (Throwable $eSeed) {}
+
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Registra una nueva notificación en el sistema
+ */
+function crearNotificacion($modulo, $tipo, $titulo, $mensaje, $enlace = '', $icono = 'bi-bell-fill', $color = 'primary', $referenciaId = null, $pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return false;
+    asegurarTablaNotificaciones($pdo);
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO notificaciones (modulo, tipo, titulo, mensaje, enlace, icono, color, referencia_id, creado_en, estatus)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ");
+        return $stmt->execute([
+            $modulo,
+            $tipo,
+            $titulo,
+            $mensaje,
+            $enlace,
+            $icono,
+            $color,
+            $referenciaId,
+            date('Y-m-d H:i:s')
+        ]);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Obtiene las notificaciones disponibles para el usuario actual respetando sus permisos
+ */
+function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return ['notificaciones' => [], 'total_no_leidas' => 0];
+    asegurarTablaNotificaciones($pdo);
+
+    if ($usuarioId === null) {
+        $usuarioId = $_SESSION['usuario_id'] ?? 0;
+    }
+    $usuarioId = (int)$usuarioId;
+
+    try {
+        $sql = "
+            SELECT n.*, 
+                   CASE WHEN nl.id IS NOT NULL THEN 1 ELSE 0 END AS leido,
+                   nl.leido_en
+            FROM notificaciones n
+            LEFT JOIN notificaciones_lecturas nl 
+                   ON nl.notificacion_id = n.id AND nl.usuario_id = ?
+            WHERE n.estatus = 1
+            ORDER BY n.creado_en DESC, n.id DESC
+            LIMIT " . (int)$limite;
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute([$usuarioId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $permitidas = [];
+        $noLeidas = 0;
+
+        foreach ($rows as $r) {
+            $modulo = trim($r['modulo'] ?? '');
+            
+            // VERIFICACIÓN ESTRICTA DE PERMISOS:
+            // Si la notificación pertenece a un módulo y el usuario no tiene permiso de ver dicho módulo,
+            // NO se le muestra la notificación.
+            if (!empty($modulo) && !tienePermiso($modulo, 'puede_ver')) {
+                continue;
+            }
+
+            $esLeido = !empty($r['leido']);
+            if (!$esLeido) {
+                $noLeidas++;
+            }
+
+            $tiempo = 'Reciente';
+            if (!empty($r['creado_en'])) {
+                $ts = strtotime($r['creado_en']);
+                $diff = time() - $ts;
+                if ($diff < 60) {
+                    $tiempo = 'Hace un momento';
+                } elseif ($diff < 3600) {
+                    $mins = max(1, floor($diff / 60));
+                    $tiempo = "Hace {$mins} min";
+                } elseif ($diff < 86400) {
+                    $hrs = floor($diff / 3600);
+                    $tiempo = "Hace {$hrs} h";
+                } else {
+                    $dias = floor($diff / 86400);
+                    if ($dias < 7) {
+                        $tiempo = "Hace {$dias} d";
+                    } else {
+                        $tiempo = date('d/m/Y', $ts);
+                    }
+                }
+            }
+            $r['tiempo_relativo'] = $tiempo;
+            $permitidas[] = $r;
+        }
+
+        return [
+            'notificaciones' => $permitidas,
+            'total_no_leidas' => $noLeidas
+        ];
+    } catch (Throwable $e) {
+        return ['notificaciones' => [], 'total_no_leidas' => 0];
+    }
+}
+
+/**
+ * Marca una notificación como leída para un usuario
+ */
+function marcarNotificacionLeida($notificacionId, $usuarioId = null, $pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return false;
+    asegurarTablaNotificaciones($pdo);
+
+    if ($usuarioId === null) {
+        $usuarioId = $_SESSION['usuario_id'] ?? 0;
+    }
+    $usuarioId = (int)$usuarioId;
+    $notificacionId = (int)$notificacionId;
+    if ($notificacionId <= 0 || $usuarioId <= 0) return false;
+
+    try {
+        $driver = '';
+        try { $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: ''); } catch (Throwable $t) {}
+
+        if ($driver === 'sqlite') {
+            $stmt = $pdo->prepare("INSERT OR IGNORE INTO notificaciones_lecturas (notificacion_id, usuario_id, leido_en) VALUES (?, ?, ?)");
+        } else {
+            $stmt = $pdo->prepare("INSERT INTO notificaciones_lecturas (notificacion_id, usuario_id, leido_en) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE leido_en = VALUES(leido_en)");
+        }
+        return $stmt->execute([$notificacionId, $usuarioId, date('Y-m-d H:i:s')]);
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Marca todas las notificaciones permitidas como leídas para un usuario
+ */
+function marcarTodasNotificacionesLeidas($usuarioId = null, $pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return false;
+    $res = obtenerNotificacionesUsuario($usuarioId, 100, $pdo);
+    $notifs = $res['notificaciones'] ?? [];
+    foreach ($notifs as $n) {
+        if (empty($n['leido'])) {
+            marcarNotificacionLeida($n['id'], $usuarioId, $pdo);
+        }
+    }
+    return true;
+}
 ?>

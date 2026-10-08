@@ -958,6 +958,8 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             <span>Central GH (Modo Consulta)</span>
         </span>
 
+        <?php include_once __DIR__ . '/componente_notificaciones.php'; ?>
+
         <div class="text-end d-none d-lg-block">
             <div class="small fw-bold text-white"><?php echo htmlspecialchars($nombreUsuario); ?></div>
             <div class="text-secondary" style="font-size: 0.73rem;">
