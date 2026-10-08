@@ -188,66 +188,61 @@ if ($modoTest || (!$isCli && !isset($_GET['ejecutar']))) {
 }
 
 // --- 6. MODO DE EJECUCIÓN (EXTRACCIÓN Y ENVÍO DE REPORTES) ---
-echo "[" . date('Y-m-d H:i:s') . "] Iniciando extracción de datos locales...\n";
+echo "[" . date('Y-m-d H:i:s') . "] Iniciando extracción de inventario desde GEDAS / Servidor Local...\n";
 
 $reportesAEnviar = [];
 
 if ($pdoLocal) {
-    // Ejemplo de extracción: Si existen tablas típicas en la agencia (órdenes, ventas, inventario)
-    // O puedes personalizar tu consulta SQL aquí:
-    /*
-    $stmt = $pdoLocal->query("SELECT folio, cliente, monto, fecha FROM ordenes_servicio ORDER BY fecha DESC LIMIT 100");
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $reportesAEnviar[] = [
-            'tipo_reporte'     => 'ordenes',
-            'folio_referencia' => $row['folio'],
-            'titulo'           => 'Orden de Servicio: ' . $row['cliente'],
-            'monto'            => $row['monto'],
-            'fecha_documento'  => $row['fecha'],
-            'datos_json'       => $row
-        ];
-    }
-    */
-
-    // Si aún no se personalizan consultas específicas, se envía el reporte de estado operativo:
-    $tablasLocales = [];
     try {
-        if ($LOCAL_DB_TYPE === 'sqlserver') {
-            $stmtT = $pdoLocal->query("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'");
-        } else {
-            $stmtT = $pdoLocal->query("SHOW TABLES");
-        }
-        $tablasLocales = $stmtT ? $stmtT->fetchAll(PDO::FETCH_COLUMN) : [];
-    } catch (Throwable $tT) {}
+        $sqlGedas = "SELECT 
+            AUAUTOS.AUAlmCve                        AS [CveAlmacen],
+            RTRIM(DEALER.AlmConce)                  AS [NombreAlmacen],
+            AUAUTOS.AUCveAut                        AS [Inventario],
+            AUAUTOS.AUDesAut                        AS [Descripcion],
+            AUAUTOS.AUNumCha                        AS [Chasis],
+            AUAUTOS.AUColExt                        AS [Color],
+            AUAUTOS.AUNumMot                        AS [Motor],
+            AUAUTOS.AUEquiOp                        AS [Equipamiento],
+            AUAUTOS.AUDm                            AS [Marca],
+            AUAUTOS.AUAnoAut                        AS [Año],
+            AUAUTOS.AUStatus                        AS [Status],
+            AUAUTOS.AUCtoVta                        AS [Precio de Venta],
+            AUAUTOS.AUPrecioAd                      AS [Costo Inventario],
+            AUAUTOS.AUImpLiq                        AS [Importe Inventario],
+            AUAUTOS.AUFecha                         AS [Fecha Alta]
+        FROM gedas.dbo.AUAUTOS AUAUTOS WITH (NOLOCK)
+        LEFT JOIN gedas.dbo.GNCATMA DEALER WITH (NOLOCK) 
+            ON AUAUTOS.AUAlmCve = DEALER.AlmCve
+        WHERE AUAUTOS.AUStatus = 'Disponible'
+        ORDER BY AUAUTOS.AUAlmCve, AUAUTOS.AUFecha DESC";
 
-    $reportesAEnviar[] = [
-        'tipo_reporte'     => 'estado_servidor',
-        'folio_referencia' => 'SRV-' . date('Ymd-Hi'),
-        'titulo'           => 'Estado Operativo del Servidor Local ' . $LOCAL_DB_HOST,
-        'resumen'          => 'Conexión activa. Total de tablas locales detectadas: ' . count($tablasLocales),
-        'monto'            => count($tablasLocales),
-        'fecha_documento'  => date('Y-m-d'),
-        'estatus'          => 'Conectado',
-        'datos_json'       => [
-            'host'           => $LOCAL_DB_HOST,
-            'puerto'         => $LOCAL_DB_PORT,
-            'base_datos'     => $LOCAL_DB_NAME,
-            'version_motor'  => $dbVersion,
-            'tablas_locales' => array_slice($tablasLocales, 0, 50),
-            'sincronizado_por'=> 'Conector Local Automático'
-        ]
-    ];
+        $stmt = $pdoLocal->query($sqlGedas);
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $reportesAEnviar[] = [
+                'cve_almacen'        => trim($row['CveAlmacen'] ?? ''),
+                'nombre_almacen'     => trim($row['NombreAlmacen'] ?? ''),
+                'inventario'         => trim($row['Inventario'] ?? ''),
+                'descripcion'        => trim($row['Descripcion'] ?? ''),
+                'chasis'             => trim($row['Chasis'] ?? ''),
+                'color'              => trim($row['Color'] ?? ''),
+                'motor'              => trim($row['Motor'] ?? ''),
+                'equipamiento'       => trim($row['Equipamiento'] ?? ''),
+                'marca'              => trim($row['Marca'] ?? ''),
+                'anio'               => trim($row['Año'] ?? ($row['Anio'] ?? '')),
+                'status'             => trim($row['Status'] ?? 'Disponible'),
+                'precio_venta'       => floatval($row['Precio de Venta'] ?? 0),
+                'costo_inventario'   => floatval($row['Costo Inventario'] ?? 0),
+                'importe_inventario' => floatval($row['Importe Inventario'] ?? 0),
+                'fecha_alta'         => trim($row['Fecha Alta'] ?? date('Y-m-d H:i:s')),
+                'datos_json'         => $row
+            ];
+        }
+        echo "[" . date('Y-m-d H:i:s') . "] ✅ " . count($reportesAEnviar) . " autos disponibles extraídos de GEDAS con éxito.\n";
+    } catch (Throwable $eSql) {
+        echo "[" . date('Y-m-d H:i:s') . "] ❌ Error al ejecutar consulta GEDAS: " . $eSql->getMessage() . "\n";
+    }
 } else {
-    echo "[" . date('Y-m-d H:i:s') . "] ❌ Error en base de datos local: $dbError\n";
-    $reportesAEnviar[] = [
-        'tipo_reporte'     => 'error_conexion',
-        'folio_referencia' => 'ERR-' . date('Ymd-Hi'),
-        'titulo'           => 'Alerta de Conexión en Servidor Local',
-        'resumen'          => $dbError,
-        'fecha_documento'  => date('Y-m-d'),
-        'estatus'          => 'Error',
-        'datos_json'       => ['error' => $dbError]
-    ];
+    echo "[" . date('Y-m-d H:i:s') . "] ❌ Error en conexión local: $dbError\n";
 }
 
 // 7. Enviar a cPanel

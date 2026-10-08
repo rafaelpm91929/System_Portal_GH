@@ -105,6 +105,47 @@ if (!empty($reportes) && is_array($reportes)) {
             $datosJson = json_encode($rep, JSON_UNESCAPED_UNICODE);
         }
 
+        // B. Almacenar en tabla especializada de inventario de autos si cuenta con chasis
+        $chasisAuto = trim($rep['chasis'] ?? ($rep['AUNumCha'] ?? ''));
+        if (!empty($chasisAuto)) {
+            $cveAlm   = trim($rep['cve_almacen'] ?? ($rep['CveAlmacen'] ?? ($rep['AUAlmCve'] ?? '')));
+            $nomAlm   = trim($rep['nombre_almacen'] ?? ($rep['NombreAlmacen'] ?? ($rep['AlmConce'] ?? '')));
+            $invClave = trim($rep['inventario'] ?? ($rep['Inventario'] ?? ($rep['AUCveAut'] ?? '')));
+            $desAut   = trim($rep['descripcion'] ?? ($rep['Descripcion'] ?? ($rep['AUDesAut'] ?? '')));
+            $colorAut = trim($rep['color'] ?? ($rep['Color'] ?? ($rep['AUColExt'] ?? '')));
+            $motorAut = trim($rep['motor'] ?? ($rep['Motor'] ?? ($rep['AUNumMot'] ?? '')));
+            $equipAut = trim($rep['equipamiento'] ?? ($rep['Equipamiento'] ?? ($rep['AUEquiOp'] ?? '')));
+            $marcaAut = trim($rep['marca'] ?? ($rep['Marca'] ?? ($rep['AUDm'] ?? '')));
+            $anioAut  = trim($rep['anio'] ?? ($rep['Año'] ?? ($rep['Anio'] ?? ($rep['AUAnoAut'] ?? ''))));
+            $statAut  = trim($rep['status'] ?? ($rep['Status'] ?? ($rep['AUStatus'] ?? 'Disponible')));
+            $prcVta   = floatval($rep['precio_venta'] ?? ($rep['Precio de Venta'] ?? ($rep['AUCtoVta'] ?? 0)));
+            $cstInv   = floatval($rep['costo_inventario'] ?? ($rep['Costo Inventario'] ?? ($rep['AUPrecioAd'] ?? 0)));
+            $impInv   = floatval($rep['importe_inventario'] ?? ($rep['Importe Inventario'] ?? ($rep['AUImpLiq'] ?? 0)));
+            $fchAlta  = trim($rep['fecha_alta'] ?? ($rep['Fecha Alta'] ?? ($rep['AUFecha'] ?? date('Y-m-d H:i:s'))));
+
+            try {
+                $stmtEx = $pdo->prepare("SELECT id FROM reportes_inventario_autos WHERE chasis = ? LIMIT 1");
+                $stmtEx->execute([$chasisAuto]);
+                $autoId = intval($stmtEx->fetchColumn());
+
+                if ($autoId > 0) {
+                    $stmtUpAut = $pdo->prepare("
+                        UPDATE reportes_inventario_autos 
+                        SET cve_almacen=?, nombre_almacen=?, inventario=?, descripcion=?, color=?, motor=?, equipamiento=?, marca=?, anio=?, status=?, precio_venta=?, costo_inventario=?, importe_inventario=?, fecha_alta=?, datos_json=?, sincronizado_en=CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ");
+                    $stmtUpAut->execute([$cveAlm, $nomAlm, $invClave, $desAut, $colorAut, $motorAut, $equipAut, $marcaAut, $anioAut, $statAut, $prcVta, $cstInv, $impInv, $fchAlta, $datosJson, $autoId]);
+                } else {
+                    $stmtInsAut = $pdo->prepare("
+                        INSERT INTO reportes_inventario_autos 
+                        (cve_almacen, nombre_almacen, inventario, descripcion, chasis, color, motor, equipamiento, marca, anio, status, precio_venta, costo_inventario, importe_inventario, fecha_alta, datos_json, sincronizado_en)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ");
+                    $stmtInsAut->execute([$cveAlm, $nomAlm, $invClave, $desAut, $chasisAuto, $colorAut, $motorAut, $equipAut, $marcaAut, $anioAut, $statAut, $prcVta, $cstInv, $impInv, $fchAlta, $datosJson]);
+                }
+            } catch (Throwable $eAut) {}
+        }
+
         try {
             // Si viene con folio, comprobar si ya existe para actualizar o insertar
             $idExistente = 0;

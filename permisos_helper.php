@@ -1336,6 +1336,27 @@ function asegurarTablasReportesAgencia($pdo = null) {
                     estatus TEXT DEFAULT 'Activo',
                     sincronizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
+
+                CREATE TABLE IF NOT EXISTS reportes_inventario_autos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cve_almacen TEXT,
+                    nombre_almacen TEXT,
+                    inventario TEXT,
+                    descripcion TEXT,
+                    chasis TEXT UNIQUE,
+                    color TEXT,
+                    motor TEXT,
+                    equipamiento TEXT,
+                    marca TEXT,
+                    anio TEXT,
+                    status TEXT DEFAULT 'Disponible',
+                    precio_venta REAL DEFAULT 0.0,
+                    costo_inventario REAL DEFAULT 0.0,
+                    importe_inventario REAL DEFAULT 0.0,
+                    fecha_alta DATETIME,
+                    datos_json TEXT,
+                    sincronizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             $pdo->exec("
@@ -1353,6 +1374,32 @@ function asegurarTablasReportesAgencia($pdo = null) {
                     INDEX `idx_rep_tipo` (`tipo_reporte`),
                     INDEX `idx_rep_folio` (`folio_referencia`),
                     INDEX `idx_rep_fecha` (`fecha_documento`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `reportes_inventario_autos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `cve_almacen` VARCHAR(50) NULL,
+                    `nombre_almacen` VARCHAR(150) NULL,
+                    `inventario` VARCHAR(50) NULL,
+                    `descripcion` VARCHAR(255) NULL,
+                    `chasis` VARCHAR(100) NULL,
+                    `color` VARCHAR(50) NULL,
+                    `motor` VARCHAR(100) NULL,
+                    `equipamiento` TEXT NULL,
+                    `marca` VARCHAR(50) NULL,
+                    `anio` VARCHAR(20) NULL,
+                    `status` VARCHAR(50) DEFAULT 'Disponible',
+                    `precio_venta` DECIMAL(14,2) DEFAULT 0.00,
+                    `costo_inventario` DECIMAL(14,2) DEFAULT 0.00,
+                    `importe_inventario` DECIMAL(14,2) DEFAULT 0.00,
+                    `fecha_alta` DATETIME NULL,
+                    `datos_json` LONGTEXT NULL,
+                    `sincronizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uk_chasis` (`chasis`),
+                    INDEX `idx_inv_alm` (`cve_almacen`),
+                    INDEX `idx_inv_marca` (`marca`),
+                    INDEX `idx_inv_anio` (`anio`),
+                    INDEX `idx_inv_status` (`status`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
