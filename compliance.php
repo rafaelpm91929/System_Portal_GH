@@ -132,8 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 try {
                     $stmtIns = $pdo->prepare("
                         INSERT INTO compliance_documentos 
-                        (tipo, codigo, titulo, descripcion, categoria, archivo_url, imagen_url, archivo_tipo, archivo_tamano, version, fecha_publicacion, fecha_vigencia, prioridad, obligatorio_lectura, estatus, creado_por)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                        (tipo, codigo, titulo, descripcion, categoria, archivo_url, imagen_url, archivo_tipo, archivo_tamano, version, fecha_publicacion, fecha_vigencia, prioridad, obligatorio_lectura, estatus, creado_por, estilo_fondo)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                     ");
                     $stmtIns->execute([
                         $tipo,
@@ -150,7 +150,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $fechaVigencia,
                         $prioridad,
                         $obligatorio,
-                        $nombreUsuario
+                        $nombreUsuario,
+                        $estiloFondo
                     ]);
                     $mensaje = "El registro " . htmlspecialchars($codigo) . " ha sido publicado exitosamente en Compliance.";
                     // Cambiar a la sección respectiva para visualizar el nuevo registro
@@ -238,6 +239,9 @@ if ($pdo) {
                     $updImg->execute([$svgFile, $avItem['id']]);
                 } catch (Throwable $eU) {}
             }
+            $avItem['fondo_cls'] = obtenerClaseFondoAviso($avItem);
+            $imgExt = strtolower(pathinfo($avItem['imagen_url'] ?? '', PATHINFO_EXTENSION));
+            $avItem['es_fisica'] = !empty($avItem['imagen_url']) && in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($avItem['imagen_url'], 'aviso_card_') === false);
         }
         unset($avItem);
 
@@ -874,11 +878,27 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             font-weight: 900;
             text-shadow: 0 1px 3px rgba(0,0,0,0.8);
         }
-        .swatch-negro { background: linear-gradient(135deg, #050b14, #101c30); border-color: rgba(212, 175, 55, 0.5); }
-        .swatch-azul { background: linear-gradient(135deg, #0a1e3f, #0d3b66); }
-        .swatch-rojo { background: linear-gradient(135deg, #400b11, #70131e); }
-        .swatch-verde { background: linear-gradient(135deg, #092b1a, #0f5132); }
-        .swatch-purpura { background: linear-gradient(135deg, #230c33, #4a154b); }
+        .swatch-negro { background: linear-gradient(135deg, #050b14 0%, #152238 100%) !important; border: 1px solid rgba(212, 175, 55, 0.5) !important; }
+        .swatch-azul { background: linear-gradient(135deg, #08214d 0%, #104887 50%, #0c356a 100%) !important; border: 1px solid rgba(96, 165, 250, 0.6) !important; }
+        .swatch-rojo { background: linear-gradient(135deg, #4a0810 0%, #8c1626 50%, #590d18 100%) !important; border: 1px solid rgba(248, 113, 113, 0.6) !important; }
+        .swatch-verde { background: linear-gradient(135deg, #062b18 0%, #0e6338 50%, #093f24 100%) !important; border: 1px solid rgba(52, 211, 153, 0.6) !important; }
+        .swatch-purpura { background: linear-gradient(135deg, #2a0d3d 0%, #601a70 50%, #3a0f47 100%) !important; border: 1px solid rgba(192, 132, 252, 0.6) !important; }
+
+        .btn-emoji-quick {
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            padding: 2px 7px;
+            font-size: 0.95rem;
+            cursor: pointer;
+            line-height: 1.2;
+            transition: all 0.15s ease;
+        }
+        .btn-emoji-quick:hover {
+            background: rgba(212, 175, 55, 0.25);
+            border-color: var(--gold-accent);
+            transform: scale(1.15);
+        }
 
         .fb-live-card {
             width: 100%;
@@ -1737,23 +1757,18 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <!-- 1. ÁREA VISUAL DE DIAPOSITIVAS (IMAGEN O TARJETA DE TEXTO) -->
                         <div class="gallery-slides-viewport">
                             <?php foreach ($avisos as $index => $av): 
-                                $imgSrc = !empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg';
-                                $imgExt = strtolower(pathinfo($imgSrc, PATHINFO_EXTENSION));
-                                $esFisica = in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false);
+                                $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : '');
+                                $esFisica = $av['es_fisica'] ?? false;
                                 
-                                $prio = $av['prioridad'] ?? 'Normal';
-                                $badgeCls = ($prio === 'Alta' || $prio === 'Urgente') ? 'bg-danger text-white' : (($prio === 'Media') ? 'bg-warning text-dark' : 'bg-primary text-white');
-                                $fondoCls = 'swatch-negro';
-                                if ($prio === 'Alta' || $prio === 'Urgente') $fondoCls = 'swatch-rojo';
-                                elseif ($prio === 'Media') $fondoCls = 'swatch-azul';
-                                elseif (stripos($av['categoria'], 'ciber') !== false) $fondoCls = 'swatch-azul';
-                                elseif (stripos($av['categoria'], 'legal') !== false) $fondoCls = 'swatch-rojo';
+                                $prio = strtoupper($av['prioridad'] ?? 'Normal');
+                                $badgeCls = ($prio === 'ALTA' || $prio === 'URGENTE') ? 'bg-danger text-white' : (($prio === 'MEDIA') ? 'bg-warning text-dark' : 'bg-primary text-white');
+                                $fondoCls = $av['fondo_cls'] ?? 'swatch-negro';
                             ?>
                                 <div class="gallery-slide-item <?php echo $index === 0 ? 'active' : ''; ?>" data-slide-index="<?php echo $index; ?>">
                                     <?php if ($esFisica): ?>
-                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox(<?php echo $index; ?>)">
                                     <?php else: ?>
-                                        <div class="gallery-fb-slide-card <?php echo $fondoCls; ?>" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <div class="gallery-fb-slide-card <?php echo $fondoCls; ?>" onclick="abrirLightbox(<?php echo $index; ?>)">
                                             <div class="d-flex align-items-center justify-content-between w-100 mb-2">
                                                 <div class="d-flex align-items-center gap-2">
                                                     <div class="fb-card-logo">GH</div>
@@ -1953,7 +1968,22 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label-gold">Título Oficial *</label>
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <label class="form-label-gold m-0">Título Oficial *</label>
+                                <div class="d-flex flex-wrap gap-1 align-items-center">
+                                    <span class="text-secondary small me-1" style="font-size: 0.72rem;">Emojis:</span>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '📢')">📢</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '⚠️')">⚠️</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '🚨')">🚨</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '🔒')">🔒</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '🛡️')">🛡️</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '📋')">📋</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '📌')">📌</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '💡')">💡</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '✅')">✅</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpTituloDoc', '🚀')">🚀</button>
+                                </div>
+                            </div>
                             <input type="text" name="titulo" id="inpTituloDoc" class="form-control form-control-gold" placeholder="Título formal del comunicado o documento" required oninput="actualizarPreviewFacebook()">
                         </div>
 
@@ -2024,7 +2054,28 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label-gold">Texto / Contenido del Aviso *</label>
+                            <div class="d-flex align-items-center justify-content-between mb-1">
+                                <label class="form-label-gold m-0">Texto / Contenido del Aviso *</label>
+                                <div class="d-flex flex-wrap gap-1 align-items-center">
+                                    <span class="text-secondary small me-1" style="font-size: 0.72rem;">Emojis:</span>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '📢')">📢</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '⚠️')">⚠️</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🚨')">🚨</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🔒')">🔒</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🛡️')">🛡️</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '📄')">📄</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '📌')">📌</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '💡')">💡</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🔔')">🔔</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '✅')">✅</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '❌')">❌</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🚀')">🚀</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '💼')">💼</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '🏢')">🏢</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', '👍')">👍</button>
+                                    <button type="button" class="btn-emoji-quick" onclick="insertarEmoji('inpDescripcionAviso', 'ℹ️')">ℹ️</button>
+                                </div>
+                            </div>
                             <textarea name="descripcion" id="inpDescripcionAviso" class="form-control form-control-gold" rows="3" placeholder="Escribe aquí el texto del aviso (se reflejará en tiempo real en la tarjeta estilo Facebook arriba)..." oninput="actualizarPreviewFacebook()"></textarea>
                         </div>
 
@@ -2069,26 +2120,62 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 <?php endif; ?>
 
 <!-- ========================================================================= -->
-<!-- MODAL: LIGHTBOX / ZOOM DE IMAGEN DE AVISO                                 -->
+<!-- MODAL: LIGHTBOX / ZOOM DE IMAGEN O TARJETA DE AVISO                        -->
 <!-- ========================================================================= -->
 <div class="modal fade" id="modalLightboxAviso" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content modal-content-gold">
             <div class="modal-header modal-header-gold">
-                <h5 class="modal-title fw-bold text-white" id="lightboxTitulo"></h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="doc-code-badge" id="lightboxCodigo">AV</span>
+                    <h5 class="modal-title fw-bold text-white m-0" id="lightboxTitulo"></h5>
+                </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-2 p-md-3 text-center bg-black position-relative">
-                <img id="lightboxImg" src="" alt="Aviso Ampliado" class="img-fluid rounded-3" style="max-height: 80vh; width: auto; object-fit: contain;">
-                <div class="small text-secondary mt-2">
-                    <i class="bi bi-shield-lock-fill text-warning"></i> Portal Oficial Grupo Huerta &bull; Usuario: <?php echo htmlspecialchars($nombreUsuario); ?> &bull; IP: <?php echo htmlspecialchars($ipUsuario); ?>
+            <div class="modal-body p-3 p-md-4 text-center bg-black position-relative d-flex flex-column align-items-center justify-content-center">
+                <!-- CASO 1: IMAGEN FÍSICA -->
+                <img id="lightboxImg" src="" alt="Aviso Ampliado" class="img-fluid rounded-3 d-none" style="max-height: 75vh; width: auto; object-fit: contain;">
+                
+                <!-- CASO 2: TARJETA DE TEXTO CON COLOR COMPLETO (SI NO TIENE IMAGEN) -->
+                <div id="lightboxCardWrapper" class="w-100 d-none" style="max-width: 900px;">
+                    <div id="lightboxFbCard" class="gallery-fb-slide-card w-100 p-4 p-md-5" style="min-height: 400px; cursor: default;">
+                        <div class="d-flex align-items-center justify-content-between w-100 mb-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="fb-card-logo" style="width: 38px; height: 38px; font-size: 0.9rem;">GH</div>
+                                <div class="text-start">
+                                    <div class="text-white fw-bold" style="font-size: 0.85rem; letter-spacing: 0.6px;">GRUPO HUERTA &bull; COMPLIANCE INSTITUCIONAL</div>
+                                    <div class="text-white text-opacity-75" style="font-size: 0.72rem;" id="lightboxCardFecha">Comunicado Oficial</div>
+                                </div>
+                            </div>
+                            <span class="badge fw-bold px-3 py-1.5 rounded-pill" style="font-size: 0.75rem;" id="lightboxCardPrioridad">ALTA</span>
+                        </div>
+                        
+                        <div class="gallery-fb-content text-center my-auto py-3 px-2">
+                            <h2 class="gallery-fb-titulo mb-3" id="lightboxCardTitulo" style="font-size: 1.9rem; font-weight: 800; line-height: 1.35; text-shadow: 0 2px 10px rgba(0,0,0,0.85);"></h2>
+                            <p class="gallery-fb-desc" id="lightboxCardDesc" style="font-size: 1.15rem; line-height: 1.6; max-width: 780px; margin: 0 auto; text-shadow: 0 1px 5px rgba(0,0,0,0.8);"></p>
+                        </div>
+
+                        <div class="d-flex align-items-center justify-content-between w-100 pt-3 border-top border-white border-opacity-15" style="font-size: 0.75rem;">
+                            <span class="text-white text-opacity-80 fw-semibold" id="lightboxCardMeta">
+                                <i class="bi bi-shield-check text-warning me-1"></i> Emisión Oficial Certificada
+                            </span>
+                            <span class="text-warning text-opacity-90">
+                                <i class="bi bi-patch-check-fill me-1"></i> Portal Grupo Huerta
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LEYENDA INFERIOR: SOLO PORTAL GRUPO HUERTA (SIN IP Y SIN USUARIO) -->
+                <div class="small text-secondary mt-3">
+                    <i class="bi bi-shield-lock-fill text-warning me-1"></i> Portal Grupo Huerta
                 </div>
             </div>
             <div class="modal-footer modal-footer-gold justify-content-between">
                 <a id="lightboxBtnDescargar" href="#" download class="btn btn-warning text-dark fw-bold rounded-pill px-4">
                     <i class="bi bi-download me-1"></i> Descargar Imagen
                 </a>
-                <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-outline-secondary rounded-pill px-4 ms-auto" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
@@ -2126,7 +2213,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <i class="bi bi-file-earmark-pdf-fill text-warning display-4 d-block mb-2"></i>
                     <h6 class="text-white fw-bold mb-1">Documento Oficial Protegido</h6>
                     <p class="text-secondary small mb-3" style="font-size: 0.78rem;">
-                        Identificación Forense: <?php echo htmlspecialchars($nombreUsuario); ?> &bull; IP: <?php echo htmlspecialchars($ipUsuario); ?>
+                        <i class="bi bi-shield-check text-warning me-1"></i> Portal Grupo Huerta &bull; Repositorio Institucional
                     </p>
                     <div id="vDocBtnContainer"></div>
                 </div>
@@ -2265,11 +2352,7 @@ function mostrarSlide(index) {
 }
 
 function abrirLightboxAvisoActual() {
-    const av = avisosGaleriaData[currentSlideIndex];
-    if (av) {
-        const src = av.imagen_url_completa || av.imagen_url || 'uploads/compliance/aviso_AV-01.svg';
-        abrirLightbox(src, av.titulo);
-    }
+    abrirLightbox(currentSlideIndex);
 }
 
 function cambiarSlideGaleria(delta) {
@@ -2349,16 +2432,100 @@ function toggleVistaAvisos() {
     }
 }
 
-// Lightbox Modal para Imagen Completa
-function abrirLightbox(src, titulo) {
-    const img = document.getElementById('lightboxImg');
-    const tit = document.getElementById('lightboxTitulo');
-    const btn = document.getElementById('lightboxBtnDescargar');
-    if (img) img.src = src;
-    if (tit) tit.innerText = titulo || 'Aviso Institucional Grupo Huerta';
-    if (btn) btn.href = src;
+// Lightbox Modal para Imagen Completa o Tarjeta de Color con Texto
+function abrirLightbox(srcOrIndex, titulo) {
+    let av = null;
+    if (typeof srcOrIndex === 'number') {
+        av = avisosGaleriaData[srcOrIndex];
+    } else if (typeof srcOrIndex === 'object' && srcOrIndex !== null) {
+        av = srcOrIndex;
+    } else if (typeof srcOrIndex === 'string') {
+        av = avisosGaleriaData.find(a => (a.imagen_url === srcOrIndex || a.imagen_url_completa === srcOrIndex || a.titulo === titulo));
+    }
+
+    const imgEl = document.getElementById('lightboxImg');
+    const cardWrap = document.getElementById('lightboxCardWrapper');
+    const fbCard = document.getElementById('lightboxFbCard');
+    const titEl = document.getElementById('lightboxTitulo');
+    const codEl = document.getElementById('lightboxCodigo');
+    const btnDescargar = document.getElementById('lightboxBtnDescargar');
+
+    if (av) {
+        if (titEl) titEl.innerText = av.titulo || 'Aviso Institucional Grupo Huerta';
+        if (codEl) codEl.innerText = av.codigo || 'AV';
+
+        const imgSrc = av.imagen_url_completa || av.imagen_url || '';
+        const ext = imgSrc.split('.').pop().toLowerCase().split('?')[0];
+        const esFisica = Boolean(av.es_fisica !== undefined ? av.es_fisica : (imgSrc && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) && !imgSrc.includes('aviso_card_')));
+
+        if (esFisica) {
+            if (imgEl) {
+                imgEl.src = imgSrc;
+                imgEl.classList.remove('d-none');
+            }
+            if (cardWrap) cardWrap.classList.add('d-none');
+            if (btnDescargar) {
+                btnDescargar.href = imgSrc;
+                btnDescargar.classList.remove('d-none');
+            }
+        } else {
+            if (imgEl) imgEl.classList.add('d-none');
+            if (cardWrap) cardWrap.classList.remove('d-none');
+            if (btnDescargar) btnDescargar.classList.add('d-none');
+
+            if (fbCard) {
+                const colorCls = av.fondo_cls || 'swatch-negro';
+                fbCard.className = 'gallery-fb-slide-card w-100 p-4 p-md-5 ' + colorCls;
+            }
+            const lbCardTit = document.getElementById('lightboxCardTitulo');
+            const lbCardDesc = document.getElementById('lightboxCardDesc');
+            const lbCardFecha = document.getElementById('lightboxCardFecha');
+            const lbCardPrio = document.getElementById('lightboxCardPrioridad');
+            const lbCardMeta = document.getElementById('lightboxCardMeta');
+
+            if (lbCardTit) lbCardTit.innerText = av.titulo || '';
+            if (lbCardDesc) lbCardDesc.innerHTML = (av.descripcion || '').replace(/\n/g, '<br>');
+            if (lbCardFecha) lbCardFecha.innerText = 'Comunicado Oficial • ' + (av.fecha_publicacion || '');
+            if (lbCardPrio) {
+                const prio = (av.prioridad || 'Normal').toUpperCase();
+                lbCardPrio.innerText = prio;
+                let bClass = 'bg-primary text-white';
+                if (prio === 'ALTA' || prio === 'URGENTE') bClass = 'bg-danger text-white';
+                else if (prio === 'MEDIA') bClass = 'bg-warning text-dark';
+                lbCardPrio.className = 'badge fw-bold px-3 py-1.5 rounded-pill ' + bClass;
+            }
+            if (lbCardMeta) {
+                lbCardMeta.innerHTML = `<i class="bi bi-shield-check text-warning me-1"></i> CÓDIGO: ${av.codigo || 'AV'} &bull; ${av.categoria || 'General'}`;
+            }
+        }
+    } else {
+        // Fallback si sólo se pasó una URL directa
+        if (imgEl) {
+            imgEl.src = srcOrIndex;
+            imgEl.classList.remove('d-none');
+        }
+        if (cardWrap) cardWrap.classList.add('d-none');
+        if (titEl) titEl.innerText = titulo || 'Aviso Institucional Grupo Huerta';
+        if (btnDescargar) {
+            btnDescargar.href = srcOrIndex;
+            btnDescargar.classList.remove('d-none');
+        }
+    }
+
     const modal = new bootstrap.Modal(document.getElementById('modalLightboxAviso'));
     modal.show();
+}
+
+function insertarEmoji(targetInputId, emoji) {
+    const el = document.getElementById(targetInputId);
+    if (!el) return;
+    const start = el.selectionStart || el.value.length;
+    const end = el.selectionEnd || el.value.length;
+    const text = el.value;
+    el.value = text.substring(0, start) + emoji + text.substring(end);
+    el.focus();
+    el.selectionStart = el.selectionEnd = start + emoji.length;
+    actualizarPreviewFacebook();
 }
 
 // Filtros en vivo
@@ -2449,11 +2616,11 @@ if (totalDashSlides > 0) {
 
 // --- Control Tarjeta Facebook y Live Preview ---
 const temasFondo = {
-    'negro_oro': { bg: 'linear-gradient(135deg, #050b14 0%, #101c30 100%)', border: '#d4af37', label: 'Negro Carbón & Oro Imperial' },
-    'azul_zafiro': { bg: 'linear-gradient(135deg, #0a1e3f 0%, #0d3b66 100%)', border: '#60a5fa', label: 'Azul Zafiro Corporativo' },
-    'rojo_rubi': { bg: 'linear-gradient(135deg, #400b11 0%, #70131e 100%)', border: '#f87171', label: 'Rojo Rubí Alta Dirección' },
-    'esmeralda': { bg: 'linear-gradient(135deg, #092b1a 0%, #0f5132 100%)', border: '#34d399', label: 'Verde Esmeralda Normativo' },
-    'purpura': { bg: 'linear-gradient(135deg, #230c33 0%, #4a154b 100%)', border: '#c084fc', label: 'Púrpura Presidencial' }
+    'negro_oro': { bg: 'linear-gradient(135deg, #050b14 0%, #152238 100%)', border: '#d4af37', label: 'Negro Carbón & Oro Imperial' },
+    'azul_zafiro': { bg: 'linear-gradient(135deg, #08214d 0%, #104887 50%, #0c356a 100%)', border: '#60a5fa', label: 'Azul Zafiro Corporativo' },
+    'rojo_rubi': { bg: 'linear-gradient(135deg, #4a0810 0%, #8c1626 50%, #590d18 100%)', border: '#f87171', label: 'Rojo Rubí Alta Dirección' },
+    'esmeralda': { bg: 'linear-gradient(135deg, #062b18 0%, #0e6338 50%, #093f24 100%)', border: '#34d399', label: 'Verde Esmeralda Normativo' },
+    'purpura': { bg: 'linear-gradient(135deg, #2a0d3d 0%, #601a70 50%, #3a0f47 100%)', border: '#c084fc', label: 'Púrpura Presidencial' }
 };
 
 function seleccionarTemaFondo(tema) {

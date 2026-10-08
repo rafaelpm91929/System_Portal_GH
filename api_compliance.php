@@ -123,6 +123,10 @@ if ($action === 'listar') {
         $baseUrl = 'https://portal.grupohuerta.mx/';
 
         foreach ($avisos as &$av) {
+            $av['fondo_cls'] = obtenerClaseFondoAviso($av);
+            $imgExt = strtolower(pathinfo($av['imagen_url'] ?? '', PATHINFO_EXTENSION));
+            $av['es_fisica'] = !empty($av['imagen_url']) && in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($av['imagen_url'], 'aviso_card_') === false);
+
             if (!empty($av['imagen_url'])) {
                 if (strpos($av['imagen_url'], 'http') !== 0) {
                     $av['imagen_url_completa'] = $baseUrl . ltrim($av['imagen_url'], '/');
