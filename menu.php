@@ -207,6 +207,7 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
         <span class="fw-bold tracking-wide">Portal Grupo Huerta</span>
     </div>
     <div class="d-flex align-items-center gap-3">
+        <?php include_once __DIR__ . '/componente_notificaciones.php'; ?>
         <div class="text-end d-none d-md-block">
             <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
             <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolUsuario); ?></span></div>
@@ -358,5 +359,6 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

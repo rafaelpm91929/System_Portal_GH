@@ -140,6 +140,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $error = "Error al guardar en la base de datos: " . $eRetry->getMessage();
                         }
                     }
+
+                    if ($insertExitoso) {
+                        $nuevoPolId = (int)$pdo->lastInsertId();
+                        $tipoNotif = (floatval($version) > 1.0) ? 'actualizacion_politica' : 'nueva_politica';
+                        $tituloNotif = ($tipoNotif === 'actualizacion_politica') ? 'Actualización de Política' : 'Nueva Política Publicada';
+                        crearNotificacion(
+                            'politicas',
+                            $tipoNotif,
+                            $tituloNotif,
+                            'Se subió la política oficial: ' . $titulo . ' (' . $area . ' - v' . $version . ')',
+                            'politicas.php',
+                            'bi-shield-shaded',
+                            '#9333ea',
+                            $nuevoPolId,
+                            $pdo
+                        );
+                    }
                 } else {
                     $error = "No se pudo guardar el archivo en el servidor. Verifica permisos de la carpeta uploads/politicas.";
                 }
