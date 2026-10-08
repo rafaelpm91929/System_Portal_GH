@@ -322,7 +322,8 @@ if ($reporteActivo === 'ordenes_servicio') {
 
     if ($pdo) {
         try {
-            $stmtKpiOrd = $pdo->query("
+            // KPIs dinámicos calculados estrictamente sobre los filtros activos
+            $sqlKpi = "
                 SELECT 
                     COUNT(*) as total_ordenes,
                     SUM(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN 1 ELSE 0 END) as abiertas,
@@ -330,7 +331,10 @@ if ($reporteActivo === 'ordenes_servicio') {
                     SUM(CASE WHEN (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%') AND dias_abierta > 15 THEN 1 ELSE 0 END) as criticas,
                     AVG(CASE WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN dias_abierta ELSE NULL END) as avg_dias_abiertas
                 FROM reportes_ordenes_servicio
-            ");
+                WHERE $whereSql
+            ";
+            $stmtKpiOrd = $pdo->prepare($sqlKpi);
+            $stmtKpiOrd->execute($params);
             $kpisOrd = $stmtKpiOrd ? $stmtKpiOrd->fetch(PDO::FETCH_ASSOC) : [];
             $totalOrdenes = intval($kpisOrd['total_ordenes'] ?? 0);
             $totalAbiertas = intval($kpisOrd['abiertas'] ?? 0);
@@ -338,8 +342,8 @@ if ($reporteActivo === 'ordenes_servicio') {
             $totalCriticas = intval($kpisOrd['criticas'] ?? 0);
             $promedioDiasAbiertas = round(floatval($kpisOrd['avg_dias_abiertas'] ?? 0), 1);
 
-            // Chart 1: Distribución por Estatus
-            $stmtStatChart = $pdo->query("
+            // Chart 1: Distribución por Estatus dinámico según filtros
+            $sqlStat = "
                 SELECT 
                     CASE 
                         WHEN cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%' THEN 'Abierta'
@@ -349,32 +353,51 @@ if ($reporteActivo === 'ordenes_servicio') {
                     END as grupo_estatus,
                     COUNT(*) as total
                 FROM reportes_ordenes_servicio
+                WHERE $whereSql
                 GROUP BY grupo_estatus
                 ORDER BY total DESC
-            ");
+            ";
+            $stmtStatChart = $pdo->prepare($sqlStat);
+            $stmtStatChart->execute($params);
             $chartEstatus = $stmtStatChart ? $stmtStatChart->fetchAll(PDO::FETCH_ASSOC) : [];
 
-            // Chart 2: Distribución por Tipo de Orden
-            $stmtTipoChart = $pdo->query("
+            // Chart 2: Distribución por Tipo de Orden dinámico según filtros
+            $sqlTipo = "
                 SELECT 
-                    COALESCE(NULLIF(tipo_orden, ''), 'Sin clasificar') as tipo,
+                    CASE 
+                        WHEN tipo_orden = 'P' OR cve_tipo_orden = 'P' THEN 'Público / Particular'
+                        WHEN tipo_orden = 'G' OR cve_tipo_orden = 'G' THEN 'Garantía'
+                        WHEN tipo_orden = 'I' OR cve_tipo_orden = 'I' THEN 'Interna'
+                        WHEN tipo_orden = 'H' OR cve_tipo_orden = 'H' THEN 'Hojalatería y Pintura'
+                        WHEN tipo_orden = 'A' OR cve_tipo_orden = 'A' THEN 'Aseguradora'
+                        WHEN tipo_orden = 'N' OR cve_tipo_orden = 'N' THEN 'Nuevos'
+                        WHEN tipo_orden = 'S' OR cve_tipo_orden = 'S' THEN 'Seminuevos'
+                        WHEN tipo_orden = 'E' OR cve_tipo_orden = 'E' THEN 'Externo'
+                        WHEN tipo_orden = 'R' OR cve_tipo_orden = 'R' THEN 'Reacondicionamiento'
+                        ELSE COALESCE(NULLIF(tipo_orden, ''), 'Sin clasificar')
+                    END as tipo,
                     COUNT(*) as total
                 FROM reportes_ordenes_servicio
+                WHERE $whereSql
                 GROUP BY tipo
                 ORDER BY total DESC
-            ");
+            ";
+            $stmtTipoChart = $pdo->prepare($sqlTipo);
+            $stmtTipoChart->execute($params);
             $chartTipos = $stmtTipoChart ? $stmtTipoChart->fetchAll(PDO::FETCH_ASSOC) : [];
 
-            // Chart 3: Antigüedad de Órdenes Abiertas (Brackets)
-            $stmtAging = $pdo->query("
+            // Chart 3: Antigüedad de Órdenes Abiertas (Aging Brackets) dinámico según filtros
+            $sqlAging = "
                 SELECT 
                     SUM(CASE WHEN dias_abierta <= 3 THEN 1 ELSE 0 END) as normal_0_3,
                     SUM(CASE WHEN dias_abierta BETWEEN 4 AND 7 THEN 1 ELSE 0 END) as atencion_4_7,
                     SUM(CASE WHEN dias_abierta BETWEEN 8 AND 15 THEN 1 ELSE 0 END) as retraso_8_15,
                     SUM(CASE WHEN dias_abierta > 15 THEN 1 ELSE 0 END) as critica_mas_15
                 FROM reportes_ordenes_servicio
-                WHERE cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%'
-            ");
+                WHERE ($whereSql) AND (cve_estatus = 'AB' OR descripcion_estatus LIKE '%ABIERTA%')
+            ";
+            $stmtAging = $pdo->prepare($sqlAging);
+            $stmtAging->execute($params);
             $chartAging = $stmtAging ? $stmtAging->fetch(PDO::FETCH_ASSOC) : [];
 
             // Catálogos para filtros
@@ -1119,8 +1142,20 @@ if ($reporteActivo === 'ordenes_servicio') {
             </div>
 
             <div class="d-flex flex-wrap align-items-center gap-2">
-                <?php if ($puedeExportar): ?>
-                    <a href="?reporte=ordenes_servicio&exportar=excel&<?php echo http_build_query(array_filter(['q'=>$filtroQ, 'estatus'=>$filtroEstatus, 'tipo'=>$filtroTipo, 'asesor'=>$filtroAsesor, 'antiguedad'=>$filtroAntiguedad, 'fecha_desde'=>$filtroFechaI, 'fecha_hasta'=>$filtroFechaF])); ?>" class="btn btn-outline-success btn-sm rounded-3 px-3 py-2 text-white">
+                <?php if ($puedeExportar): 
+                    $paramsExcel = array_filter([
+                        'reporte'     => 'ordenes_servicio',
+                        'exportar'    => 'excel',
+                        'q'           => $filtroQ,
+                        'estatus'     => $filtroEstatus,
+                        'tipo'        => $filtroTipo,
+                        'asesor'      => $filtroAsesor,
+                        'antiguedad'  => $filtroAntiguedad,
+                        'fecha_desde' => $filtroFechaI,
+                        'fecha_hasta' => $filtroFechaF
+                    ]);
+                ?>
+                    <a href="?<?php echo http_build_query($paramsExcel); ?>" class="btn btn-outline-success btn-sm rounded-3 px-3 py-2 text-white">
                         <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel
                     </a>
                 <?php endif; ?>
@@ -1333,6 +1368,11 @@ if ($reporteActivo === 'ordenes_servicio') {
                     <button type="submit" class="btn btn-primary btn-sm rounded-3 px-3">
                         <i class="bi bi-funnel-fill me-1"></i> Aplicar Filtros
                     </button>
+                    <?php if ($puedeExportar): ?>
+                        <button type="submit" name="exportar" value="excel" class="btn btn-outline-success btn-sm rounded-3 px-3 text-white">
+                            <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel
+                        </button>
+                    <?php endif; ?>
                     <a href="reportes_agencia.php?reporte=ordenes_servicio" class="btn btn-outline-secondary btn-sm text-secondary rounded-3">
                         <i class="bi bi-x-circle me-1"></i> Limpiar
                     </a>
