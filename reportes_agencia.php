@@ -191,7 +191,7 @@ if ($reporteActivo === 'inventario_seminuevos') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Reportes Agencia'; ?> - Portal de Sistemas</title>
+    <title><?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Módulo de Reportes de Agencia'; ?> - PORTAL <?php echo htmlspecialchars(strtoupper($agenciaNombre)); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <?php include_once 'pwa_head.php'; ?>
@@ -234,26 +234,51 @@ if ($reporteActivo === 'inventario_seminuevos') {
             overflow: hidden;
         }
         .card-kpi {
-            background: var(--bg-card);
-            border: 1px solid var(--border-subtle);
-            border-radius: 14px;
-            padding: 20px;
-            transition: all 0.25s ease;
+            background: linear-gradient(180deg, #0a1b32 0%, #061122 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 22px 20px;
+            transition: all 0.28s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .card-kpi::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--kpi-accent, #10b981);
+            box-shadow: 0 0 12px var(--kpi-accent, #10b981);
         }
         .card-kpi:hover {
-            transform: translateY(-3px);
+            transform: translateY(-4px);
             border-color: rgba(16, 185, 129, 0.4);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(16, 185, 129, 0.12);
         }
         .filter-box {
-            background: #071324;
-            border: 1px solid var(--border-subtle);
-            border-radius: 14px;
-            padding: 22px;
+            background: linear-gradient(180deg, #071529 0%, #050f1d 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
             margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+        }
+        .btn-filtrar {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+            border: none !important;
+            color: #03140d !important;
+            font-weight: 700 !important;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35) !important;
+            transition: all 0.2s ease !important;
+        }
+        .btn-filtrar:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5) !important;
         }
         .report-box-card {
-            background: var(--bg-card);
+            background: linear-gradient(180deg, #091931 0%, #061122 100%);
             border: 1px solid var(--border-subtle);
             border-radius: 18px;
             padding: 30px 24px;
@@ -272,11 +297,11 @@ if ($reporteActivo === 'inventario_seminuevos') {
             background: #0a1c36;
         }
         .table-custom {
-            background: #081528 !important;
-            border: 1px solid var(--border-subtle);
-            border-radius: 14px;
+            background: #071324 !important;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
         }
         .table-custom table {
             margin-bottom: 0;
@@ -284,26 +309,29 @@ if ($reporteActivo === 'inventario_seminuevos') {
             background: transparent !important;
         }
         .table-custom th {
-            background: #040c17 !important;
+            background: #040d1a !important;
             color: #94a3b8 !important;
-            font-size: 0.76rem;
+            font-size: 0.75rem;
             font-weight: 700;
-            letter-spacing: 0.8px;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
-            padding: 14px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+            padding: 15px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
             white-space: nowrap;
         }
         .table-custom td {
             background: transparent !important;
             color: #f1f5f9 !important;
             padding: 14px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
             vertical-align: middle;
             font-size: 0.88rem;
         }
+        .table-custom tbody tr {
+            transition: background-color 0.18s ease;
+        }
         .table-custom tbody tr:hover td {
-            background: #0c1e36 !important;
+            background: #0b1f38 !important;
         }
         .form-control, .form-select {
             background: #050f1c !important;
@@ -323,13 +351,39 @@ if ($reporteActivo === 'inventario_seminuevos') {
             color: #34d399;
             border: 1px solid rgba(16, 185, 129, 0.35);
             font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 8px;
+            padding: 5px 11px;
+            border-radius: 20px;
             font-size: 0.75rem;
             letter-spacing: 0.5px;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
+        }
+        .dot-pulse {
+            width: 7px;
+            height: 7px;
+            background: #10b981;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulseGreen 2s infinite;
+        }
+        @keyframes pulseGreen {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .btn-copy-vin {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            padding: 0 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: color 0.15s ease;
+        }
+        .btn-copy-vin:hover {
+            color: #38bdf8;
         }
     </style>
 </head>
@@ -353,7 +407,7 @@ if ($reporteActivo === 'inventario_seminuevos') {
                 <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo" style="max-height: 28px; max-width: 100px; object-fit: contain;">
             <?php endif; ?>
             <span class="fw-bold fs-5">
-                PORTAL DE SISTEMAS 
+                PORTAL <span class="text-white"><?php echo htmlspecialchars(strtoupper($agenciaNombre)); ?></span> 
                 <span class="text-success">
                     | <?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Reportes Agencia'; ?>
                 </span>
@@ -381,35 +435,22 @@ if ($reporteActivo === 'inventario_seminuevos') {
 
     <!-- HERO PANEL HUB DE REPORTES -->
     <div class="hero-panel">
-        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-4">
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
             <div>
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1 rounded-pill">
-                        <i class="bi bi-grid-fill me-1"></i> Centro de Reportes Operativos
-                    </span>
-                    <span class="badge bg-dark border border-secondary text-secondary px-3 py-1 rounded-pill small">
-                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Cero Puertos Abiertos (Push HTTPS Saliente)
-                    </span>
-                </div>
                 <h2 class="fw-bold text-white mb-2">Módulo de Reportes de Agencia</h2>
-                <p class="text-secondary mb-0" style="max-width: 720px;">
-                    Selecciona en los recuadros inferiores el reporte que deseas consultar y analizar en tiempo real. La información es alimentada de forma segura por la API local conectada al DMS/ERP.
+                <p class="text-secondary mb-0" style="max-width: 650px;">
+                    Selecciona en los recuadros inferiores el reporte que deseas consultar y analizar en tiempo real.
                 </p>
             </div>
 
-            <!-- Estado Conector -->
-            <div class="d-flex flex-column align-items-lg-end gap-2 w-100 w-lg-auto">
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-warning bg-opacity-25 text-warning border border-warning'; ?>">
-                        <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
-                        <?php echo (!empty($ultimaSync)) ? 'Conector Sincronizado' : 'Esperando Conexión'; ?>
-                    </span>
-                    <a href="agencia.php?descargar_conector_local=1" class="btn btn-success text-dark fw-bold btn-sm rounded-3 px-3">
-                        <i class="bi bi-cloud-arrow-down-fill me-1"></i> Descargar Conector API (.php)
-                    </a>
-                </div>
+            <!-- Estado Sincronización -->
+            <div class="d-flex flex-column align-items-lg-end gap-1">
+                <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-secondary bg-opacity-25 text-secondary border border-secondary'; ?>">
+                    <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
+                    <?php echo (!empty($ultimaSync)) ? 'Sincronizado' : 'Sin sincronizar'; ?>
+                </span>
                 <div class="text-secondary small font-monospace">
-                    Última Sincronización: <span class="text-info"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
+                    Última Sincronización: <span class="text-info fw-semibold"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
                 </div>
             </div>
         </div>
@@ -418,9 +459,9 @@ if ($reporteActivo === 'inventario_seminuevos') {
     <!-- GRID DE RECUADROS DE REPORTES -->
     <div class="row g-4">
 
-        <!-- RECUADRO 1: INVENTARIO DE SEMINUEVOS (ACTIVO Y LISTO) -->
+        <!-- RECUADRO 1: INVENTARIO DE SEMINUEVOS -->
         <div class="col-md-6 col-lg-4">
-            <div class="report-box-card" style="border-color: rgba(16, 185, 129, 0.4);">
+            <div class="report-box-card" style="border-color: rgba(16, 185, 129, 0.45);">
                 <div>
                     <div class="d-flex align-items-center justify-content-between mb-3">
                         <div class="p-3 rounded-3" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 1.8rem;">
@@ -431,21 +472,9 @@ if ($reporteActivo === 'inventario_seminuevos') {
                         </span>
                     </div>
                     <h4 class="fw-bold text-white mb-2">Inventario de Seminuevos</h4>
-                    <p class="text-secondary small mb-3">
-                        Listado de unidades seminuevas y disponibles extraídas de la base de datos oficial <strong>GEDAS (AUAUTOS / GNCATMA)</strong> por almacén, chasis (VIN), color, motor y valor comercial.
+                    <p class="text-secondary small mb-4">
+                        Consulta general del inventario de vehículos seminuevos disponibles para venta.
                     </p>
-                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06);">
-                        <div class="row g-2 text-center">
-                            <div class="col-6 border-end border-secondary border-opacity-25">
-                                <div class="text-secondary" style="font-size: 0.72rem;">ESTATUS</div>
-                                <div class="fw-bold text-success small font-monospace">Disponible</div>
-                            </div>
-                            <div class="col-6">
-                                <div class="text-secondary" style="font-size: 0.72rem;">ORIGEN</div>
-                                <div class="fw-bold text-info small font-monospace">GEDAS DMS</div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <div>
@@ -515,90 +544,77 @@ if ($reporteActivo === 'inventario_seminuevos') {
 
     <!-- HERO PANEL REPORTE DETALLE -->
     <div class="hero-panel">
-        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-4">
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-3">
             <div>
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                    <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1 rounded-pill">
-                        <i class="bi bi-car-front-fill me-1"></i> Consulta Oficial GEDAS: AUAUTOS & GNCATMA
-                    </span>
-                    <span class="badge bg-dark border border-secondary text-secondary px-3 py-1 rounded-pill small">
-                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Sin Apertura de Puertos (Push HTTPS)
-                    </span>
-                </div>
-                <h2 class="fw-bold text-white mb-2">Inventario de Seminuevos</h2>
-                <p class="text-secondary mb-0" style="max-width: 720px;">
-                    Listado actualizado de vehículos seminuevos con estatus <code>Disponible</code> por almacén, chasis (VIN), color, motor y valor de inventario.
+                <h2 class="fw-bold text-white mb-1">Inventario de Seminuevos</h2>
+                <p class="text-secondary small mb-0">
+                    Listado actualizado de vehículos seminuevos con estatus <span class="text-success fw-semibold">Disponible</span>.
                 </p>
             </div>
 
-            <!-- Botonera y Estado -->
-            <div class="d-flex flex-column align-items-lg-end gap-2 w-100 w-lg-auto">
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-warning bg-opacity-25 text-warning border border-warning'; ?>">
-                        <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
-                        <?php echo (!empty($ultimaSync)) ? 'Sincronizado' : 'Esperando Conexión'; ?>
-                    </span>
-                    <a href="agencia.php?descargar_conector_local=1" class="btn btn-success text-dark fw-bold btn-sm rounded-3 px-3">
-                        <i class="bi bi-cloud-arrow-down-fill me-1"></i> Descargar Conector API (.php)
-                    </a>
-                </div>
+            <!-- Estado de Sincronización -->
+            <div class="d-flex flex-column align-items-lg-end gap-1">
+                <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-warning bg-opacity-25 text-warning border border-warning'; ?>">
+                    <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
+                    <?php echo (!empty($ultimaSync)) ? 'Sincronizado' : 'Esperando Conexión'; ?>
+                </span>
                 <div class="text-secondary small font-monospace">
-                    Última Sincronización: <span class="text-info"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
+                    Última Sincronización: <span class="text-info fw-semibold"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- TARJETAS DE KPIs -->
+    <!-- TARJETAS DE KPIs MODERNAS -->
     <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-3">
-            <div class="card-kpi">
+            <div class="card-kpi" style="--kpi-accent: #10b981;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="text-secondary small fw-bold text-uppercase">Unidades Disponibles</span>
-                    <div class="p-2 rounded-2 bg-success bg-opacity-15 text-success fs-5">
-                        <i class="bi bi-car-front"></i>
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Unidades Disponibles</span>
+                    <div class="p-2 rounded-3 bg-success bg-opacity-15 text-success fs-5">
+                        <i class="bi bi-car-front-fill"></i>
                     </div>
                 </div>
-                <div class="fs-3 fw-bold text-white"><?php echo number_format($totalUnidades); ?></div>
+                <div class="fs-2 fw-bold text-white"><?php echo number_format($totalUnidades); ?></div>
                 <small class="text-secondary">Autos listos para venta</small>
             </div>
         </div>
 
         <div class="col-sm-6 col-lg-3">
-            <div class="card-kpi">
+            <div class="card-kpi" style="--kpi-accent: #38bdf8;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="text-secondary small fw-bold text-uppercase">Almacenes con Stock</span>
-                    <div class="p-2 rounded-2 bg-info bg-opacity-15 text-info fs-5">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Almacenes con Stock</span>
+                    <div class="p-2 rounded-3 bg-info bg-opacity-15 text-info fs-5">
                         <i class="bi bi-building-check"></i>
                     </div>
                 </div>
-                <div class="fs-3 fw-bold text-white"><?php echo number_format($totalAlmacenes); ?></div>
+                <div class="fs-2 fw-bold text-white"><?php echo number_format($totalAlmacenes); ?></div>
                 <small class="text-secondary">Concesionarios y patios activos</small>
             </div>
         </div>
 
         <div class="col-sm-6 col-lg-3">
-            <div class="card-kpi">
+            <div class="card-kpi" style="--kpi-accent: #f59e0b;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="text-secondary small fw-bold text-uppercase">Importe Inventario</span>
-                    <div class="p-2 rounded-2 bg-warning bg-opacity-15 text-warning fs-5">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Importe Inventario</span>
+                    <div class="p-2 rounded-3 bg-warning bg-opacity-15 text-warning fs-5">
                         <i class="bi bi-box-seam-fill"></i>
                     </div>
                 </div>
-                <div class="fs-3 fw-bold text-warning font-monospace">$<?php echo number_format($totalImporteInventario, 2); ?></div>
+                <div class="fs-2 fw-bold text-warning font-monospace">$<?php echo number_format($totalImporteInventario, 2); ?></div>
                 <small class="text-secondary">Costo acumulado de unidades</small>
             </div>
         </div>
 
         <div class="col-sm-6 col-lg-3">
-            <div class="card-kpi">
+            <div class="card-kpi" style="--kpi-accent: #10b981;">
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <span class="text-secondary small fw-bold text-uppercase">Valor Potencial Venta</span>
-                    <div class="p-2 rounded-2 bg-success bg-opacity-15 text-success fs-5">
+                    <span class="text-secondary small fw-bold text-uppercase" style="letter-spacing: 0.5px;">Valor Potencial Venta</span>
+                    <div class="p-2 rounded-3 bg-success bg-opacity-15 text-success fs-5">
                         <i class="bi bi-cash-stack"></i>
                     </div>
                 </div>
-                <div class="fs-3 fw-bold text-success font-monospace">$<?php echo number_format($totalPrecioVenta, 2); ?></div>
+                <div class="fs-2 fw-bold text-success font-monospace">$<?php echo number_format($totalPrecioVenta, 2); ?></div>
                 <small class="text-secondary">Precio de venta comercial</small>
             </div>
         </div>
@@ -666,22 +682,25 @@ if ($reporteActivo === 'inventario_seminuevos') {
             </div>
 
             <div class="col-md-2 d-flex gap-2">
-                <button type="submit" class="btn btn-success text-dark fw-bold w-100 rounded-3">
+                <button type="submit" class="btn btn-filtrar w-100 rounded-3 py-2">
                     <i class="bi bi-funnel-fill me-1"></i> Filtrar
                 </button>
-                <a href="reportes_agencia.php?reporte=inventario_seminuevos" class="btn btn-outline-secondary rounded-3 text-white" title="Limpiar Filtros">
+                <a href="reportes_agencia.php?reporte=inventario_seminuevos" class="btn btn-outline-secondary rounded-3 text-white px-3" title="Limpiar Filtros">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
         </form>
 
         <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top border-secondary border-opacity-25 flex-wrap gap-2">
-            <div class="text-secondary small">
-                Mostrando <strong class="text-white"><?php echo count($unidades); ?></strong> de <strong class="text-white"><?php echo $totalUnidades; ?></strong> unidades disponibles.
+            <div class="text-secondary small d-flex align-items-center gap-2">
+                <span class="badge bg-dark border border-secondary text-light font-monospace">
+                    <?php echo count($unidades); ?> / <?php echo $totalUnidades; ?>
+                </span>
+                <span>unidades disponibles en inventario.</span>
             </div>
             <div class="d-flex gap-2">
                 <?php if ($puedeExportar): ?>
-                    <a href="reportes_agencia.php?<?php echo http_build_query(array_merge($_GET, ['reporte' => 'inventario_seminuevos', 'exportar' => 'excel'])); ?>" class="btn btn-outline-success btn-sm rounded-3">
+                    <a href="reportes_agencia.php?<?php echo http_build_query(array_merge($_GET, ['reporte' => 'inventario_seminuevos', 'exportar' => 'excel'])); ?>" class="btn btn-outline-success btn-sm rounded-3 px-3 shadow-sm">
                         <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel (.xls)
                     </a>
                 <?php endif; ?>
@@ -698,11 +717,11 @@ if ($reporteActivo === 'inventario_seminuevos') {
                         <th style="width: 140px;">Almacén</th>
                         <th style="width: 110px;">Inventario</th>
                         <th>Descripción de Unidad</th>
-                        <th style="width: 170px;">Chasis (VIN)</th>
+                        <th style="width: 180px;">Chasis (VIN)</th>
                         <th style="width: 120px;">Color</th>
                         <th style="width: 130px;">Motor</th>
                         <th style="width: 110px; text-align: center;">Marca / Año</th>
-                        <th style="width: 110px; text-align: center;">Estatus</th>
+                        <th style="width: 120px; text-align: center;">Estatus</th>
                         <th style="width: 130px; text-align: right;">Precio Venta</th>
                         <th style="width: 130px; text-align: right;">Costo Inv.</th>
                         <th style="width: 110px; text-align: center;">Fecha Alta</th>
@@ -743,9 +762,14 @@ if ($reporteActivo === 'inventario_seminuevos') {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="font-monospace text-warning fw-bold small">
-                                        <?php echo htmlspecialchars($u['chasis']); ?>
-                                    </span>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="font-monospace text-warning fw-bold small">
+                                            <?php echo htmlspecialchars($u['chasis']); ?>
+                                        </span>
+                                        <button type="button" class="btn-copy-vin" onclick="copiarVIN('<?php echo htmlspecialchars($u['chasis']); ?>', this)" title="Copiar VIN">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
                                 </td>
                                 <td>
                                     <span class="text-light small"><?php echo htmlspecialchars($u['color']); ?></span>
@@ -760,11 +784,11 @@ if ($reporteActivo === 'inventario_seminuevos') {
                                 </td>
                                 <td style="text-align: center;">
                                     <span class="badge-status-disponible">
-                                        <i class="bi bi-check-circle-fill"></i> Disponible
+                                        <span class="dot-pulse"></span> Disponible
                                     </span>
                                 </td>
                                 <td style="text-align: right;">
-                                    <span class="fw-bold font-monospace text-success">
+                                    <span class="fw-bold font-monospace text-success fs-6">
                                         $<?php echo number_format(floatval($u['precio_venta']), 2); ?>
                                     </span>
                                 </td>
@@ -774,12 +798,12 @@ if ($reporteActivo === 'inventario_seminuevos') {
                                     </span>
                                 </td>
                                 <td style="text-align: center;">
-                                    <span class="small text-secondary">
+                                    <span class="small text-secondary font-monospace">
                                         <?php echo date('d/m/Y', strtotime($u['fecha_alta'])); ?>
                                     </span>
                                 </td>
                                 <td style="text-align: center;">
-                                    <button type="button" class="btn btn-sm btn-outline-info rounded-3 p-1 px-2 lh-1" onclick='abrirFichaAuto(<?php echo json_encode($u, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)' title="Ver Ficha Técnica Completa">
+                                    <button type="button" class="btn btn-sm btn-outline-info rounded-3 p-1 px-2 lh-1 shadow-sm" onclick='abrirFichaAuto(<?php echo json_encode($u, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)' title="Ver Ficha Técnica Completa">
                                         <i class="bi bi-eye-fill"></i>
                                     </button>
                                 </td>
@@ -879,6 +903,24 @@ function abrirFichaAuto(item) {
 
     const modal = new bootstrap.Modal(document.getElementById('modalFichaAuto'));
     modal.show();
+}
+
+function copiarVIN(vin, btn) {
+    if (!navigator.clipboard) {
+        const temp = document.createElement('input');
+        temp.value = vin;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+    } else {
+        navigator.clipboard.writeText(vin);
+    }
+    const icon = btn.querySelector('i');
+    if (icon) {
+        icon.className = 'bi bi-check2 text-success';
+        setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 1500);
+    }
 }
 </script>
 </body>

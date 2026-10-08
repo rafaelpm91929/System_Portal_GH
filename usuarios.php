@@ -780,7 +780,7 @@ $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
         <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
             <i class="bi bi-arrow-left me-1"></i> Menú Principal
         </a>
-        <span class="fw-bold fs-5">PORTAL DE SISTEMAS <span class="text-primary">| Control de Usuarios y Roles</span></span>
+        <span class="fw-bold fs-5">PORTAL <span class="text-white"><?php echo htmlspecialchars(strtoupper($agenciaSesion)); ?></span> <span class="text-primary">| Control de Usuarios y Roles</span></span>
     </div>
     <div>
         <span class="badge bg-primary p-2 fs-6"><i class="bi bi-building-fill me-1"></i> <?php echo htmlspecialchars($agenciaSesion); ?></span>

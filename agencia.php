@@ -364,7 +364,7 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Datos de la Agencia - Portal de Sistemas Grupo Huerta</title>
+    <title>Datos de la Agencia - PORTAL <?php echo htmlspecialchars(strtoupper($agenciaNombreActual)); ?></title>
     <?php include_once 'pwa_head.php'; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -483,7 +483,7 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
         <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
             <i class="bi bi-arrow-left me-1"></i> Volver al Menú Principal
         </a>
-        <span class="fw-bold fs-5">PORTAL DE SISTEMAS <span class="text-primary">| Datos de la Agencia</span></span>
+        <span class="fw-bold fs-5">PORTAL <span class="text-white"><?php echo htmlspecialchars(strtoupper($agenciaNombreActual)); ?></span> <span class="text-primary">| Datos de la Agencia</span></span>
     </div>
     <div>
         <span class="badge bg-primary p-2 fs-6"><i class="bi bi-building-fill me-1"></i> <?php echo htmlspecialchars($agenciaNombreActual); ?></span>

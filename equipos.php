@@ -4519,7 +4519,7 @@ function renderBadgeTipoSite($tipo) {
         <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 me-1" onclick="toggleSidebarNavegacion()" title="Ocultar / Mostrar Menú Lateral">
             <i class="bi bi-layout-sidebar-inset me-1"></i> <span class="d-none d-md-inline">Menú</span>
         </button>
-        <span class="fw-bold fs-5">PORTAL DE SISTEMAS <span class="text-primary">| Inventario de Equipos</span></span>
+        <span class="fw-bold fs-5">PORTAL <span class="text-white"><?php echo htmlspecialchars(strtoupper($_SESSION['agencia'] ?? 'AGENCIA')); ?></span> <span class="text-primary">| Inventario de Equipos</span></span>
     </div>
     <div>
         <span class="badge bg-primary p-2 fs-6"><i class="bi bi-display me-1"></i> Control de Hardware</span>
