@@ -154,6 +154,12 @@ if ($action === 'listar') {
 
             $stmtA = $pdo->query("SELECT * FROM compliance_documentos WHERE tipo = 'aviso' AND estatus = 1 ORDER BY id DESC");
             $avisos = $stmtA ? $stmtA->fetchAll(PDO::FETCH_ASSOC) : [];
+            foreach ($avisos as &$av) {
+                $av['fondo_cls'] = obtenerClaseFondoAviso($av);
+                $imgExt = strtolower(pathinfo($av['imagen_url'] ?? '', PATHINFO_EXTENSION));
+                $av['es_fisica'] = !empty($av['imagen_url']) && in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($av['imagen_url'], 'aviso_card_') === false);
+            }
+            unset($av);
 
             echo json_encode([
                 'exito' => true,

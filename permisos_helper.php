@@ -623,6 +623,8 @@ function asegurarTablaCompliance($pdo = null) {
         }
 
         try { $pdo->exec("ALTER TABLE compliance_documentos ADD COLUMN imagen_url VARCHAR(255) NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE compliance_documentos ADD COLUMN estilo_fondo VARCHAR(50) DEFAULT 'negro_oro'"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE compliance_documentos CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); } catch (Throwable $t) {}
         try {
             $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-01.svg' WHERE codigo = 'AV-01' AND (imagen_url IS NULL OR imagen_url = '')");
             $pdo->exec("UPDATE compliance_documentos SET imagen_url = 'uploads/compliance/aviso_AV-02.svg' WHERE codigo = 'AV-02' AND (imagen_url IS NULL OR imagen_url = '')");
@@ -930,5 +932,43 @@ function generarImagenAvisoSVG($titulo, $descripcion, $prioridad = 'Alta', $cate
 
     $svg .= '</svg>' . "\n";
     return $svg;
+}
+
+/**
+ * Retorna la clase CSS de degradado/color para la tarjeta de aviso según el estilo guardado,
+ * inspección de SVG o prioridad corporativa.
+ */
+function obtenerClaseFondoAviso($aviso) {
+    $estilo = trim($aviso['estilo_fondo'] ?? '');
+    if ($estilo === 'rojo_rubi' || $estilo === 'rojo') return 'swatch-rojo';
+    if ($estilo === 'azul_zafiro' || $estilo === 'azul') return 'swatch-azul';
+    if ($estilo === 'esmeralda' || $estilo === 'verde') return 'swatch-verde';
+    if ($estilo === 'purpura') return 'swatch-purpura';
+    if ($estilo === 'negro_oro' || $estilo === 'negro') return 'swatch-negro';
+
+    // Si tiene archivo SVG generado en disco, leer el color guardado
+    $img = $aviso['imagen_url'] ?? '';
+    if (!empty($img) && strpos($img, '.svg') !== false && file_exists(__DIR__ . '/' . $img)) {
+        $svgRaw = @file_get_contents(__DIR__ . '/' . $img);
+        if ($svgRaw) {
+            if (strpos($svgRaw, '#400b11') !== false || strpos($svgRaw, '#70131e') !== false) return 'swatch-rojo';
+            if (strpos($svgRaw, '#0a1e3f') !== false || strpos($svgRaw, '#0d3b66') !== false) return 'swatch-azul';
+            if (strpos($svgRaw, '#092b1a') !== false || strpos($svgRaw, '#0f5132') !== false) return 'swatch-verde';
+            if (strpos($svgRaw, '#230c33') !== false || strpos($svgRaw, '#4a154b') !== false) return 'swatch-purpura';
+            if (strpos($svgRaw, '#050b14') !== false || strpos($svgRaw, '#101c30') !== false) return 'swatch-negro';
+        }
+    }
+
+    // Fallback por prioridad y categoría
+    $prio = strtolower(trim($aviso['prioridad'] ?? 'normal'));
+    if ($prio === 'alta' || $prio === 'urgente') return 'swatch-rojo';
+    if ($prio === 'media') return 'swatch-azul';
+
+    $cat = strtolower(trim($aviso['categoria'] ?? ''));
+    if (strpos($cat, 'ciber') !== false) return 'swatch-azul';
+    if (strpos($cat, 'legal') !== false || strpos($cat, 'alta') !== false) return 'swatch-rojo';
+    if (strpos($cat, 'normat') !== false || strpos($cat, 'ecolog') !== false) return 'swatch-verde';
+
+    return 'swatch-negro';
 }
 ?>

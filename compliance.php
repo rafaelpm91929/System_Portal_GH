@@ -100,6 +100,9 @@ foreach ($avisos as &$av) {
     if (empty($av['archivo_url_completo']) && !empty($av['archivo_url'])) {
         $av['archivo_url_completo'] = (strpos($av['archivo_url'], 'http') === 0) ? $av['archivo_url'] : 'https://portal.grupohuerta.mx/' . ltrim($av['archivo_url'], '/');
     }
+    $av['fondo_cls'] = $av['fondo_cls'] ?? obtenerClaseFondoAviso($av);
+    $imgExt = strtolower(pathinfo($av['imagen_url'] ?? '', PATHINFO_EXTENSION));
+    $av['es_fisica'] = !empty($av['imagen_url']) && in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($av['imagen_url'], 'aviso_card_') === false);
 }
 unset($av);
 
@@ -657,6 +660,12 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
             text-shadow: 0 2px 6px rgba(0,0,0,0.7);
         }
 
+        .swatch-negro { background: linear-gradient(135deg, #050b14 0%, #152238 100%) !important; border: 1px solid rgba(212, 175, 55, 0.5) !important; }
+        .swatch-azul { background: linear-gradient(135deg, #08214d 0%, #104887 50%, #0c356a 100%) !important; border: 1px solid rgba(96, 165, 250, 0.6) !important; }
+        .swatch-rojo { background: linear-gradient(135deg, #4a0810 0%, #8c1626 50%, #590d18 100%) !important; border: 1px solid rgba(248, 113, 113, 0.6) !important; }
+        .swatch-verde { background: linear-gradient(135deg, #062b18 0%, #0e6338 50%, #093f24 100%) !important; border: 1px solid rgba(52, 211, 153, 0.6) !important; }
+        .swatch-purpura { background: linear-gradient(135deg, #2a0d3d 0%, #601a70 50%, #3a0f47 100%) !important; border: 1px solid rgba(192, 132, 252, 0.6) !important; }
+
         /* PIE FIJO DEL ANUNCIO (100% ESTÁTICO, NO SE MUEVE NI PARPADEA) */
         .gallery-static-footer {
             height: 120px;
@@ -1182,32 +1191,11 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 <?php foreach ($avisos as $dIdx => $dAv): 
                                     $dImg = !empty($dAv['imagen_url_completa']) ? $dAv['imagen_url_completa'] : (!empty($dAv['imagen_url']) ? $dAv['imagen_url'] : '');
                                     $dExt = strtolower(pathinfo($dImg, PATHINFO_EXTENSION));
-                                    $dEsFisica = !empty($dImg) && in_array($dExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($dImg, 'aviso_card_') === false);
+                                    $dEsFisica = $dAv['es_fisica'] ?? (!empty($dImg) && in_array($dExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($dImg, 'aviso_card_') === false));
                                     
                                     $dPrio = $dAv['prioridad'] ?? 'Normal';
                                     $dBadge = ($dPrio === 'Alta' || $dPrio === 'Urgente') ? 'bg-danger text-white' : (($dPrio === 'Media') ? 'bg-warning text-dark' : 'bg-primary text-white');
-                                    
-                                    $dFondoCls = 'swatch-negro';
-                                    if ($dPrio === 'Alta' || $dPrio === 'Urgente') {
-                                        $dFondoCls = 'swatch-rojo';
-                                    } elseif ($dPrio === 'Media') {
-                                        $dFondoCls = 'swatch-azul';
-                                    } elseif (stripos($dAv['categoria'] ?? '', 'ciber') !== false) {
-                                        $dFondoCls = 'swatch-azul';
-                                    } elseif (stripos($dAv['categoria'] ?? '', 'legal') !== false || stripos($dAv['categoria'] ?? '', 'alta') !== false) {
-                                        $dFondoCls = 'swatch-rojo';
-                                    }
-
-                                    if (!empty($dImg) && strpos($dImg, '.svg') !== false && file_exists(__DIR__ . '/' . $dImg)) {
-                                        $svgRaw = @file_get_contents(__DIR__ . '/' . $dImg);
-                                        if ($svgRaw) {
-                                            if (strpos($svgRaw, '#400b11') !== false || strpos($svgRaw, '#70131e') !== false) $dFondoCls = 'swatch-rojo';
-                                            elseif (strpos($svgRaw, '#0a1e3f') !== false || strpos($svgRaw, '#0d3b66') !== false) $dFondoCls = 'swatch-azul';
-                                            elseif (strpos($svgRaw, '#092b1a') !== false || strpos($svgRaw, '#0f5132') !== false) $dFondoCls = 'swatch-verde';
-                                            elseif (strpos($svgRaw, '#230c33') !== false || strpos($svgRaw, '#4a154b') !== false) $dFondoCls = 'swatch-purpura';
-                                            elseif (strpos($svgRaw, '#050b14') !== false || strpos($svgRaw, '#101c30') !== false) $dFondoCls = 'swatch-negro';
-                                        }
-                                    }
+                                    $dFondoCls = $dAv['fondo_cls'] ?? 'swatch-negro';
                                 ?>
                                     <div class="dash-carousel-slide <?php echo $dIdx === 0 ? 'active' : ''; ?>" data-dash-index="<?php echo $dIdx; ?>" onclick="cambiarSeccion('avisos')">
                                         <?php if ($dEsFisica): ?>
@@ -1474,21 +1462,17 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <?php foreach ($avisos as $index => $av): 
                                 $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : 'uploads/compliance/aviso_AV-01.svg');
                                 $imgExt = strtolower(pathinfo($imgSrc, PATHINFO_EXTENSION));
-                                $esFisica = in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false);
+                                $esFisica = $av['es_fisica'] ?? (in_array($imgExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false));
                                 
                                 $prio = $av['prioridad'] ?? 'Normal';
                                 $badgeCls = ($prio === 'Alta' || $prio === 'Urgente') ? 'bg-danger text-white' : (($prio === 'Media') ? 'bg-warning text-dark' : 'bg-primary text-white');
-                                $fondoCls = 'swatch-negro';
-                                if ($prio === 'Alta' || $prio === 'Urgente') $fondoCls = 'swatch-rojo';
-                                elseif ($prio === 'Media') $fondoCls = 'swatch-azul';
-                                elseif (stripos($av['categoria'], 'ciber') !== false) $fondoCls = 'swatch-azul';
-                                elseif (stripos($av['categoria'], 'legal') !== false) $fondoCls = 'swatch-rojo';
+                                $fondoCls = $av['fondo_cls'] ?? 'swatch-negro';
                             ?>
                                 <div class="gallery-slide-item <?php echo $index === 0 ? 'active' : ''; ?>" data-slide-index="<?php echo $index; ?>">
                                     <?php if ($esFisica): ?>
-                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="gallery-slide-img" onclick="abrirLightbox(<?php echo $index; ?>)">
                                     <?php else: ?>
-                                        <div class="gallery-fb-slide-card <?php echo $fondoCls; ?>" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <div class="gallery-fb-slide-card <?php echo $fondoCls; ?>" onclick="abrirLightbox(<?php echo $index; ?>)">
                                             <div class="d-flex align-items-center justify-content-between w-100 mb-2">
                                                 <div class="d-flex align-items-center gap-2">
                                                     <div class="fb-card-logo">GH</div>
@@ -1544,8 +1528,8 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                         <?php foreach ($avisos as $idx => $av): 
                             $thumbImg = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : '');
                             $tExt = strtolower(pathinfo($thumbImg, PATHINFO_EXTENSION));
-                            $tEsFisica = !empty($thumbImg) && in_array($tExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($thumbImg, 'aviso_card_') === false);
-                            $tFondoCls = ($av['prioridad'] === 'Alta' || $av['prioridad'] === 'Urgente') ? 'swatch-rojo' : (($av['prioridad'] === 'Media') ? 'swatch-azul' : 'swatch-negro');
+                            $tEsFisica = $av['es_fisica'] ?? (!empty($thumbImg) && in_array($tExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($thumbImg, 'aviso_card_') === false));
+                            $tFondoCls = $av['fondo_cls'] ?? 'swatch-negro';
                         ?>
                             <div class="gallery-thumb-card <?php echo $idx === 0 ? 'active' : ''; ?>" data-thumb-index="<?php echo $idx; ?>" onclick="irASlideGaleria(<?php echo $idx; ?>)" title="<?php echo htmlspecialchars($av['titulo']); ?>">
                                 <?php if ($tEsFisica): ?>
@@ -1569,13 +1553,11 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 
                 <!-- 2. VISTA CUADRÍCULA ALTERNA (OCULTA POR DEFECTO) -->
                 <div class="row g-3 d-none" id="vistaCuadriculaAvisos">
-                    <?php foreach ($avisos as $av): 
+                    <?php foreach ($avisos as $idxG => $av): 
                         $imgSrc = !empty($av['imagen_url_completa']) ? $av['imagen_url_completa'] : (!empty($av['imagen_url']) ? $av['imagen_url'] : '');
                         $avExt = strtolower(pathinfo($imgSrc, PATHINFO_EXTENSION));
-                        $avEsFisica = !empty($imgSrc) && in_array($avExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false);
-                        $avFondoCls = ($av['prioridad'] === 'Alta' || $av['prioridad'] === 'Urgente') ? 'swatch-rojo' : (($av['prioridad'] === 'Media') ? 'swatch-azul' : 'swatch-negro');
-                        if (stripos($av['categoria'], 'ciber') !== false) $avFondoCls = 'swatch-azul';
-                        elseif (stripos($av['categoria'], 'legal') !== false) $avFondoCls = 'swatch-rojo';
+                        $avEsFisica = $av['es_fisica'] ?? (!empty($imgSrc) && in_array($avExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']) && (strpos($imgSrc, 'aviso_card_') === false));
+                        $avFondoCls = $av['fondo_cls'] ?? 'swatch-negro';
                         $anexoUrl = !empty($av['archivo_url_completo']) ? $av['archivo_url_completo'] : ($av['archivo_url'] ?? '');
                         $pClass = 'priority-normal';
                         if ($av['prioridad'] === 'Alta') $pClass = 'priority-alta';
@@ -1585,11 +1567,11 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                             <div class="doc-item-card h-100 d-flex flex-column justify-content-between p-3">
                                 <div>
                                     <?php if ($avEsFisica): ?>
-                                        <div class="rounded-3 overflow-hidden mb-3 border border-secondary border-opacity-25" style="background: #030812; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <div class="rounded-3 overflow-hidden mb-3 border border-secondary border-opacity-25" style="background: #030812; cursor: pointer;" onclick="abrirLightbox(<?php echo $idxG; ?>)">
                                             <img src="<?php echo htmlspecialchars($imgSrc); ?>" alt="<?php echo htmlspecialchars($av['titulo']); ?>" class="w-100" style="max-height: 220px; object-fit: contain;">
                                         </div>
                                     <?php else: ?>
-                                        <div class="rounded-3 overflow-hidden mb-3 p-3 <?php echo $avFondoCls; ?> border border-secondary border-opacity-25 d-flex flex-column justify-content-center text-center" style="min-height: 140px; cursor: pointer;" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <div class="rounded-3 overflow-hidden mb-3 p-3 <?php echo $avFondoCls; ?> border border-secondary border-opacity-25 d-flex flex-column justify-content-center text-center" style="min-height: 140px; cursor: pointer;" onclick="abrirLightbox(<?php echo $idxG; ?>)">
                                             <div class="fb-card-logo mx-auto mb-2" style="width: 32px; height: 32px; font-size: 0.75rem;">GH</div>
                                             <div class="fw-bold text-white small mb-1"><?php echo htmlspecialchars($av['titulo']); ?></div>
                                             <div class="text-white text-opacity-75" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['codigo']); ?> &bull; <?php echo htmlspecialchars($av['fecha_publicacion']); ?></div>
@@ -1606,7 +1588,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                                 <div class="d-flex align-items-center justify-content-between pt-2 border-top border-secondary border-opacity-10">
                                     <span class="text-secondary" style="font-size: 0.72rem;"><?php echo htmlspecialchars($av['fecha_publicacion']); ?></span>
                                     <div class="d-flex gap-2">
-                                        <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox('<?php echo htmlspecialchars($imgSrc); ?>', '<?php echo htmlspecialchars(addslashes($av['titulo'])); ?>')">
+                                        <button class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="abrirLightbox(<?php echo $idxG; ?>)">
                                             <i class="bi bi-arrows-fullscreen"></i>
                                         </button>
                                         <?php if (!empty($anexoUrl)): ?>
@@ -1631,24 +1613,62 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
 <!-- ========================================================================= -->
 <!-- MODAL: LIGHTBOX / ZOOM DE IMAGEN DE AVISO                                 -->
 <!-- ========================================================================= -->
+<!-- MODAL: LIGHTBOX / ZOOM DE IMAGEN O TARJETA DE AVISO                        -->
+<!-- ========================================================================= -->
 <div class="modal fade" id="modalLightboxAviso" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content modal-content-gold">
             <div class="modal-header modal-header-gold">
-                <h5 class="modal-title fw-bold text-white" id="lightboxTitulo"></h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="doc-code-badge" id="lightboxCodigo">AV</span>
+                    <h5 class="modal-title fw-bold text-white m-0" id="lightboxTitulo"></h5>
+                </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body p-2 p-md-3 text-center bg-black position-relative">
-                <img id="lightboxImg" src="" alt="Aviso Ampliado" class="img-fluid rounded-3" style="max-height: 80vh; width: auto; object-fit: contain;">
-                <div class="small text-secondary mt-2">
-                    <i class="bi bi-shield-lock-fill text-warning"></i> Portal Oficial Grupo Huerta &bull; Usuario: <?php echo htmlspecialchars($nombreUsuario); ?> &bull; IP: <?php echo htmlspecialchars($ipUsuario); ?>
+            <div class="modal-body p-3 p-md-4 text-center bg-black position-relative d-flex flex-column align-items-center justify-content-center">
+                <!-- CASO 1: IMAGEN FÍSICA -->
+                <img id="lightboxImg" src="" alt="Aviso Ampliado" class="img-fluid rounded-3 d-none" style="max-height: 75vh; width: auto; object-fit: contain;">
+                
+                <!-- CASO 2: TARJETA DE TEXTO CON COLOR COMPLETO (SI NO TIENE IMAGEN) -->
+                <div id="lightboxCardWrapper" class="w-100 d-none" style="max-width: 900px;">
+                    <div id="lightboxFbCard" class="gallery-fb-slide-card w-100 p-4 p-md-5" style="min-height: 400px; cursor: default;">
+                        <div class="d-flex align-items-center justify-content-between w-100 mb-3">
+                            <div class="d-flex align-items-center gap-3">
+                                <div class="fb-card-logo" style="width: 38px; height: 38px; font-size: 0.9rem;">GH</div>
+                                <div class="text-start">
+                                    <div class="text-white fw-bold" style="font-size: 0.85rem; letter-spacing: 0.6px;">GRUPO HUERTA &bull; COMPLIANCE INSTITUCIONAL</div>
+                                    <div class="text-white text-opacity-75" style="font-size: 0.72rem;" id="lightboxCardFecha">Comunicado Oficial</div>
+                                </div>
+                            </div>
+                            <span class="badge fw-bold px-3 py-1.5 rounded-pill" style="font-size: 0.75rem;" id="lightboxCardPrioridad">ALTA</span>
+                        </div>
+                        
+                        <div class="gallery-fb-content text-center my-auto py-3 px-2">
+                            <h2 class="gallery-fb-titulo mb-3" id="lightboxCardTitulo" style="font-size: 1.9rem; font-weight: 800; line-height: 1.35; text-shadow: 0 2px 10px rgba(0,0,0,0.85);"></h2>
+                            <p class="gallery-fb-desc" id="lightboxCardDesc" style="font-size: 1.15rem; line-height: 1.6; max-width: 780px; margin: 0 auto; text-shadow: 0 1px 5px rgba(0,0,0,0.8);"></p>
+                        </div>
+
+                        <div class="d-flex align-items-center justify-content-between w-100 pt-3 border-top border-white border-opacity-15" style="font-size: 0.75rem;">
+                            <span class="text-white text-opacity-80 fw-semibold" id="lightboxCardMeta">
+                                <i class="bi bi-shield-check text-warning me-1"></i> Emisión Oficial Certificada
+                            </span>
+                            <span class="text-warning text-opacity-90">
+                                <i class="bi bi-patch-check-fill me-1"></i> Portal Grupo Huerta
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- LEYENDA INFERIOR: SOLO PORTAL GRUPO HUERTA (SIN IP Y SIN USUARIO) -->
+                <div class="small text-secondary mt-3">
+                    <i class="bi bi-shield-lock-fill text-warning me-1"></i> Portal Grupo Huerta
                 </div>
             </div>
             <div class="modal-footer modal-footer-gold justify-content-between">
                 <a id="lightboxBtnDescargar" href="#" download class="btn btn-warning text-dark fw-bold rounded-pill px-4">
                     <i class="bi bi-download me-1"></i> Descargar Imagen
                 </a>
-                <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cerrar</button>
+                <button type="button" class="btn btn-outline-secondary rounded-pill px-4 ms-auto" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
@@ -1686,7 +1706,7 @@ if (!in_array($seccionActiva, ['principal', 'formatos', 'manuales', 'avisos'])) 
                     <i class="bi bi-file-earmark-pdf-fill text-warning display-4 d-block mb-2"></i>
                     <h6 class="text-white fw-bold mb-1">Documento Oficial Protegido</h6>
                     <p class="text-secondary small mb-3" style="font-size: 0.78rem;">
-                        Identificación Forense: <?php echo htmlspecialchars($nombreUsuario); ?> &bull; IP: <?php echo htmlspecialchars($ipUsuario); ?>
+                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Portal Grupo Huerta
                     </p>
                     <div id="vDocBtnContainer"></div>
                 </div>
@@ -1812,11 +1832,7 @@ function mostrarSlide(index) {
 }
 
 function abrirLightboxAvisoActual() {
-    const av = avisosGaleriaData[currentSlideIndex];
-    if (av) {
-        const src = av.imagen_url_completa || av.imagen_url || 'uploads/compliance/aviso_AV-01.svg';
-        abrirLightbox(src, av.titulo);
-    }
+    abrirLightbox(currentSlideIndex);
 }
 
 function cambiarSlideGaleria(delta) {
@@ -1895,13 +1911,86 @@ function toggleVistaAvisos() {
     }
 }
 
-function abrirLightbox(src, titulo) {
-    const img = document.getElementById('lightboxImg');
-    const tit = document.getElementById('lightboxTitulo');
-    const btn = document.getElementById('lightboxBtnDescargar');
-    if (img) img.src = src;
-    if (tit) tit.innerText = titulo || 'Aviso Institucional Grupo Huerta';
-    if (btn) btn.href = src;
+// Lightbox Modal para Imagen Completa o Tarjeta de Color con Texto
+function abrirLightbox(srcOrIndex, titulo) {
+    let av = null;
+    if (typeof srcOrIndex === 'number') {
+        av = avisosGaleriaData[srcOrIndex];
+    } else if (typeof srcOrIndex === 'object' && srcOrIndex !== null) {
+        av = srcOrIndex;
+    } else if (typeof srcOrIndex === 'string') {
+        av = avisosGaleriaData.find(a => (a.imagen_url === srcOrIndex || a.imagen_url_completa === srcOrIndex || a.titulo === titulo));
+    }
+
+    const imgEl = document.getElementById('lightboxImg');
+    const cardWrap = document.getElementById('lightboxCardWrapper');
+    const fbCard = document.getElementById('lightboxFbCard');
+    const titEl = document.getElementById('lightboxTitulo');
+    const codEl = document.getElementById('lightboxCodigo');
+    const btnDescargar = document.getElementById('lightboxBtnDescargar');
+
+    if (av) {
+        if (titEl) titEl.innerText = av.titulo || 'Aviso Institucional Grupo Huerta';
+        if (codEl) codEl.innerText = av.codigo || 'AV';
+
+        const imgSrc = av.imagen_url_completa || av.imagen_url || '';
+        const ext = imgSrc.split('.').pop().toLowerCase().split('?')[0];
+        const esFisica = Boolean(av.es_fisica !== undefined ? av.es_fisica : (imgSrc && ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext) && !imgSrc.includes('aviso_card_')));
+
+        if (esFisica) {
+            if (imgEl) {
+                imgEl.src = imgSrc;
+                imgEl.classList.remove('d-none');
+            }
+            if (cardWrap) cardWrap.classList.add('d-none');
+            if (btnDescargar) {
+                btnDescargar.href = imgSrc;
+                btnDescargar.classList.remove('d-none');
+            }
+        } else {
+            if (imgEl) imgEl.classList.add('d-none');
+            if (cardWrap) cardWrap.classList.remove('d-none');
+            if (btnDescargar) btnDescargar.classList.add('d-none');
+
+            if (fbCard) {
+                const colorCls = av.fondo_cls || 'swatch-negro';
+                fbCard.className = 'gallery-fb-slide-card w-100 p-4 p-md-5 ' + colorCls;
+            }
+            const lbCardTit = document.getElementById('lightboxCardTitulo');
+            const lbCardDesc = document.getElementById('lightboxCardDesc');
+            const lbCardFecha = document.getElementById('lightboxCardFecha');
+            const lbCardPrio = document.getElementById('lightboxCardPrioridad');
+            const lbCardMeta = document.getElementById('lightboxCardMeta');
+
+            if (lbCardTit) lbCardTit.innerText = av.titulo || '';
+            if (lbCardDesc) lbCardDesc.innerHTML = (av.descripcion || '').replace(/\n/g, '<br>');
+            if (lbCardFecha) lbCardFecha.innerText = 'Comunicado Oficial • ' + (av.fecha_publicacion || '');
+            if (lbCardPrio) {
+                const prio = (av.prioridad || 'Normal').toUpperCase();
+                lbCardPrio.innerText = prio;
+                let bClass = 'bg-primary text-white';
+                if (prio === 'ALTA' || prio === 'URGENTE') bClass = 'bg-danger text-white';
+                else if (prio === 'MEDIA') bClass = 'bg-warning text-dark';
+                lbCardPrio.className = 'badge fw-bold px-3 py-1.5 rounded-pill ' + bClass;
+            }
+            if (lbCardMeta) {
+                lbCardMeta.innerHTML = `<i class="bi bi-shield-check text-warning me-1"></i> CÓDIGO: ${av.codigo || 'AV'} &bull; ${av.categoria || 'General'}`;
+            }
+        }
+    } else {
+        // Fallback si sólo se pasó una URL directa
+        if (imgEl) {
+            imgEl.src = srcOrIndex;
+            imgEl.classList.remove('d-none');
+        }
+        if (cardWrap) cardWrap.classList.add('d-none');
+        if (titEl) titEl.innerText = titulo || 'Aviso Institucional Grupo Huerta';
+        if (btnDescargar) {
+            btnDescargar.href = srcOrIndex;
+            btnDescargar.classList.remove('d-none');
+        }
+    }
+
     const modal = new bootstrap.Modal(document.getElementById('modalLightboxAviso'));
     modal.show();
 }
