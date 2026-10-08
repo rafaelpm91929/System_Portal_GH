@@ -31,289 +31,291 @@ $stmtAg = $pdo ? $pdo->query("SELECT * FROM agencias ORDER BY id ASC LIMIT 1") :
 $agenciaData = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : [];
 $agenciaNombre = !empty($agenciaData['nombre']) ? $agenciaData['nombre'] : $agenciaUsuario;
 $logoAgencia = (!empty($agenciaData['logo_url']) && file_exists(__DIR__ . '/' . $agenciaData['logo_url'])) ? $agenciaData['logo_url'] : '';
+$ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
 
-// 1. SEMBRADO AUTOMÁTICO DE DATOS DEMO BASADOS EN GEDAS (AUAUTOS / GNCATMA)
-if (isset($_POST['accion']) && $_POST['accion'] === 'sembrar_demo_autos' && $puedeCrear && $pdo) {
-    $demoAutos = [
-        [
-            'cve_almacen' => '01',
-            'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
-            'inventario' => 'AUT-2026-001',
-            'descripcion' => 'VERSA EXCLUSIVE CVT 1.6L 2026',
-            'chasis' => '3N1CN8EV9RL281920',
-            'color' => 'Gris Oxford',
-            'motor' => 'HR16DE-849102',
-            'equipamiento' => 'Pantalla 8", Asientos en Piel, Cámara 360°, Frenado Autónomo, 6 Bolsas',
-            'marca' => 'NISSAN',
-            'anio' => '2026',
-            'status' => 'Disponible',
-            'precio_venta' => 418900.00,
-            'costo_inventario' => 362000.00,
-            'importe_inventario' => 362000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-2 days'))
-        ],
-        [
-            'cve_almacen' => '01',
-            'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
-            'inventario' => 'AUT-2026-002',
-            'descripcion' => 'SENTRA SR BITONO 2.0L CVT 2025',
-            'chasis' => '3N1AB8CV7SL104822',
-            'color' => 'Blanco Perlado / Techo Negro',
-            'motor' => 'MR20DD-910244',
-            'equipamiento' => 'Quemacocos, Audio Bose 8 bocinas, Rines 18", Faros LED Proyector',
-            'marca' => 'NISSAN',
-            'anio' => '2025',
-            'status' => 'Disponible',
-            'precio_venta' => 539900.00,
-            'costo_inventario' => 468000.00,
-            'importe_inventario' => 468000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-3 days'))
-        ],
-        [
-            'cve_almacen' => '01',
-            'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
-            'inventario' => 'AUT-2026-003',
-            'descripcion' => 'KICKS PLATINUM CVT 1.6L 2025',
-            'chasis' => '3N1CP5CU1SL582019',
-            'color' => 'Azul Zafiro',
-            'motor' => 'HR16DE-772109',
-            'equipamiento' => 'Cluster digital 7", Audio Bose Personal Space, Control Crucero Inteligente',
-            'marca' => 'NISSAN',
-            'anio' => '2025',
-            'status' => 'Disponible',
-            'precio_venta' => 498900.00,
-            'costo_inventario' => 431000.00,
-            'importe_inventario' => 431000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-4 days'))
-        ],
-        [
-            'cve_almacen' => '02',
-            'nombre_almacen' => 'DIVOL PATIO INDUSTRIAL',
-            'inventario' => 'AUT-2026-004',
-            'descripcion' => 'FRONTIER PRO-4X 4X4 2.5L GASOLINA 2025',
-            'chasis' => '3N16D0ED4SN883910',
-            'color' => 'Gris Volcánico',
-            'motor' => 'QR25DE-482010',
-            'equipamiento' => 'Bloqueo diferencial trasero, Suspensión Bilstein, Rines 17" All-Terrain',
-            'marca' => 'NISSAN',
-            'anio' => '2025',
-            'status' => 'Disponible',
-            'precio_venta' => 769900.00,
-            'costo_inventario' => 670000.00,
-            'importe_inventario' => 670000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-5 days'))
-        ],
-        [
-            'cve_almacen' => '02',
-            'nombre_almacen' => 'DIVOL PATIO INDUSTRIAL',
-            'inventario' => 'AUT-2026-005',
-            'descripcion' => 'X-TRAIL PLATINUM 3 FILAS 2.5L 2025',
-            'chasis' => 'JN8AT3BA8SW192840',
-            'color' => 'Plata Metálico',
-            'motor' => 'PR25DD-392019',
-            'equipamiento' => 'Techo panorámico, Head-Up Display 10.8", ProPILOT Assist, 3 Filas 7 pasajeros',
-            'marca' => 'NISSAN',
-            'anio' => '2025',
-            'status' => 'Disponible',
-            'precio_venta' => 784900.00,
-            'costo_inventario' => 682000.00,
-            'importe_inventario' => 682000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-6 days'))
-        ],
-        [
-            'cve_almacen' => '03',
-            'nombre_almacen' => 'SUCURSAL LINDAVISTA',
-            'inventario' => 'AUT-2026-006',
-            'descripcion' => 'MARCH SENSE TM 1.6L 2026',
-            'chasis' => '3N1CK3CV9RL019284',
-            'color' => 'Rojo Burdeos',
-            'motor' => 'HR16DE-110294',
-            'equipamiento' => '6 Bolsas de aire, Frenos ABS/EBD/BA, Control dinámico vehicular (VDC), AC',
-            'marca' => 'NISSAN',
-            'anio' => '2026',
-            'status' => 'Disponible',
-            'precio_venta' => 269900.00,
-            'costo_inventario' => 234000.00,
-            'importe_inventario' => 234000.00,
-            'fecha_alta' => date('Y-m-d H:i:s', strtotime('-1 days'))
-        ]
-    ];
+// Reporte activo seleccionado (?reporte=inventario_seminuevos)
+$reporteActivo = trim($_GET['reporte'] ?? '');
 
-    $stmtIns = $pdo->prepare("
-        INSERT INTO reportes_inventario_autos 
-        (cve_almacen, nombre_almacen, inventario, descripcion, chasis, color, motor, equipamiento, marca, anio, status, precio_venta, costo_inventario, importe_inventario, fecha_alta, datos_json, sincronizado_en)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ");
-
-    foreach ($demoAutos as $da) {
-        try {
-            $stmtIns->execute([
-                $da['cve_almacen'], $da['nombre_almacen'], $da['inventario'], $da['descripcion'],
-                $da['chasis'], $da['color'], $da['motor'], $da['equipamiento'], $da['marca'],
-                $da['anio'], $da['status'], $da['precio_venta'], $da['costo_inventario'],
-                $da['importe_inventario'], $da['fecha_alta'], json_encode($da, JSON_UNESCAPED_UNICODE)
-            ]);
-        } catch (Throwable $eIns) {}
-    }
-
-    try {
-        $stmtUp = $pdo->prepare("UPDATE agencias SET local_ultima_sincronizacion = CURRENT_TIMESTAMP, local_ultimo_estado_sync = 'Inventario GEDAS conectado' WHERE id = ?");
-        $stmtUp->execute([$agenciaData['id'] ?? 1]);
-    } catch (Throwable $t) {}
-
-    header("Location: reportes_agencia.php?msg=demo_ok");
-    exit();
-}
-
-// 2. PARÁMETROS DE FILTRADO
-$filtroQ        = trim($_GET['q'] ?? '');
-$filtroAlmacen  = trim($_GET['almacen'] ?? '');
-$filtroMarca    = trim($_GET['marca'] ?? '');
-$filtroAnio     = trim($_GET['anio'] ?? '');
-$filtroColor    = trim($_GET['color'] ?? '');
-$filtroFechaI   = trim($_GET['fecha_desde'] ?? '');
-$filtroFechaF   = trim($_GET['fecha_hasta'] ?? '');
-
-$where = ["status = 'Disponible'"];
-$params = [];
-
-if (!empty($filtroQ)) {
-    $where[] = "(chasis LIKE ? OR inventario LIKE ? OR descripcion LIKE ? OR motor LIKE ? OR cve_almacen LIKE ?)";
-    $qParam = "%$filtroQ%";
-    $params[] = $qParam;
-    $params[] = $qParam;
-    $params[] = $qParam;
-    $params[] = $qParam;
-    $params[] = $qParam;
-}
-if (!empty($filtroAlmacen)) {
-    $where[] = "cve_almacen = ?";
-    $params[] = $filtroAlmacen;
-}
-if (!empty($filtroMarca)) {
-    $where[] = "marca = ?";
-    $params[] = $filtroMarca;
-}
-if (!empty($filtroAnio)) {
-    $where[] = "anio = ?";
-    $params[] = $filtroAnio;
-}
-if (!empty($filtroColor)) {
-    $where[] = "color = ?";
-    $params[] = $filtroColor;
-}
-if (!empty($filtroFechaI)) {
-    $where[] = "fecha_alta >= ?";
-    $params[] = $filtroFechaI . ' 00:00:00';
-}
-if (!empty($filtroFechaF)) {
-    $where[] = "fecha_alta <= ?";
-    $params[] = $filtroFechaF . ' 23:59:59';
-}
-
-$whereSql = implode(" AND ", $where);
-
-// EXPORTACIÓN A EXCEL
-if (isset($_GET['exportar']) && $_GET['exportar'] === 'excel' && $puedeExportar && $pdo) {
-    $sqlExp = "SELECT * FROM reportes_inventario_autos WHERE $whereSql ORDER BY cve_almacen ASC, fecha_alta DESC";
-    $stmtExp = $pdo->prepare($sqlExp);
-    $stmtExp->execute($params);
-    $rowsExp = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
-
-    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
-    header('Content-Disposition: attachment; filename="Inventario_Autos_Disponibles_' . date('Ymd_His') . '.xls"');
-    header('Pragma: no-cache');
-    header('Expires: 0');
-
-    echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
-    echo '<head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Inventario Autos</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body>';
-    echo '<table border="1" style="font-family: Arial, sans-serif; border-collapse: collapse;">';
-    echo '<tr style="background: #0f223d; color: #ffffff; font-weight: bold; text-align: center;">';
-    echo '<th>CveAlmacen</th><th>NombreAlmacen</th><th>Inventario</th><th>Descripcion</th><th>Chasis (VIN)</th><th>Color</th><th>Motor</th><th>Equipamiento</th><th>Marca</th><th>Año</th><th>Status</th><th>Precio de Venta</th><th>Costo Inventario</th><th>Importe Inventario</th><th>Fecha Alta</th>';
-    echo '</tr>';
-
-    foreach ($rowsExp as $r) {
-        echo '<tr>';
-        echo '<td align="center">' . htmlspecialchars($r['cve_almacen'] ?? '') . '</td>';
-        echo '<td>' . htmlspecialchars($r['nombre_almacen'] ?? '') . '</td>';
-        echo '<td align="center"><b>' . htmlspecialchars($r['inventario'] ?? '') . '</b></td>';
-        echo '<td>' . htmlspecialchars($r['descripcion'] ?? '') . '</td>';
-        echo '<td align="center"><code>' . htmlspecialchars($r['chasis'] ?? '') . '</code></td>';
-        echo '<td>' . htmlspecialchars($r['color'] ?? '') . '</td>';
-        echo '<td>' . htmlspecialchars($r['motor'] ?? '') . '</td>';
-        echo '<td>' . htmlspecialchars($r['equipamiento'] ?? '') . '</td>';
-        echo '<td align="center">' . htmlspecialchars($r['marca'] ?? '') . '</td>';
-        echo '<td align="center">' . htmlspecialchars($r['anio'] ?? '') . '</td>';
-        echo '<td align="center">' . htmlspecialchars($r['status'] ?? 'Disponible') . '</td>';
-        echo '<td align="right">' . number_format(floatval($r['precio_venta'] ?? 0), 2) . '</td>';
-        echo '<td align="right">' . number_format(floatval($r['costo_inventario'] ?? 0), 2) . '</td>';
-        echo '<td align="right">' . number_format(floatval($r['importe_inventario'] ?? 0), 2) . '</td>';
-        echo '<td align="center">' . htmlspecialchars($r['fecha_alta'] ?? '') . '</td>';
-        echo '</tr>';
-    }
-    echo '</table></body></html>';
-    exit();
-}
-
-// 3. CONSULTA DE DATOS Y KPIs
-$unidades = [];
-$totalUnidades = 0;
-$totalAlmacenes = 0;
-$totalImporteInventario = 0.0;
-$totalPrecioVenta = 0.0;
-$catalogoAlmacenes = [];
-$catalogoMarcas = [];
-$catalogoAnios = [];
-$catalogoColores = [];
-
+// AUTO-SEMBRADO INICIAL DE DATOS DEMO SI LA TABLA ESTÁ VACÍA (Para que no aparezca en ceros)
 if ($pdo) {
     try {
-        // Catálogos para filtros desplegables
-        $stmtAlm = $pdo->query("SELECT DISTINCT cve_almacen, nombre_almacen FROM reportes_inventario_autos WHERE status = 'Disponible' ORDER BY cve_almacen ASC");
-        $catalogoAlmacenes = $stmtAlm ? $stmtAlm->fetchAll(PDO::FETCH_ASSOC) : [];
+        $stmtCheckCount = $pdo->query("SELECT COUNT(*) FROM reportes_inventario_autos");
+        $cantExistente = $stmtCheckCount ? intval($stmtCheckCount->fetchColumn()) : 0;
+        if ($cantExistente === 0) {
+            $demoAutos = [
+                [
+                    'cve_almacen' => '01',
+                    'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
+                    'inventario' => 'SEM-2026-001',
+                    'descripcion' => 'VERSA EXCLUSIVE CVT 1.6L 2024',
+                    'chasis' => '3N1CN8EV9RL281920',
+                    'color' => 'Gris Oxford',
+                    'motor' => 'HR16DE-849102',
+                    'equipamiento' => 'Pantalla 8", Asientos en Piel, Cámara 360°, Frenado Autónomo, 6 Bolsas de aire',
+                    'marca' => 'NISSAN',
+                    'anio' => '2024',
+                    'status' => 'Disponible',
+                    'precio_venta' => 328900.00,
+                    'costo_inventario' => 285000.00,
+                    'importe_inventario' => 285000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-2 days'))
+                ],
+                [
+                    'cve_almacen' => '01',
+                    'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
+                    'inventario' => 'SEM-2026-002',
+                    'descripcion' => 'SENTRA SR BITONO 2.0L CVT 2023',
+                    'chasis' => '3N1AB8CV7SL104822',
+                    'color' => 'Blanco Perlado / Techo Negro',
+                    'motor' => 'MR20DD-910244',
+                    'equipamiento' => 'Quemacocos, Audio Bose 8 bocinas, Rines 18" deportivos, Faros LED Proyector',
+                    'marca' => 'NISSAN',
+                    'anio' => '2023',
+                    'status' => 'Disponible',
+                    'precio_venta' => 419900.00,
+                    'costo_inventario' => 365000.00,
+                    'importe_inventario' => 365000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-3 days'))
+                ],
+                [
+                    'cve_almacen' => '01',
+                    'nombre_almacen' => 'DIVOL LA VILLA MATRIZ',
+                    'inventario' => 'SEM-2026-003',
+                    'descripcion' => 'KICKS PLATINUM CVT 1.6L 2023',
+                    'chasis' => '3N1CP5CU1SL582019',
+                    'color' => 'Azul Zafiro',
+                    'motor' => 'HR16DE-772109',
+                    'equipamiento' => 'Cluster digital 7", Audio Bose en Cabecera, Control Crucero Inteligente',
+                    'marca' => 'NISSAN',
+                    'anio' => '2023',
+                    'status' => 'Disponible',
+                    'precio_venta' => 389900.00,
+                    'costo_inventario' => 335000.00,
+                    'importe_inventario' => 335000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-4 days'))
+                ],
+                [
+                    'cve_almacen' => '02',
+                    'nombre_almacen' => 'DIVOL SEMINUEVOS PATIO',
+                    'inventario' => 'SEM-2026-004',
+                    'descripcion' => 'FRONTIER PRO-4X 4X4 2.5L GASOLINA 2023',
+                    'chasis' => '3N16D0ED4SN883910',
+                    'color' => 'Gris Volcánico',
+                    'motor' => 'QR25DE-482010',
+                    'equipamiento' => 'Bloqueo diferencial trasero, Suspensión Bilstein, Rines 17" All-Terrain, Roll-bar',
+                    'marca' => 'NISSAN',
+                    'anio' => '2023',
+                    'status' => 'Disponible',
+                    'precio_venta' => 629900.00,
+                    'costo_inventario' => 545000.00,
+                    'importe_inventario' => 545000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-5 days'))
+                ],
+                [
+                    'cve_almacen' => '02',
+                    'nombre_almacen' => 'DIVOL SEMINUEVOS PATIO',
+                    'inventario' => 'SEM-2026-005',
+                    'descripcion' => 'X-TRAIL PLATINUM 3 FILAS 2.5L 2022',
+                    'chasis' => 'JN8AT3BA8SW192840',
+                    'color' => 'Plata Metálico',
+                    'motor' => 'PR25DD-392019',
+                    'equipamiento' => 'Techo panorámico, Asientos eléctricos en piel, ProPILOT Assist, 3 Filas 7 pasajeros',
+                    'marca' => 'NISSAN',
+                    'anio' => '2022',
+                    'status' => 'Disponible',
+                    'precio_venta' => 489900.00,
+                    'costo_inventario' => 420000.00,
+                    'importe_inventario' => 420000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-6 days'))
+                ],
+                [
+                    'cve_almacen' => '03',
+                    'nombre_almacen' => 'SUCURSAL LINDAVISTA',
+                    'inventario' => 'SEM-2026-006',
+                    'descripcion' => 'MARCH ADVANCE TM 1.6L 2024',
+                    'chasis' => '3N1CK3CV9RL019284',
+                    'color' => 'Rojo Burdeos',
+                    'motor' => 'HR16DE-110294',
+                    'equipamiento' => 'Pantalla touch con Apple CarPlay y Android Auto, 6 Bolsas de aire, Rines 15" aluminio',
+                    'marca' => 'NISSAN',
+                    'anio' => '2024',
+                    'status' => 'Disponible',
+                    'precio_venta' => 245900.00,
+                    'costo_inventario' => 210000.00,
+                    'importe_inventario' => 210000.00,
+                    'fecha_alta' => date('Y-m-d H:i:s', strtotime('-1 days'))
+                ]
+            ];
 
-        $stmtMar = $pdo->query("SELECT DISTINCT marca FROM reportes_inventario_autos WHERE status = 'Disponible' AND marca IS NOT NULL AND marca != '' ORDER BY marca ASC");
-        $catalogoMarcas = $stmtMar ? $stmtMar->fetchAll(PDO::FETCH_COLUMN) : [];
+            $stmtIns = $pdo->prepare("
+                INSERT INTO reportes_inventario_autos 
+                (cve_almacen, nombre_almacen, inventario, descripcion, chasis, color, motor, equipamiento, marca, anio, status, precio_venta, costo_inventario, importe_inventario, fecha_alta, datos_json, sincronizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ");
 
-        $stmtAni = $pdo->query("SELECT DISTINCT anio FROM reportes_inventario_autos WHERE status = 'Disponible' AND anio IS NOT NULL AND anio != '' ORDER BY anio DESC");
-        $catalogoAnios = $stmtAni ? $stmtAni->fetchAll(PDO::FETCH_COLUMN) : [];
-
-        $stmtCol = $pdo->query("SELECT DISTINCT color FROM reportes_inventario_autos WHERE status = 'Disponible' AND color IS NOT NULL AND color != '' ORDER BY color ASC");
-        $catalogoColores = $stmtCol ? $stmtCol->fetchAll(PDO::FETCH_COLUMN) : [];
-
-        // KPIs Generales del inventario disponible
-        $stmtKpi = $pdo->query("
-            SELECT 
-                COUNT(*) as total_autos,
-                COUNT(DISTINCT cve_almacen) as total_almacenes,
-                COALESCE(SUM(importe_inventario), 0) as suma_importe,
-                COALESCE(SUM(precio_venta), 0) as suma_venta
-            FROM reportes_inventario_autos 
-            WHERE status = 'Disponible'
-        ");
-        $kpis = $stmtKpi ? $stmtKpi->fetch(PDO::FETCH_ASSOC) : [];
-        $totalUnidades = intval($kpis['total_autos'] ?? 0);
-        $totalAlmacenes = intval($kpis['total_almacenes'] ?? 0);
-        $totalImporteInventario = floatval($kpis['suma_importe'] ?? 0);
-        $totalPrecioVenta = floatval($kpis['suma_venta'] ?? 0);
-
-        // Consulta de Unidades Filtradas
-        $sqlList = "SELECT * FROM reportes_inventario_autos WHERE $whereSql ORDER BY cve_almacen ASC, fecha_alta DESC LIMIT 300";
-        $stmtList = $pdo->prepare($sqlList);
-        $stmtList->execute($params);
-        $unidades = $stmtList->fetchAll(PDO::FETCH_ASSOC);
-
-    } catch (Throwable $e) {}
+            foreach ($demoAutos as $da) {
+                try {
+                    $stmtIns->execute([
+                        $da['cve_almacen'], $da['nombre_almacen'], $da['inventario'], $da['descripcion'],
+                        $da['chasis'], $da['color'], $da['motor'], $da['equipamiento'], $da['marca'],
+                        $da['anio'], $da['status'], $da['precio_venta'], $da['costo_inventario'],
+                        $da['importe_inventario'], $da['fecha_alta'], json_encode($da, JSON_UNESCAPED_UNICODE)
+                    ]);
+                } catch (Throwable $tIns) {}
+            }
+        }
+    } catch (Throwable $eCount) {}
 }
 
-$ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
+// =========================================================================
+// LÓGICA ESPECÍFICA PARA EL REPORTE: INVENTARIO DE SEMINUEVOS
+// =========================================================================
+if ($reporteActivo === 'inventario_seminuevos') {
+
+    $filtroQ        = trim($_GET['q'] ?? '');
+    $filtroAlmacen  = trim($_GET['almacen'] ?? '');
+    $filtroMarca    = trim($_GET['marca'] ?? '');
+    $filtroAnio     = trim($_GET['anio'] ?? '');
+    $filtroColor    = trim($_GET['color'] ?? '');
+    $filtroFechaI   = trim($_GET['fecha_desde'] ?? '');
+    $filtroFechaF   = trim($_GET['fecha_hasta'] ?? '');
+
+    $where = ["status = 'Disponible'"];
+    $params = [];
+
+    if (!empty($filtroQ)) {
+        $where[] = "(chasis LIKE ? OR inventario LIKE ? OR descripcion LIKE ? OR motor LIKE ? OR cve_almacen LIKE ?)";
+        $qParam = "%$filtroQ%";
+        $params[] = $qParam;
+        $params[] = $qParam;
+        $params[] = $qParam;
+        $params[] = $qParam;
+        $params[] = $qParam;
+    }
+    if (!empty($filtroAlmacen)) {
+        $where[] = "cve_almacen = ?";
+        $params[] = $filtroAlmacen;
+    }
+    if (!empty($filtroMarca)) {
+        $where[] = "marca = ?";
+        $params[] = $filtroMarca;
+    }
+    if (!empty($filtroAnio)) {
+        $where[] = "anio = ?";
+        $params[] = $filtroAnio;
+    }
+    if (!empty($filtroColor)) {
+        $where[] = "color = ?";
+        $params[] = $filtroColor;
+    }
+    if (!empty($filtroFechaI)) {
+        $where[] = "fecha_alta >= ?";
+        $params[] = $filtroFechaI . ' 00:00:00';
+    }
+    if (!empty($filtroFechaF)) {
+        $where[] = "fecha_alta <= ?";
+        $params[] = $filtroFechaF . ' 23:59:59';
+    }
+
+    $whereSql = implode(" AND ", $where);
+
+    // EXPORTACIÓN A EXCEL
+    if (isset($_GET['exportar']) && $_GET['exportar'] === 'excel' && $puedeExportar && $pdo) {
+        $sqlExp = "SELECT * FROM reportes_inventario_autos WHERE $whereSql ORDER BY cve_almacen ASC, fecha_alta DESC";
+        $stmtExp = $pdo->prepare($sqlExp);
+        $stmtExp->execute($params);
+        $rowsExp = $stmtExp->fetchAll(PDO::FETCH_ASSOC);
+
+        header('Content-Type: application/vnd.ms-excel; charset=utf-8');
+        header('Content-Disposition: attachment; filename="Inventario_Seminuevos_' . date('Ymd_His') . '.xls"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+
+        echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        echo '<head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Inventario Seminuevos</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head><body>';
+        echo '<table border="1" style="font-family: Arial, sans-serif; border-collapse: collapse;">';
+        echo '<tr style="background: #0f223d; color: #ffffff; font-weight: bold; text-align: center;">';
+        echo '<th>CveAlmacen</th><th>NombreAlmacen</th><th>Inventario</th><th>Descripcion</th><th>Chasis (VIN)</th><th>Color</th><th>Motor</th><th>Equipamiento</th><th>Marca</th><th>Año</th><th>Status</th><th>Precio de Venta</th><th>Costo Inventario</th><th>Importe Inventario</th><th>Fecha Alta</th>';
+        echo '</tr>';
+
+        foreach ($rowsExp as $r) {
+            echo '<tr>';
+            echo '<td align="center">' . htmlspecialchars($r['cve_almacen'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['nombre_almacen'] ?? '') . '</td>';
+            echo '<td align="center"><b>' . htmlspecialchars($r['inventario'] ?? '') . '</b></td>';
+            echo '<td>' . htmlspecialchars($r['descripcion'] ?? '') . '</td>';
+            echo '<td align="center"><code>' . htmlspecialchars($r['chasis'] ?? '') . '</code></td>';
+            echo '<td>' . htmlspecialchars($r['color'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['motor'] ?? '') . '</td>';
+            echo '<td>' . htmlspecialchars($r['equipamiento'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['marca'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['anio'] ?? '') . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['status'] ?? 'Disponible') . '</td>';
+            echo '<td align="right">' . number_format(floatval($r['precio_venta'] ?? 0), 2) . '</td>';
+            echo '<td align="right">' . number_format(floatval($r['costo_inventario'] ?? 0), 2) . '</td>';
+            echo '<td align="right">' . number_format(floatval($r['importe_inventario'] ?? 0), 2) . '</td>';
+            echo '<td align="center">' . htmlspecialchars($r['fecha_alta'] ?? '') . '</td>';
+            echo '</tr>';
+        }
+        echo '</table></body></html>';
+        exit();
+    }
+
+    // Consultas de datos
+    $unidades = [];
+    $totalUnidades = 0;
+    $totalAlmacenes = 0;
+    $totalImporteInventario = 0.0;
+    $totalPrecioVenta = 0.0;
+    $catalogoAlmacenes = [];
+    $catalogoMarcas = [];
+    $catalogoAnios = [];
+    $catalogoColores = [];
+
+    if ($pdo) {
+        try {
+            $stmtAlm = $pdo->query("SELECT DISTINCT cve_almacen, nombre_almacen FROM reportes_inventario_autos WHERE status = 'Disponible' ORDER BY cve_almacen ASC");
+            $catalogoAlmacenes = $stmtAlm ? $stmtAlm->fetchAll(PDO::FETCH_ASSOC) : [];
+
+            $stmtMar = $pdo->query("SELECT DISTINCT marca FROM reportes_inventario_autos WHERE status = 'Disponible' AND marca IS NOT NULL AND marca != '' ORDER BY marca ASC");
+            $catalogoMarcas = $stmtMar ? $stmtMar->fetchAll(PDO::FETCH_COLUMN) : [];
+
+            $stmtAni = $pdo->query("SELECT DISTINCT anio FROM reportes_inventario_autos WHERE status = 'Disponible' AND anio IS NOT NULL AND anio != '' ORDER BY anio DESC");
+            $catalogoAnios = $stmtAni ? $stmtAni->fetchAll(PDO::FETCH_COLUMN) : [];
+
+            $stmtCol = $pdo->query("SELECT DISTINCT color FROM reportes_inventario_autos WHERE status = 'Disponible' AND color IS NOT NULL AND color != '' ORDER BY color ASC");
+            $catalogoColores = $stmtCol ? $stmtCol->fetchAll(PDO::FETCH_COLUMN) : [];
+
+            $stmtKpi = $pdo->query("
+                SELECT 
+                    COUNT(*) as total_autos,
+                    COUNT(DISTINCT cve_almacen) as total_almacenes,
+                    COALESCE(SUM(importe_inventario), 0) as suma_importe,
+                    COALESCE(SUM(precio_venta), 0) as suma_venta
+                FROM reportes_inventario_autos 
+                WHERE status = 'Disponible'
+            ");
+            $kpis = $stmtKpi ? $stmtKpi->fetch(PDO::FETCH_ASSOC) : [];
+            $totalUnidades = intval($kpis['total_autos'] ?? 0);
+            $totalAlmacenes = intval($kpis['total_almacenes'] ?? 0);
+            $totalImporteInventario = floatval($kpis['suma_importe'] ?? 0);
+            $totalPrecioVenta = floatval($kpis['suma_venta'] ?? 0);
+
+            $sqlList = "SELECT * FROM reportes_inventario_autos WHERE $whereSql ORDER BY cve_almacen ASC, fecha_alta DESC LIMIT 300";
+            $stmtList = $pdo->prepare($sqlList);
+            $stmtList->execute($params);
+            $unidades = $stmtList->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Throwable $e) {}
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventario de Autos Disponibles - Portal de Sistemas</title>
+    <title><?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Reportes Agencia'; ?> - Portal de Sistemas</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <?php include_once 'pwa_head.php'; ?>
@@ -373,6 +375,25 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
             border-radius: 14px;
             padding: 22px;
             margin-bottom: 25px;
+        }
+        .report-box-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 18px;
+            padding: 30px 24px;
+            transition: all 0.28s ease;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+        }
+        .report-box-card:hover {
+            transform: translateY(-6px);
+            border-color: rgba(16, 185, 129, 0.45);
+            box-shadow: 0 14px 35px rgba(0, 0, 0, 0.5), 0 0 20px rgba(16, 185, 129, 0.15);
+            background: #0a1c36;
         }
         .table-custom {
             background: #081528 !important;
@@ -441,14 +462,26 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
 <!-- Navbar -->
 <div class="top-navbar d-flex justify-content-between align-items-center mb-4">
     <div class="d-flex align-items-center gap-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
-            <i class="bi bi-arrow-left me-1"></i> Menú Principal
-        </a>
+        <?php if (!empty($reporteActivo)): ?>
+            <a href="reportes_agencia.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
+                <i class="bi bi-arrow-left me-1"></i> Volver a Recuadros de Reportes
+            </a>
+        <?php else: ?>
+            <a href="menu.php" class="btn btn-outline-secondary btn-sm text-white rounded-3">
+                <i class="bi bi-arrow-left me-1"></i> Menú Principal
+            </a>
+        <?php endif; ?>
+
         <div class="d-flex align-items-center gap-2">
             <?php if (!empty($logoAgencia)): ?>
                 <img src="<?php echo htmlspecialchars($logoAgencia); ?>" alt="Logo" style="max-height: 28px; max-width: 100px; object-fit: contain;">
             <?php endif; ?>
-            <span class="fw-bold fs-5">PORTAL DE SISTEMAS <span class="text-success">| Inventario Autos Disponibles</span></span>
+            <span class="fw-bold fs-5">
+                PORTAL DE SISTEMAS 
+                <span class="text-success">
+                    | <?php echo ($reporteActivo === 'inventario_seminuevos') ? 'Inventario de Seminuevos' : 'Reportes Agencia'; ?>
+                </span>
+            </span>
         </div>
     </div>
     <div class="d-flex align-items-center gap-2">
@@ -465,29 +498,160 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
 
 <div class="container-fluid px-4" style="max-width: 1550px;">
 
-    <!-- Alertas -->
-    <?php if (isset($_GET['msg']) && $_GET['msg'] === 'demo_ok'): ?>
-        <div class="alert alert-success alert-dismissible fade show border-0 rounded-3 mb-4 shadow" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> ¡Inventario de prueba cargado con éxito! Las unidades se visualizan conforme al esquema oficial de GEDAS (AUAUTOS / GNCATMA).
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    <?php endif; ?>
+    <?php if (empty($reporteActivo)): ?>
+    <!-- ===================================================================== -->
+    <!-- VISTA 1: CATÁLOGO DE REPORTES EN RECUADROS (GRID DE REPORTES)         -->
+    <!-- ===================================================================== -->
 
-    <!-- HERO PANEL -->
+    <!-- HERO PANEL HUB DE REPORTES -->
     <div class="hero-panel">
         <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-4">
             <div>
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
                     <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1 rounded-pill">
-                        <i class="bi bi-car-front-fill me-1"></i> Consulta Oficial: GEDAS AUAUTOS & GNCATMA
+                        <i class="bi bi-grid-fill me-1"></i> Centro de Reportes Operativos
                     </span>
                     <span class="badge bg-dark border border-secondary text-secondary px-3 py-1 rounded-pill small">
-                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Sin Apertura de Puertos (Push HTTPS Saliente)
+                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Cero Puertos Abiertos (Push HTTPS Saliente)
                     </span>
                 </div>
-                <h2 class="fw-bold text-white mb-2">Inventario de Autos Disponibles</h2>
+                <h2 class="fw-bold text-white mb-2">Módulo de Reportes de Agencia</h2>
                 <p class="text-secondary mb-0" style="max-width: 720px;">
-                    Listado actualizado de vehículos nuevos y seminuevos con estatus <code>Disponible</code> por almacén, chasis (VIN), color, motor y valor de inventario.
+                    Selecciona en los recuadros inferiores el reporte que deseas consultar y analizar en tiempo real. La información es alimentada de forma segura por la API local conectada al DMS/ERP.
+                </p>
+            </div>
+
+            <!-- Estado Conector -->
+            <div class="d-flex flex-column align-items-lg-end gap-2 w-100 w-lg-auto">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="badge p-2 px-3 rounded-pill <?php echo (!empty($ultimaSync)) ? 'bg-success bg-opacity-25 text-success border border-success' : 'bg-warning bg-opacity-25 text-warning border border-warning'; ?>">
+                        <i class="bi <?php echo (!empty($ultimaSync)) ? 'bi-check-circle-fill' : 'bi-clock-fill'; ?> me-1"></i>
+                        <?php echo (!empty($ultimaSync)) ? 'Conector Sincronizado' : 'Esperando Conexión'; ?>
+                    </span>
+                    <a href="agencia.php?descargar_conector_local=1" class="btn btn-success text-dark fw-bold btn-sm rounded-3 px-3">
+                        <i class="bi bi-cloud-arrow-down-fill me-1"></i> Descargar Conector API (.php)
+                    </a>
+                </div>
+                <div class="text-secondary small font-monospace">
+                    Última Sincronización: <span class="text-info"><?php echo !empty($ultimaSync) ? htmlspecialchars($ultimaSync) : 'Sin transmisión previa'; ?></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GRID DE RECUADROS DE REPORTES -->
+    <div class="row g-4">
+
+        <!-- RECUADRO 1: INVENTARIO DE SEMINUEVOS (ACTIVO Y LISTO) -->
+        <div class="col-md-6 col-lg-4">
+            <div class="report-box-card" style="border-color: rgba(16, 185, 129, 0.4);">
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="p-3 rounded-3" style="background: rgba(16, 185, 129, 0.15); color: #34d399; font-size: 1.8rem;">
+                            <i class="bi bi-car-front-fill"></i>
+                        </div>
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1 rounded-pill">
+                            <i class="bi bi-check-circle-fill me-1"></i> DISPONIBLE
+                        </span>
+                    </div>
+                    <h4 class="fw-bold text-white mb-2">Inventario de Seminuevos</h4>
+                    <p class="text-secondary small mb-3">
+                        Listado de unidades seminuevas y disponibles extraídas de la base de datos oficial <strong>GEDAS (AUAUTOS / GNCATMA)</strong> por almacén, chasis (VIN), color, motor y valor comercial.
+                    </p>
+                    <div class="p-3 rounded-3 mb-3" style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06);">
+                        <div class="row g-2 text-center">
+                            <div class="col-6 border-end border-secondary border-opacity-25">
+                                <div class="text-secondary" style="font-size: 0.72rem;">ESTATUS</div>
+                                <div class="fw-bold text-success small font-monospace">Disponible</div>
+                            </div>
+                            <div class="col-6">
+                                <div class="text-secondary" style="font-size: 0.72rem;">ORIGEN</div>
+                                <div class="fw-bold text-info small font-monospace">GEDAS DMS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <a href="reportes_agencia.php?reporte=inventario_seminuevos" class="btn btn-success text-dark fw-bold w-100 rounded-3 py-2 shadow-sm d-flex align-items-center justify-content-center gap-2">
+                        <span>Ingresar al Reporte</span> <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- RECUADRO 2: ÓRDENES DE SERVICIO & TALLER (PRÓXIMAMENTE) -->
+        <div class="col-md-6 col-lg-4">
+            <div class="report-box-card" style="opacity: 0.85;">
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="p-3 rounded-3" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 1.8rem;">
+                            <i class="bi bi-tools"></i>
+                        </div>
+                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-3 py-1 rounded-pill">
+                            <i class="bi bi-hourglass-split me-1"></i> PRÓXIMAMENTE
+                        </span>
+                    </div>
+                    <h4 class="fw-bold text-white mb-2">Órdenes de Servicio</h4>
+                    <p class="text-secondary small mb-3">
+                        Monitoreo de citas, autos en rampa, diagnósticos, paquetes de mantenimiento y estatus de entrega en taller mecánico.
+                    </p>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary w-100 rounded-3 py-2 text-secondary" disabled>
+                        En proceso de integración
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RECUADRO 3: VENTAS Y FACTURACIÓN (PRÓXIMAMENTE) -->
+        <div class="col-md-6 col-lg-4">
+            <div class="report-box-card" style="opacity: 0.85;">
+                <div>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <div class="p-3 rounded-3" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; font-size: 1.8rem;">
+                            <i class="bi bi-cash-stack"></i>
+                        </div>
+                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary px-3 py-1 rounded-pill">
+                            <i class="bi bi-hourglass-split me-1"></i> PRÓXIMAMENTE
+                        </span>
+                    </div>
+                    <h4 class="fw-bold text-white mb-2">Ventas y Facturación</h4>
+                    <p class="text-secondary small mb-3">
+                        Resumen de unidades entregadas, facturas emitidas, márgenes por asesor de ventas y formas de financiamiento.
+                    </p>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary w-100 rounded-3 py-2 text-secondary" disabled>
+                        En proceso de integración
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <?php else: ?>
+    <!-- ===================================================================== -->
+    <!-- VISTA 2: REPORTE EN DETALLE (INVENTARIO DE SEMINUEVOS)                 -->
+    <!-- ===================================================================== -->
+
+    <!-- HERO PANEL REPORTE DETALLE -->
+    <div class="hero-panel">
+        <div class="d-flex flex-column flex-lg-row align-items-start align-items-lg-center justify-content-between gap-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                    <span class="badge bg-success bg-opacity-25 text-success border border-success px-3 py-1 rounded-pill">
+                        <i class="bi bi-car-front-fill me-1"></i> Consulta Oficial GEDAS: AUAUTOS & GNCATMA
+                    </span>
+                    <span class="badge bg-dark border border-secondary text-secondary px-3 py-1 rounded-pill small">
+                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Sin Apertura de Puertos (Push HTTPS)
+                    </span>
+                </div>
+                <h2 class="fw-bold text-white mb-2">Inventario de Seminuevos</h2>
+                <p class="text-secondary mb-0" style="max-width: 720px;">
+                    Listado actualizado de vehículos seminuevos con estatus <code>Disponible</code> por almacén, chasis (VIN), color, motor y valor de inventario.
                 </p>
             </div>
 
@@ -567,6 +731,8 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
     <!-- BARRA DE FILTROS APLICADOS -->
     <div class="filter-box">
         <form method="GET" class="row g-3 align-items-end">
+            <input type="hidden" name="reporte" value="inventario_seminuevos">
+
             <div class="col-md-3">
                 <label class="form-label small fw-bold text-secondary">Búsqueda Rápida</label>
                 <div class="input-group">
@@ -627,7 +793,7 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
                 <button type="submit" class="btn btn-success text-dark fw-bold w-100 rounded-3">
                     <i class="bi bi-funnel-fill me-1"></i> Filtrar
                 </button>
-                <a href="reportes_agencia.php" class="btn btn-outline-secondary rounded-3 text-white" title="Limpiar Filtros">
+                <a href="reportes_agencia.php?reporte=inventario_seminuevos" class="btn btn-outline-secondary rounded-3 text-white" title="Limpiar Filtros">
                     <i class="bi bi-x-lg"></i>
                 </a>
             </div>
@@ -638,16 +804,8 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
                 Mostrando <strong class="text-white"><?php echo count($unidades); ?></strong> de <strong class="text-white"><?php echo $totalUnidades; ?></strong> unidades disponibles.
             </div>
             <div class="d-flex gap-2">
-                <?php if ($totalUnidades === 0 && $puedeCrear): ?>
-                    <form method="POST" class="d-inline">
-                        <input type="hidden" name="accion" value="sembrar_demo_autos">
-                        <button type="submit" class="btn btn-outline-info btn-sm rounded-3">
-                            <i class="bi bi-magic me-1"></i> Cargar Datos de Demostración GEDAS
-                        </button>
-                    </form>
-                <?php endif; ?>
                 <?php if ($puedeExportar): ?>
-                    <a href="reportes_agencia.php?<?php echo http_build_query(array_merge($_GET, ['exportar' => 'excel'])); ?>" class="btn btn-outline-success btn-sm rounded-3">
+                    <a href="reportes_agencia.php?<?php echo http_build_query(array_merge($_GET, ['reporte' => 'inventario_seminuevos', 'exportar' => 'excel'])); ?>" class="btn btn-outline-success btn-sm rounded-3">
                         <i class="bi bi-file-earmark-excel-fill text-success me-1"></i> Exportar a Excel (.xls)
                     </a>
                 <?php endif; ?>
@@ -655,7 +813,7 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
         </div>
     </div>
 
-    <!-- TABLA DE INVENTARIO DISPONIBLE -->
+    <!-- TABLA DE INVENTARIO DISPONIBLE (100% DARK THEME) -->
     <div class="table-custom">
         <div class="table-responsive">
             <table class="table">
@@ -681,15 +839,7 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
                             <td colspan="12" class="text-center py-5 text-secondary">
                                 <i class="bi bi-car-front display-4 d-block mb-2 opacity-50 text-secondary"></i>
                                 <h5 class="fw-bold text-white mb-1">No hay unidades en inventario</h5>
-                                <p class="small mb-3">No se encontraron vehículos disponibles con los filtros actuales o la base de datos local aún no ha transmitido el inventario.</p>
-                                <?php if ($puedeCrear): ?>
-                                    <form method="POST" class="d-inline">
-                                        <input type="hidden" name="accion" value="sembrar_demo_autos">
-                                        <button type="submit" class="btn btn-sm btn-success text-dark fw-bold rounded-3 px-3">
-                                            <i class="bi bi-magic me-1"></i> Cargar Inventario de Demostración
-                                        </button>
-                                    </form>
-                                <?php endif; ?>
+                                <p class="small mb-0">No se encontraron vehículos disponibles con los filtros actuales.</p>
                             </td>
                         </tr>
                     <?php else: ?>
@@ -765,68 +915,68 @@ $ultimaSync = $agenciaData['local_ultima_sincronizacion'] ?? null;
         </div>
     </div>
 
-</div>
-
-<!-- ========================================================================= -->
-<!-- MODAL: FICHA TÉCNICA DEL VEHÍCULO                                         -->
-<!-- ========================================================================= -->
-<div class="modal fade" id="modalFichaAuto" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content" style="background: #081528; border: 1px solid rgba(16, 185, 129, 0.4); color: #fff;">
-            <div class="modal-header border-secondary border-opacity-25">
-                <div>
-                    <h5 class="modal-title fw-bold text-white mb-0" id="fa_descripcion">Ficha de Unidad</h5>
-                    <small class="text-secondary font-monospace" id="fa_chasis">VIN: ---</small>
+    <!-- MODAL: FICHA TÉCNICA DEL VEHÍCULO -->
+    <div class="modal fade" id="modalFichaAuto" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content" style="background: #081528; border: 1px solid rgba(16, 185, 129, 0.4); color: #fff;">
+                <div class="modal-header border-secondary border-opacity-25">
+                    <div>
+                        <h5 class="modal-title fw-bold text-white mb-0" id="fa_descripcion">Ficha de Unidad</h5>
+                        <small class="text-secondary font-monospace" id="fa_chasis">VIN: ---</small>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body p-4">
-                <div class="row g-3 mb-4">
-                    <div class="col-sm-4">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="text-secondary small fw-bold">PRECIO DE VENTA</div>
-                            <div class="fw-bold text-success font-monospace fs-5" id="fa_precio_venta">$0.00</div>
+                <div class="modal-body p-4">
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-4">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="text-secondary small fw-bold">PRECIO DE VENTA</div>
+                                <div class="fw-bold text-success font-monospace fs-5" id="fa_precio_venta">$0.00</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="text-secondary small fw-bold">COSTO INVENTARIO</div>
+                                <div class="fw-bold text-warning font-monospace fs-5" id="fa_costo">$0.00</div>
+                            </div>
+                        </div>
+                        <div class="col-sm-4">
+                            <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                                <div class="text-secondary small fw-bold">MARGEN BRUTO EST.</div>
+                                <div class="fw-bold text-info font-monospace fs-5" id="fa_margen">$0.00</div>
+                            </div>
                         </div>
                     </div>
-                    <div class="col-sm-4">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="text-secondary small fw-bold">COSTO INVENTARIO</div>
-                            <div class="fw-bold text-warning font-monospace fs-5" id="fa_costo">$0.00</div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-sm-6">
+                            <div class="small text-secondary"><strong>Almacén:</strong> <span class="text-light" id="fa_almacen">---</span></div>
+                            <div class="small text-secondary mt-2"><strong>Clave Inventario:</strong> <span class="text-info font-monospace fw-bold" id="fa_inventario">---</span></div>
+                            <div class="small text-secondary mt-2"><strong>Marca / Año:</strong> <span class="text-light" id="fa_marca_anio">---</span></div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="small text-secondary"><strong>Color Exterior:</strong> <span class="text-light" id="fa_color">---</span></div>
+                            <div class="small text-secondary mt-2"><strong>Número de Motor:</strong> <span class="text-light font-monospace" id="fa_motor">---</span></div>
+                            <div class="small text-secondary mt-2"><strong>Fecha de Alta:</strong> <span class="text-light" id="fa_fecha">---</span></div>
                         </div>
                     </div>
-                    <div class="col-sm-4">
-                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
-                            <div class="text-secondary small fw-bold">MARGEN BRUTO EST.</div>
-                            <div class="fw-bold text-info font-monospace fs-5" id="fa_margen">$0.00</div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold text-secondary">Equipamiento Opcional y Paquete</label>
+                        <div class="p-3 rounded-3 text-light" style="background: #050d1a; border: 1px solid rgba(255,255,255,0.08);" id="fa_equipamiento">
+                            ---
                         </div>
                     </div>
                 </div>
-
-                <div class="row g-3 mb-3">
-                    <div class="col-sm-6">
-                        <div class="small text-secondary"><strong>Almacén:</strong> <span class="text-light" id="fa_almacen">---</span></div>
-                        <div class="small text-secondary mt-2"><strong>Clave Inventario:</strong> <span class="text-info font-monospace fw-bold" id="fa_inventario">---</span></div>
-                        <div class="small text-secondary mt-2"><strong>Marca / Año:</strong> <span class="text-light" id="fa_marca_anio">---</span></div>
-                    </div>
-                    <div class="col-sm-6">
-                        <div class="small text-secondary"><strong>Color Exterior:</strong> <span class="text-light" id="fa_color">---</span></div>
-                        <div class="small text-secondary mt-2"><strong>Número de Motor:</strong> <span class="text-light font-monospace" id="fa_motor">---</span></div>
-                        <div class="small text-secondary mt-2"><strong>Fecha de Alta:</strong> <span class="text-light" id="fa_fecha">---</span></div>
-                    </div>
+                <div class="modal-footer border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
                 </div>
-
-                <div class="mb-3">
-                    <label class="form-label small fw-bold text-secondary">Equipamiento Opcional y Paquete</label>
-                    <div class="p-3 rounded-3 text-light" style="background: #050d1a; border: 1px solid rgba(255,255,255,0.08);" id="fa_equipamiento">
-                        ---
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer border-secondary border-opacity-25">
-                <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
             </div>
         </div>
     </div>
+
+    <?php endif; ?>
+
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
