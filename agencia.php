@@ -17,6 +17,9 @@ if (!in_array($rolActual, ['superadmin', 'admin'])) {
 // Auto-asegurar existencia de las tablas de permisos y agencias
 if ($pdo) {
     asegurarTablasPermisos($pdo);
+    if (function_exists('asegurarTablasReportesAgencia')) {
+        asegurarTablasReportesAgencia($pdo);
+    }
 }
 
 $mensaje = '';
@@ -247,6 +250,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
         }
     }
+
+    // ACCIÓN: GUARDAR CONFIGURACIÓN DE CONEXIÓN AL SERVIDOR LOCAL / DMS
+    elseif ($accion === 'guardar_servidor_local') {
+        $agencia_id   = intval($_POST['agencia_id'] ?? ($agenciaData['id'] ?? 1));
+        $local_host   = trim($_POST['local_db_host'] ?? '127.0.0.1');
+        $local_port   = intval($_POST['local_db_port'] ?? 3306);
+        $local_name   = trim($_POST['local_db_name'] ?? '');
+        $local_user   = trim($_POST['local_db_user'] ?? '');
+        $local_pass   = trim($_POST['local_db_pass'] ?? '');
+        $local_tipo   = strtolower(trim($_POST['local_tipo_db'] ?? 'mysql'));
+        $local_token  = trim($_POST['local_api_token'] ?? '');
+        $local_srv_url= trim($_POST['local_servidor_url'] ?? '');
+
+        if ($local_port <= 0) {
+            $local_port = ($local_tipo === 'sqlserver') ? 1433 : 3306;
+        }
+
+        if (empty($local_token)) {
+            $local_token = 'TK_LOCAL_' . strtoupper(bin2hex(random_bytes(8)));
+        }
+
+        try {
+            $stmtUpdLoc = $pdo->prepare("
+                UPDATE agencias 
+                SET local_db_host = ?, local_db_port = ?, local_db_name = ?, local_db_user = ?, local_db_pass = ?, local_tipo_db = ?, local_api_token = ?, local_servidor_url = ?
+                WHERE id = ?
+            ");
+            $stmtUpdLoc->execute([$local_host, $local_port, $local_name, $local_user, $local_pass, $local_tipo, $local_token, $local_srv_url, $agencia_id]);
+
+            // Recargar datos actualizados
+            $stmt = $pdo->prepare("SELECT * FROM agencias WHERE id=? LIMIT 1");
+            $stmt->execute([$agencia_id]);
+            $agenciaData = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            $mensaje = "¡Configuración de conexión al Servidor Local guardada exitosamente!";
+        } catch (PDOException $e) {
+            $error = "Error al guardar configuración de servidor local: " . $e->getMessage();
+        }
+    }
+}
+
+// ====================================================================
+// DESCARGA AUTOMÁTICA DEL CONECTOR PHP PARA SERVIDOR LOCAL
+// ====================================================================
+if (isset($_GET['descargar_conector_local'])) {
+    $hostLocal  = !empty($agenciaData['local_db_host']) ? $agenciaData['local_db_host'] : '127.0.0.1';
+    $portLocal  = !empty($agenciaData['local_db_port']) ? intval($agenciaData['local_db_port']) : 3306;
+    $dbLocal    = !empty($agenciaData['local_db_name']) ? $agenciaData['local_db_name'] : 'dms_agencia';
+    $userLocal  = !empty($agenciaData['local_db_user']) ? $agenciaData['local_db_user'] : 'root';
+    $passLocal  = !empty($agenciaData['local_db_pass']) ? $agenciaData['local_db_pass'] : '';
+    $tipoLocal  = !empty($agenciaData['local_tipo_db']) ? $agenciaData['local_tipo_db'] : 'mysql';
+    $tokenLocal = !empty($agenciaData['local_api_token']) ? $agenciaData['local_api_token'] : 'TK_LOCAL_DEFAULT_2026';
+
+    $protocolo    = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || ($_SERVER['SERVER_PORT'] ?? 80) == 443) ? "https://" : "http://";
+    $hostServidor = $_SERVER['HTTP_HOST'] ?? 'portal.divolavilla.com';
+    $directorio   = rtrim(dirname($_SERVER['SCRIPT_NAME'] ?? ''), '/\\');
+    $urlReceptor  = $protocolo . $hostServidor . ($directorio ? $directorio : '') . '/api_receptor_reportes_locales.php';
+
+    $template = file_get_contents(__DIR__ . '/conector_servidor_local.php');
+    if ($template) {
+        $template = preg_replace("/\\\$LOCAL_DB_HOST\s*=\s*'.*?';/", "\$LOCAL_DB_HOST = '" . addslashes($hostLocal) . "';", $template);
+        $template = preg_replace("/\\\$LOCAL_DB_PORT\s*=\s*\d+;/", "\$LOCAL_DB_PORT = " . intval($portLocal) . ";", $template);
+        $template = preg_replace("/\\\$LOCAL_DB_NAME\s*=\s*'.*?';/", "\$LOCAL_DB_NAME = '" . addslashes($dbLocal) . "';", $template);
+        $template = preg_replace("/\\\$LOCAL_DB_USER\s*=\s*'.*?';/", "\$LOCAL_DB_USER = '" . addslashes($userLocal) . "';", $template);
+        $template = preg_replace("/\\\$LOCAL_DB_PASS\s*=\s*'.*?';/", "\$LOCAL_DB_PASS = '" . addslashes($passLocal) . "';", $template);
+        $template = preg_replace("/\\\$LOCAL_DB_TYPE\s*=\s*'.*?';/", "\$LOCAL_DB_TYPE = '" . addslashes($tipoLocal) . "';", $template);
+        $template = preg_replace("/\\\$LOCAL_API_TOKEN\s*=\s*'.*?';/", "\$LOCAL_API_TOKEN = '" . addslashes($tokenLocal) . "';", $template);
+        $template = preg_replace("/\\\$CPANEL_RECEPTOR_URL\s*=\s*'.*?';/", "\$CPANEL_RECEPTOR_URL = '" . addslashes($urlReceptor) . "';", $template);
+    }
+
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="conector_servidor_local.php"');
+    header('Content-Length: ' . strlen($template));
+    echo $template;
+    exit();
 }
 
 // Auto-sembrado de Áreas Predeterminadas (Administración, Servicio, Refacciones, Ventas, HyP, CRM)
@@ -724,6 +802,158 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
         </div>
     </div>
 
+    <!-- ========================================================================= -->
+    <!-- SECCIÓN: CONEXIÓN A SERVIDOR LOCAL / DMS (REPORTES DE AGENCIA)            -->
+    <!-- ========================================================================= -->
+    <div class="row mt-4" id="servidor_local">
+        <div class="col-12">
+            <div class="card-custom" style="border-color: rgba(16, 185, 129, 0.35); box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+                <div class="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between mb-4 border-bottom border-secondary border-opacity-25 pb-3 gap-3">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="p-3 rounded-3 fs-3" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
+                            <i class="bi bi-hdd-network-fill"></i>
+                        </div>
+                        <div>
+                            <div class="d-flex align-items-center gap-2">
+                                <h5 class="fw-bold mb-0 text-white">Conexión a Servidor Local / DMS (Reportes de Agencia)</h5>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success rounded-pill px-2 py-1 small">
+                                    <i class="bi bi-shield-check me-1"></i> API Local
+                                </span>
+                            </div>
+                            <small class="text-secondary">Configura los datos del servidor local (IP, usuario, contraseña y token) para extraer y transmitir reportes operativos hacia tu cPanel.</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <a href="agencia.php?descargar_conector_local=1" class="btn btn-outline-success btn-sm rounded-3 px-3 py-2 text-white d-flex align-items-center gap-1.5 shadow-sm">
+                            <i class="bi bi-cloud-arrow-down-fill text-success"></i> <span>Descargar API Automática (.php)</span>
+                        </a>
+                        <button type="button" class="btn btn-success text-dark fw-bold btn-sm rounded-3 px-3 py-2 d-flex align-items-center gap-1.5 shadow-sm" onclick="ejecutarPruebaConexionLocal()">
+                            <i class="bi bi-activity"></i> <span>Hacer prueba de conexión a servidor local</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Resumen de Estado de Conexión -->
+                <div class="row g-3 mb-4">
+                    <div class="col-sm-6 col-md-3">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="label-custom">HOST / IP LOCAL</div>
+                            <div class="val-custom text-info font-monospace fs-6">
+                                <i class="bi bi-hdd-fill me-1"></i> <?php echo htmlspecialchars(($agenciaData['local_db_host'] ?? '127.0.0.1') . ':' . ($agenciaData['local_db_port'] ?? 3306)); ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="label-custom">BASE DE DATOS</div>
+                            <div class="val-custom text-white font-monospace fs-6">
+                                <i class="bi bi-database-fill me-1 text-primary"></i> <?php echo htmlspecialchars($agenciaData['local_db_name'] ?? 'dms_agencia'); ?> (<?php echo strtoupper(htmlspecialchars($agenciaData['local_tipo_db'] ?? 'mysql')); ?>)
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="label-custom">TOKEN API LOCAL</div>
+                            <div class="val-custom text-warning font-monospace small">
+                                <i class="bi bi-key-fill me-1"></i> <?php echo htmlspecialchars(substr($agenciaData['local_api_token'] ?? 'TK_LOCAL_PENDIENTE', 0, 10) . '••••••••'); ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-sm-6 col-md-3">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="label-custom">ÚLTIMA SINCRONIZACIÓN</div>
+                            <div class="val-custom text-light small">
+                                <i class="bi bi-clock-history me-1 text-success"></i> <?php echo !empty($agenciaData['local_ultima_sincronizacion']) ? htmlspecialchars($agenciaData['local_ultima_sincronizacion']) : '<span class="text-secondary">Sin sincronizar aún</span>'; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Formulario de Configuración -->
+                <form method="POST" id="formServidorLocal">
+                    <input type="hidden" name="accion" value="guardar_servidor_local">
+                    <input type="hidden" name="agencia_id" value="<?php echo $agenciaData['id'] ?? 1; ?>">
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-secondary">IP o Host del Servidor Local</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-hdd-network"></i></span>
+                                <input type="text" name="local_db_host" id="cfg_local_host" class="form-control" placeholder="ej. 192.168.1.100 o 127.0.0.1" value="<?php echo htmlspecialchars($agenciaData['local_db_host'] ?? '127.0.0.1'); ?>" required>
+                            </div>
+                            <small class="text-secondary" style="font-size: 0.73rem;">IP donde está alojado el DMS o base de datos en la agencia.</small>
+                        </div>
+
+                        <div class="col-md-2">
+                            <label class="form-label small fw-bold text-secondary">Puerto</label>
+                            <input type="number" name="local_db_port" id="cfg_local_port" class="form-control" placeholder="3306" value="<?php echo htmlspecialchars($agenciaData['local_db_port'] ?? 3306); ?>" required>
+                            <small class="text-secondary" style="font-size: 0.73rem;">3306 (MySQL) o 1433 (SQL Server).</small>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-secondary">Motor de Base de Datos</label>
+                            <select name="local_tipo_db" id="cfg_local_tipo" class="form-select">
+                                <option value="mysql" <?php echo (($agenciaData['local_tipo_db'] ?? 'mysql') === 'mysql') ? 'selected' : ''; ?>>MySQL / MariaDB</option>
+                                <option value="sqlserver" <?php echo (($agenciaData['local_tipo_db'] ?? '') === 'sqlserver') ? 'selected' : ''; ?>>Microsoft SQL Server</option>
+                            </select>
+                            <small class="text-secondary" style="font-size: 0.73rem;">Tipo de gestor de base de datos.</small>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-secondary">Nombre de la Base de Datos</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-database"></i></span>
+                                <input type="text" name="local_db_name" id="cfg_local_dbname" class="form-control" placeholder="ej. dms_agencia, intelisis" value="<?php echo htmlspecialchars($agenciaData['local_db_name'] ?? ''); ?>" required>
+                            </div>
+                            <small class="text-secondary" style="font-size: 0.73rem;">Nombre de la BD local a consultar.</small>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-secondary">Usuario de la BD Local</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-person"></i></span>
+                                <input type="text" name="local_db_user" id="cfg_local_user" class="form-control" placeholder="ej. root o user_dms" value="<?php echo htmlspecialchars($agenciaData['local_db_user'] ?? ''); ?>" required>
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label small fw-bold text-secondary">Contraseña de la BD Local</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-lock"></i></span>
+                                <input type="password" name="local_db_pass" id="cfg_local_pass" class="form-control" placeholder="••••••••" value="<?php echo htmlspecialchars($agenciaData['local_db_pass'] ?? ''); ?>">
+                                <button type="button" class="btn btn-outline-secondary" onclick="togglePasswordLocal('cfg_local_pass', this)"><i class="bi bi-eye"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-secondary">Token de Seguridad para la API</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-shield-lock"></i></span>
+                                <input type="text" name="local_api_token" id="cfg_local_token" class="form-control font-monospace text-warning" placeholder="Token Secreto" value="<?php echo htmlspecialchars($agenciaData['local_api_token'] ?? ''); ?>" required>
+                                <button type="button" class="btn btn-outline-warning btn-sm" onclick="generarNuevoTokenLocal()"><i class="bi bi-shuffle me-1"></i> Generar</button>
+                            </div>
+                            <small class="text-secondary" style="font-size: 0.73rem;">Clave secreta compartida entre el servidor local y este cPanel para validar cada reporte.</small>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3 mt-4 pt-3 border-top border-secondary border-opacity-25">
+                        <div class="text-secondary small">
+                            <i class="bi bi-info-circle-fill text-info me-1"></i> Al guardar, se actualizan los parámetros en la base de datos de la agencia y en el conector descargable.
+                        </div>
+                        <div class="d-flex gap-2 w-100 w-md-auto justify-content-end">
+                            <a href="reportes_agencia.php" class="btn btn-outline-secondary text-white rounded-3 px-3">
+                                <i class="bi bi-bar-chart-line-fill me-1"></i> Ir a Reportes Agencia
+                            </a>
+                            <button type="submit" class="btn btn-success text-dark fw-bold rounded-3 px-4 shadow">
+                                <i class="bi bi-check-lg me-1"></i> Guardar Parámetros de Conexión
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <!-- =================================================== -->
@@ -883,12 +1113,167 @@ $colorClaveActual = $agenciaData['color_tema'] ?? ($temaActivo['clave'] ?? 'azul
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- =================================================== -->
+<!-- MODAL: PRUEBA DE CONEXIÓN A SERVIDOR LOCAL          -->
+<!-- =================================================== -->
+<div class="modal fade" id="modalPruebaConexionLocal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="background: #081528; border: 1px solid rgba(16, 185, 129, 0.4); color: #fff;">
+            <div class="modal-header border-secondary border-opacity-25">
+                <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
+                    <span class="p-2 rounded-2 bg-success bg-opacity-25 text-success"><i class="bi bi-activity"></i></span>
+                    Diagnóstico de Conexión a Servidor Local
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4" id="contenedorResultadoTestLocal">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                    <h5 class="fw-bold text-white">Ejecutando prueba de conexión...</h5>
+                    <p class="text-secondary small mb-0">Probando sockets TCP con el servidor local y receptor de cPanel...</p>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25">
+                <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                <a href="agencia.php?descargar_conector_local=1" class="btn btn-success text-dark fw-bold rounded-3">
+                    <i class="bi bi-cloud-arrow-down-fill me-1"></i> Descargar Conector Local
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     function abrirModalEditarArea(area) {
         document.getElementById('edit_area_id').value = area.id;
         document.getElementById('edit_area_nombre').value = area.nombre;
         const modal = new bootstrap.Modal(document.getElementById('modalEditarArea'));
         modal.show();
+    }
+
+    function togglePasswordLocal(id, btn) {
+        const input = document.getElementById(id);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            btn.innerHTML = '<i class="bi bi-eye-slash"></i>';
+        } else {
+            input.type = 'password';
+            btn.innerHTML = '<i class="bi bi-eye"></i>';
+        }
+    }
+
+    function generarNuevoTokenLocal() {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let token = 'TK_LOCAL_';
+        for (let i = 0; i < 16; i++) {
+            token += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        document.getElementById('cfg_local_token').value = token;
+    }
+
+    function ejecutarPruebaConexionLocal() {
+        const modalEl = document.getElementById('modalPruebaConexionLocal');
+        const modal = new bootstrap.Modal(modalEl);
+        const contenedor = document.getElementById('contenedorResultadoTestLocal');
+
+        contenedor.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-success mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                <h5 class="fw-bold text-white">Ejecutando prueba de conexión...</h5>
+                <p class="text-secondary small mb-0">Probando sockets TCP con el servidor local y receptor de cPanel...</p>
+            </div>
+        `;
+        modal.show();
+
+        const payload = {
+            host: document.getElementById('cfg_local_host')?.value || '',
+            port: document.getElementById('cfg_local_port')?.value || '3306',
+            dbname: document.getElementById('cfg_local_dbname')?.value || '',
+            user: document.getElementById('cfg_local_user')?.value || '',
+            pass: document.getElementById('cfg_local_pass')?.value || '',
+            tipo_db: document.getElementById('cfg_local_tipo')?.value || 'mysql',
+            token: document.getElementById('cfg_local_token')?.value || ''
+        };
+
+        fetch('api_test_conexion_local.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(r => r.json())
+        .then(data => {
+            const d = data.detalles || {};
+            let htmlBadge = '';
+            let htmlAlert = '';
+
+            if (d.pdo_conectado) {
+                htmlBadge = `<span class="badge bg-success fs-6 px-3 py-2"><i class="bi bi-check-circle-fill me-1"></i> Conexión Directa Exitosa</span>`;
+                htmlAlert = `<div class="alert alert-success border-0 bg-success bg-opacity-10 text-success p-3 rounded-3 mb-3">
+                    <strong>¡Excelente!</strong> Se estableció conexión directa con el motor de base de datos local (${escapeHtml(d.version_motor || payload.tipo_db)}).
+                </div>`;
+            } else if (d.es_ip_privada) {
+                htmlBadge = `<span class="badge bg-info text-dark fs-6 px-3 py-2"><i class="bi bi-hdd-network-fill me-1"></i> Red Privada LAN Detectada</span>`;
+                htmlAlert = `<div class="alert alert-info border-0 bg-info bg-opacity-10 text-info p-3 rounded-3 mb-3">
+                    <strong><i class="bi bi-info-circle-fill me-1"></i> Servidor Local en Intranet / Red Privada:</strong><br>
+                    La IP <code>${escapeHtml(payload.host)}</code> pertenece a una red local privada (RFC 1918). Debido a que tu cPanel está en la nube, la comunicación se realiza mediante el <strong>Conector Local Automático</strong>. Este script corre dentro de la agencia y transmite los reportes por HTTPS hacia cPanel sin abrir puertos en el router.
+                </div>`;
+            } else if (d.socket_abierto) {
+                htmlBadge = `<span class="badge bg-warning text-dark fs-6 px-3 py-2"><i class="bi bi-exclamation-triangle-fill me-1"></i> Socket Abierto (Revisar Credencial)</span>`;
+                htmlAlert = `<div class="alert alert-warning border-0 bg-warning bg-opacity-10 text-warning p-3 rounded-3 mb-3">
+                    <strong>Host alcanzable por red (${d.socket_tiempo_ms} ms), pero la BD respondió:</strong><br>
+                    <code>${escapeHtml(d.pdo_mensaje || 'Acceso denegado con las credenciales ingresadas')}</code>
+                </div>`;
+            } else {
+                htmlBadge = `<span class="badge bg-danger fs-6 px-3 py-2"><i class="bi bi-x-circle-fill me-1"></i> Host No Alcanzable</span>`;
+                htmlAlert = `<div class="alert alert-danger border-0 bg-danger bg-opacity-10 text-danger p-3 rounded-3 mb-3">
+                    <strong>No se pudo abrir socket TCP hacia ${escapeHtml(payload.host)}:${escapeHtml(payload.port)}:</strong><br>
+                    <code>${escapeHtml(d.socket_error || 'Tiempo de espera agotado')}</code><br>
+                    <small class="text-light mt-1 d-block">Si el servidor está dentro de la red interna de la sucursal, descarga el conector local y ejecútalo directamente en ese equipo.</small>
+                </div>`;
+            }
+
+            contenedor.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="fw-bold text-white mb-0">Resultado del Diagnóstico:</h6>
+                    ${htmlBadge}
+                </div>
+
+                ${htmlAlert}
+
+                <div class="row g-2 p-3 rounded-3 mb-3" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); font-size: 0.85rem;">
+                    <div class="col-sm-6 text-secondary"><strong>IP / Host Evaluado:</strong> <span class="text-light font-monospace">${escapeHtml(payload.host)}:${escapeHtml(payload.port)}</span></div>
+                    <div class="col-sm-6 text-secondary"><strong>IP Resuelta:</strong> <span class="text-light font-monospace">${escapeHtml(d.ip_resuelta || payload.host)}</span></div>
+                    <div class="col-sm-6 text-secondary"><strong>Tipo de Red:</strong> <span class="text-light">${d.es_ip_privada ? 'Privada / LAN' : 'Pública / WAN'}</span></div>
+                    <div class="col-sm-6 text-secondary"><strong>Socket TCP:</strong> <span class="${d.socket_abierto ? 'text-success' : 'text-danger'}">${d.socket_abierto ? 'Abierto (' + d.socket_tiempo_ms + ' ms)' : 'Cerrado / No alcanzable'}</span></div>
+                    <div class="col-sm-6 text-secondary"><strong>Receptor cPanel:</strong> <span class="text-success"><i class="bi bi-check-circle-fill"></i> Activo y Listo</span></div>
+                    <div class="col-sm-6 text-secondary"><strong>Última Sincronización:</strong> <span class="text-light">${escapeHtml(d.ultima_sincronizacion || 'Ninguna')}</span></div>
+                </div>
+
+                <div class="p-3 rounded-3" style="background: rgba(16, 185, 129, 0.08); border: 1px dashed rgba(16, 185, 129, 0.3);">
+                    <div class="fw-bold text-success mb-1 small"><i class="bi bi-lightbulb-fill me-1"></i> Pasos para poner la API en tu Servidor Local:</div>
+                    <ol class="small text-secondary mb-0 ps-3">
+                        <li>Descarga el archivo <strong>conector_servidor_local.php</strong>.</li>
+                        <li>Cópialo al servidor de la agencia (ej. <code>C:\\xampp\\htdocs\\</code> o en una carpeta de tu servidor).</li>
+                        <li>Ábrelo en tu navegador local (<code>http://localhost/conector_servidor_local.php</code>) para comprobar la conexión a tu base de datos.</li>
+                        <li>Programa una Tarea en Windows (Programador de Tareas) que ejecute <code>php conector_servidor_local.php</code> cada X minutos para enviar los datos automáticamente a tu cPanel.</li>
+                    </ol>
+                </div>
+            `;
+        })
+        .catch(err => {
+            contenedor.innerHTML = `
+                <div class="alert alert-danger border-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i> Error al ejecutar la prueba: ${escapeHtml(err.message)}
+                </div>
+            `;
+        });
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        return text.toString().replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' })[m]);
     }
 </script>
 </body>

@@ -355,6 +355,21 @@ $modulosVisibles = 0;
     </div>
     <?php endif; ?>
 
+    <!-- Módulo: Reportes Agencia (Servidor Local / DMS) -->
+    <?php if (tienePermiso('reportes_agencia', 'puede_ver')): $modulosVisibles++; ?>
+    <div class="module-card" style="border-color: rgba(16, 185, 129, 0.45);">
+        <span class="active-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);"><i class="bi bi-hdd-network-fill me-1"></i> SERVIDOR LOCAL</span>
+        <div class="icon-box icon-green" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
+            <i class="bi bi-bar-chart-line-fill"></i>
+        </div>
+        <div class="module-title">Reportes Agencia</div>
+        <div class="module-desc">
+            Consulta y análisis de datos extraídos desde el servidor local y base de datos (DMS/ERP) de la agencia.
+        </div>
+        <a href="reportes_agencia.php" class="btn-ingresar" style="background: #059669; border-color: #059669;">Ingresar</a>
+    </div>
+    <?php endif; ?>
+
     <?php if ($modulosVisibles === 0): ?>
     <div class="col-12 py-5" style="grid-column: 1 / -1;">
         <div class="p-5 rounded-4 border border-secondary border-opacity-25 text-center shadow" style="background: rgba(13, 30, 54, 0.6); max-width: 650px; margin: 0 auto;">

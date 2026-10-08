@@ -118,9 +118,10 @@ function asegurarTablasPermisos($pdo) {
             ['compliance',       'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales',          'bi-journal-check',        6, 1],
             ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'bi-ticket-detailed-fill', 7, 1],
             ['directorio',       'Directorio',                         'Directorio oficial de colaboradores, correos y extensiones',                'bi-telephone-inbound-fill', 8, 1],
-            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 9, 1],
-            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              10, 1],
-            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                11, 1]
+            ['reportes_agencia', 'Reportes Agencia',                   'Reportes de la base de datos del servidor local / DMS de la agencia',       'bi-bar-chart-line-fill', 9, 1],
+            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 10, 1],
+            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              11, 1],
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                12, 1]
         ];
 
         foreach ($modulosBase as $m) {
@@ -135,6 +136,7 @@ function asegurarTablasPermisos($pdo) {
             }
         }
 
+        asegurarTablasReportesAgencia($pdo);
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
     }
@@ -162,9 +164,10 @@ function obtenerCatalogoModulos($pdo = null) {
         ['clave' => 'compliance',       'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales',          'icono' => 'bi-journal-check',        'orden' => 6, 'estatus' => 1],
         ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'icono' => 'bi-ticket-detailed-fill', 'orden' => 7, 'estatus' => 1],
         ['clave' => 'directorio',       'nombre' => 'Directorio',                         'descripcion' => 'Directorio oficial de colaboradores, correos y extensiones',                'icono' => 'bi-telephone-inbound-fill', 'orden' => 8, 'estatus' => 1],
-        ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 9, 'estatus' => 1],
-        ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 10, 'estatus' => 1],
-        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 11, 'estatus' => 1]
+        ['clave' => 'reportes_agencia', 'nombre' => 'Reportes Agencia',                   'descripcion' => 'Reportes de la base de datos del servidor local / DMS de la agencia',       'icono' => 'bi-bar-chart-line-fill', 'orden' => 9, 'estatus' => 1],
+        ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 10, 'estatus' => 1],
+        ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 11, 'estatus' => 1],
+        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 12, 'estatus' => 1]
     ];
 }
 
@@ -1278,5 +1281,93 @@ function marcarTodasNotificacionesLeidas($usuarioId = null, $pdo = null) {
         }
     }
     return true;
+}
+
+/**
+ * Auto-Instala o asegura la existencia de campos del Servidor Local en agencias y tabla de reportes_agencia_datos
+ */
+function asegurarTablasReportesAgencia($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?: '');
+        } catch (Throwable $t) {}
+
+        // 1. Columnas para enlace con Servidor Local en agencias
+        $cols = [
+            'local_db_host'               => 'VARCHAR(150) DEFAULT "127.0.0.1"',
+            'local_db_port'               => 'VARCHAR(10) DEFAULT "3306"',
+            'local_db_name'               => 'VARCHAR(100) NULL',
+            'local_db_user'               => 'VARCHAR(100) NULL',
+            'local_db_pass'               => 'VARCHAR(255) NULL',
+            'local_tipo_db'               => 'VARCHAR(50) DEFAULT "mysql"',
+            'local_api_token'             => 'VARCHAR(150) NULL',
+            'local_servidor_url'          => 'TEXT NULL',
+            'local_ultima_sincronizacion' => 'DATETIME NULL',
+            'local_ultimo_estado_sync'    => 'TEXT NULL'
+        ];
+
+        foreach ($cols as $colName => $colDef) {
+            try {
+                if ($driver === 'sqlite') {
+                    $pdo->exec("ALTER TABLE agencias ADD COLUMN {$colName} TEXT");
+                } else {
+                    $pdo->exec("ALTER TABLE `agencias` ADD COLUMN `{$colName}` {$colDef}");
+                }
+            } catch (Throwable $t) {}
+        }
+
+        // 2. Tabla para almacenar datos de reportes recibidos desde el servidor local
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS reportes_agencia_datos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo_reporte TEXT NOT NULL,
+                    folio_referencia TEXT,
+                    titulo TEXT NOT NULL,
+                    datos_json TEXT,
+                    resumen TEXT,
+                    monto REAL DEFAULT 0.0,
+                    fecha_documento DATE,
+                    estatus TEXT DEFAULT 'Activo',
+                    sincronizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `reportes_agencia_datos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `tipo_reporte` VARCHAR(100) NOT NULL,
+                    `folio_referencia` VARCHAR(100) NULL,
+                    `titulo` VARCHAR(255) NOT NULL,
+                    `datos_json` LONGTEXT NULL,
+                    `resumen` TEXT NULL,
+                    `monto` DECIMAL(14,2) DEFAULT 0.00,
+                    `fecha_documento` DATE NULL,
+                    `estatus` VARCHAR(50) DEFAULT 'Activo',
+                    `sincronizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_rep_tipo` (`tipo_reporte`),
+                    INDEX `idx_rep_folio` (`folio_referencia`),
+                    INDEX `idx_rep_fecha` (`fecha_documento`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+
+        // 3. Generar token por defecto si la agencia no tiene uno
+        try {
+            $stmtTk = $pdo->query("SELECT id, local_api_token FROM agencias ORDER BY id ASC LIMIT 1");
+            $ag = $stmtTk ? $stmtTk->fetch(PDO::FETCH_ASSOC) : null;
+            if ($ag && empty($ag['local_api_token'])) {
+                $tokenGen = 'TK_LOCAL_' . strtoupper(bin2hex(random_bytes(8)));
+                $stmtUp = $pdo->prepare("UPDATE agencias SET local_api_token = ? WHERE id = ?");
+                $stmtUp->execute([$tokenGen, $ag['id']]);
+            }
+        } catch (Throwable $t) {}
+
+    } catch (Throwable $e) {}
 }
 ?>
