@@ -85,14 +85,14 @@ if ($accionReq === 'consultar' || $accionReq === 'consultar_estado' || isset($_G
 }
 
 // Acción de recepción de contestación / nuevo mensaje en el chat del ticket
-if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion') {
+if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion' || $accionReq === 'nuevo_mensaje') {
     $folioReq = trim($datos['folio'] ?? ($_POST['folio'] ?? ''));
     $ticketIdReq = intval($datos['ticket_id'] ?? ($_POST['ticket_id'] ?? 0));
     $mensajeReq = trim($datos['mensaje'] ?? ($_POST['mensaje'] ?? ''));
-    $autorNom = trim($datos['autor_nombre'] ?? ($_POST['autor_nombre'] ?? 'Usuario Sucursal'));
-    $autorUsr = trim($datos['autor_usuario'] ?? ($_POST['autor_usuario'] ?? ''));
-    $autorRol = trim($datos['autor_rol'] ?? ($_POST['autor_rol'] ?? 'usuario'));
-    $autorAg  = trim($datos['autor_agencia'] ?? ($_POST['autor_agencia'] ?? ''));
+    $autorNom = trim($datos['autor_nombre'] ?? ($datos['autor'] ?? ($_POST['autor_nombre'] ?? 'Usuario Sucursal')));
+    $autorUsr = trim($datos['autor_usuario'] ?? ($datos['usuario'] ?? ($_POST['autor_usuario'] ?? '')));
+    $autorRol = trim($datos['autor_rol'] ?? ($datos['rol'] ?? ($_POST['autor_rol'] ?? 'usuario')));
+    $autorAg  = trim($datos['autor_agencia'] ?? ($datos['agencia'] ?? ($_POST['autor_agencia'] ?? '')));
 
     if (empty($mensajeReq) || (empty($folioReq) && $ticketIdReq <= 0)) {
         http_response_code(400);
