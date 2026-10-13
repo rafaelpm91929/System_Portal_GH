@@ -239,29 +239,33 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
 
                         if ($tInfo && !empty($tInfo['solicitante_agencia'])) {
                             $agKey = strpos(strtolower($tInfo['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
-                            $targetUrl = 'https://portal.divolavilla.com/sistemas/api_webhook_ticket.php';
+                            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
                             if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
-                                $targetUrl = str_replace('api_obtener_datos.php', 'api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
+                                $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
                             }
 
-                            $payloadWebhook = json_encode([
-                                'token'            => 'GedasDivolavilla2026!',
+                            $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GedasDivolavilla2026!';
+                            $postDataWh = [
+                                'token'            => $tokenWh,
                                 'folio'            => $tInfo['folio'],
                                 'estado'           => $nuevoEstado,
                                 'asignado_a'       => $asignadoA,
                                 'prioridad'        => $prioridad,
                                 'notas_resolucion' => $notasResolucion,
                                 'actualizado_en'   => date('Y-m-d H:i:s')
-                            ]);
+                            ];
 
-                            $chWh = curl_init($targetUrl);
+                            $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
                             curl_setopt_array($chWh, [
                                 CURLOPT_RETURNTRANSFER => true,
                                 CURLOPT_POST           => true,
-                                CURLOPT_POSTFIELDS     => $payloadWebhook,
-                                CURLOPT_TIMEOUT        => 3,
+                                CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
+                                CURLOPT_TIMEOUT        => 4,
                                 CURLOPT_SSL_VERIFYPEER => false,
-                                CURLOPT_HTTPHEADER     => ['Content-Type: application/json']
+                                CURLOPT_HTTPHEADER     => [
+                                    'Authorization: Bearer ' . $tokenWh,
+                                    'Content-Type: application/x-www-form-urlencoded'
+                                ]
                             ]);
                             @curl_exec($chWh);
                             @curl_close($chWh);
@@ -355,6 +359,49 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         if ($autorRol === 'agente' && empty($tActual['asignado_a'])) {
                             $stmtUpdAsig = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :ag WHERE id = :id");
                             $stmtUpdAsig->execute([':ag' => $nombreUsuario, ':id' => $ticketId]);
+                        }
+
+                        // Notificar a la agencia sucursal en tiempo real la contestación vía webhook
+                        if (!empty($tActual['solicitante_agencia']) && !$esNotaInterna) {
+                            try {
+                                $agKey = strpos(strtolower($tActual['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
+                                $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                                if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
+                                    $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
+                                }
+                                $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GedasDivolavilla2026!';
+                                $postMsgWh = [
+                                    'token'         => $tokenWh,
+                                    'accion'        => 'nuevo_mensaje',
+                                    'folio'         => $tActual['folio'],
+                                    'ticket_id'     => $ticketId,
+                                    'mensaje'       => $mensajeTxt,
+                                    'autor_nombre'  => $nombreUsuario,
+                                    'autor_usuario' => $autorUsuario,
+                                    'autor_rol'     => $autorRol,
+                                    'autor_agencia' => $agenciaUsuario,
+                                    'estado'        => !empty($cambioEstado) ? $cambioEstado : ($tActual['estado'] ?? 'En Proceso'),
+                                    'actualizado_en'=> date('Y-m-d H:i:s')
+                                ];
+                                if ($archivoMsgUrl && file_exists(__DIR__ . '/' . $archivoMsgUrl)) {
+                                    $postMsgWh['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoMsgUrl));
+                                    $postMsgWh['archivo_nombre'] = basename($archivoMsgUrl);
+                                }
+                                $chWhM = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
+                                curl_setopt_array($chWhM, [
+                                    CURLOPT_RETURNTRANSFER => true,
+                                    CURLOPT_POST           => true,
+                                    CURLOPT_POSTFIELDS     => http_build_query($postMsgWh),
+                                    CURLOPT_TIMEOUT        => 4,
+                                    CURLOPT_SSL_VERIFYPEER => false,
+                                    CURLOPT_HTTPHEADER     => [
+                                        'Authorization: Bearer ' . $tokenWh,
+                                        'Content-Type: application/x-www-form-urlencoded'
+                                    ]
+                                ]);
+                                @curl_exec($chWhM);
+                                @curl_close($chWhM);
+                            } catch (Throwable $eWhM) {}
                         }
 
                         header("Location: tickets.php?ver=" . $ticketId . "&enviado=1");
