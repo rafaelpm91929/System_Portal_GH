@@ -24,6 +24,47 @@ require_once 'permisos_helper.php';
 require_once 'excel_helper.php';
 include_once 'config_agencias.php';
 
+date_default_timezone_set('America/Mexico_City');
+if ($pdo) {
+    try { $pdo->exec("SET time_zone = '-06:00'"); } catch (Throwable $tzE) {}
+}
+
+/**
+ * Formatea la fecha y hora de mensajes y tickets a la hora local oficial de México (America/Mexico_City).
+ * Detecta y corrige automáticamente cualquier desfase UTC (+2 a +8 horas adelante) generado por MySQL o servidores en la nube.
+ */
+if (!function_exists('formatearFechaHoraMensaje')) {
+    function formatearFechaHoraMensaje($fechaStr, $incluirPrefijo = true) {
+        if (empty($fechaStr)) return '---';
+        try {
+            $ts = strtotime($fechaStr);
+            if ($ts === false) return $fechaStr;
+
+            // Si la fecha registrada viene con desfase UTC (+2 a +8 horas adelante de la hora actual de México)
+            if ($ts > (time() + 300)) {
+                $ts -= (6 * 3600); // Convertir UTC a México City (-6 hrs)
+            }
+
+            $diaMsg = date('Y-m-d', $ts);
+            $hoy = date('Y-m-d');
+            $ayer = date('Y-m-d', strtotime('-1 day'));
+
+            $horaFormateada = date('h:i A', $ts); // Ej: 05:05 PM
+            $hora24 = date('H:i', $ts);          // Ej: 17:05
+
+            if ($diaMsg === $hoy && $incluirPrefijo) {
+                return 'Hoy a las ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
+            } elseif ($diaMsg === $ayer && $incluirPrefijo) {
+                return 'Ayer a las ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
+            } else {
+                return date('d/m/Y', $ts) . ' ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
+            }
+        } catch (Throwable $e) {
+            return $fechaStr;
+        }
+    }
+}
+
 // Normalizador unificado de nombres de agencia
 if (!function_exists('normalizarAgencia')) {
     function normalizarAgencia($nombre) {
@@ -325,33 +366,38 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         $autorRol = ($esAdmin) ? 'agente' : 'usuario';
                         $autorUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
 
+                        $fechaMsgActual = date('Y-m-d H:i:s');
                         $stmtMsg = $pdo->prepare("
                             INSERT INTO tickets_mensajes
-                            (ticket_id, autor_id, autor_usuario, autor_nombre, autor_email, autor_rol, autor_agencia, mensaje, archivo_adjunto, es_nota_interna)
+                            (ticket_id, autor_id, autor_usuario, autor_nombre, autor_email, autor_rol, autor_agencia, mensaje, archivo_adjunto, es_nota_interna, creado_en)
                             VALUES
-                            (:tk, :aut_id, :aut_usr, :aut_nom, :aut_em, :aut_rol, :aut_ag, :msg, :adj, :interna)
+                            (:tk, :aut_id, :aut_usr, :aut_nom, :aut_em, :aut_rol, :aut_ag, :msg, :adj, :interna, :creado_en)
                         ");
                         $stmtMsg->execute([
-                            ':tk'      => $ticketId,
-                            ':aut_id'  => $usuarioId,
-                            ':aut_usr' => $autorUsuario,
-                            ':aut_nom' => $nombreUsuario,
-                            ':aut_em'  => $_SESSION['usuario_email'] ?? '',
-                            ':aut_rol' => $autorRol,
-                            ':aut_ag'  => $agenciaUsuario,
-                            ':msg'     => $mensajeTxt,
-                            ':adj'     => $archivoMsgUrl,
-                            ':interna' => $esNotaInterna
+                            ':tk'        => $ticketId,
+                            ':aut_id'    => $usuarioId,
+                            ':aut_usr'   => $autorUsuario,
+                            ':aut_nom'   => $nombreUsuario,
+                            ':aut_em'    => $_SESSION['usuario_email'] ?? '',
+                            ':aut_rol'   => $autorRol,
+                            ':aut_ag'    => $agenciaUsuario,
+                            ':msg'       => $mensajeTxt,
+                            ':adj'       => $archivoMsgUrl,
+                            ':interna'   => $esNotaInterna,
+                            ':creado_en' => $fechaMsgActual
                         ]);
 
                         // Actualizar estado si se seleccionó uno nuevo
                         if (!empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
-                            $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = CURRENT_TIMESTAMP WHERE id = :id");
-                            $stmtUpdSt->execute([':est' => $cambioEstado, ':id' => $ticketId]);
+                            $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = :act WHERE id = :id");
+                            $stmtUpdSt->execute([':est' => $cambioEstado, ':act' => $fechaMsgActual, ':id' => $ticketId]);
                         } else {
                             if ($autorRol === 'agente' && strtolower($tActual['estado']) === 'abierto') {
-                                $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = 'En Proceso', actualizado_en = CURRENT_TIMESTAMP WHERE id = :id");
-                                $stmtUpdSt->execute([':id' => $ticketId]);
+                                $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = 'En Proceso', actualizado_en = :act WHERE id = :id");
+                                $stmtUpdSt->execute([':act' => $fechaMsgActual, ':id' => $ticketId]);
+                            } else {
+                                $stmtUpdAct = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = :act WHERE id = :id");
+                                $stmtUpdAct->execute([':act' => $fechaMsgActual, ':id' => $ticketId]);
                             }
                         }
 
@@ -369,7 +415,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                                 if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
                                     $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
                                 }
-                                $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GedasDivolavilla2026!';
+                                $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
                                 $postMsgWh = [
                                     'token'         => $tokenWh,
                                     'accion'        => 'nuevo_mensaje',
@@ -381,7 +427,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                                     'autor_rol'     => $autorRol,
                                     'autor_agencia' => $agenciaUsuario,
                                     'estado'        => !empty($cambioEstado) ? $cambioEstado : ($tActual['estado'] ?? 'En Proceso'),
-                                    'actualizado_en'=> date('Y-m-d H:i:s')
+                                    'creado_en'     => $fechaMsgActual,
+                                    'actualizado_en'=> $fechaMsgActual
                                 ];
                                 if ($archivoMsgUrl && file_exists(__DIR__ . '/' . $archivoMsgUrl)) {
                                     $postMsgWh['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoMsgUrl));
@@ -2184,7 +2231,7 @@ if (!empty($ticketVerParam) && $pdo) {
                         <?php endif; ?>
                         <div>
                             <i class="bi bi-calendar3 me-1"></i> Registrado: 
-                            <span class="text-white"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'] ?? 'now')); ?> hrs</span>
+                            <span class="text-white"><?php echo formatearFechaHoraMensaje($ticketActivo['creado_en'] ?? 'now'); ?></span>
                         </div>
                         <?php if (!empty($ticketActivo['asignado_a'])): ?>
                             <div>
@@ -2214,7 +2261,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                         <div class="fw-bold text-white fs-6">Requerimiento Inicial Reportado</div>
                                         <div class="text-secondary small">
                                             Por <strong class="text-light"><?php echo htmlspecialchars($ticketActivo['solicitante_nombre'] ?? 'Solicitante'); ?></strong> 
-                                            el <?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'] ?? 'now')); ?> hrs
+                                            el <?php echo formatearFechaHoraMensaje($ticketActivo['creado_en'] ?? 'now'); ?>
                                         </div>
                                     </div>
                                 </div>
@@ -2230,10 +2277,26 @@ if (!empty($ticketVerParam) && $pdo) {
                             <?php if (!empty($ticketActivo['archivo_adjunto'])): 
                                 $extAdj = strtolower(pathinfo($ticketActivo['archivo_adjunto'], PATHINFO_EXTENSION));
                                 $esImg = in_array($extAdj, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                $esPdf = ($extAdj === 'pdf');
                             ?>
                                 <div class="mt-4 pt-3 border-top border-secondary border-opacity-25">
                                     <div class="small text-secondary fw-semibold mb-2"><i class="bi bi-paperclip me-1 text-info"></i> Evidencia Adjunta en la Solicitud:</div>
-                                    <?php if ($esImg): ?>
+                                    <?php if ($esPdf): ?>
+                                        <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); max-width: 520px;">
+                                            <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                                <i class="bi bi-file-earmark-pdf-fill text-danger fs-2 flex-shrink-0"></i>
+                                                <div class="text-truncate">
+                                                    <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars(basename($ticketActivo['archivo_adjunto'])); ?>">
+                                                        <?php echo htmlspecialchars(basename($ticketActivo['archivo_adjunto'])); ?>
+                                                    </div>
+                                                    <div class="text-secondary" style="font-size: 0.73rem;">Documento PDF adjunto a la solicitud</div>
+                                                </div>
+                                            </div>
+                                            <a href="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" target="_blank" download class="btn btn-sm btn-danger rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                                <i class="bi bi-file-pdf me-1"></i> Abrir / Descargar PDF
+                                            </a>
+                                        </div>
+                                    <?php elseif ($esImg): ?>
                                         <div class="p-2 rounded-3 bg-black bg-opacity-40 d-inline-block border border-secondary border-opacity-30">
                                             <a href="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" target="_blank" title="Clic para ver en tamaño completo">
                                                 <img src="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" alt="Evidencia" class="img-fluid rounded-2 shadow" style="max-height: 240px; object-fit: contain; display: block;">
@@ -2344,7 +2407,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                                     <?php endif; ?>
                                                 </div>
                                                 <span class="text-secondary" style="font-size: 0.72rem;">
-                                                    <i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($msg['creado_en'])); ?> hrs
+                                                    <i class="bi bi-clock me-1"></i><?php echo formatearFechaHoraMensaje($msg['creado_en'] ?? ''); ?>
                                                 </span>
                                             </div>
                                         </div>
@@ -2355,17 +2418,41 @@ if (!empty($ticketVerParam) && $pdo) {
                                     </div>
 
                                     <?php if (!empty($msg['archivo_adjunto'])): 
-                                        $extM = strtolower(pathinfo($msg['archivo_adjunto'], PATHINFO_EXTENSION));
+                                        $rawAdjM = trim($msg['archivo_adjunto']);
+                                        $extM = strtolower(pathinfo($rawAdjM, PATHINFO_EXTENSION));
                                         $esImgM = in_array($extM, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                        $esPdfM = ($extM === 'pdf');
+                                        $nomAdjM = basename($rawAdjM);
+                                        $urlAdjM = $rawAdjM;
                                     ?>
                                         <div class="mt-3 pt-2 border-top border-secondary border-opacity-25">
-                                            <?php if ($esImgM): ?>
-                                                <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank">
-                                                    <img src="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" alt="Adjunto" class="img-fluid rounded-2 shadow-sm" style="max-height: 200px; object-fit: contain; background: rgba(0,0,0,0.5); padding: 4px;">
+                                            <?php if ($esPdfM): ?>
+                                                <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3 my-1" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); max-width: 500px;">
+                                                    <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                                        <i class="bi bi-file-earmark-pdf-fill text-danger fs-2 flex-shrink-0"></i>
+                                                        <div class="text-truncate">
+                                                            <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars($nomAdjM); ?>">
+                                                                <?php echo htmlspecialchars($nomAdjM); ?>
+                                                            </div>
+                                                            <div class="text-secondary" style="font-size: 0.72rem;">Documento PDF adjunto</div>
+                                                        </div>
+                                                    </div>
+                                                    <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" download class="btn btn-sm btn-danger rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                                        <i class="bi bi-file-pdf me-1"></i> Abrir / Descargar PDF
+                                                    </a>
+                                                </div>
+                                            <?php elseif ($esImgM): ?>
+                                                <div class="mb-2">
+                                                    <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank">
+                                                        <img src="<?php echo htmlspecialchars($urlAdjM); ?>" alt="Adjunto" class="img-fluid rounded-2 shadow-sm" style="max-height: 200px; object-fit: contain; background: rgba(0,0,0,0.5); padding: 4px; border: 1px solid rgba(255,255,255,0.15);">
+                                                    </a>
+                                                </div>
+                                                <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1 text-decoration-none" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-image me-1"></i> Ver imagen completa
                                                 </a>
                                             <?php else: ?>
-                                                <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1 text-decoration-none">
-                                                    <i class="bi bi-paperclip me-1"></i> Ver / Descargar: <?php echo basename($msg['archivo_adjunto']); ?>
+                                                <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1 text-decoration-none" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-paperclip me-1"></i> Ver / Descargar: <?php echo htmlspecialchars($nomAdjM); ?>
                                                 </a>
                                             <?php endif; ?>
                                         </div>
@@ -2397,9 +2484,9 @@ if (!empty($ticketVerParam) && $pdo) {
                                 <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top border-secondary border-opacity-25">
                                     <div class="d-flex align-items-center gap-2">
                                         <label class="btn btn-outline-secondary btn-sm rounded-pill text-white border-opacity-40 mb-0 d-inline-flex align-items-center gap-1" style="cursor: pointer;">
-                                            <i class="bi bi-paperclip text-info"></i>
-                                            <span>Adjuntar Evidencia</span>
-                                            <input type="file" name="archivo_mensaje" id="archivoMensajeInput" class="d-none" onchange="mostrarArchivoMsgSeleccionado(this)">
+                                            <i class="bi bi-file-earmark-pdf-fill text-danger"></i>
+                                            <span>Adjuntar PDF o Evidencia</span>
+                                            <input type="file" name="archivo_mensaje" id="archivoMensajeInput" class="d-none" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt,.zip" onchange="mostrarArchivoMsgSeleccionado(this)">
                                         </label>
                                         <span id="txtArchivoMsgSeleccionado" class="small text-secondary font-monospace"></span>
                                     </div>
@@ -2503,11 +2590,11 @@ if (!empty($ticketVerParam) && $pdo) {
                                 </div>
                                 <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
                                     <span class="text-secondary">Fecha Alta:</span>
-                                    <span class="text-secondary font-monospace"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'])); ?> hrs</span>
+                                    <span class="text-secondary font-monospace"><?php echo formatearFechaHoraMensaje($ticketActivo['creado_en']); ?></span>
                                 </div>
                                 <div class="d-flex justify-content-between py-1">
                                     <span class="text-secondary">Última Act.:</span>
-                                    <span class="text-secondary font-monospace"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['actualizado_en'] ?? $ticketActivo['creado_en'])); ?> hrs</span>
+                                    <span class="text-secondary font-monospace"><?php echo formatearFechaHoraMensaje($ticketActivo['actualizado_en'] ?? $ticketActivo['creado_en']); ?></span>
                                 </div>
                             </div>
                         </div>
@@ -2689,7 +2776,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                                         <?php endif; ?>
                                                     </td>
                                                     <td>
-                                                        <span class="text-secondary small font-monospace"><?php echo date('d/m/Y H:i', strtotime($tsv['creado_en'] ?? 'now')); ?></span>
+                                                        <span class="text-secondary small font-monospace"><?php echo formatearFechaHoraMensaje($tsv['creado_en'] ?? 'now'); ?></span>
                                                     </td>
                                                     <td class="text-end">
                                                         <a href="tickets.php?ver=<?php echo $tsv['id']; ?>" class="btn btn-warning btn-sm fw-bold rounded-pill px-3 shadow-sm text-dark d-inline-flex align-items-center gap-1">
@@ -3007,7 +3094,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                         <span class="badge-folio"><?php echo htmlspecialchars($folio); ?></span>
                                     </a>
                                     <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
-                                        <i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['creado_en'])); ?>
+                                        <i class="bi bi-clock me-1"></i><?php echo formatearFechaHoraMensaje($t['creado_en'] ?? ''); ?>
                                     </div>
                                 </td>
 

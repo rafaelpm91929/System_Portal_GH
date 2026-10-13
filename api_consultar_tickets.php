@@ -11,6 +11,11 @@ require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
 include_once __DIR__ . '/config_agencias.php';
 
+date_default_timezone_set('America/Mexico_City');
+if ($pdo) {
+    try { $pdo->exec("SET time_zone = '-06:00'"); } catch (Throwable $tzE) {}
+}
+
 if (!$pdo) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'mensaje' => 'Error de conexión a la base de datos central.'], JSON_UNESCAPED_UNICODE);
@@ -70,10 +75,21 @@ if (isset($_GET['mensajes']) || ($datos['accion'] ?? '') === 'mensajes') {
         if ($targetT) {
             $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
             $stmtM->execute([$targetT['id']]);
+            $mensajesList = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($mensajesList as &$mRow) {
+                if (!empty($mRow['creado_en'])) {
+                    $tsM = strtotime($mRow['creado_en']);
+                    if ($tsM !== false && $tsM > (time() + 300)) {
+                        $mRow['creado_en'] = date('Y-m-d H:i:s', $tsM - (6 * 3600));
+                    }
+                }
+            }
+            unset($mRow);
+
             echo json_encode([
                 'status'   => 'ok',
                 'folio'    => $targetT['folio'],
-                'mensajes' => $stmtM->fetchAll(PDO::FETCH_ASSOC)
+                'mensajes' => $mensajesList
             ], JSON_UNESCAPED_UNICODE);
             exit;
         } else {
@@ -127,6 +143,22 @@ try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $tickets = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($tickets as &$tkRow) {
+        if (!empty($tkRow['creado_en'])) {
+            $tsC = strtotime($tkRow['creado_en']);
+            if ($tsC !== false && $tsC > (time() + 300)) {
+                $tkRow['creado_en'] = date('Y-m-d H:i:s', $tsC - (6 * 3600));
+            }
+        }
+        if (!empty($tkRow['actualizado_en'])) {
+            $tsA = strtotime($tkRow['actualizado_en']);
+            if ($tsA !== false && $tsA > (time() + 300)) {
+                $tkRow['actualizado_en'] = date('Y-m-d H:i:s', $tsA - (6 * 3600));
+            }
+        }
+    }
+    unset($tkRow);
 
     echo json_encode([
         'status'         => 'ok',

@@ -9,7 +9,9 @@ require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
 include_once __DIR__ . '/config_agencias.php';
 
+date_default_timezone_set('America/Mexico_City');
 if ($pdo) {
+    try { $pdo->exec("SET time_zone = '-06:00'"); } catch (Throwable $tzE) {}
     asegurarTablaTickets($pdo);
 } else {
     http_response_code(500);
@@ -111,15 +113,60 @@ if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion' || 
             exit;
         }
 
+        // Procesar archivo adjunto (PDF, imagen, etc.) si viene en Base64 o $_FILES
+        $rutaAdjuntoMsg = null;
+        $dirUploads = __DIR__ . '/uploads/tickets/';
+        if (!is_dir($dirUploads)) @mkdir($dirUploads, 0777, true);
+
+        if (!empty($datos['archivo_base64']) && !empty($datos['archivo_nombre'])) {
+            $ext = strtolower(pathinfo($datos['archivo_nombre'], PATHINFO_EXTENSION));
+            $nombreLimpio = 'msg_remoto_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+            $destino = $dirUploads . $nombreLimpio;
+            $contenido = base64_decode($datos['archivo_base64']);
+            if ($contenido !== false && file_put_contents($destino, $contenido)) {
+                $rutaAdjuntoMsg = 'uploads/tickets/' . $nombreLimpio;
+            }
+        } elseif (isset($_FILES['archivo_adjunto']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['archivo_adjunto']['name'], PATHINFO_EXTENSION));
+            $nombreLimpio = 'msg_remoto_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+            if (move_uploaded_file($_FILES['archivo_adjunto']['tmp_name'], $dirUploads . $nombreLimpio)) {
+                $rutaAdjuntoMsg = 'uploads/tickets/' . $nombreLimpio;
+            }
+        } elseif (isset($_FILES['adjunto_mensaje']) && $_FILES['adjunto_mensaje']['error'] === UPLOAD_ERR_OK) {
+            $ext = strtolower(pathinfo($_FILES['adjunto_mensaje']['name'], PATHINFO_EXTENSION));
+            $nombreLimpio = 'msg_remoto_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+            if (move_uploaded_file($_FILES['adjunto_mensaje']['tmp_name'], $dirUploads . $nombreLimpio)) {
+                $rutaAdjuntoMsg = 'uploads/tickets/' . $nombreLimpio;
+            }
+        }
+
+        $fechaMsg = trim($datos['creado_en'] ?? date('Y-m-d H:i:s'));
+
         $stmtInsM = $pdo->prepare("
             INSERT INTO tickets_mensajes
-            (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje)
+            (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
             VALUES
-            (?, ?, ?, ?, ?, ?)
+            (?, ?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmtInsM->execute([$targetId, $autorUsr, $autorNom, $autorRol, $autorAg, $mensajeReq]);
+        $stmtInsM->execute([$targetId, $autorUsr, $autorNom, $autorRol, $autorAg, $mensajeReq, $rutaAdjuntoMsg, $fechaMsg]);
 
-        echo json_encode(['status' => 'ok', 'mensaje' => 'Mensaje agregado al ticket correctamente.', 'ticket_id' => $targetId], JSON_UNESCAPED_UNICODE);
+        // Actualizar estado del ticket y marca de tiempo si se solicitó
+        $cambioEst = trim($datos['cambio_estado'] ?? ($_POST['cambio_estado'] ?? ''));
+        if (!empty($cambioEst) && in_array($cambioEst, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
+            $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = ?, actualizado_en = ? WHERE id = ?");
+            $stmtUpdSt->execute([$cambioEst, $fechaMsg, $targetId]);
+        } else {
+            $stmtUpdAct = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = ? WHERE id = ?");
+            $stmtUpdAct->execute([$fechaMsg, $targetId]);
+        }
+
+        echo json_encode([
+            'status'         => 'ok', 
+            'mensaje'        => 'Mensaje agregado al ticket correctamente.', 
+            'ticket_id'      => $targetId,
+            'archivo_adjunto'=> $rutaAdjuntoMsg,
+            'creado_en'      => $fechaMsg
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     } catch (Throwable $eIns) {
         http_response_code(500);
@@ -211,11 +258,12 @@ try {
     $nextNum = ($countStmt ? (int)$countStmt->fetchColumn() : 0) + 1;
     $folio = 'TK-' . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
+    $fechaActualTicket = date('Y-m-d H:i:s');
     $stmt = $pdo->prepare("
         INSERT INTO tickets_soporte 
-        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto)
+        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en, actualizado_en)
         VALUES
-        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_usr, :sol_nom, :sol_em, :sol_ag, :archivo)
+        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_usr, :sol_nom, :sol_em, :sol_ag, :archivo, :creado, :act)
     ");
     $stmt->execute([
         ':folio'    => $folio,
@@ -227,7 +275,9 @@ try {
         ':sol_nom'  => $solicitanteNombre,
         ':sol_em'   => $solicitanteEmail,
         ':sol_ag'   => $agenciaNombre,
-        ':archivo'  => $rutaAdjunto
+        ':archivo'  => $rutaAdjunto,
+        ':creado'   => $fechaActualTicket,
+        ':act'      => $fechaActualTicket
     ]);
 
     $idGenerado = $pdo->lastInsertId();
@@ -239,8 +289,9 @@ try {
         'folio'          => $folio,
         'agencia'        => $agenciaNombre,
         'area_sistemas'  => $area,
-        'creado_en'      => date('Y-m-d H:i:s')
+        'creado_en'      => $fechaActualTicket
     ], JSON_UNESCAPED_UNICODE);
+    exit;
 
 } catch (Throwable $e) {
     http_response_code(500);
