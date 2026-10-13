@@ -48,7 +48,7 @@ function formatearFechaHoraMensaje($fechaStr, $incluirPrefijo = true) {
         if ($ts === false) return $fechaStr;
 
         // Si la fecha registrada viene con desfase UTC (+2 a +8 horas adelante de la hora actual de México)
-        if ($ts > (time() + 1800)) {
+        if ($ts > (time() + 300)) {
             $ts -= (6 * 3600); // Convertir UTC a México City (-6 hrs)
         }
 
@@ -62,9 +62,9 @@ function formatearFechaHoraMensaje($fechaStr, $incluirPrefijo = true) {
         if ($diaMsg === $hoy && $incluirPrefijo) {
             return 'Hoy a las ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
         } elseif ($diaMsg === $ayer && $incluirPrefijo) {
-            return 'Ayer a las ' . $horaFormateada;
+            return 'Ayer a las ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
         } else {
-            return date('d/m/Y', $ts) . ' ' . $horaFormateada;
+            return date('d/m/Y', $ts) . ' ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
         }
     } catch (Throwable $e) {
         return $fechaStr;
@@ -386,18 +386,24 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                 $mensajesCentral = $dec['mensajes'];
 
                 if ($pdo) {
-                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? AND (creado_en = ? OR autor_nombre = ?) LIMIT 1");
+                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? AND autor_nombre = ? LIMIT 1");
                     $stmtIns = $pdo->prepare("
                         INSERT INTO tickets_mensajes 
                         (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ");
-                    foreach ($mensajesCentral as $m) {
+                    foreach ($mensajesCentral as &$m) {
                         $txtM = trim($m['mensaje'] ?? '');
                         if (empty($txtM)) continue;
                         $fechaM = $m['creado_en'] ?? date('Y-m-d H:i:s');
+                        // Si la fecha remota viene en UTC (+2 a +8 horas adelantada respecto a la hora actual de México)
+                        $tsM = strtotime($fechaM);
+                        if ($tsM !== false && $tsM > (time() + 300)) {
+                            $fechaM = date('Y-m-d H:i:s', $tsM - (6 * 3600));
+                            $m['creado_en'] = $fechaM;
+                        }
                         $autorNomM = $m['autor_nombre'] ?? 'Sistemas Central';
-                        $stmtChk->execute([$ticketId, $folio, $txtM, $fechaM, $autorNomM]);
+                        $stmtChk->execute([$ticketId, $folio, $txtM, $autorNomM]);
                         if (!$stmtChk->fetchColumn()) {
                             try {
                                 $stmtIns->execute([
@@ -415,6 +421,7 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                             } catch (Throwable $eIns) {}
                         }
                     }
+                    unset($m);
                 }
             }
         }
@@ -996,10 +1003,10 @@ if (!empty($verParam) && $pdo) {
                     $mensajesSeleccionados = $mensajesRemotos;
                 } elseif (!empty($mensajesRemotos)) {
                     $textosLocales = array_map(function($lm) { 
-                        return trim($lm['mensaje'] ?? '') . '|' . trim($lm['creado_en'] ?? ''); 
+                        return trim($lm['mensaje'] ?? '') . '|' . trim($lm['autor_nombre'] ?? ''); 
                     }, $mensajesSeleccionados);
                     foreach ($mensajesRemotos as $rm) {
-                        $txtR = trim($rm['mensaje'] ?? '') . '|' . trim($rm['creado_en'] ?? '');
+                        $txtR = trim($rm['mensaje'] ?? '') . '|' . trim($rm['autor_nombre'] ?? '');
                         if (!empty($txtR) && !in_array($txtR, $textosLocales)) {
                             $mensajesSeleccionados[] = $rm;
                             $textosLocales[] = $txtR;
@@ -1925,25 +1932,57 @@ if ($ticketSeleccionado) {
                     </div>
 
                     <?php if (!empty($ticketSeleccionado['archivo_adjunto'])): 
-                        $extT = strtolower(pathinfo($ticketSeleccionado['archivo_adjunto'], PATHINFO_EXTENSION));
+                        $rawAdjT = trim($ticketSeleccionado['archivo_adjunto']);
+                        $extT = strtolower(pathinfo($rawAdjT, PATHINFO_EXTENSION));
                         $esImgT = in_array($extT, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                        $esPdfT = ($extT === 'pdf');
+
+                        if (str_starts_with($rawAdjT, 'http://') || str_starts_with($rawAdjT, 'https://')) {
+                            $urlAdjT = $rawAdjT;
+                        } elseif (file_exists(__DIR__ . '/' . $rawAdjT)) {
+                            $urlAdjT = $rawAdjT;
+                        } else {
+                            $urlAdjT = 'https://portal.grupohuerta.mx/' . ltrim($rawAdjT, '/');
+                        }
+                        $nombreAdjT = basename($rawAdjT);
                     ?>
                         <div class="mt-4 pt-3 border-top border-secondary border-opacity-25">
                             <div class="text-secondary small fw-bold text-uppercase mb-2">
                                 <i class="bi bi-paperclip text-info me-1"></i> Evidencia / Archivo Adjunto Original
                             </div>
-                            <?php if ($esImgT && file_exists(__DIR__ . '/' . $ticketSeleccionado['archivo_adjunto'])): ?>
+                            <?php if ($esPdfT): ?>
+                                <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); max-width: 520px;">
+                                    <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                        <i class="bi bi-file-earmark-pdf-fill text-danger fs-2 flex-shrink-0"></i>
+                                        <div class="text-truncate">
+                                            <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars($nombreAdjT); ?>">
+                                                <?php echo htmlspecialchars($nombreAdjT); ?>
+                                            </div>
+                                            <div class="text-secondary" style="font-size: 0.73rem;">Documento PDF &bull; Documento adjunto</div>
+                                        </div>
+                                    </div>
+                                    <a href="<?php echo htmlspecialchars($urlAdjT); ?>" target="_blank" download class="btn btn-sm btn-danger rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                        <i class="bi bi-file-pdf me-1"></i> Abrir / Descargar PDF
+                                    </a>
+                                </div>
+                            <?php elseif ($esImgT): ?>
                                 <div class="mb-2">
-                                    <a href="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" target="_blank" title="Ver imagen completa">
-                                        <img src="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" alt="Evidencia" class="preview-img">
+                                    <a href="<?php echo htmlspecialchars($urlAdjT); ?>" target="_blank" title="Ver imagen completa">
+                                        <img src="<?php echo htmlspecialchars($urlAdjT); ?>" alt="Evidencia" class="preview-img" style="border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;">
+                                    </a>
+                                </div>
+                                <div>
+                                    <a href="<?php echo htmlspecialchars($urlAdjT); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
+                                        <i class="bi bi-image me-1"></i> Ver imagen completa
+                                    </a>
+                                </div>
+                            <?php else: ?>
+                                <div>
+                                    <a href="<?php echo htmlspecialchars($urlAdjT); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
+                                        <i class="bi bi-box-arrow-up-right me-1"></i> Ver / Descargar Archivo (<?php echo strtoupper($extT); ?>)
                                     </a>
                                 </div>
                             <?php endif; ?>
-                            <div>
-                                <a href="<?php echo htmlspecialchars($ticketSeleccionado['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
-                                    <i class="bi bi-box-arrow-up-right me-1"></i> Ver / Descargar Archivo (<?php echo strtoupper($extT); ?>)
-                                </a>
-                            </div>
                         </div>
                     <?php endif; ?>
                 </div>
@@ -2005,21 +2044,51 @@ if ($ticketSeleccionado) {
                                         <?php echo htmlspecialchars($msg['mensaje']); ?>
                                     </div>
 
-                                    <?php if (!empty($msg['archivo_adjunto'])): 
-                                        $extMsg = strtolower(pathinfo($msg['archivo_adjunto'], PATHINFO_EXTENSION));
+                                     <?php if (!empty($msg['archivo_adjunto'])): 
+                                        $rawAdjM = trim($msg['archivo_adjunto']);
+                                        $extMsg = strtolower(pathinfo($rawAdjM, PATHINFO_EXTENSION));
                                         $esImgMsg = in_array($extMsg, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                        $esPdfMsg = ($extMsg === 'pdf');
+
+                                        if (str_starts_with($rawAdjM, 'http://') || str_starts_with($rawAdjM, 'https://')) {
+                                            $urlAdjM = $rawAdjM;
+                                        } elseif (file_exists(__DIR__ . '/' . $rawAdjM)) {
+                                            $urlAdjM = $rawAdjM;
+                                        } else {
+                                            $urlAdjM = 'https://portal.grupohuerta.mx/' . ltrim($rawAdjM, '/');
+                                        }
+                                        $nomAdjM = basename($rawAdjM);
                                     ?>
                                         <div class="mt-2.5 pt-2 border-top border-secondary border-opacity-25">
-                                            <?php if ($esImgMsg && file_exists(__DIR__ . '/' . $msg['archivo_adjunto'])): ?>
-                                                <div class="mb-2">
-                                                    <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank">
-                                                        <img src="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" alt="Captura" style="max-height: 220px; border-radius: 8px;">
+                                            <?php if ($esPdfMsg): ?>
+                                                <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3 my-1" style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); max-width: 500px;">
+                                                    <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                                        <i class="bi bi-file-earmark-pdf-fill text-danger fs-2 flex-shrink-0"></i>
+                                                        <div class="text-truncate">
+                                                            <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars($nomAdjM); ?>">
+                                                                <?php echo htmlspecialchars($nomAdjM); ?>
+                                                            </div>
+                                                            <div class="text-secondary" style="font-size: 0.72rem;">Documento PDF adjunto</div>
+                                                        </div>
+                                                    </div>
+                                                    <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" download class="btn btn-sm btn-danger rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                                        <i class="bi bi-file-pdf me-1"></i> Abrir / Descargar PDF
                                                     </a>
                                                 </div>
+                                            <?php elseif ($esImgMsg): ?>
+                                                <div class="mb-2">
+                                                    <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank">
+                                                        <img src="<?php echo htmlspecialchars($urlAdjM); ?>" alt="Captura" style="max-height: 220px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);">
+                                                    </a>
+                                                </div>
+                                                <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-image me-1"></i> Ver imagen completa
+                                                </a>
+                                            <?php else: ?>
+                                                <a href="<?php echo htmlspecialchars($urlAdjM); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-paperclip me-1"></i> Archivo adjunto (<?php echo strtoupper($extMsg); ?>)
+                                                </a>
                                             <?php endif; ?>
-                                            <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3" style="font-size: 0.78rem;">
-                                                <i class="bi bi-paperclip me-1"></i> Archivo adjunto (<?php echo strtoupper($extMsg); ?>)
-                                            </a>
                                         </div>
                                     <?php endif; ?>
                                 </div>
@@ -2044,9 +2113,9 @@ if ($ticketSeleccionado) {
                             <div class="row g-3 align-items-end mb-3">
                                 <div class="col-md-6">
                                     <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
-                                        <i class="bi bi-paperclip me-1"></i> Adjuntar captura o archivo (opcional)
+                                        <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i> Adjuntar PDF o Evidencia (opcional)
                                     </label>
-                                    <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+                                    <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt,.zip">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
