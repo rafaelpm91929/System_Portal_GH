@@ -30,6 +30,9 @@ if (empty($tokenEnviado) && !empty($datos['token'])) {
 if (empty($tokenEnviado) && !empty($_POST['token'])) {
     $tokenEnviado = trim($_POST['token']);
 }
+if (empty($tokenEnviado) && !empty($_GET['token'])) {
+    $tokenEnviado = trim($_GET['token']);
+}
 
 $tokenEsperado = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
 if ($tokenEnviado !== $tokenEsperado && $tokenEnviado !== 'GH_SISTEMAS_TICKETS_2026!') {

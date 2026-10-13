@@ -242,8 +242,8 @@ function sincronizarTicketsConCentral($pdo) {
 function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
     if (!$pdo || empty($folio)) return 0;
 
-    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio);
     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio) . '&token=' . urlencode($token);
 
     try {
         $ch = curl_init($urlCentral);
@@ -567,7 +567,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 // Notificar a Central de Sistemas en background
                 try {
                     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
-                    $payloadCentral = [
+                    $postFields = [
                         'token'         => $token,
                         'accion'        => 'agregar_mensaje',
                         'folio'         => $folioT,
@@ -579,21 +579,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         'mensaje'       => $textoMensaje
                     ];
                     if (!empty($cambioEstado)) {
-                        $payloadCentral['cambio_estado'] = $cambioEstado;
+                        $postFields['cambio_estado'] = $cambioEstado;
                     }
                     if ($archivoMensaje && file_exists(__DIR__ . '/' . $archivoMensaje)) {
-                        $payloadCentral['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoMensaje));
-                        $payloadCentral['archivo_nombre'] = basename($archivoMensaje);
+                        $postFields['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoMensaje));
+                        $postFields['archivo_nombre'] = basename($archivoMensaje);
                     }
-                    $ctx = stream_context_create([
-                        'http' => [
-                            'method'  => 'POST',
-                            'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $token\r\n",
-                            'content' => json_encode($payloadCentral),
-                            'timeout' => 4
+
+                    $chCentral = curl_init('https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($token));
+                    curl_setopt_array($chCentral, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_POST           => true,
+                        CURLOPT_POSTFIELDS     => http_build_query($postFields),
+                        CURLOPT_TIMEOUT        => 5,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_HTTPHEADER     => [
+                            'Authorization: Bearer ' . $token,
+                            'Content-Type: application/x-www-form-urlencoded'
                         ]
                     ]);
-                    @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctx);
+                    @curl_exec($chCentral);
+                    @curl_close($chCentral);
                 } catch (Throwable $eNet) {}
 
                 header("Location: tickets.php?ver=" . $ticketId . "&msg_ok=1#conversacion");
