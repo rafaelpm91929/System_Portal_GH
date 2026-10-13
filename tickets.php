@@ -135,8 +135,8 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
 function sincronizarTicketsConCentral($pdo) {
     if (!$pdo) return 0;
 
-    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php';
     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?token=' . urlencode($token);
 
     try {
         // Obtener folios locales registrados
@@ -240,16 +240,17 @@ function sincronizarTicketsConCentral($pdo) {
  * Sincroniza en tiempo real los mensajes y contestaciones de este ticket desde la Central (portal.grupohuerta.mx)
  */
 function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
-    if (!$pdo || empty($folio)) return 0;
+    if (empty($folio)) return [];
 
     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
     $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio) . '&token=' . urlencode($token);
 
+    $mensajesCentral = [];
     try {
         $ch = curl_init($urlCentral);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_TIMEOUT        => 6,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_HTTPHEADER     => [
                 'Authorization: Bearer ' . $token,
@@ -263,37 +264,42 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
         if ($res !== false && $httpCode === 200) {
             $dec = json_decode($res, true);
             if ($dec && ($dec['status'] ?? '') === 'ok' && !empty($dec['mensajes'])) {
-                $nuevos = 0;
-                $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE ticket_id = ? AND mensaje = ? AND autor_nombre = ? LIMIT 1");
-                $stmtIns = $pdo->prepare("
-                    INSERT INTO tickets_mensajes 
-                    (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                foreach ($dec['mensajes'] as $m) {
-                    $stmtChk->execute([$ticketId, $m['mensaje'], $m['autor_nombre']]);
-                    if (!$stmtChk->fetchColumn()) {
-                        $stmtIns->execute([
-                            $ticketId,
-                            $folio,
-                            $m['autor_id'] ?? null,
-                            $m['autor_nombre'] ?? 'Sistemas TI',
-                            $m['autor_usuario'] ?? '',
-                            $m['autor_rol'] ?? 'agente',
-                            $m['autor_agencia'] ?? 'Dirección Sistemas',
-                            $m['mensaje'],
-                            $m['archivo_adjunto'] ?? null,
-                            $m['creado_en'] ?? date('Y-m-d H:i:s')
-                        ]);
-                        $nuevos++;
+                $mensajesCentral = $dec['mensajes'];
+
+                if ($pdo) {
+                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");
+                    $stmtIns = $pdo->prepare("
+                        INSERT INTO tickets_mensajes 
+                        (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    foreach ($mensajesCentral as $m) {
+                        $txtM = trim($m['mensaje'] ?? '');
+                        if (empty($txtM)) continue;
+                        $stmtChk->execute([$ticketId, $folio, $txtM]);
+                        if (!$stmtChk->fetchColumn()) {
+                            try {
+                                $stmtIns->execute([
+                                    $ticketId,
+                                    $folio,
+                                    $m['autor_id'] ?? null,
+                                    $m['autor_nombre'] ?? 'Sistemas TI',
+                                    $m['autor_usuario'] ?? '',
+                                    $m['autor_rol'] ?? 'agente',
+                                    $m['autor_agencia'] ?? 'Dirección Sistemas',
+                                    $txtM,
+                                    $m['archivo_adjunto'] ?? null,
+                                    $m['creado_en'] ?? date('Y-m-d H:i:s')
+                                ]);
+                            } catch (Throwable $eIns) {}
+                        }
                     }
                 }
-                return $nuevos;
             }
         }
     } catch (Throwable $e) {}
 
-    return 0;
+    return $mensajesCentral;
 }
 
 // ====================================================
@@ -838,14 +844,30 @@ if ($verTicketId > 0 && $pdo) {
             }
 
             if ($ticketSeleccionado) {
+                $mensajesRemotos = [];
                 // Sincronizar en tiempo real los mensajes desde Central
                 if (!empty($ticketSeleccionado['folio'])) {
-                    sincronizarMensajesDeTicket($pdo, $verTicketId, $ticketSeleccionado['folio']);
+                    $mensajesRemotos = sincronizarMensajesDeTicket($pdo, $verTicketId, $ticketSeleccionado['folio']);
                 }
 
                 $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? OR (folio IS NOT NULL AND folio != '' AND folio = ?) ORDER BY id ASC");
                 $stmtM->execute([$verTicketId, $ticketSeleccionado['folio'] ?? '']);
                 $mensajesSeleccionados = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+
+                // Si por alguna razón la tabla local aún no los tiene pero vinieron de Central, usarlos directamente
+                if (empty($mensajesSeleccionados) && !empty($mensajesRemotos)) {
+                    $mensajesSeleccionados = $mensajesRemotos;
+                } elseif (!empty($mensajesRemotos)) {
+                    // Asegurar que cualquier mensaje que esté en Central pero falte en local se incluya en la vista
+                    $textosLocales = array_map(function($lm) { return trim($lm['mensaje'] ?? ''); }, $mensajesSeleccionados);
+                    foreach ($mensajesRemotos as $rm) {
+                        $txtR = trim($rm['mensaje'] ?? '');
+                        if (!empty($txtR) && !in_array($txtR, $textosLocales)) {
+                            $mensajesSeleccionados[] = $rm;
+                            $textosLocales[] = $txtR;
+                        }
+                    }
+                }
             }
         }
     } catch (Throwable $e) {}
