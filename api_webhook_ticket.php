@@ -101,23 +101,42 @@ try {
     $filasAfectadas = $stmt->rowCount();
 
     // Si viene un mensaje en el webhook, insertarlo en tickets_mensajes
-    $nuevoMensaje = trim($datos['mensaje'] ?? '');
+    $nuevoMensaje = trim($datos['mensaje'] ?? ($_POST['mensaje'] ?? ''));
     if (!empty($nuevoMensaje)) {
         $stmtTk = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
         $stmtTk->execute([$folio]);
         $tkId = $stmtTk->fetchColumn();
         if ($tkId) {
-            $stmtInsM = $pdo->prepare("
-                INSERT INTO tickets_mensajes 
-                (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $autorNom = $datos['autor_nombre'] ?? ($datos['autor'] ?? 'Sistemas Central');
-            $autorUsr = $datos['autor_usuario'] ?? ($datos['usuario'] ?? '');
-            $autorRol = $datos['autor_rol'] ?? ($datos['rol'] ?? 'agente');
-            $autorAg  = $datos['autor_agencia'] ?? 'Dirección Sistemas';
-            $adj      = $datos['archivo_adjunto'] ?? null;
-            $stmtInsM->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $autorAg, $nuevoMensaje, $adj, $actualizadoEn]);
+            $autorNom = $datos['autor_nombre'] ?? ($_POST['autor_nombre'] ?? ($datos['autor'] ?? ($_POST['autor'] ?? 'Sistemas Central')));
+            $autorUsr = $datos['autor_usuario'] ?? ($_POST['autor_usuario'] ?? ($datos['usuario'] ?? ($_POST['usuario'] ?? '')));
+            $autorRol = $datos['autor_rol'] ?? ($_POST['autor_rol'] ?? ($datos['rol'] ?? ($_POST['rol'] ?? 'agente')));
+            $autorAg  = $datos['autor_agencia'] ?? ($_POST['autor_agencia'] ?? 'Dirección Sistemas');
+            $adj      = $datos['archivo_adjunto'] ?? ($_POST['archivo_adjunto'] ?? null);
+
+            // Manejo de archivo adjunto en Base64 si viene enviado
+            $adjBase64 = $datos['archivo_base64'] ?? ($_POST['archivo_base64'] ?? '');
+            $adjNombre = $datos['archivo_nombre'] ?? ($_POST['archivo_nombre'] ?? '');
+            if (!empty($adjBase64) && !empty($adjNombre)) {
+                $dirUpload = __DIR__ . '/uploads/tickets/';
+                if (!is_dir($dirUpload)) @mkdir($dirUpload, 0777, true);
+                $extA = strtolower(pathinfo($adjNombre, PATHINFO_EXTENSION));
+                $nomGuardar = 'msg_wh_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $extA;
+                if (@file_put_contents($dirUpload . $nomGuardar, base64_decode($adjBase64))) {
+                    $adj = 'uploads/tickets/' . $nomGuardar;
+                }
+            }
+
+            // Evitar duplicados exactos
+            $stmtDup = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");
+            $stmtDup->execute([$tkId, $folio, $nuevoMensaje]);
+            if (!$stmtDup->fetchColumn()) {
+                $stmtInsM = $pdo->prepare("
+                    INSERT INTO tickets_mensajes 
+                    (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmtInsM->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $autorAg, $nuevoMensaje, $adj, $actualizadoEn]);
+            }
         }
     }
 

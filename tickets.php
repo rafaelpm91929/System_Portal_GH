@@ -43,7 +43,14 @@ function obtenerIdentidadAgenciaActual($pdo = null) {
     }
 
     $nombre = '';
-    $token = getenv('TOKEN_SECRETO') ?: (defined('TOKEN_SECRETO') ? TOKEN_SECRETO : '');
+    // Token maestro para comunicarse con la Dirección Central de Sistemas (portal.grupohuerta.mx)
+    // El servidor central siempre valida GH_SISTEMAS_TICKETS_2026! para todas las agencias
+    $token = 'GH_SISTEMAS_TICKETS_2026!';
+    $envTok = getenv('TOKEN_SECRETO');
+    if (!empty($envTok) && $envTok !== 'TK_LOCAL_DEFAULT_2026' && strpos($envTok, 'TK_LOCAL_') !== 0) {
+        $token = $envTok;
+    }
+
     $cpanel = '';
     $subdominio = '';
     $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
@@ -56,11 +63,6 @@ function obtenerIdentidadAgenciaActual($pdo = null) {
             if ($row) {
                 if (!empty($row['nombre'])) {
                     $nombre = trim($row['nombre']);
-                }
-                if (empty($token) && !empty($row['local_api_token'])) {
-                    $token = trim($row['local_api_token']);
-                } elseif (empty($token) && !empty($row['token'])) {
-                    $token = trim($row['token']);
                 }
                 if (!empty($row['cpanel'])) $cpanel = trim($row['cpanel']);
                 if (!empty($row['subdominio'])) $subdominio = trim($row['subdominio']);
@@ -86,11 +88,6 @@ function obtenerIdentidadAgenciaActual($pdo = null) {
         } else {
             $nombre = 'Agencia';
         }
-    }
-
-    // 4. Token fallback: usar el Token Maestro Central si no hay uno específico
-    if (empty($token)) {
-        $token = 'GH_SISTEMAS_TICKETS_2026!';
     }
 
     $identidad = [
@@ -324,9 +321,8 @@ function sincronizarTicketsConCentral($pdo) {
  */
 function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
     if (empty($folio)) return [];
-    global $tokenAgencia;
-    $identidad = obtenerIdentidadAgenciaActual($pdo);
-    $token = $tokenAgencia ?: $identidad['token'];
+    // Token maestro para conectar con Central
+    $token = 'GH_SISTEMAS_TICKETS_2026!';
     $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio) . '&token=' . urlencode($token);
 
     $mensajesCentral = [];
@@ -351,7 +347,7 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                 $mensajesCentral = $dec['mensajes'];
 
                 if ($pdo) {
-                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");
+                    $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? AND (creado_en = ? OR autor_nombre = ?) LIMIT 1");
                     $stmtIns = $pdo->prepare("
                         INSERT INTO tickets_mensajes 
                         (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
@@ -360,20 +356,22 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                     foreach ($mensajesCentral as $m) {
                         $txtM = trim($m['mensaje'] ?? '');
                         if (empty($txtM)) continue;
-                        $stmtChk->execute([$ticketId, $folio, $txtM]);
+                        $fechaM = $m['creado_en'] ?? date('Y-m-d H:i:s');
+                        $autorNomM = $m['autor_nombre'] ?? 'Sistemas Central';
+                        $stmtChk->execute([$ticketId, $folio, $txtM, $fechaM, $autorNomM]);
                         if (!$stmtChk->fetchColumn()) {
                             try {
                                 $stmtIns->execute([
                                     $ticketId,
                                     $folio,
                                     $m['autor_id'] ?? null,
-                                    $m['autor_nombre'] ?? 'Sistemas TI',
+                                    $autorNomM,
                                     $m['autor_usuario'] ?? '',
                                     $m['autor_rol'] ?? 'agente',
                                     $m['autor_agencia'] ?? 'Dirección Sistemas',
                                     $txtM,
                                     $m['archivo_adjunto'] ?? null,
-                                    $m['creado_en'] ?? date('Y-m-d H:i:s')
+                                    $fechaM
                                 ]);
                             } catch (Throwable $eIns) {}
                         }
@@ -557,7 +555,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         // Notificar modificación a Central de Sistemas
                         try {
                             $folioT = $tActual['folio'] ?: ('TK-' . $ticketId);
-                            $tokenMod = $tokenAgencia ?: $identidadActual['token'];
+                            $tokenMod = 'GH_SISTEMAS_TICKETS_2026!';
                             $payloadCentral = [
                                 'token'         => $tokenMod,
                                 'accion'        => 'actualizar_ticket',
@@ -656,13 +654,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 // Notificar a Central de Sistemas en background
                 try {
-                    $tokenMsg = $tokenAgencia ?: $identidadActual['token'];
+                    $tokenMsg = 'GH_SISTEMAS_TICKETS_2026!';
                     $agenciaMsg = $agenciaUsuario ?: $identidadActual['nombre'];
                     $postFields = [
                         'token'         => $tokenMsg,
                         'accion'        => 'agregar_mensaje',
                         'folio'         => $folioT,
-                        'ticket_id'     => $ticketId,
                         'autor_nombre'  => $nombreUsuario,
                         'autor_usuario' => $loginUsuario,
                         'autor_rol'     => $rolAutor,
@@ -904,24 +901,38 @@ if ($pdo) {
     } catch (Throwable $e) {}
 }
 
-// Consulta de ticket seleccionado para la pestaña de detalle
-$verTicketId = intval($_GET['ver'] ?? ($_GET['id'] ?? 0));
+// Consulta de ticket seleccionado para la pestaña de detalle (soporta ID numérico o Folio oficial)
+$verParam = trim($_GET['ver'] ?? ($_GET['id'] ?? ''));
+$verTicketId = 0;
 $ticketSeleccionado = null;
 $mensajesSeleccionados = [];
 
-if ($verTicketId > 0 && $pdo) {
+if (!empty($verParam) && $pdo) {
     try {
-        $stmtSel = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ?");
-        $stmtSel->execute([$verTicketId]);
-        $ticketSeleccionado = $stmtSel->fetch(PDO::FETCH_ASSOC);
+        if (is_numeric($verParam) && intval($verParam) > 0) {
+            $stmtSel = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ? LIMIT 1");
+            $stmtSel->execute([intval($verParam)]);
+        } else {
+            $stmtSel = $pdo->prepare("SELECT * FROM tickets_soporte WHERE folio = ? LIMIT 1");
+            $stmtSel->execute([$verParam]);
+        }
+        $ticketSeleccionado = $stmtSel ? $stmtSel->fetch(PDO::FETCH_ASSOC) : null;
 
         if ($ticketSeleccionado) {
+            $verTicketId = (int)$ticketSeleccionado['id'];
+            $folioActivo = $ticketSeleccionado['folio'] ?? '';
+
             if (!$esAdmin) {
                 $pertenece = false;
                 if (!empty($ticketSeleccionado['solicitante_id']) && (int)$ticketSeleccionado['solicitante_id'] === (int)$usuarioId) $pertenece = true;
                 if (!empty($ticketSeleccionado['solicitante_usuario']) && !empty($loginUsuario) && strtolower($ticketSeleccionado['solicitante_usuario']) === strtolower($loginUsuario)) $pertenece = true;
                 if (!empty($ticketSeleccionado['solicitante_email']) && !empty($emailUsuario) && strtolower($ticketSeleccionado['solicitante_email']) === strtolower($emailUsuario)) $pertenece = true;
                 if (!empty($ticketSeleccionado['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($ticketSeleccionado['solicitante_nombre']) === strtolower($nombreUsuario)) $pertenece = true;
+                if (!empty($ticketSeleccionado['solicitante_agencia']) && !empty($agenciaUsuario)) {
+                    if (stripos($ticketSeleccionado['solicitante_agencia'], $agenciaUsuario) !== false || stripos($agenciaUsuario, $ticketSeleccionado['solicitante_agencia']) !== false) {
+                        $pertenece = true;
+                    }
+                }
 
                 if (!$pertenece) {
                     $ticketSeleccionado = null;
@@ -930,23 +941,25 @@ if ($verTicketId > 0 && $pdo) {
 
             if ($ticketSeleccionado) {
                 $mensajesRemotos = [];
-                // Sincronizar en tiempo real los mensajes desde Central
-                if (!empty($ticketSeleccionado['folio'])) {
-                    $mensajesRemotos = sincronizarMensajesDeTicket($pdo, $verTicketId, $ticketSeleccionado['folio']);
+                // Sincronizar en tiempo real los mensajes desde Central (portal.grupohuerta.mx)
+                if (!empty($folioActivo)) {
+                    $mensajesRemotos = sincronizarMensajesDeTicket($pdo, $verTicketId, $folioActivo);
                 }
 
+                // Cargar mensajes locales de la tabla tickets_mensajes
                 $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? OR (folio IS NOT NULL AND folio != '' AND folio = ?) ORDER BY id ASC");
-                $stmtM->execute([$verTicketId, $ticketSeleccionado['folio'] ?? '']);
-                $mensajesSeleccionados = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+                $stmtM->execute([$verTicketId, $folioActivo]);
+                $mensajesSeleccionados = $stmtM ? $stmtM->fetchAll(PDO::FETCH_ASSOC) : [];
 
-                // Si por alguna razón la tabla local aún no los tiene pero vinieron de Central, usarlos directamente
+                // Fusión garantizada: si la base de datos local está vacía o faltan mensajes de Central, integrarlos
                 if (empty($mensajesSeleccionados) && !empty($mensajesRemotos)) {
                     $mensajesSeleccionados = $mensajesRemotos;
                 } elseif (!empty($mensajesRemotos)) {
-                    // Asegurar que cualquier mensaje que esté en Central pero falte en local se incluya en la vista
-                    $textosLocales = array_map(function($lm) { return trim($lm['mensaje'] ?? ''); }, $mensajesSeleccionados);
+                    $textosLocales = array_map(function($lm) { 
+                        return trim($lm['mensaje'] ?? '') . '|' . trim($lm['creado_en'] ?? ''); 
+                    }, $mensajesSeleccionados);
                     foreach ($mensajesRemotos as $rm) {
-                        $txtR = trim($rm['mensaje'] ?? '');
+                        $txtR = trim($rm['mensaje'] ?? '') . '|' . trim($rm['creado_en'] ?? '');
                         if (!empty($txtR) && !in_array($txtR, $textosLocales)) {
                             $mensajesSeleccionados[] = $rm;
                             $textosLocales[] = $txtR;
