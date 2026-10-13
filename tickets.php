@@ -32,17 +32,94 @@ if (!isset($_SESSION['usuario_id'])) {
 requerirPermiso('tickets', 'puede_ver');
 
 
+/**
+ * Resuelve dinámicamente la identidad, token y configuración de la agencia local
+ * según su base de datos, cPanel o dominio host, sin depender de nombres fijos.
+ */
+function obtenerIdentidadAgenciaActual($pdo = null) {
+    static $identidad = null;
+    if ($identidad !== null) {
+        return $identidad;
+    }
+
+    $nombre = '';
+    $token = getenv('TOKEN_SECRETO') ?: (defined('TOKEN_SECRETO') ? TOKEN_SECRETO : '');
+    $cpanel = '';
+    $subdominio = '';
+    $host = $_SERVER['HTTP_HOST'] ?? ($_SERVER['SERVER_NAME'] ?? '');
+
+    // 1. Consultar base de datos local (tabla agencias)
+    if ($pdo) {
+        try {
+            $stmt = $pdo->query("SELECT * FROM agencias ORDER BY id ASC LIMIT 1");
+            $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+            if ($row) {
+                if (!empty($row['nombre'])) {
+                    $nombre = trim($row['nombre']);
+                }
+                if (empty($token) && !empty($row['local_api_token'])) {
+                    $token = trim($row['local_api_token']);
+                } elseif (empty($token) && !empty($row['token'])) {
+                    $token = trim($row['token']);
+                }
+                if (!empty($row['cpanel'])) $cpanel = trim($row['cpanel']);
+                if (!empty($row['subdominio'])) $subdominio = trim($row['subdominio']);
+            }
+        } catch (Throwable $e) {}
+    }
+
+    // 2. Sesión activa si ya tiene agencia
+    if (empty($nombre) && !empty($_SESSION['agencia'])) {
+        $nombre = trim($_SESSION['agencia']);
+    }
+
+    // 3. Si no hay nombre aún, inferir del dominio/host actual
+    if (empty($nombre)) {
+        if (!empty($host)) {
+            $hostClean = preg_replace('/:\d+$/', '', strtolower($host));
+            $partes = explode('.', $hostClean);
+            $segmento = $partes[0];
+            if (in_array($segmento, ['portal', 'sistemas', 'admin', 'www']) && count($partes) > 1) {
+                $segmento = $partes[1];
+            }
+            $nombre = ucwords(str_replace(['-', '_'], ' ', $segmento));
+        } else {
+            $nombre = 'Agencia';
+        }
+    }
+
+    // 4. Token fallback: usar el Token Maestro Central si no hay uno específico
+    if (empty($token)) {
+        $token = 'GH_SISTEMAS_TICKETS_2026!';
+    }
+
+    $identidad = [
+        'nombre'     => $nombre,
+        'token'      => $token,
+        'cpanel'     => $cpanel ?: $host,
+        'subdominio' => $subdominio ?: $host,
+        'host'       => $host
+    ];
+    return $identidad;
+}
+
 // Cargar permisos y asegurar tablas
 $usuarioId = $_SESSION['usuario_id'];
 $nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Usuario');
 $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
 $emailUsuario = $_SESSION['usuario_email'] ?? '';
-$agenciaUsuario = $_SESSION['agencia'] ?? 'Grupo Huerta';
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
+// Obtener identidad dinámica de la sucursal/agencia
+$identidadActual = obtenerIdentidadAgenciaActual($pdo);
+$agenciaUsuario = $identidadActual['nombre'];
+$_SESSION['agencia'] = $agenciaUsuario;
+$tokenAgencia = $identidadActual['token'];
+
 if ($pdo) {
     asegurarTablaTickets($pdo);
+
     // Asegurar carga de login y email si faltan en sesión
     if (empty($loginUsuario) || empty($emailUsuario)) {
         try {
@@ -81,12 +158,15 @@ unset($_SESSION['flash_mensaje'], $_SESSION['flash_error']);
  * Envía el ticket en tiempo real al Portal Maestro Central de la Dirección de Sistemas
  */
 function enviarTicketACentral($datosTicket, $archivoLocal = null) {
+    global $pdo, $agenciaUsuario, $tokenAgencia;
+    $identidad = obtenerIdentidadAgenciaActual($pdo);
     $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php';
-    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+    $token = !empty($datosTicket['token']) ? $datosTicket['token'] : ($tokenAgencia ?: $identidad['token']);
+    $agencia = !empty($datosTicket['agencia']) ? $datosTicket['agencia'] : ($agenciaUsuario ?: $identidad['nombre']);
 
     $payload = [
         'token'               => $token,
-        'agencia'             => $datosTicket['agencia'] ?? 'Divol La Villa',
+        'agencia'             => $agencia,
         'area_sistemas'       => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
         'titulo'              => $datosTicket['titulo'] ?? '',
         'descripcion'         => $datosTicket['descripcion'] ?? '',
@@ -134,8 +214,11 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
  */
 function sincronizarTicketsConCentral($pdo) {
     if (!$pdo) return 0;
+    global $agenciaUsuario, $tokenAgencia;
+    $identidad = obtenerIdentidadAgenciaActual($pdo);
+    $token = $tokenAgencia ?: $identidad['token'];
+    $agencia = $agenciaUsuario ?: $identidad['nombre'];
 
-    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
     $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?token=' . urlencode($token);
 
     try {
@@ -145,7 +228,7 @@ function sincronizarTicketsConCentral($pdo) {
 
         $payload = [
             'token'   => $token,
-            'agencia' => $agenciaUsuario
+            'agencia' => $agencia
         ];
         if (!empty($folios)) {
             $payload['folios'] = $folios;
@@ -220,7 +303,7 @@ function sincronizarTicketsConCentral($pdo) {
                             $tc['solicitante_usuario'] ?? '',
                             $tc['solicitante_nombre'] ?? 'Usuario',
                             $tc['solicitante_email'] ?? '',
-                            $tc['solicitante_agencia'] ?? $agenciaUsuario,
+                            $tc['solicitante_agencia'] ?? $agencia,
                             $tc['creado_en'] ?? date('Y-m-d H:i:s'),
                             $tc['actualizado_en'] ?? date('Y-m-d H:i:s')
                         ]);
@@ -241,8 +324,9 @@ function sincronizarTicketsConCentral($pdo) {
  */
 function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
     if (empty($folio)) return [];
-
-    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+    global $tokenAgencia;
+    $identidad = obtenerIdentidadAgenciaActual($pdo);
+    $token = $tokenAgencia ?: $identidad['token'];
     $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio) . '&token=' . urlencode($token);
 
     $mensajesCentral = [];
@@ -473,9 +557,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         // Notificar modificación a Central de Sistemas
                         try {
                             $folioT = $tActual['folio'] ?: ('TK-' . $ticketId);
-                            $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+                            $tokenMod = $tokenAgencia ?: $identidadActual['token'];
                             $payloadCentral = [
-                                'token'         => $token,
+                                'token'         => $tokenMod,
                                 'accion'        => 'actualizar_ticket',
                                 'folio'         => $folioT,
                                 'titulo'        => $titulo,
@@ -488,7 +572,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $ctx = stream_context_create([
                                 'http' => [
                                     'method'  => 'POST',
-                                    'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $token\r\n",
+                                    'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $tokenMod\r\n",
                                     'content' => json_encode($payloadCentral),
                                     'timeout' => 3
                                 ]
@@ -572,16 +656,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 // Notificar a Central de Sistemas en background
                 try {
-                    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+                    $tokenMsg = $tokenAgencia ?: $identidadActual['token'];
+                    $agenciaMsg = $agenciaUsuario ?: $identidadActual['nombre'];
                     $postFields = [
-                        'token'         => $token,
+                        'token'         => $tokenMsg,
                         'accion'        => 'agregar_mensaje',
                         'folio'         => $folioT,
                         'ticket_id'     => $ticketId,
                         'autor_nombre'  => $nombreUsuario,
                         'autor_usuario' => $loginUsuario,
                         'autor_rol'     => $rolAutor,
-                        'autor_agencia' => $agenciaUsuario,
+                        'autor_agencia' => $agenciaMsg,
                         'mensaje'       => $textoMensaje
                     ];
                     if (!empty($cambioEstado)) {
@@ -592,7 +677,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $postFields['archivo_nombre'] = basename($archivoMensaje);
                     }
 
-                    $chCentral = curl_init('https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($token));
+                    $chCentral = curl_init('https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($tokenMsg));
                     curl_setopt_array($chCentral, [
                         CURLOPT_RETURNTRANSFER => true,
                         CURLOPT_POST           => true,
@@ -600,7 +685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         CURLOPT_TIMEOUT        => 5,
                         CURLOPT_SSL_VERIFYPEER => false,
                         CURLOPT_HTTPHEADER     => [
-                            'Authorization: Bearer ' . $token,
+                            'Authorization: Bearer ' . $tokenMsg,
                             'Content-Type: application/x-www-form-urlencoded'
                         ]
                     ]);

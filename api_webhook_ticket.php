@@ -34,10 +34,34 @@ if (empty($tokenEnviado) && !empty($_GET['token'])) {
     $tokenEnviado = trim($_GET['token']);
 }
 
-$tokenEsperado = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
-if ($tokenEnviado !== $tokenEsperado && $tokenEnviado !== 'GH_SISTEMAS_TICKETS_2026!') {
+// 2. Validar Token contra token maestro central, env o base de datos local
+$tokenMaestro = 'GH_SISTEMAS_TICKETS_2026!';
+$tokenEnv = getenv('TOKEN_SECRETO') ?: (defined('TOKEN_SECRETO') ? TOKEN_SECRETO : '');
+$tokenValido = false;
+
+if (!empty($tokenEnviado)) {
+    if ($tokenEnviado === $tokenMaestro || $tokenEnviado === 'GedasDivolavilla2026!') {
+        $tokenValido = true;
+    } elseif (!empty($tokenEnv) && $tokenEnviado === $tokenEnv) {
+        $tokenValido = true;
+    } else {
+        // Consultar token configurado en la agencia local (tabla agencias)
+        try {
+            $stmtAg = $pdo->query("SELECT * FROM agencias ORDER BY id ASC LIMIT 1");
+            $agRow = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
+            if ($agRow) {
+                $dbToken = $agRow['local_api_token'] ?? ($agRow['token'] ?? '');
+                if (!empty($dbToken) && $tokenEnviado === $dbToken) {
+                    $tokenValido = true;
+                }
+            }
+        } catch (Throwable $e) {}
+    }
+}
+
+if (!$tokenValido) {
     http_response_code(401);
-    echo json_encode(['status' => 'error', 'mensaje' => 'No autorizado: Token de central inválido.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'mensaje' => 'No autorizado: Token de central inválido o no reconocido.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
