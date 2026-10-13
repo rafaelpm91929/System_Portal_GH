@@ -114,7 +114,7 @@ unset($_SESSION['flash_mensaje'], $_SESSION['flash_error']);
 // ====================================================
 // MANEJO DE ACCIONES POST (CREAR, EDITAR, ATENDER)
 // ====================================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
     $accion = $_POST['accion'] ?? '';
 
     // 1. Crear / Registrar Nuevo Ticket de Soporte (Por Agente)
@@ -260,10 +260,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     } catch (Throwable $eWh) {}
 
                     $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
+                    if (!empty($_POST['redirect_ver'])) {
+                        header("Location: tickets.php?ver=" . $ticketId . "&actualizado=1");
+                        exit();
+                    }
                 }
             } catch (Throwable $e) {
                 $error = "Error al actualizar el ticket: " . $e->getMessage();
             }
+        }
+    }
+
+    // 2.1 Enviar Contestación / Respuesta en el Chat del Ticket
+    if ($accion === 'agregar_mensaje_ticket') {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        $mensajeTxt = trim($_POST['mensaje'] ?? '');
+        $esNotaInterna = !empty($_POST['es_nota_interna']) ? 1 : 0;
+        $cambioEstado = trim($_POST['cambio_estado'] ?? '');
+
+        if ($ticketId > 0 && !empty($mensajeTxt)) {
+            try {
+                // Validación estricta de área autorizada
+                $stmtChk = $pdo->prepare("SELECT id, folio, area_sistemas, solicitante_agencia, asignado_a, estado FROM tickets_soporte WHERE id = ?");
+                $stmtChk->execute([$ticketId]);
+                $tActual = $stmtChk->fetch(PDO::FETCH_ASSOC);
+
+                if (!$tActual) {
+                    $error = "El ticket especificado no existe.";
+                } else {
+                    $areaTicket = strtoupper(trim($tActual['area_sistemas'] ?? ''));
+                    if (!$accesoTodasAreas && !in_array($areaTicket, $areasAutorizadas)) {
+                        $error = "Acceso denegado: No tienes autorización para responder en el área '$areaTicket'.";
+                    } else {
+                        // Procesar evidencia adjunta si se envió
+                        $archivoMsgUrl = null;
+                        if (isset($_FILES['archivo_mensaje']) && $_FILES['archivo_mensaje']['error'] === UPLOAD_ERR_OK) {
+                            $fileTmp = $_FILES['archivo_mensaje']['tmp_name'];
+                            $fileName = $_FILES['archivo_mensaje']['name'];
+                            $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                            $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
+                            if (in_array($fileExt, $extPermitidas)) {
+                                $dirUpload = __DIR__ . '/uploads/tickets/';
+                                if (!is_dir($dirUpload)) @mkdir($dirUpload, 0777, true);
+                                $nuevoNombre = 'chat_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
+                                if (move_uploaded_file($fileTmp, $dirUpload . $nuevoNombre)) {
+                                    $archivoMsgUrl = 'uploads/tickets/' . $nuevoNombre;
+                                }
+                            }
+                        }
+
+                        $autorRol = ($esAdmin) ? 'agente' : 'usuario';
+                        $autorUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
+
+                        $stmtMsg = $pdo->prepare("
+                            INSERT INTO tickets_mensajes
+                            (ticket_id, autor_id, autor_usuario, autor_nombre, autor_email, autor_rol, autor_agencia, mensaje, archivo_adjunto, es_nota_interna)
+                            VALUES
+                            (:tk, :aut_id, :aut_usr, :aut_nom, :aut_em, :aut_rol, :aut_ag, :msg, :adj, :interna)
+                        ");
+                        $stmtMsg->execute([
+                            ':tk'      => $ticketId,
+                            ':aut_id'  => $usuarioId,
+                            ':aut_usr' => $autorUsuario,
+                            ':aut_nom' => $nombreUsuario,
+                            ':aut_em'  => $_SESSION['usuario_email'] ?? '',
+                            ':aut_rol' => $autorRol,
+                            ':aut_ag'  => $agenciaUsuario,
+                            ':msg'     => $mensajeTxt,
+                            ':adj'     => $archivoMsgUrl,
+                            ':interna' => $esNotaInterna
+                        ]);
+
+                        // Actualizar estado si se seleccionó uno nuevo
+                        if (!empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
+                            $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = CURRENT_TIMESTAMP WHERE id = :id");
+                            $stmtUpdSt->execute([':est' => $cambioEstado, ':id' => $ticketId]);
+                        } else {
+                            if ($autorRol === 'agente' && strtolower($tActual['estado']) === 'abierto') {
+                                $stmtUpdSt = $pdo->prepare("UPDATE tickets_soporte SET estado = 'En Proceso', actualizado_en = CURRENT_TIMESTAMP WHERE id = :id");
+                                $stmtUpdSt->execute([':id' => $ticketId]);
+                            }
+                        }
+
+                        // Auto-asignar al agente que contesta si no tenía asignado
+                        if ($autorRol === 'agente' && empty($tActual['asignado_a'])) {
+                            $stmtUpdAsig = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :ag WHERE id = :id");
+                            $stmtUpdAsig->execute([':ag' => $nombreUsuario, ':id' => $ticketId]);
+                        }
+
+                        header("Location: tickets.php?ver=" . $ticketId . "&enviado=1");
+                        exit();
+                    }
+                }
+            } catch (Throwable $eMsg) {
+                $error = "Error al enviar la contestación: " . $eMsg->getMessage();
+            }
+        } else {
+            $error = "Por favor escribe un mensaje para la contestación.";
         }
     }
 
@@ -686,6 +779,32 @@ foreach ($tickets as $t) {
 }
 
 $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $conteoPorEstado['Cerrado']) / $totalTickets) * 100, 1) : 0;
+
+// ====================================================
+// CARGA DE TICKET ESPECÍFICO PARA VISTA COMPLETA (NO FLOTANTE)
+// ====================================================
+$ticketVerParam = trim($_GET['ver'] ?? ($_GET['ticket_id'] ?? ''));
+$ticketActivo = null;
+$mensajesTicketActivo = [];
+
+if (!empty($ticketVerParam) && $pdo) {
+    try {
+        if (is_numeric($ticketVerParam)) {
+            $stmtTkVer = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ?");
+            $stmtTkVer->execute([intval($ticketVerParam)]);
+        } else {
+            $stmtTkVer = $pdo->prepare("SELECT * FROM tickets_soporte WHERE folio = ? OR id = ?");
+            $stmtTkVer->execute([$ticketVerParam, intval($ticketVerParam)]);
+        }
+        $ticketActivo = $stmtTkVer ? $stmtTkVer->fetch(PDO::FETCH_ASSOC) : null;
+
+        if ($ticketActivo) {
+            $stmtMsgTk = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
+            $stmtMsgTk->execute([$ticketActivo['id']]);
+            $mensajesTicketActivo = $stmtMsgTk ? $stmtMsgTk->fetchAll(PDO::FETCH_ASSOC) : [];
+        }
+    } catch (Throwable $eVer) {}
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -1622,6 +1741,133 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                 padding: 3px 4px;
             }
         }
+
+        /* ======================================================= */
+        /* ESTILOS DE VISTA COMPLETA DEL TICKET Y CHAT CONTESTACIONES */
+        /* ======================================================= */
+        .ticket-workspace {
+            animation: fadeInTicket 0.25s ease-out;
+        }
+        @keyframes fadeInTicket {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .ticket-header-box {
+            background: linear-gradient(135deg, rgba(8, 22, 42, 0.95) 0%, rgba(4, 13, 26, 0.95) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 20px rgba(2, 132, 199, 0.15);
+        }
+
+        .ticket-card {
+            background: rgba(8, 22, 42, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(10px);
+        }
+
+        .chat-thread-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .chat-bubble-card {
+            border-radius: 14px;
+            padding: 16px 20px;
+            position: relative;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .chat-bubble-card:hover {
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .chat-bubble-user {
+            background: linear-gradient(135deg, rgba(15, 34, 56, 0.9) 0%, rgba(10, 25, 42, 0.9) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.22);
+            border-left: 4px solid #38bdf8;
+        }
+
+        .chat-bubble-agent {
+            background: linear-gradient(135deg, rgba(6, 44, 74, 0.95) 0%, rgba(8, 30, 52, 0.95) 100%);
+            border: 1px solid rgba(14, 165, 233, 0.45);
+            border-left: 4px solid #0284c7;
+            box-shadow: 0 4px 18px rgba(2, 132, 199, 0.18);
+        }
+
+        .chat-bubble-internal {
+            background: linear-gradient(135deg, rgba(50, 35, 10, 0.92) 0%, rgba(30, 20, 5, 0.92) 100%);
+            border: 1px dashed rgba(245, 158, 11, 0.5);
+            border-left: 4px solid #f59e0b;
+        }
+
+        .chat-avatar-circle {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .chat-avatar-user {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .chat-avatar-agent {
+            background: rgba(2, 132, 199, 0.25);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.5);
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+        }
+
+        .chat-avatar-internal {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.4);
+        }
+
+        .chat-composer-box {
+            background: rgba(10, 25, 45, 0.95);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 16px;
+            padding: 18px 20px;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+        }
+
+        .chat-composer-box textarea:focus {
+            background: rgba(6, 18, 34, 0.9) !important;
+            border-color: #38bdf8 !important;
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2) !important;
+            color: #fff !important;
+        }
+
+        .evidence-preview-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .ticket-link-row {
+            color: #fff;
+            text-decoration: none;
+            transition: color 0.15s ease;
+        }
+        .ticket-link-row:hover {
+            color: #38bdf8 !important;
+        }
     </style>
 </head>
 <body>
@@ -1795,9 +2041,460 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
             <?php endif; ?>
 
             <!-- ======================================================= -->
+            <!-- SECCIÓN DETALLE Y RESOLUCIÓN COMPLETA DEL TICKET (NO FLOTANTE) -->
+            <!-- ======================================================= -->
+            <div id="seccionTab_detalle" class="tab-seccion ticket-workspace" style="<?php echo $ticketActivo ? 'display: block;' : 'display: none;'; ?>">
+                <?php if ($ticketActivo): 
+                    $tEst = strtolower(trim($ticketActivo['estado'] ?? 'abierto'));
+                    $tPrio = ucfirst(strtolower(trim($ticketActivo['prioridad'] ?? 'media')));
+                    $tAreaKey = strtoupper(trim($ticketActivo['area_sistemas'] ?? 'INFRAESTRUCTURA'));
+                    $tAreaInfo = $AREAS_SISTEMAS_CATALOGO[$tAreaKey] ?? [
+                        'nombre' => $tAreaKey,
+                        'icono'  => 'bi-cpu-fill',
+                        'color'  => '#38bdf8',
+                        'bg'     => 'rgba(56, 189, 248, 0.18)',
+                        'border' => 'rgba(56, 189, 248, 0.45)'
+                    ];
+
+                    $tPrioClass = 'bg-secondary text-light';
+                    if ($tPrio === 'Baja') $tPrioClass = 'bg-success bg-opacity-25 text-success border border-success border-opacity-35';
+                    elseif ($tPrio === 'Media') $tPrioClass = 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-35';
+                    elseif ($tPrio === 'Alta') $tPrioClass = 'bg-danger bg-opacity-25 text-danger border border-danger border-opacity-35';
+                    elseif ($tPrio === 'Urgente') $tPrioClass = 'bg-danger text-white shadow-sm';
+
+                    $tStatusClass = 'bg-warning text-dark fw-bold';
+                    $tStatusGlow = 'rgba(245, 158, 11, 0.3)';
+                    if ($tEst === 'en proceso') {
+                        $tStatusClass = 'bg-info text-dark fw-bold';
+                        $tStatusGlow = 'rgba(14, 165, 233, 0.35)';
+                    } elseif ($tEst === 'resuelto') {
+                        $tStatusClass = 'bg-success text-white fw-bold';
+                        $tStatusGlow = 'rgba(16, 185, 129, 0.35)';
+                    } elseif ($tEst === 'cerrado') {
+                        $tStatusClass = 'bg-secondary text-white fw-bold';
+                        $tStatusGlow = 'rgba(100, 116, 139, 0.2)';
+                    }
+                ?>
+                <!-- Header Box del Ticket -->
+                <div class="ticket-header-box mb-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <a href="tickets.php" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1.5 d-inline-flex align-items-center gap-1 border-opacity-35 shadow-sm" style="backdrop-filter: blur(4px);">
+                                <i class="bi bi-arrow-left"></i> Volver a la Lista de Tickets
+                            </a>
+                            <span class="badge-folio fs-6 px-3 py-1.5" id="detFolioBadge">
+                                <?php echo htmlspecialchars($ticketActivo['folio'] ?? ('TK-' . $ticketActivo['id'])); ?>
+                            </span>
+                            <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill text-white border-opacity-25 px-2 py-1" onclick="copiarFolio('<?php echo htmlspecialchars($ticketActivo['folio'] ?? ('TK-' . $ticketActivo['id'])); ?>')" title="Copiar Folio">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            <span class="badge-agencia px-3 py-1.5">
+                                <i class="bi bi-building me-1"></i> <?php echo htmlspecialchars($ticketActivo['solicitante_agencia'] ?? 'Agencia Central'); ?>
+                            </span>
+                            <span style="font-size: 0.8rem; font-weight: 700; padding: 4px 12px; border-radius: 12px; background: <?php echo $tAreaInfo['bg']; ?>; color: <?php echo $tAreaInfo['color']; ?>; border: 1px solid <?php echo $tAreaInfo['border']; ?>; display: inline-flex; align-items: center; gap: 6px;">
+                                <i class="bi <?php echo $tAreaInfo['icono']; ?>"></i> <?php echo $tAreaInfo['nombre']; ?>
+                            </span>
+                        </div>
+
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="badge rounded-pill <?php echo $tPrioClass; ?> px-3 py-1.5 fw-bold" style="font-size: 0.82rem;">
+                                Prioridad: <?php echo $tPrio; ?>
+                            </span>
+                            <span class="badge rounded-pill <?php echo $tStatusClass; ?> px-3 py-1.5 fs-6 shadow-sm" style="box-shadow: 0 0 15px <?php echo $tStatusGlow; ?> !important;">
+                                <i class="bi bi-circle-fill me-1" style="font-size: 0.55rem;"></i> <?php echo htmlspecialchars($ticketActivo['estado'] ?? 'Abierto'); ?>
+                            </span>
+                        </div>
+                    </div>
+
+                    <h2 class="fw-bold text-white mb-2" style="font-size: 1.6rem; line-height: 1.3;">
+                        <?php echo htmlspecialchars($ticketActivo['titulo'] ?? 'Sin título'); ?>
+                    </h2>
+
+                    <div class="d-flex flex-wrap align-items-center gap-3 text-secondary small pt-2 border-top border-secondary border-opacity-20">
+                        <div>
+                            <i class="bi bi-person-circle text-info me-1"></i> Solicitante: 
+                            <strong class="text-white"><?php echo htmlspecialchars($ticketActivo['solicitante_nombre'] ?? 'Usuario'); ?></strong>
+                            <?php if (!empty($ticketActivo['solicitante_usuario'])): ?>
+                                <span class="text-info font-monospace">(@<?php echo htmlspecialchars($ticketActivo['solicitante_usuario']); ?>)</span>
+                            <?php endif; ?>
+                        </div>
+                        <?php if (!empty($ticketActivo['solicitante_email'])): ?>
+                            <div>
+                                <i class="bi bi-envelope text-secondary me-1"></i>
+                                <a href="mailto:<?php echo htmlspecialchars($ticketActivo['solicitante_email']); ?>" class="text-info text-decoration-none">
+                                    <?php echo htmlspecialchars($ticketActivo['solicitante_email']); ?>
+                                </a>
+                            </div>
+                        <?php endif; ?>
+                        <div>
+                            <i class="bi bi-calendar3 me-1"></i> Registrado: 
+                            <span class="text-white"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'] ?? 'now')); ?> hrs</span>
+                        </div>
+                        <?php if (!empty($ticketActivo['asignado_a'])): ?>
+                            <div>
+                                <i class="bi bi-headset text-warning me-1"></i> Técnico asignado: 
+                                <strong class="text-warning"><?php echo htmlspecialchars($ticketActivo['asignado_a']); ?></strong>
+                            </div>
+                        <?php else: ?>
+                            <div>
+                                <span class="badge bg-secondary bg-opacity-50 text-light"><i class="bi bi-exclamation-circle me-1"></i> Sin técnico asignado</span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <!-- Contenido Principal: 2 Columnas -->
+                <div class="row g-4">
+                    <!-- Columna Izquierda: Solicitud Original + Hilo de Chat/Contestaciones + Composer -->
+                    <div class="col-lg-8">
+                        <!-- 1. Tarjeta de Solicitud Inicial -->
+                        <div class="ticket-card p-4 mb-4" style="border-left: 4px solid #38bdf8;">
+                            <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                                <div class="d-flex align-items-center gap-2">
+                                    <div class="chat-avatar-circle chat-avatar-user">
+                                        <i class="bi bi-file-earmark-text-fill"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold text-white fs-6">Requerimiento Inicial Reportado</div>
+                                        <div class="text-secondary small">
+                                            Por <strong class="text-light"><?php echo htmlspecialchars($ticketActivo['solicitante_nombre'] ?? 'Solicitante'); ?></strong> 
+                                            el <?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'] ?? 'now')); ?> hrs
+                                        </div>
+                                    </div>
+                                </div>
+                                <span class="badge bg-info bg-opacity-20 text-info border border-info border-opacity-30 rounded-pill px-3 py-1">
+                                    Apertura de Incidencia
+                                </span>
+                            </div>
+
+                            <div class="text-light fs-6" style="white-space: pre-line; line-height: 1.7; color: #e2e8f0 !important;">
+                                <?php echo htmlspecialchars($ticketActivo['descripcion'] ?? 'Sin descripción'); ?>
+                            </div>
+
+                            <?php if (!empty($ticketActivo['archivo_adjunto'])): 
+                                $extAdj = strtolower(pathinfo($ticketActivo['archivo_adjunto'], PATHINFO_EXTENSION));
+                                $esImg = in_array($extAdj, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                            ?>
+                                <div class="mt-4 pt-3 border-top border-secondary border-opacity-25">
+                                    <div class="small text-secondary fw-semibold mb-2"><i class="bi bi-paperclip me-1 text-info"></i> Evidencia Adjunta en la Solicitud:</div>
+                                    <?php if ($esImg): ?>
+                                        <div class="p-2 rounded-3 bg-black bg-opacity-40 d-inline-block border border-secondary border-opacity-30">
+                                            <a href="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" target="_blank" title="Clic para ver en tamaño completo">
+                                                <img src="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" alt="Evidencia" class="img-fluid rounded-2 shadow" style="max-height: 240px; object-fit: contain; display: block;">
+                                            </a>
+                                            <div class="mt-2 text-center">
+                                                <a href="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-pill px-3 py-0.5" style="font-size: 0.78rem;">
+                                                    <i class="bi bi-arrows-fullscreen me-1"></i> Ver Imagen Completa
+                                                </a>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="evidence-preview-box">
+                                            <i class="bi bi-file-earmark-arrow-down-fill text-info fs-3"></i>
+                                            <div class="flex-grow-1 overflow-hidden">
+                                                <div class="text-white small fw-bold text-truncate"><?php echo basename($ticketActivo['archivo_adjunto']); ?></div>
+                                                <div class="text-secondary" style="font-size: 0.72rem;">Archivo adjunto (<?php echo strtoupper($extAdj); ?>)</div>
+                                            </div>
+                                            <a href="<?php echo htmlspecialchars($ticketActivo['archivo_adjunto']); ?>" target="_blank" class="btn btn-info btn-sm rounded-pill px-3 fw-bold text-dark">
+                                                <i class="bi bi-download me-1"></i> Descargar
+                                            </a>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- 2. Hilo del Chat y Contestaciones -->
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h5 class="fw-bold text-white mb-0 d-flex align-items-center gap-2">
+                                <i class="bi bi-chat-dots-fill text-info"></i> Conversación y Respuestas
+                                <span class="badge bg-dark border border-secondary text-info rounded-pill px-2.5 py-1 font-monospace" style="font-size: 0.75rem;">
+                                    <?php echo count($mensajesTicketActivo); ?> mensajes
+                                </span>
+                            </h5>
+                            <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill text-white border-opacity-30 py-0 px-2" onclick="location.reload()" title="Actualizar conversación">
+                                <i class="bi bi-arrow-clockwise me-1"></i> Actualizar
+                            </button>
+                        </div>
+
+                        <div class="chat-thread-container mb-4">
+                            <?php if (empty($mensajesTicketActivo) && empty($ticketActivo['notas_resolucion'])): ?>
+                                <div class="p-4 rounded-4 text-center border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.02);">
+                                    <i class="bi bi-chat-square-text text-secondary fs-1 d-block mb-2 opacity-50"></i>
+                                    <div class="text-light fw-semibold">Aún no hay respuestas en este ticket</div>
+                                    <div class="text-secondary small mt-1">Escribe a continuación para enviar una contestación al solicitante o agregar notas técnicas de seguimiento.</div>
+                                </div>
+                            <?php endif; ?>
+
+                            <!-- Si existían notas de resolución previas del agente, mostrarlas como evento -->
+                            <?php if (!empty($ticketActivo['notas_resolucion'])): ?>
+                                <div class="chat-bubble-card chat-bubble-agent">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="chat-avatar-circle chat-avatar-agent">
+                                                <i class="bi bi-headset"></i>
+                                            </div>
+                                            <div>
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span class="fw-bold text-info">
+                                                        <?php echo htmlspecialchars($ticketActivo['asignado_a'] ?: 'Agente de Sistemas'); ?>
+                                                    </span>
+                                                    <span class="badge bg-primary text-white py-0 px-2" style="font-size: 0.68rem;">SOPORTE TI</span>
+                                                    <span class="badge bg-dark border border-secondary text-secondary py-0 px-2" style="font-size: 0.68rem;">Bitácora de Atención</span>
+                                                </div>
+                                                <span class="text-secondary" style="font-size: 0.72rem;">Registrado en bitácora técnica</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="text-light small" style="white-space: pre-line; line-height: 1.6;">
+                                        <?php echo htmlspecialchars($ticketActivo['notas_resolucion']); ?>
+                                    </div>
+                                </div>
+                            <?php endif; ?>
+
+                            <!-- Mensajes del Chat en orden cronológico -->
+                            <?php foreach ($mensajesTicketActivo as $msg): 
+                                $esAgente = ($msg['autor_rol'] === 'agente');
+                                $esInterna = !empty($msg['es_nota_interna']);
+                                $bubbleClass = $esInterna ? 'chat-bubble-internal' : ($esAgente ? 'chat-bubble-agent' : 'chat-bubble-user');
+                                $avatarClass = $esInterna ? 'chat-avatar-internal' : ($esAgente ? 'chat-avatar-agent' : 'chat-avatar-user');
+                                $avatarIcon  = $esInterna ? 'bi-lock-fill' : ($esAgente ? 'bi-headset' : 'bi-person-fill');
+                            ?>
+                                <div class="chat-bubble-card <?php echo $bubbleClass; ?>">
+                                    <div class="d-flex align-items-center justify-content-between mb-2">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div class="chat-avatar-circle <?php echo $avatarClass; ?>">
+                                                <i class="bi <?php echo $avatarIcon; ?>"></i>
+                                            </div>
+                                            <div>
+                                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                                    <strong class="<?php echo $esAgente ? 'text-info' : 'text-white'; ?>">
+                                                        <?php echo htmlspecialchars($msg['autor_nombre'] ?? 'Usuario'); ?>
+                                                    </strong>
+                                                    <?php if (!empty($msg['autor_usuario'])): ?>
+                                                        <span class="text-secondary font-monospace small" style="font-size: 0.72rem;">@<?php echo htmlspecialchars($msg['autor_usuario']); ?></span>
+                                                    <?php endif; ?>
+                                                    <?php if ($esInterna): ?>
+                                                        <span class="badge bg-warning text-dark py-0 px-2 fw-bold" style="font-size: 0.68rem;">NOTA INTERNA TI</span>
+                                                    <?php elseif ($esAgente): ?>
+                                                        <span class="badge bg-primary text-white py-0 px-2" style="font-size: 0.68rem;">SOPORTE TI &bull; AGENTE</span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-info bg-opacity-25 text-info py-0 px-2" style="font-size: 0.68rem;">SOLICITANTE</span>
+                                                    <?php endif; ?>
+                                                    <?php if (!empty($msg['autor_agencia'])): ?>
+                                                        <span class="badge bg-dark border border-secondary text-secondary py-0 px-1.5" style="font-size: 0.65rem;">
+                                                            <?php echo htmlspecialchars($msg['autor_agencia']); ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <span class="text-secondary" style="font-size: 0.72rem;">
+                                                    <i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($msg['creado_en'])); ?> hrs
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="text-light" style="white-space: pre-line; line-height: 1.6; font-size: 0.95rem;">
+                                        <?php echo htmlspecialchars($msg['mensaje']); ?>
+                                    </div>
+
+                                    <?php if (!empty($msg['archivo_adjunto'])): 
+                                        $extM = strtolower(pathinfo($msg['archivo_adjunto'], PATHINFO_EXTENSION));
+                                        $esImgM = in_array($extM, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                    ?>
+                                        <div class="mt-3 pt-2 border-top border-secondary border-opacity-25">
+                                            <?php if ($esImgM): ?>
+                                                <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank">
+                                                    <img src="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" alt="Adjunto" class="img-fluid rounded-2 shadow-sm" style="max-height: 200px; object-fit: contain; background: rgba(0,0,0,0.5); padding: 4px;">
+                                                </a>
+                                            <?php else: ?>
+                                                <a href="<?php echo htmlspecialchars($msg['archivo_adjunto']); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1 text-decoration-none">
+                                                    <i class="bi bi-paperclip me-1"></i> Ver / Descargar: <?php echo basename($msg['archivo_adjunto']); ?>
+                                                </a>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+
+                        <!-- 3. Caja de Nueva Contestación / Chat Composer -->
+                        <div class="chat-composer-box">
+                            <form method="POST" enctype="multipart/form-data">
+                                <input type="hidden" name="accion" value="agregar_mensaje_ticket">
+                                <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id']; ?>">
+
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <label class="form-label small fw-bold text-info mb-0">
+                                        <i class="bi bi-reply-fill me-1"></i> Escribir Contestación al Solicitante
+                                    </label>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" name="es_nota_interna" id="swNotaInterna" value="1">
+                                        <label class="form-check-label small text-secondary" for="swNotaInterna" title="Solo visible para administradores y técnicos de TI">
+                                            <i class="bi bi-lock-fill text-warning me-1"></i> Nota Interna TI
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <textarea name="mensaje" rows="4" class="form-control rounded-3 mb-3" placeholder="Escribe aquí tu respuesta, actualización técnica, instrucciones o solución para el usuario..." required style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35); resize: vertical;"></textarea>
+
+                                <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pt-2 border-top border-secondary border-opacity-25">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <label class="btn btn-outline-secondary btn-sm rounded-pill text-white border-opacity-40 mb-0 d-inline-flex align-items-center gap-1" style="cursor: pointer;">
+                                            <i class="bi bi-paperclip text-info"></i>
+                                            <span>Adjuntar Evidencia</span>
+                                            <input type="file" name="archivo_mensaje" id="archivoMensajeInput" class="d-none" onchange="mostrarArchivoMsgSeleccionado(this)">
+                                        </label>
+                                        <span id="txtArchivoMsgSeleccionado" class="small text-secondary font-monospace"></span>
+                                    </div>
+
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <select name="cambio_estado" class="form-select form-select-sm rounded-3 text-white" style="width: auto; background: rgba(8, 22, 42, 0.9); border-color: rgba(56, 189, 248, 0.4);">
+                                            <option value="">Mantener Estado Actual</option>
+                                            <option value="En Proceso" <?php echo $tEst === 'abierto' ? 'selected' : ''; ?>>Cambiar a: En Proceso</option>
+                                            <option value="Resuelto">Cambiar a: Resuelto</option>
+                                            <option value="Cerrado">Cambiar a: Cerrado</option>
+                                        </select>
+
+                                        <button type="submit" class="btn btn-info btn-sm rounded-pill px-4 fw-bold text-dark d-inline-flex align-items-center gap-1.5 shadow">
+                                            <i class="bi bi-send-fill"></i> Enviar Contestación
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Columna Derecha: Panel de Gestión del Agente TI & Ficha Técnica -->
+                    <div class="col-lg-4">
+                        <!-- Panel de Resolución y Estado -->
+                        <div class="ticket-card p-4 mb-4" style="border-top: 3px solid #0284c7;">
+                            <h5 class="fw-bold text-white mb-3 d-flex align-items-center gap-2">
+                                <i class="bi bi-sliders2 text-info"></i> Gestión del Ticket
+                            </h5>
+
+                            <form method="POST">
+                                <input type="hidden" name="accion" value="actualizar_ticket">
+                                <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id']; ?>">
+                                <input type="hidden" name="redirect_ver" value="1">
+
+                                <div class="mb-3">
+                                    <label class="form-label small text-secondary fw-semibold">Estado del Ticket *</label>
+                                    <select name="estado" class="form-select" required style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35);">
+                                        <option value="Abierto" <?php echo $tEst === 'abierto' ? 'selected' : ''; ?>>Abierto (En espera)</option>
+                                        <option value="En Proceso" <?php echo $tEst === 'en proceso' ? 'selected' : ''; ?>>En Proceso (En atención)</option>
+                                        <option value="Resuelto" <?php echo $tEst === 'resuelto' ? 'selected' : ''; ?>>Resuelto (Trabajo terminado)</option>
+                                        <option value="Cerrado" <?php echo $tEst === 'cerrado' ? 'selected' : ''; ?>>Cerrado (Finalizado)</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label small text-secondary fw-semibold">Nivel de Prioridad</label>
+                                    <select name="prioridad" class="form-select" style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35);">
+                                        <option value="Baja" <?php echo $tPrio === 'Baja' ? 'selected' : ''; ?>>Baja</option>
+                                        <option value="Media" <?php echo $tPrio === 'Media' ? 'selected' : ''; ?>>Media</option>
+                                        <option value="Alta" <?php echo $tPrio === 'Alta' ? 'selected' : ''; ?>>Alta</option>
+                                        <option value="Urgente" <?php echo $tPrio === 'Urgente' ? 'selected' : ''; ?>>Urgente</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <label class="form-label small text-secondary fw-semibold mb-0">Especialista Asignado</label>
+                                        <button type="button" class="btn btn-link btn-sm text-info p-0 text-decoration-none" style="font-size: 0.74rem;" onclick="asignarmeEnFormulario('<?php echo htmlspecialchars($nombreUsuario); ?>')">
+                                            <i class="bi bi-hand-index-thumb"></i> Asignarme a mí
+                                        </button>
+                                    </div>
+                                    <input type="text" name="asignado_a" id="inputAsignadoAgente" class="form-control" value="<?php echo htmlspecialchars($ticketActivo['asignado_a'] ?? ''); ?>" placeholder="Nombre del técnico responsable" style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35);">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label small text-secondary fw-semibold">Bitácora / Notas de Solución</label>
+                                    <textarea name="notas_resolucion" class="form-control" rows="3" placeholder="Diagnóstico, solución técnica aplicada o motivo de cierre..." style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35); font-size: 0.88rem;"><?php echo htmlspecialchars($ticketActivo['notas_resolucion'] ?? ''); ?></textarea>
+                                </div>
+
+                                <button type="submit" class="btn btn-info w-100 fw-bold rounded-3 text-dark py-2 shadow">
+                                    <i class="bi bi-check2-circle me-1"></i> Guardar Cambios de Atención
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- Ficha Técnica del Solicitante -->
+                        <div class="ticket-card p-4 mb-4">
+                            <h6 class="fw-bold text-white mb-3 d-flex align-items-center gap-2">
+                                <i class="bi bi-person-lines-fill text-info"></i> Ficha del Solicitante
+                            </h6>
+                            <div class="d-flex flex-column gap-2 small">
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Nombre:</span>
+                                    <strong class="text-white"><?php echo htmlspecialchars($ticketActivo['solicitante_nombre'] ?? '---'); ?></strong>
+                                </div>
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Usuario:</span>
+                                    <span class="text-info font-monospace">@<?php echo htmlspecialchars($ticketActivo['solicitante_usuario'] ?? '---'); ?></span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Email:</span>
+                                    <span class="text-white text-truncate" style="max-width: 170px;" title="<?php echo htmlspecialchars($ticketActivo['solicitante_email'] ?? ''); ?>"><?php echo htmlspecialchars($ticketActivo['solicitante_email'] ?? '---'); ?></span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Agencia Origen:</span>
+                                    <strong class="text-light"><?php echo htmlspecialchars($ticketActivo['solicitante_agencia'] ?? 'General'); ?></strong>
+                                </div>
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Área TI:</span>
+                                    <span class="text-info fw-bold"><?php echo htmlspecialchars($ticketActivo['area_sistemas'] ?? '---'); ?></span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                    <span class="text-secondary">Fecha Alta:</span>
+                                    <span class="text-secondary font-monospace"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['creado_en'])); ?> hrs</span>
+                                </div>
+                                <div class="d-flex justify-content-between py-1">
+                                    <span class="text-secondary">Última Act.:</span>
+                                    <span class="text-secondary font-monospace"><?php echo date('d/m/Y H:i', strtotime($ticketActivo['actualizado_en'] ?? $ticketActivo['creado_en'])); ?> hrs</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Acciones Rápidas -->
+                        <div class="ticket-card p-3">
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-outline-success btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between" onclick="agendarCitaParaTicket(<?php echo htmlspecialchars(json_encode($ticketActivo)); ?>)">
+                                    <span><i class="bi bi-calendar-plus me-2"></i> Agendar Cita Técnica</span>
+                                    <i class="bi bi-chevron-right small text-secondary"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-light btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between border-opacity-25" onclick="window.print()">
+                                    <span><i class="bi bi-printer me-2"></i> Imprimir Ficha de Ticket</span>
+                                    <i class="bi bi-chevron-right small text-secondary"></i>
+                                </button>
+                                <?php if ($esAdmin): ?>
+                                    <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente este ticket?');" class="m-0">
+                                        <input type="hidden" name="accion" value="eliminar_ticket">
+                                        <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id']; ?>">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 py-2 text-start w-100 d-flex align-items-center justify-content-between border-opacity-35">
+                                            <span><i class="bi bi-trash3 me-2"></i> Eliminar Ticket</span>
+                                            <i class="bi bi-chevron-right small text-secondary"></i>
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php else: ?>
+                    <div class="alert alert-warning rounded-4 p-4 text-center my-4">
+                        <i class="bi bi-exclamation-triangle fs-2 d-block mb-2 text-warning"></i>
+                        <h5 class="fw-bold text-white">No se encontró el ticket solicitado</h5>
+                        <p class="small text-secondary mb-3">El ticket no existe o no cuentas con permisos para ver el área correspondiente.</p>
+                        <a href="tickets.php" class="btn btn-primary rounded-pill px-4">Volver al listado de tickets</a>
+                    </div>
+                <?php endif; ?>
+            </div>
+
+            <!-- ======================================================= -->
             <!-- SECCIÓN 1: GESTIÓN DE TICKETS Y AGENCIA S -->
             <!-- ======================================================= -->
-            <div id="seccionTab_tickets" class="tab-seccion">
+            <div id="seccionTab_tickets" class="tab-seccion" style="<?php echo $ticketActivo ? 'display: none;' : ''; ?>">
                 <div id="vistaAgencias">
                     <!-- Encabezado de Vista: Tickets Dirección Sistemas -->
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
@@ -1923,7 +2620,7 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                                                     </td>
                                                     <td>
                                                         <div class="fw-bold text-white text-truncate" style="max-width: 280px;" title="<?php echo htmlspecialchars($tsv['titulo'] ?? ''); ?>">
-                                                            <?php echo htmlspecialchars($tsv['titulo'] ?? 'Sin título'); ?>
+                                                            <a href="tickets.php?ver=<?php echo $tsv['id']; ?>" class="ticket-link-row"><?php echo htmlspecialchars($tsv['titulo'] ?? 'Sin título'); ?></a>
                                                         </div>
                                                         <div class="text-secondary small text-truncate" style="max-width: 280px;">
                                                             <?php echo htmlspecialchars(mb_substr($tsv['descripcion'] ?? '', 0, 60)) . '...'; ?>
@@ -1939,9 +2636,9 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                                                         <span class="text-secondary small font-monospace"><?php echo date('d/m/Y H:i', strtotime($tsv['creado_en'] ?? 'now')); ?></span>
                                                     </td>
                                                     <td class="text-end">
-                                                        <button type="button" class="btn btn-warning btn-sm fw-bold rounded-pill px-3 shadow-sm text-dark d-inline-flex align-items-center gap-1" onclick='abrirModalAtender(<?php echo json_encode($tsv); ?>)'>
+                                                        <a href="tickets.php?ver=<?php echo $tsv['id']; ?>" class="btn btn-warning btn-sm fw-bold rounded-pill px-3 shadow-sm text-dark d-inline-flex align-items-center gap-1">
                                                             <i class="bi bi-headset"></i> Atender
-                                                        </button>
+                                                        </a>
                                                     </td>
                                                 </tr>
                                             <?php endforeach; ?>
@@ -2250,7 +2947,9 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                                 data-asignado="<?php echo htmlspecialchars($asignado); ?>">
                                 
                                 <td>
-                                    <span class="badge-folio"><?php echo htmlspecialchars($folio); ?></span>
+                                    <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="ticket-link-row" title="Ver ticket completo">
+                                        <span class="badge-folio"><?php echo htmlspecialchars($folio); ?></span>
+                                    </a>
                                     <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
                                         <i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['creado_en'])); ?>
                                     </div>
@@ -2269,7 +2968,9 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                                 </td>
 
                                 <td>
-                                    <div class="fw-bold text-white mb-1"><?php echo htmlspecialchars($t['titulo']); ?></div>
+                                    <div class="fw-bold text-white mb-1">
+                                        <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="ticket-link-row" title="Ver ticket completo"><?php echo htmlspecialchars($t['titulo']); ?></a>
+                                    </div>
                                     <div class="text-secondary small text-truncate" style="max-width: 320px;">
                                         <?php echo htmlspecialchars(mb_strimwidth($t['descripcion'], 0, 75, '...')); ?>
                                     </div>
@@ -2323,9 +3024,9 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
                                 </td>
 
                                 <td class="text-center">
-                                    <button class="btn btn-sm btn-info rounded-3 px-2 py-1 text-dark fw-bold" onclick="abrirModalAtender(<?php echo htmlspecialchars(json_encode($t)); ?>)" title="Gestionar y resolver ticket">
+                                    <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="btn btn-sm btn-info rounded-3 px-2 py-1 text-dark fw-bold" title="Abrir ticket completo y contestar">
                                         <i class="bi bi-headset me-1"></i> Atender
-                                    </button>
+                                    </a>
                                     <?php if ($esAdmin): ?>
                                         <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente este ticket?');" style="display:inline;">
                                             <input type="hidden" name="accion" value="eliminar_ticket">
@@ -3134,9 +3835,14 @@ function cambiarTab(tabName, updateUrl = true) {
         tabName = 'tickets';
     }
 
+    const secDetalle = document.getElementById('seccionTab_detalle');
+    if (secDetalle) {
+        secDetalle.style.display = 'none';
+    }
+
     // Actualizar botones de navegación en sidebar
     tabsPermitidos.forEach(t => {
-        const btn = document.getElementById('navBtn_' + t);
+        const btn = document.getElementById('sidebarBtn_' + t);
         const sec = document.getElementById('seccionTab_' + t);
         if (btn) {
             if (t === tabName) {
@@ -3151,14 +3857,14 @@ function cambiarTab(tabName, updateUrl = true) {
     });
 
     // Actualizar título superior
-    const titleEl = document.getElementById('navbarTabTitle');
+    const titleEl = document.getElementById('topNavTituloSeccion');
     if (titleEl) {
         if (tabName === 'tickets') {
-            titleEl.innerText = 'Gestión Central de Tickets';
+            titleEl.innerHTML = '<i class="bi bi-ticket-detailed-fill text-info me-1"></i> Tickets de Soporte';
         } else if (tabName === 'citas') {
-            titleEl.innerText = 'Agenda de Citas y Visitas Técnicas';
+            titleEl.innerHTML = '<i class="bi bi-calendar-event-fill text-success me-1"></i> Agenda de Citas Técnicas';
         } else if (tabName === 'estadisticas') {
-            titleEl.innerText = 'Estadísticas e Inteligencia TI';
+            titleEl.innerHTML = '<i class="bi bi-bar-chart-line-fill text-primary me-1"></i> Estadísticas e Inteligencia TI';
         }
     }
 
@@ -3179,6 +3885,8 @@ function cambiarTab(tabName, updateUrl = true) {
     if (updateUrl) {
         const currentUrl = new URL(window.location);
         currentUrl.searchParams.set('tab', tabName);
+        currentUrl.searchParams.delete('ver');
+        currentUrl.searchParams.delete('ticket_id');
         if (tabName !== 'tickets') {
             currentUrl.searchParams.delete('agencia');
         }
@@ -3373,34 +4081,51 @@ function limpiarBusqueda() {
 }
 
 function abrirModalAtender(ticket) {
-    document.getElementById('atenderTicketId').value = ticket.id;
-    document.getElementById('atenderFolio').innerText = ticket.folio || ('TK-' + ticket.id);
-    document.getElementById('atenderAgencia').innerText = ticket.solicitante_agencia || 'Agencia General';
-    document.getElementById('atenderTitulo').innerText = ticket.titulo || 'Sin título';
-    let solicitanteTxt = ticket.solicitante_nombre || 'Usuario';
-    if (ticket.solicitante_usuario) {
-        solicitanteTxt += ' (@' + ticket.solicitante_usuario + ')';
+    const id = (typeof ticket === 'object' && ticket) ? (ticket.id || '') : ticket;
+    if (id) {
+        window.location.href = 'tickets.php?ver=' + id;
+        return;
     }
-    document.getElementById('atenderSolicitante').innerText = solicitanteTxt;
-    document.getElementById('atenderEmail').innerText = ticket.solicitante_email || 'Sin correo';
-    document.getElementById('atenderArea').innerText = ticket.area_sistemas || 'SISTEMAS';
-    document.getElementById('atenderDescripcion').innerText = ticket.descripcion || '';
-    document.getElementById('atenderEstado').value = ticket.estado || 'Abierto';
-    document.getElementById('atenderPrioridad').value = ticket.prioridad || 'Media';
-    document.getElementById('atenderAsignado').value = ticket.asignado_a || '';
-    document.getElementById('atenderNotas').value = ticket.notas_resolucion || '';
+}
 
-    const contenedorAdj = document.getElementById('contenedorAdjunto');
-    const linkAdj = document.getElementById('linkAdjunto');
-    if (ticket.archivo_adjunto && ticket.archivo_adjunto !== '') {
-        linkAdj.href = ticket.archivo_adjunto;
-        contenedorAdj.classList.remove('d-none');
+function copiarFolio(folio) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(folio).then(() => {
+            alert('Folio copiado al portapapeles: ' + folio);
+        }).catch(() => {
+            prompt('Copia el folio:', folio);
+        });
     } else {
-        contenedorAdj.classList.add('d-none');
+        prompt('Copia el folio:', folio);
     }
+}
 
-    const modal = new bootstrap.Modal(document.getElementById('modalAtenderTicket'));
-    modal.show();
+function mostrarArchivoMsgSeleccionado(input) {
+    const txtEl = document.getElementById('txtArchivoMsgSeleccionado');
+    if (txtEl && input.files && input.files[0]) {
+        txtEl.innerText = '📎 ' + input.files[0].name;
+    }
+}
+
+function asignarmeEnFormulario(nombre) {
+    const input = document.getElementById('inputAsignadoAgente');
+    if (input) {
+        input.value = nombre;
+    }
+}
+
+function agendarCitaParaTicket(ticket) {
+    const modalEl = document.getElementById('modalNuevaCita');
+    if (modalEl) {
+        const modal = new bootstrap.Modal(modalEl);
+        const asuntoInp = document.getElementById('citaAsunto');
+        const agSelect = document.getElementById('citaAgencia');
+        const descInp = document.getElementById('citaDescripcion');
+        if (asuntoInp) asuntoInp.value = 'Atención ' + (ticket.folio || ('TK-' + ticket.id)) + ': ' + (ticket.titulo || '');
+        if (agSelect && ticket.solicitante_agencia) agSelect.value = ticket.solicitante_agencia;
+        if (descInp) descInp.value = 'Seguimiento técnico para ' + (ticket.solicitante_nombre || 'usuario') + ' (' + (ticket.solicitante_email || '') + ')\nMotivo: ' + (ticket.descripcion || '');
+        modal.show();
+    }
 }
 
 // ----------------------------------------------------

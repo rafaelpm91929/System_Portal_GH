@@ -84,6 +84,50 @@ if ($accionReq === 'consultar' || $accionReq === 'consultar_estado' || isset($_G
     } catch (Throwable $e) {}
 }
 
+// Acción de recepción de contestación / nuevo mensaje en el chat del ticket
+if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion') {
+    $folioReq = trim($datos['folio'] ?? ($_POST['folio'] ?? ''));
+    $ticketIdReq = intval($datos['ticket_id'] ?? ($_POST['ticket_id'] ?? 0));
+    $mensajeReq = trim($datos['mensaje'] ?? ($_POST['mensaje'] ?? ''));
+    $autorNom = trim($datos['autor_nombre'] ?? ($_POST['autor_nombre'] ?? 'Usuario Sucursal'));
+    $autorUsr = trim($datos['autor_usuario'] ?? ($_POST['autor_usuario'] ?? ''));
+    $autorRol = trim($datos['autor_rol'] ?? ($_POST['autor_rol'] ?? 'usuario'));
+    $autorAg  = trim($datos['autor_agencia'] ?? ($_POST['autor_agencia'] ?? ''));
+
+    if (empty($mensajeReq) || (empty($folioReq) && $ticketIdReq <= 0)) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'mensaje' => 'Folio/ticket_id y mensaje son requeridos.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        $stmtFind = $pdo->prepare("SELECT id FROM tickets_soporte WHERE " . ($ticketIdReq > 0 ? "id = ?" : "folio = ?"));
+        $stmtFind->execute([$ticketIdReq > 0 ? $ticketIdReq : $folioReq]);
+        $targetId = $stmtFind->fetchColumn();
+
+        if (!$targetId) {
+            http_response_code(404);
+            echo json_encode(['status' => 'error', 'mensaje' => 'Ticket no encontrado.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $stmtInsM = $pdo->prepare("
+            INSERT INTO tickets_mensajes
+            (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje)
+            VALUES
+            (?, ?, ?, ?, ?, ?)
+        ");
+        $stmtInsM->execute([$targetId, $autorUsr, $autorNom, $autorRol, $autorAg, $mensajeReq]);
+
+        echo json_encode(['status' => 'ok', 'mensaje' => 'Mensaje agregado al ticket correctamente.', 'ticket_id' => $targetId], JSON_UNESCAPED_UNICODE);
+        exit;
+    } catch (Throwable $eIns) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'mensaje' => 'Error al guardar mensaje: ' . $eIns->getMessage()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $agenciaNombre = trim($datos['agencia'] ?? ($datos['solicitante_agencia'] ?? 'Agencia Desconocida'));
 if (stripos($agenciaNombre, 'divol') !== false) {
     $agenciaNombre = 'Divol La Villa';

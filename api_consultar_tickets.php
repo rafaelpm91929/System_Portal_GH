@@ -59,6 +59,31 @@ if (!$tokenValido) {
     exit;
 }
 
+// Consulta de mensajes de un ticket específico
+if (isset($_GET['mensajes']) || ($datos['accion'] ?? '') === 'mensajes') {
+    $folioMsg = trim($_GET['folio'] ?? ($datos['folio'] ?? ''));
+    $tkIdMsg = intval($_GET['ticket_id'] ?? ($datos['ticket_id'] ?? 0));
+    try {
+        $stmtF = $pdo->prepare("SELECT id, folio FROM tickets_soporte WHERE " . ($tkIdMsg > 0 ? "id = ?" : "folio = ?"));
+        $stmtF->execute([$tkIdMsg > 0 ? $tkIdMsg : $folioMsg]);
+        $targetT = $stmtF->fetch(PDO::FETCH_ASSOC);
+        if ($targetT) {
+            $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
+            $stmtM->execute([$targetT['id']]);
+            echo json_encode([
+                'status'   => 'ok',
+                'folio'    => $targetT['folio'],
+                'mensajes' => $stmtM->fetchAll(PDO::FETCH_ASSOC)
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        } else {
+            http_response_code(404);
+            echo json_encode(['status' => 'error', 'mensaje' => 'Ticket no encontrado.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    } catch (Throwable $e) {}
+}
+
 // 3. Parámetros de búsqueda
 $foliosParam = $datos['folios'] ?? ($_POST['folios'] ?? ($_GET['folios'] ?? null));
 $agenciaParam = trim($datos['agencia'] ?? ($_POST['agencia'] ?? ($_GET['agencia'] ?? '')));
@@ -92,7 +117,7 @@ if (!empty($desdeFecha)) {
     $params[] = $desdeFecha;
 }
 
-$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, creado_en, actualizado_en, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia FROM tickets_soporte";
+$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, creado_en, actualizado_en, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, (SELECT COUNT(*) FROM tickets_mensajes WHERE ticket_id = tickets_soporte.id) AS total_mensajes FROM tickets_soporte";
 if (!empty($whereClauses)) {
     $sql .= " WHERE " . implode(' AND ', $whereClauses);
 }
