@@ -57,6 +57,15 @@ $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 if ($pdo) {
     asegurarTablaTickets($pdo);
     asegurarTablaCitas($pdo);
+
+    if (isset($_GET['ajax_mensajes'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        $tkId = intval($_GET['ajax_mensajes']);
+        $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
+        $stmtM->execute([$tkId]);
+        echo json_encode(['status' => 'ok', 'mensajes' => $stmtM->fetchAll(PDO::FETCH_ASSOC)], JSON_UNESCAPED_UNICODE);
+        exit();
+    }
 }
 
 // Catálogo Oficial Maestro de Áreas de Sistemas
@@ -2079,7 +2088,7 @@ if (!empty($ticketVerParam) && $pdo) {
                 <div class="ticket-header-box mb-4">
                     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
                         <div class="d-flex flex-wrap align-items-center gap-2">
-                            <a href="tickets.php" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1.5 d-inline-flex align-items-center gap-1 border-opacity-35 shadow-sm" style="backdrop-filter: blur(4px);">
+                            <a href="tickets.php" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1.5 d-inline-flex align-items-center gap-1 border-opacity-35 shadow-sm" style="backdrop-filter: blur(4px);" onclick="volverAListaTickets(event)">
                                 <i class="bi bi-arrow-left"></i> Volver a la Lista de Tickets
                             </a>
                             <span class="badge-folio fs-6 px-3 py-1.5" id="detFolioBadge">
@@ -2486,7 +2495,7 @@ if (!empty($ticketVerParam) && $pdo) {
                         <i class="bi bi-exclamation-triangle fs-2 d-block mb-2 text-warning"></i>
                         <h5 class="fw-bold text-white">No se encontró el ticket solicitado</h5>
                         <p class="small text-secondary mb-3">El ticket no existe o no cuentas con permisos para ver el área correspondiente.</p>
-                        <a href="tickets.php" class="btn btn-primary rounded-pill px-4">Volver al listado de tickets</a>
+                        <a href="tickets.php" class="btn btn-primary rounded-pill px-4" onclick="volverAListaTickets(event)">Volver al listado de tickets</a>
                     </div>
                 <?php endif; ?>
             </div>
@@ -4088,6 +4097,31 @@ function abrirModalAtender(ticket) {
     }
 }
 
+function volverAListaTickets(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const currentUrl = new URL(window.location);
+    currentUrl.searchParams.delete('ver');
+    currentUrl.searchParams.delete('ticket_id');
+    currentUrl.searchParams.delete('enviado');
+    currentUrl.searchParams.delete('actualizado');
+    currentUrl.searchParams.set('tab', 'tickets');
+    history.pushState(null, '', currentUrl.toString());
+
+    const secDetalle = document.getElementById('seccionTab_detalle');
+    const secTickets = document.getElementById('seccionTab_tickets');
+    if (secDetalle) secDetalle.style.display = 'none';
+    if (secTickets) secTickets.style.display = 'block';
+
+    cambiarTab('tickets', false);
+    const agParam = currentUrl.searchParams.get('agencia');
+    if (agParam && agParam !== 'TODAS') {
+        mostrarHistorialAgencia(agParam);
+    } else {
+        mostrarVistaAgencias();
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function copiarFolio(folio) {
     if (navigator.clipboard) {
         navigator.clipboard.writeText(folio).then(() => {
@@ -4640,15 +4674,51 @@ window.addEventListener('keydown', (e) => {
 // ----------------------------------------------------
 window.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
-    const tabParam = urlParams.get('tab') || 'tickets';
-    cambiarTab(tabParam, false);
+    const hasTicketVer = urlParams.has('ver') || urlParams.has('ticket_id');
 
-    if (tabParam === 'tickets') {
-        const agParam = urlParams.get('agencia');
-        if (agParam) {
-            mostrarHistorialAgencia(agParam);
-        } else {
-            mostrarVistaAgencias();
+    if (hasTicketVer) {
+        // Vista de detalle de ticket activo: Mantener abierta y visible
+        const secDetalle = document.getElementById('seccionTab_detalle');
+        const secTickets = document.getElementById('seccionTab_tickets');
+        const secCitas = document.getElementById('seccionTab_citas');
+        const secStats = document.getElementById('seccionTab_estadisticas');
+        if (secDetalle) secDetalle.style.display = 'block';
+        if (secTickets) secTickets.style.display = 'none';
+        if (secCitas) secCitas.style.display = 'none';
+        if (secStats) secStats.style.display = 'none';
+
+        ['tickets', 'citas', 'estadisticas'].forEach(t => {
+            const btn = document.getElementById('sidebarBtn_' + t);
+            if (btn) btn.classList.remove('active');
+        });
+        const btnTk = document.getElementById('sidebarBtn_tickets');
+        if (btnTk) btnTk.classList.add('active');
+
+        const titleEl = document.getElementById('topNavTituloSeccion');
+        if (titleEl) {
+            titleEl.innerHTML = '<i class="bi bi-headset text-info me-1"></i> Espacio de Trabajo del Ticket';
+        }
+
+        // Si se acaba de enviar una respuesta o actualización, scroll al chat
+        if (urlParams.has('enviado')) {
+            setTimeout(() => {
+                const chatBox = document.querySelector('.chat-thread-container');
+                if (chatBox) {
+                    chatBox.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                }
+            }, 120);
+        }
+    } else {
+        const tabParam = urlParams.get('tab') || 'tickets';
+        cambiarTab(tabParam, false);
+
+        if (tabParam === 'tickets') {
+            const agParam = urlParams.get('agencia');
+            if (agParam) {
+                mostrarHistorialAgencia(agParam);
+            } else {
+                mostrarVistaAgencias();
+            }
         }
     }
 
@@ -4675,6 +4745,16 @@ window.addEventListener('DOMContentLoaded', () => {
 // Navegación atrás / adelante del navegador
 window.addEventListener('popstate', () => {
     const urlParams = new URLSearchParams(window.location.search);
+    const hasTicketVer = urlParams.has('ver') || urlParams.has('ticket_id');
+
+    if (hasTicketVer) {
+        window.location.reload();
+        return;
+    }
+
+    const secDetalle = document.getElementById('seccionTab_detalle');
+    if (secDetalle) secDetalle.style.display = 'none';
+
     const tabParam = urlParams.get('tab') || 'tickets';
     cambiarTab(tabParam, false);
 
