@@ -31,6 +31,45 @@ if (!isset($_SESSION['usuario_id'])) {
 
 requerirPermiso('tickets', 'puede_ver');
 
+// Forzar zona horaria oficial de México (UTC-6)
+date_default_timezone_set('America/Mexico_City');
+if ($pdo) {
+    try { $pdo->exec("SET time_zone = '-06:00'"); } catch (Throwable $tzE) {}
+}
+
+/**
+ * Formatea la fecha y hora de mensajes y tickets a la hora local oficial de México (America/Mexico_City).
+ * Detecta y corrige automáticamente cualquier desfase UTC (+5 o +6 horas adelante) generado por MySQL o servidores en la nube.
+ */
+function formatearFechaHoraMensaje($fechaStr, $incluirPrefijo = true) {
+    if (empty($fechaStr)) return '---';
+    try {
+        $ts = strtotime($fechaStr);
+        if ($ts === false) return $fechaStr;
+
+        // Si la fecha registrada viene con desfase UTC (+2 a +8 horas adelante de la hora actual de México)
+        if ($ts > (time() + 1800)) {
+            $ts -= (6 * 3600); // Convertir UTC a México City (-6 hrs)
+        }
+
+        $diaMsg = date('Y-m-d', $ts);
+        $hoy = date('Y-m-d');
+        $ayer = date('Y-m-d', strtotime('-1 day'));
+
+        $horaFormateada = date('h:i A', $ts); // Ej: 05:05 PM
+        $hora24 = date('H:i', $ts);          // Ej: 17:05
+
+        if ($diaMsg === $hoy && $incluirPrefijo) {
+            return 'Hoy a las ' . $horaFormateada . ' (' . $hora24 . ' hrs)';
+        } elseif ($diaMsg === $ayer && $incluirPrefijo) {
+            return 'Ayer a las ' . $horaFormateada;
+        } else {
+            return date('d/m/Y', $ts) . ' ' . $horaFormateada;
+        }
+    } catch (Throwable $e) {
+        return $fechaStr;
+    }
+}
 
 /**
  * Resuelve dinámicamente la identidad, token y configuración de la agencia local
@@ -623,13 +662,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $stmtCheckT->execute([$ticketId]);
                 $folioT = $stmtCheckT->fetchColumn() ?: ('TK-' . $ticketId);
 
-                $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
-                $sqlFecha = ($driver === 'sqlite') ? "datetime('now', 'localtime')" : "NOW()";
+                $fechaActual = date('Y-m-d H:i:s');
 
                 $stmtMsg = $pdo->prepare("
                     INSERT INTO tickets_mensajes 
                     (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, mensaje, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, $sqlFecha)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
                 $rolAutor = $esAdmin ? 'administrador' : 'solicitante';
                 $stmtMsg->execute([
@@ -640,16 +678,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $loginUsuario,
                     $rolAutor,
                     $textoMensaje,
-                    $archivoMensaje
+                    $archivoMensaje,
+                    $fechaActual
                 ]);
 
                 // Actualizar estado si el usuario seleccionó uno al contestar
                 if (!empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
-                    $stmtUpSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = $sqlFecha WHERE id = :id");
-                    $stmtUpSt->execute([':est' => $cambioEstado, ':id' => $ticketId]);
+                    $stmtUpSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = :act WHERE id = :id");
+                    $stmtUpSt->execute([':est' => $cambioEstado, ':act' => $fechaActual, ':id' => $ticketId]);
                 } else {
-                    $stmtUp = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = $sqlFecha WHERE id = :id");
-                    $stmtUp->execute([$ticketId]);
+                    $stmtUp = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = :act WHERE id = :id");
+                    $stmtUp->execute([':act' => $fechaActual, ':id' => $ticketId]);
                 }
 
                 // Notificar a Central de Sistemas en background
@@ -664,7 +703,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         'autor_usuario' => $loginUsuario,
                         'autor_rol'     => $rolAutor,
                         'autor_agencia' => $agenciaMsg,
-                        'mensaje'       => $textoMensaje
+                        'mensaje'       => $textoMensaje,
+                        'creado_en'     => $fechaActual
                     ];
                     if (!empty($cambioEstado)) {
                         $postFields['cambio_estado'] = $cambioEstado;
@@ -1540,6 +1580,11 @@ if ($ticketSeleccionado) {
                                                 <i class="bi bi-ticket-perforated-fill text-info fs-5"></i>
                                                 <span><?php echo htmlspecialchars($t['folio'] ?? ('#TK-' . $t['id'])); ?></span>
                                             </div>
+                                            <?php if (!empty($t['creado_en'])): ?>
+                                                <div class="text-secondary small mt-1" style="font-size: 0.7rem;">
+                                                    <i class="bi bi-calendar3 me-1"></i><?php echo formatearFechaHoraMensaje($t['creado_en'], false); ?>
+                                                </div>
+                                            <?php endif; ?>
                                         </td>
 
                                         <!-- Área Destino -->
@@ -1566,10 +1611,10 @@ if ($ticketSeleccionado) {
                                                 <div class="mt-2 p-2 rounded-2" style="background: rgba(14, 165, 233, 0.12); border-left: 3px solid #38bdf8; max-width: 440px;">
                                                     <div class="d-flex align-items-center justify-content-between mb-1">
                                                         <span class="small fw-bold text-info" style="font-size: 0.78rem;">
-                                                            <i class="bi bi-headset me-1"></i> Respuesta TI Central <?php if (!empty($t['asignado_a'])): ?>— <strong><?php echo htmlspecialchars($t['asignado_a']); ?></strong><?php endif; ?>:
+                                                             <i class="bi bi-headset me-1"></i> Respuesta TI Central <?php if (!empty($t['asignado_a'])): ?>— <strong><?php echo htmlspecialchars($t['asignado_a']); ?></strong><?php endif; ?>:
                                                         </span>
                                                         <?php if (!empty($t['actualizado_en'])): ?>
-                                                            <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i><?php echo date('d/m/Y H:i', strtotime($t['actualizado_en'])); ?></span>
+                                                            <span class="text-secondary" style="font-size: 0.7rem;"><i class="bi bi-clock me-1"></i><?php echo formatearFechaHoraMensaje($t['actualizado_en']); ?></span>
                                                         <?php endif; ?>
                                                     </div>
                                                     <div class="text-white small" style="font-size: 0.82rem; white-space: pre-line; line-height: 1.4;">
@@ -1801,9 +1846,9 @@ if ($ticketSeleccionado) {
                             </div>
                             <h2 class="fw-bold text-white mb-1"><?php echo htmlspecialchars($ticketSeleccionado['titulo']); ?></h2>
                             <div class="text-secondary small">
-                                <i class="bi bi-calendar3 me-1"></i> Creado el <?php echo !empty($ticketSeleccionado['creado_en']) ? date('d/m/Y \a \l\a\s H:i', strtotime($ticketSeleccionado['creado_en'])) : '---'; ?>
+                                <i class="bi bi-calendar3 me-1"></i> Creado el <?php echo formatearFechaHoraMensaje($ticketSeleccionado['creado_en']); ?>
                                 <?php if (!empty($ticketSeleccionado['actualizado_en'])): ?>
-                                    &bull; <i class="bi bi-clock-history me-1"></i> Última actividad: <?php echo date('d/m/Y H:i', strtotime($ticketSeleccionado['actualizado_en'])); ?>
+                                    &bull; <i class="bi bi-clock-history me-1"></i> Última actividad: <?php echo formatearFechaHoraMensaje($ticketSeleccionado['actualizado_en']); ?>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -1952,7 +1997,7 @@ if ($ticketSeleccionado) {
                                             <span class="badge rounded-pill bg-dark border border-secondary text-info" style="font-size: 0.72rem;"><?php echo $badgeRol; ?></span>
                                         </div>
                                         <div class="text-secondary small" style="font-size: 0.75rem;">
-                                            <i class="bi bi-clock me-1"></i> <?php echo !empty($msg['creado_en']) ? date('d/m/Y H:i', strtotime($msg['creado_en'])) : ''; ?>
+                                            <i class="bi bi-clock me-1"></i> <?php echo formatearFechaHoraMensaje($msg['creado_en'] ?? ''); ?>
                                         </div>
                                     </div>
 

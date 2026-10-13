@@ -72,6 +72,12 @@ $asignadoA = trim($datos['asignado_a'] ?? ($_POST['asignado_a'] ?? ''));
 $prioridad = trim($datos['prioridad'] ?? ($_POST['prioridad'] ?? 'Media'));
 $notasResolucion = trim($datos['notas_resolucion'] ?? ($_POST['notas_resolucion'] ?? ''));
 $actualizadoEn = trim($datos['actualizado_en'] ?? ($_POST['actualizado_en'] ?? date('Y-m-d H:i:s')));
+if (!empty($actualizadoEn)) {
+    $tsAct = strtotime($actualizadoEn);
+    if ($tsAct !== false && $tsAct > (time() + 1800)) {
+        $actualizadoEn = date('Y-m-d H:i:s', $tsAct - (6 * 3600));
+    }
+}
 
 if (empty($folio)) {
     http_response_code(400);
