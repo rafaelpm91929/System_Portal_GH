@@ -391,6 +391,47 @@ function asegurarTablaTickets($pdo = null) {
         try {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
         } catch (Throwable $eAlt) {}
+
+        // Tabla de mensajes / contestaciones de chat de soporte
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS tickets_mensajes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ticket_id INTEGER NOT NULL,
+                    folio TEXT NULL,
+                    autor_id INTEGER NULL,
+                    autor_usuario TEXT NULL,
+                    autor_nombre TEXT NOT NULL,
+                    autor_email TEXT NULL,
+                    autor_rol TEXT DEFAULT 'usuario',
+                    autor_agencia TEXT NULL,
+                    mensaje TEXT NOT NULL,
+                    archivo_adjunto TEXT NULL,
+                    es_nota_interna INTEGER DEFAULT 0,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `tickets_mensajes` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `ticket_id` INT NOT NULL,
+                    `folio` VARCHAR(50) NULL,
+                    `autor_id` INT NULL,
+                    `autor_usuario` VARCHAR(100) NULL,
+                    `autor_nombre` VARCHAR(150) NOT NULL,
+                    `autor_email` VARCHAR(150) NULL,
+                    `autor_rol` VARCHAR(50) DEFAULT 'usuario',
+                    `autor_agencia` VARCHAR(100) NULL,
+                    `mensaje` TEXT NOT NULL,
+                    `archivo_adjunto` VARCHAR(255) NULL,
+                    `es_nota_interna` TINYINT(1) DEFAULT 0,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_tk_id` (`ticket_id`),
+                    INDEX `idx_folio` (`folio`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
     } catch (Throwable $e) {}
 }
 

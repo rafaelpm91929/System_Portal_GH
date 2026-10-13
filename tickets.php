@@ -145,7 +145,7 @@ function sincronizarTicketsConCentral($pdo) {
 
         $payload = [
             'token'   => $token,
-            'agencia' => 'Divol La Villa'
+            'agencia' => $agenciaUsuario
         ];
         if (!empty($folios)) {
             $payload['folios'] = $folios;
@@ -220,7 +220,7 @@ function sincronizarTicketsConCentral($pdo) {
                             $tc['solicitante_usuario'] ?? '',
                             $tc['solicitante_nombre'] ?? 'Usuario',
                             $tc['solicitante_email'] ?? '',
-                            $tc['solicitante_agencia'] ?? 'Divol La Villa',
+                            $tc['solicitante_agencia'] ?? $agenciaUsuario,
                             $tc['creado_en'] ?? date('Y-m-d H:i:s'),
                             $tc['actualizado_en'] ?? date('Y-m-d H:i:s')
                         ]);
@@ -229,6 +229,66 @@ function sincronizarTicketsConCentral($pdo) {
                 }
                 $_SESSION['ultimo_sync_tickets'] = time();
                 return $actualizados;
+            }
+        }
+    } catch (Throwable $e) {}
+
+    return 0;
+}
+
+/**
+ * Sincroniza en tiempo real los mensajes y contestaciones de este ticket desde la Central (portal.grupohuerta.mx)
+ */
+function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
+    if (!$pdo || empty($folio)) return 0;
+
+    $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($folio);
+    $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+
+    try {
+        $ch = curl_init($urlCentral);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_HTTPHEADER     => [
+                'Authorization: Bearer ' . $token,
+                'User-Agent: PortalAgencia/2.0'
+            ]
+        ]);
+        $res = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($res !== false && $httpCode === 200) {
+            $dec = json_decode($res, true);
+            if ($dec && ($dec['status'] ?? '') === 'ok' && !empty($dec['mensajes'])) {
+                $nuevos = 0;
+                $stmtChk = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE ticket_id = ? AND mensaje = ? AND autor_nombre = ? LIMIT 1");
+                $stmtIns = $pdo->prepare("
+                    INSERT INTO tickets_mensajes 
+                    (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                foreach ($dec['mensajes'] as $m) {
+                    $stmtChk->execute([$ticketId, $m['mensaje'], $m['autor_nombre']]);
+                    if (!$stmtChk->fetchColumn()) {
+                        $stmtIns->execute([
+                            $ticketId,
+                            $folio,
+                            $m['autor_id'] ?? null,
+                            $m['autor_nombre'] ?? 'Sistemas TI',
+                            $m['autor_usuario'] ?? '',
+                            $m['autor_rol'] ?? 'agente',
+                            $m['autor_agencia'] ?? 'Dirección Sistemas',
+                            $m['mensaje'],
+                            $m['archivo_adjunto'] ?? null,
+                            $m['creado_en'] ?? date('Y-m-d H:i:s')
+                        ]);
+                        $nuevos++;
+                    }
+                }
+                return $nuevos;
             }
         }
     } catch (Throwable $e) {}
@@ -333,10 +393,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
-    // 2. Enviar nuevo mensaje / contestar al ticket
+    // 2. Modificar Requerimiento del Ticket (Solicitante o Administrador)
+    elseif ($accion === 'modificar_ticket') {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        $titulo = trim($_POST['titulo'] ?? '');
+        $descripcion = trim($_POST['descripcion'] ?? '');
+        $area = trim($_POST['area_sistemas'] ?? '');
+        $prioridad = trim($_POST['prioridad'] ?? 'Media');
+        $nuevoEstado = trim($_POST['estado'] ?? '');
+
+        if ($ticketId > 0 && !empty($titulo) && !empty($descripcion)) {
+            try {
+                $stmtCheckT = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ?");
+                $stmtCheckT->execute([$ticketId]);
+                $tActual = $stmtCheckT->fetch(PDO::FETCH_ASSOC);
+
+                if ($tActual) {
+                    $puedeModificar = false;
+                    if ($esAdmin) {
+                        $puedeModificar = true;
+                    } else {
+                        if (!empty($tActual['solicitante_id']) && (int)$tActual['solicitante_id'] === (int)$usuarioId) $puedeModificar = true;
+                        if (!empty($tActual['solicitante_usuario']) && !empty($loginUsuario) && strtolower($tActual['solicitante_usuario']) === strtolower($loginUsuario)) $puedeModificar = true;
+                        if (!empty($tActual['solicitante_email']) && !empty($emailUsuario) && strtolower($tActual['solicitante_email']) === strtolower($emailUsuario)) $puedeModificar = true;
+                        if (!empty($tActual['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($tActual['solicitante_nombre']) === strtolower($nombreUsuario)) $puedeModificar = true;
+                    }
+
+                    if (!$puedeModificar) {
+                        $error = "No cuentas con autorización para modificar este ticket.";
+                    } else {
+                        $archivoUrl = $tActual['archivo_adjunto'];
+                        if (isset($_FILES['archivo_adjunto']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
+                            $fileTmp = $_FILES['archivo_adjunto']['tmp_name'];
+                            $fileName = $_FILES['archivo_adjunto']['name'];
+                            $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                            $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip'];
+
+                            if (in_array($fileExt, $extPermitidas)) {
+                                $dirUpload = __DIR__ . '/uploads/tickets/';
+                                if (!is_dir($dirUpload)) @mkdir($dirUpload, 0777, true);
+                                $nuevoNombre = 'ticket_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
+                                if (move_uploaded_file($fileTmp, $dirUpload . $nuevoNombre)) {
+                                    $archivoUrl = 'uploads/tickets/' . $nuevoNombre;
+                                }
+                            }
+                        }
+
+                        $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');
+                        $sqlFecha = ($driver === 'sqlite') ? "datetime('now', 'localtime')" : "NOW()";
+                        $estadoFinal = (!empty($nuevoEstado) && in_array($nuevoEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) ? $nuevoEstado : $tActual['estado'];
+
+                        $stmtUpd = $pdo->prepare("
+                            UPDATE tickets_soporte 
+                            SET titulo = :titulo,
+                                descripcion = :descripcion,
+                                area_sistemas = :area,
+                                prioridad = :prioridad,
+                                estado = :estado,
+                                archivo_adjunto = :archivo,
+                                actualizado_en = $sqlFecha
+                            WHERE id = :id
+                        ");
+                        $stmtUpd->execute([
+                            ':titulo'      => $titulo,
+                            ':descripcion' => $descripcion,
+                            ':area'        => !empty($area) ? $area : $tActual['area_sistemas'],
+                            ':prioridad'   => $prioridad,
+                            ':estado'      => $estadoFinal,
+                            ':archivo'     => $archivoUrl,
+                            ':id'          => $ticketId
+                        ]);
+
+                        // Notificar modificación a Central de Sistemas
+                        try {
+                            $folioT = $tActual['folio'] ?: ('TK-' . $ticketId);
+                            $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
+                            $payloadCentral = [
+                                'token'         => $token,
+                                'accion'        => 'actualizar_ticket',
+                                'folio'         => $folioT,
+                                'titulo'        => $titulo,
+                                'descripcion'   => $descripcion,
+                                'area_sistemas' => !empty($area) ? $area : $tActual['area_sistemas'],
+                                'prioridad'     => $prioridad,
+                                'estado'        => $estadoFinal,
+                                'modificado_por'=> $nombreUsuario
+                            ];
+                            $ctx = stream_context_create([
+                                'http' => [
+                                    'method'  => 'POST',
+                                    'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $token\r\n",
+                                    'content' => json_encode($payloadCentral),
+                                    'timeout' => 3
+                                ]
+                            ]);
+                            @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctx);
+                        } catch (Throwable $eNet) {}
+
+                        header("Location: tickets.php?ver=" . $ticketId . "&modificado=1");
+                        exit;
+                    }
+                }
+            } catch (Throwable $t) {
+                $error = "Error al actualizar ticket: " . $t->getMessage();
+            }
+        } else {
+            $error = "Por favor completa el título y la descripción del ticket.";
+        }
+    }
+
+    // 3. Enviar nuevo mensaje / contestar al ticket
     elseif ($accion === 'enviar_mensaje') {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         $textoMensaje = trim($_POST['mensaje'] ?? '');
+        $cambioEstado = trim($_POST['cambio_estado'] ?? '');
 
         if ($ticketId > 0 && !empty($textoMensaje)) {
             // Manejo de archivo adjunto opcional en el mensaje
@@ -385,27 +555,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $archivoMensaje
                 ]);
 
-                $stmtUp = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = $sqlFecha WHERE id = ?");
-                $stmtUp->execute([$ticketId]);
+                // Actualizar estado si el usuario seleccionó uno al contestar
+                if (!empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
+                    $stmtUpSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = $sqlFecha WHERE id = :id");
+                    $stmtUpSt->execute([':est' => $cambioEstado, ':id' => $ticketId]);
+                } else {
+                    $stmtUp = $pdo->prepare("UPDATE tickets_soporte SET actualizado_en = $sqlFecha WHERE id = :id");
+                    $stmtUp->execute([$ticketId]);
+                }
 
                 // Notificar a Central de Sistemas en background
                 try {
                     $token = getenv('TOKEN_SECRETO') ?: 'GedasDivolavilla2026!';
                     $payloadCentral = [
-                        'token'     => $token,
-                        'accion'    => 'nuevo_mensaje',
-                        'folio'     => $folioT,
-                        'autor'     => $nombreUsuario,
-                        'usuario'   => $loginUsuario,
-                        'mensaje'   => $textoMensaje,
-                        'agencia'   => $agenciaUsuario
+                        'token'         => $token,
+                        'accion'        => 'agregar_mensaje',
+                        'folio'         => $folioT,
+                        'ticket_id'     => $ticketId,
+                        'autor_nombre'  => $nombreUsuario,
+                        'autor_usuario' => $loginUsuario,
+                        'autor_rol'     => $rolAutor,
+                        'autor_agencia' => $agenciaUsuario,
+                        'mensaje'       => $textoMensaje
                     ];
+                    if (!empty($cambioEstado)) {
+                        $payloadCentral['cambio_estado'] = $cambioEstado;
+                    }
+                    if ($archivoMensaje && file_exists(__DIR__ . '/' . $archivoMensaje)) {
+                        $payloadCentral['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoMensaje));
+                        $payloadCentral['archivo_nombre'] = basename($archivoMensaje);
+                    }
                     $ctx = stream_context_create([
                         'http' => [
                             'method'  => 'POST',
                             'header'  => "Content-Type: application/json\r\nAuthorization: Bearer $token\r\n",
                             'content' => json_encode($payloadCentral),
-                            'timeout' => 3
+                            'timeout' => 4
                         ]
                     ]);
                     @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctx);
@@ -647,8 +832,13 @@ if ($verTicketId > 0 && $pdo) {
             }
 
             if ($ticketSeleccionado) {
-                $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
-                $stmtM->execute([$verTicketId]);
+                // Sincronizar en tiempo real los mensajes desde Central
+                if (!empty($ticketSeleccionado['folio'])) {
+                    sincronizarMensajesDeTicket($pdo, $verTicketId, $ticketSeleccionado['folio']);
+                }
+
+                $stmtM = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? OR (folio IS NOT NULL AND folio != '' AND folio = ?) ORDER BY id ASC");
+                $stmtM->execute([$verTicketId, $ticketSeleccionado['folio'] ?? '']);
                 $mensajesSeleccionados = $stmtM->fetchAll(PDO::FETCH_ASSOC);
             }
         }
@@ -1041,6 +1231,12 @@ if ($ticketSeleccionado) {
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
     <?php endif; ?>
+    <?php if (isset($_GET['modificado'])): ?>
+        <div class="alert alert-success alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border-left: 4px solid #22c55e !important;">
+            <i class="bi bi-check-circle-fill me-2 fs-5"></i> ¡Ticket modificado exitosamente! Los cambios y evidencias han sido guardados y sincronizados.
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    <?php endif; ?>
     <?php if (isset($_GET['estado_ok'])): ?>
         <div class="alert alert-info alert-dismissible fade show border-0 rounded-4 shadow-sm mb-4" role="alert" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-left: 4px solid #38bdf8 !important;">
             <i class="bi bi-check-circle-fill me-2 fs-5"></i> Estado y notas del ticket actualizados correctamente.
@@ -1292,11 +1488,25 @@ if ($ticketSeleccionado) {
 
                                         <!-- Acciones -->
                                         <td class="text-end">
-                                            <div class="d-inline-flex gap-1.5">
+                                            <div class="d-inline-flex gap-1.5 align-items-center">
                                                 <!-- Ver Detalle / Contestar en la Misma Pantalla -->
                                                 <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="btn-action-icon text-info" title="Ver Detalle y Contestar Ticket">
                                                     <i class="bi bi-chat-left-dots-fill"></i>
                                                 </a>
+
+                                                <?php 
+                                                    $esPropioFila = $esAdmin || (
+                                                        (!empty($t['solicitante_id']) && (int)$t['solicitante_id'] === (int)$usuarioId) ||
+                                                        (!empty($t['solicitante_usuario']) && !empty($loginUsuario) && strtolower($t['solicitante_usuario']) === strtolower($loginUsuario)) ||
+                                                        (!empty($t['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($t['solicitante_nombre']) === strtolower($nombreUsuario))
+                                                    );
+                                                ?>
+                                                <?php if ($esPropioFila): ?>
+                                                    <!-- Modificar Ticket -->
+                                                    <a href="tickets.php?ver=<?php echo $t['id']; ?>&editar=1" class="btn-action-icon text-warning" title="Modificar este Ticket">
+                                                        <i class="bi bi-pencil-fill"></i>
+                                                    </a>
+                                                <?php endif; ?>
                                                 
                                                 <?php if ($esAdmin): ?>
                                                     <!-- Eliminar Ticket -->
@@ -1471,11 +1681,23 @@ if ($ticketSeleccionado) {
                                 <?php endif; ?>
                             </div>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
                             <div class="p-2.5 rounded-3 text-end" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.1);">
                                 <div class="text-secondary small fw-bold" style="font-size: 0.7rem;">FOLIO</div>
                                 <div class="fs-4 font-monospace fw-bold text-info"><?php echo htmlspecialchars($ticketSeleccionado['folio'] ?? ('#TK-' . $ticketSeleccionado['id'])); ?></div>
                             </div>
+                            <?php 
+                                $puedeEditarTicket = $esAdmin || (
+                                    (!empty($ticketSeleccionado['solicitante_id']) && (int)$ticketSeleccionado['solicitante_id'] === (int)$usuarioId) ||
+                                    (!empty($ticketSeleccionado['solicitante_usuario']) && !empty($loginUsuario) && strtolower($ticketSeleccionado['solicitante_usuario']) === strtolower($loginUsuario)) ||
+                                    (!empty($ticketSeleccionado['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($ticketSeleccionado['solicitante_nombre']) === strtolower($nombreUsuario))
+                                );
+                            ?>
+                            <?php if ($puedeEditarTicket): ?>
+                                <button type="button" class="btn btn-warning btn-sm rounded-3 px-3 py-2 fw-bold text-dark d-inline-flex align-items-center gap-1.5 shadow" data-bs-toggle="modal" data-bs-target="#modalModificarTicket" title="Modificar requerimiento o estado del ticket">
+                                    <i class="bi bi-pencil-square"></i> Modificar Ticket
+                                </button>
+                            <?php endif; ?>
                             <button type="button" onclick="cambiarPestana('lista')" class="btn btn-outline-secondary btn-sm rounded-3 text-white px-3 py-2" title="Volver al listado">
                                 <i class="bi bi-arrow-left me-1"></i> Volver a Mis Tickets
                             </button>
@@ -1517,9 +1739,16 @@ if ($ticketSeleccionado) {
 
                 <!-- Detalle del Requerimiento Original -->
                 <div class="detail-card">
-                    <h5 class="fw-bold text-info mb-3 d-flex align-items-center gap-2">
-                        <i class="bi bi-card-text"></i> Descripción del Requerimiento Original
-                    </h5>
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h5 class="fw-bold text-info mb-0 d-flex align-items-center gap-2">
+                            <i class="bi bi-card-text"></i> Descripción del Requerimiento Original
+                        </h5>
+                        <?php if ($puedeEditarTicket): ?>
+                            <button type="button" class="btn btn-outline-warning btn-sm rounded-pill py-0.5 px-2.5" style="font-size: 0.78rem;" data-bs-toggle="modal" data-bs-target="#modalModificarTicket">
+                                <i class="bi bi-pencil me-1"></i> Editar Requerimiento
+                            </button>
+                        <?php endif; ?>
+                    </div>
                     <div class="p-3.5 rounded-3 text-white" style="background: #061325; border: 1px solid rgba(255, 255, 255, 0.1); font-size: 0.98rem; line-height: 1.6; white-space: pre-line;">
                         <?php echo htmlspecialchars($ticketSeleccionado['descripcion']); ?>
                     </div>
@@ -1641,19 +1870,32 @@ if ($ticketSeleccionado) {
                                 <textarea name="mensaje" rows="4" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" placeholder="Escribe aquí tu respuesta, detalles adicionales, avances o dudas sobre este requerimiento..." required></textarea>
                             </div>
 
-                            <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
-                                <div>
+                            <div class="row g-3 align-items-end mb-3">
+                                <div class="col-md-6">
                                     <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
                                         <i class="bi bi-paperclip me-1"></i> Adjuntar captura o archivo (opcional)
                                     </label>
-                                    <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15); max-width: 380px;" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
+                                    <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip">
                                 </div>
-                                <div class="text-end">
-                                    <button type="submit" class="btn btn-primary px-4 py-2.5 rounded-3 fw-bold d-inline-flex align-items-center gap-2 shadow" style="background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border: none;">
-                                        <i class="bi bi-send-fill"></i>
-                                        <span>Enviar Mensaje</span>
-                                    </button>
+                                <div class="col-md-6">
+                                    <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
+                                        <i class="bi bi-clock-history me-1"></i> Actualizar estado del ticket (opcional)
+                                    </label>
+                                    <select name="cambio_estado" class="form-select form-select-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);">
+                                        <option value="">Mantener estado actual (<?php echo htmlspecialchars($ticketSeleccionado['estado'] ?? 'Abierto'); ?>)</option>
+                                        <option value="Abierto">Cambiar a: Abierto (Reabrir caso)</option>
+                                        <option value="En Proceso">Cambiar a: En Proceso (En atención)</option>
+                                        <option value="Resuelto">Cambiar a: Resuelto (Mi problema quedó solucionado)</option>
+                                        <option value="Cerrado">Cambiar a: Cerrado (Finalizar ticket)</option>
+                                    </select>
                                 </div>
+                            </div>
+
+                            <div class="text-end">
+                                <button type="submit" class="btn btn-primary px-4 py-2.5 rounded-3 fw-bold d-inline-flex align-items-center gap-2 shadow" style="background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%); border: none;">
+                                    <i class="bi bi-send-fill"></i>
+                                    <span>Enviar Contestación</span>
+                                </button>
                             </div>
                         </form>
                     </div>
@@ -1696,6 +1938,118 @@ if ($ticketSeleccionado) {
                         </form>
                     </div>
                 <?php endif; ?>
+
+                <!-- ============================================== -->
+                <!-- MODAL: MODIFICAR TICKET (SOLICITANTE / ADMIN) -->
+                <!-- ============================================== -->
+                <div class="modal fade" id="modalModificarTicket" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered modal-lg">
+                        <div class="modal-content" style="background: #0b1a30; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 18px; box-shadow: 0 15px 40px rgba(0,0,0,0.7);">
+                            <form method="POST" action="tickets.php?ver=<?php echo $verTicketId; ?>" enctype="multipart/form-data">
+                                <input type="hidden" name="accion" value="modificar_ticket">
+                                <input type="hidden" name="ticket_id" id="modTicketId" value="<?php echo $verTicketId; ?>">
+
+                                <div class="modal-header border-secondary border-opacity-25 pb-3">
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="p-2 rounded-3" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-size: 1.25rem;">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </div>
+                                        <div>
+                                            <h5 class="modal-title fw-bold text-white mb-0" id="modModalTitulo">Modificar Requerimiento del Ticket</h5>
+                                            <span class="text-secondary small font-monospace" id="modModalFolio">
+                                                <?php echo htmlspecialchars($ticketSeleccionado['folio'] ?? ('#TK-' . $ticketSeleccionado['id'])); ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                                </div>
+
+                                <div class="modal-body p-4">
+                                    <div class="row g-3">
+                                        <!-- Título / Asunto -->
+                                        <div class="col-12">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-card-heading text-info me-1"></i> Título / Asunto <span class="text-danger">*</span>
+                                            </label>
+                                            <input type="text" name="titulo" id="modTitulo" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);" value="<?php echo htmlspecialchars($ticketSeleccionado['titulo'] ?? ''); ?>" required>
+                                        </div>
+
+                                        <!-- Área de Sistemas -->
+                                        <div class="col-md-6">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-diagram-3 text-info me-1"></i> Área de Sistemas Destino <span class="text-danger">*</span>
+                                            </label>
+                                            <select name="area_sistemas" id="modArea" class="form-select rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);" required>
+                                                <option value="INFRAESTRUCTURA" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'INFRAESTRUCTURA' ? 'selected' : ''; ?>>🖥️ INFRAESTRUCTURA (Redes, Servidores, Impresoras)</option>
+                                                <option value="DESARROLLO" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'DESARROLLO' ? 'selected' : ''; ?>>💻 DESARROLLO (Portales, Sistemas Web, Bases de Datos)</option>
+                                                <option value="CYBERSEGURIDAD" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'CYBERSEGURIDAD' ? 'selected' : ''; ?>>🛡️ CYBERSEGURIDAD (Accesos, Antivirus, Cuentas)</option>
+                                                <option value="REDES SOCIALES" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'REDES SOCIALES' ? 'selected' : ''; ?>>📱 REDES SOCIALES (Marketing, Publicaciones)</option>
+                                                <option value="AUDITORIA" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'AUDITORIA' ? 'selected' : ''; ?>>📋 AUDITORIA (Procesos, Revisiones TI)</option>
+                                                <option value="CORPORATIVO" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'CORPORATIVO' ? 'selected' : ''; ?>>🏢 CORPORATIVO (Dirección General)</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- Prioridad -->
+                                        <div class="col-md-3">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-reception-3 text-warning me-1"></i> Prioridad
+                                            </label>
+                                            <select name="prioridad" id="modPrioridad" class="form-select rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);">
+                                                <option value="Baja" <?php echo ($ticketSeleccionado['prioridad'] ?? '') === 'Baja' ? 'selected' : ''; ?>>🟢 Baja</option>
+                                                <option value="Media" <?php echo ($ticketSeleccionado['prioridad'] ?? 'Media') === 'Media' ? 'selected' : ''; ?>>🟡 Media</option>
+                                                <option value="Alta" <?php echo ($ticketSeleccionado['prioridad'] ?? '') === 'Alta' ? 'selected' : ''; ?>>🟠 Alta</option>
+                                                <option value="Urgente" <?php echo ($ticketSeleccionado['prioridad'] ?? '') === 'Urgente' ? 'selected' : ''; ?>>🔴 Urgente</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- Estado del Ticket -->
+                                        <div class="col-md-3">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-clock-history text-info me-1"></i> Estado
+                                            </label>
+                                            <select name="estado" id="modEstado" class="form-select rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);">
+                                                <option value="Abierto" <?php echo ($ticketSeleccionado['estado'] ?? '') === 'Abierto' ? 'selected' : ''; ?>>Abierto</option>
+                                                <option value="En Proceso" <?php echo ($ticketSeleccionado['estado'] ?? '') === 'En Proceso' ? 'selected' : ''; ?>>En Proceso</option>
+                                                <option value="Resuelto" <?php echo ($ticketSeleccionado['estado'] ?? '') === 'Resuelto' ? 'selected' : ''; ?>>Resuelto</option>
+                                                <option value="Cerrado" <?php echo ($ticketSeleccionado['estado'] ?? '') === 'Cerrado' ? 'selected' : ''; ?>>Cerrado</option>
+                                            </select>
+                                        </div>
+
+                                        <!-- Descripción Detallada -->
+                                        <div class="col-12">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-text-paragraph text-info me-1"></i> Descripción Detallada <span class="text-danger">*</span>
+                                            </label>
+                                            <textarea name="descripcion" id="modDescripcion" rows="5" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);" required><?php echo htmlspecialchars($ticketSeleccionado['descripcion'] ?? ''); ?></textarea>
+                                        </div>
+
+                                        <!-- Archivo de Evidencia -->
+                                        <div class="col-12">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                <i class="bi bi-paperclip text-info me-1"></i> Actualizar o Agregar Archivo de Evidencia (Opcional)
+                                            </label>
+                                            <input type="file" name="archivo_adjunto" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255,255,255,0.15);" accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx,.xls,.xlsx,.zip">
+                                            <?php if (!empty($ticketSeleccionado['archivo_adjunto'])): ?>
+                                                <div class="small text-info mt-1">
+                                                    <i class="bi bi-check-circle me-1"></i> Archivo actual: <strong><?php echo basename($ticketSeleccionado['archivo_adjunto']); ?></strong> (Se conservará si no seleccionas uno nuevo).
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="modal-footer border-secondary border-opacity-25 pt-3">
+                                    <button type="button" class="btn btn-outline-secondary px-4 rounded-3 text-white" data-bs-dismiss="modal">
+                                        Cancelar
+                                    </button>
+                                    <button type="submit" class="btn btn-warning px-4 py-2 rounded-3 fw-bold text-dark shadow">
+                                        <i class="bi bi-check2-circle me-1"></i> Guardar Cambios del Ticket
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
 
             </div>
         <?php endif; ?>
@@ -1742,7 +2096,15 @@ if ($ticketSeleccionado) {
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        if (window.location.hash === '#conversacion') {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('editar')) {
+            const modalEl = document.getElementById('modalModificarTicket');
+            if (modalEl) {
+                const modal = new bootstrap.Modal(modalEl);
+                modal.show();
+            }
+        }
+        if (window.location.hash === '#conversacion' || urlParams.has('msg_ok')) {
             const conv = document.getElementById('conversacion');
             if (conv) {
                 setTimeout(() => conv.scrollIntoView({ behavior: 'smooth' }), 200);

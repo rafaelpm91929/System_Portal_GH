@@ -73,6 +73,27 @@ try {
 
     $filasAfectadas = $stmt->rowCount();
 
+    // Si viene un mensaje en el webhook, insertarlo en tickets_mensajes
+    $nuevoMensaje = trim($datos['mensaje'] ?? '');
+    if (!empty($nuevoMensaje)) {
+        $stmtTk = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
+        $stmtTk->execute([$folio]);
+        $tkId = $stmtTk->fetchColumn();
+        if ($tkId) {
+            $stmtInsM = $pdo->prepare("
+                INSERT INTO tickets_mensajes 
+                (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $autorNom = $datos['autor_nombre'] ?? ($datos['autor'] ?? 'Sistemas Central');
+            $autorUsr = $datos['autor_usuario'] ?? ($datos['usuario'] ?? '');
+            $autorRol = $datos['autor_rol'] ?? ($datos['rol'] ?? 'agente');
+            $autorAg  = $datos['autor_agencia'] ?? 'Dirección Sistemas';
+            $adj      = $datos['archivo_adjunto'] ?? null;
+            $stmtInsM->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $autorAg, $nuevoMensaje, $adj, $actualizadoEn]);
+        }
+    }
+
     echo json_encode([
         'status'          => 'ok',
         'mensaje'         => 'Ticket actualizado en portal de agencia exitosamente.',
