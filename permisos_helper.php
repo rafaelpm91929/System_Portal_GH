@@ -102,6 +102,17 @@ function asegurarTablasPermisos($pdo) {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN areas_tickets VARCHAR(255) DEFAULT 'TODOS'");
         } catch (Throwable $eAlter) {}
 
+        // Asegurar columnas foto, cargo y telefono en usuarios
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN foto VARCHAR(255) NULL");
+        } catch (Throwable $eFoto) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN cargo VARCHAR(100) NULL");
+        } catch (Throwable $eCargo) {}
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(50) NULL");
+        } catch (Throwable $eTel) {}
+
         // Migración transparente si existía 'agencias'
         try {
             $pdo->exec("UPDATE modulos SET clave = 'agencia', nombre = 'Datos de la Agencia', icono = 'bi-building' WHERE clave = 'agencias'");
@@ -1389,5 +1400,147 @@ function marcarTodasNotificacionesLeidas($usuarioId = null, $pdo = null) {
         }
     }
     return true;
+}
+
+/**
+ * Asegura las columnas extendidas para la ficha y foto de los agentes en la tabla usuarios
+ */
+function asegurarColumnasUsuarios($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $pdo->exec("ALTER TABLE usuarios ADD COLUMN foto VARCHAR(255) NULL");
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec("ALTER TABLE usuarios ADD COLUMN cargo VARCHAR(100) NULL");
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec("ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(50) NULL");
+    } catch (Throwable $e) {}
+}
+
+/**
+ * Obtiene el registro completo de un agente de soporte desde la tabla usuarios
+ */
+function obtenerDatosAgente($pdo, $nombreOAgente) {
+    if (!$pdo || empty(trim($nombreOAgente))) return null;
+    $termino = trim($nombreOAgente);
+    asegurarColumnasUsuarios($pdo);
+
+    // 1. Si es numérico (ID de usuario)
+    if (is_numeric($termino) && intval($termino) > 0) {
+        $stmt = $pdo->prepare("SELECT id, usuario, nombre, email, rol, agencia, activo, areas_tickets, foto, cargo, telefono, creado_en FROM usuarios WHERE id = ? LIMIT 1");
+        $stmt->execute([intval($termino)]);
+        $u = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($u) return $u;
+    }
+
+    // 2. Coincidencia exacta por nombre, usuario o email
+    $stmt = $pdo->prepare("SELECT id, usuario, nombre, email, rol, agencia, activo, areas_tickets, foto, cargo, telefono, creado_en FROM usuarios WHERE nombre = ? OR usuario = ? OR email = ? LIMIT 1");
+    $stmt->execute([$termino, $termino, $termino]);
+    $u = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($u) return $u;
+
+    // 3. Coincidencia por LIKE
+    $stmt = $pdo->prepare("SELECT id, usuario, nombre, email, rol, agencia, activo, areas_tickets, foto, cargo, telefono, creado_en FROM usuarios WHERE nombre LIKE ? OR usuario LIKE ? LIMIT 1");
+    $stmt->execute(['%' . $termino . '%', '%' . $termino . '%']);
+    $u = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($u) return $u;
+
+    return null;
+}
+
+/**
+ * Calcula las estadísticas y productividad de tickets y citas para un agente asignado
+ */
+function obtenerEstadisticasAgente($pdo, $nombreAgente, $usuarioAgente = null) {
+    $stats = [
+        'total' => 0,
+        'abiertos' => 0,
+        'en_proceso' => 0,
+        'resueltos' => 0,
+        'cerrados' => 0,
+        'efectividad' => 0,
+        'con_reporte_firmado' => 0,
+        'citas_total' => 0,
+        'citas_realizadas' => 0,
+        'por_area' => [],
+        'ultimos_tickets' => []
+    ];
+    if (!$pdo || empty(trim($nombreAgente))) return $stats;
+
+    $termino = trim($nombreAgente);
+    $params = [$termino];
+    $sqlWhere = "asignado_a = ?";
+    if (!empty($usuarioAgente) && strcasecmp($usuarioAgente, $termino) !== 0) {
+        $sqlWhere = "(asignado_a = ? OR asignado_a = ?)";
+        $params = [$termino, trim($usuarioAgente)];
+    }
+
+    // Totales por estado
+    try {
+        $stmt = $pdo->prepare("SELECT estado, COUNT(*) as cant FROM tickets_soporte WHERE $sqlWhere GROUP BY estado");
+        $stmt->execute($params);
+        $filas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($filas as $f) {
+            $cant = (int)$f['cant'];
+            $est = strtolower(trim($f['estado']));
+            $stats['total'] += $cant;
+            if ($est === 'abierto') $stats['abiertos'] += $cant;
+            elseif ($est === 'en proceso') $stats['en_proceso'] += $cant;
+            elseif ($est === 'resuelto') $stats['resueltos'] += $cant;
+            elseif ($est === 'cerrado') $stats['cerrados'] += $cant;
+        }
+
+        if ($stats['total'] > 0) {
+            $solucionados = $stats['resueltos'] + $stats['cerrados'];
+            $stats['efectividad'] = round(($solucionados / $stats['total']) * 100, 1);
+        }
+    } catch (Throwable $t) {}
+
+    // Reportes de servicio firmados digitalmente
+    try {
+        $stmtRep = $pdo->prepare("SELECT COUNT(*) FROM tickets_soporte WHERE $sqlWhere AND (reporte_firmado = 1 OR reporte_firma_digital IS NOT NULL)");
+        $stmtRep->execute($params);
+        $stats['con_reporte_firmado'] = (int)$stmtRep->fetchColumn();
+    } catch (Throwable $t) {}
+
+    // Citas técnicas vinculadas a este agente
+    try {
+        $pCitas = [$termino];
+        $sqlCitas = "tecnico_asignado = ?";
+        if (!empty($usuarioAgente) && strcasecmp($usuarioAgente, $termino) !== 0) {
+            $sqlCitas = "(tecnico_asignado = ? OR tecnico_asignado = ?)";
+            $pCitas = [$termino, trim($usuarioAgente)];
+        }
+        $stmtC = $pdo->prepare("SELECT estado, COUNT(*) as cant FROM citas_soporte WHERE $sqlCitas GROUP BY estado");
+        $stmtC->execute($pCitas);
+        $filasC = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($filasC as $fc) {
+            $cantC = (int)$fc['cant'];
+            $stats['citas_total'] += $cantC;
+            if (strtolower(trim($fc['estado'])) === 'realizada') {
+                $stats['citas_realizadas'] += $cantC;
+            }
+        }
+    } catch (Throwable $t) {}
+
+    // Distribución por área de sistemas
+    try {
+        $stmtA = $pdo->prepare("SELECT area_sistemas, COUNT(*) as cant FROM tickets_soporte WHERE $sqlWhere GROUP BY area_sistemas ORDER BY cant DESC");
+        $stmtA->execute($params);
+        $stats['por_area'] = $stmtA->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // Últimos 6 tickets atendidos
+    try {
+        $stmtU = $pdo->prepare("SELECT id, folio, titulo, area_sistemas, solicitante_agencia, estado, prioridad, creado_en FROM tickets_soporte WHERE $sqlWhere ORDER BY id DESC LIMIT 6");
+        $stmtU->execute($params);
+        $stats['ultimos_tickets'] = $stmtU->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    return $stats;
 }
 ?>

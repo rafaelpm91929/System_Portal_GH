@@ -98,6 +98,27 @@ $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 if ($pdo) {
     asegurarTablaTickets($pdo);
     asegurarTablaCitas($pdo);
+    asegurarColumnasUsuarios($pdo);
+
+    // Endpoint AJAX exclusivo para SuperAdmin: Ficha y estadísticas del Agente
+    if (isset($_GET['ajax_agente_stats'])) {
+        header('Content-Type: application/json; charset=utf-8');
+        if (!$esSuperAdmin) {
+            http_response_code(403);
+            echo json_encode(['status' => 'error', 'message' => 'Acceso denegado: Solo el rol SuperAdmin puede consultar la ficha y estadísticas del agente.'], JSON_UNESCAPED_UNICODE);
+            exit();
+        }
+        $terminoAgente = trim($_GET['agente'] ?? '');
+        $datosAgente = obtenerDatosAgente($pdo, $terminoAgente);
+        $usuarioAgente = $datosAgente['usuario'] ?? null;
+        $statsAgente = obtenerEstadisticasAgente($pdo, $terminoAgente, $usuarioAgente);
+        echo json_encode([
+            'status' => 'ok',
+            'agente' => $datosAgente,
+            'stats'  => $statsAgente
+        ], JSON_UNESCAPED_UNICODE);
+        exit();
+    }
 
     if (isset($_GET['ajax_mensajes'])) {
         header('Content-Type: application/json; charset=utf-8');
@@ -958,6 +979,105 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         }
     }
 
+    // 9. Actualizar Fotografía y Ficha de Agente (Exclusivo SuperAdmin)
+    if ($accion === 'superadmin_actualizar_foto_agente') {
+        if (!$esSuperAdmin) {
+            $error = "Acceso denegado: Solo el rol SuperAdmin puede actualizar la fotografía y datos del agente.";
+        } else {
+            $agenteId = intval($_POST['agente_id'] ?? 0);
+            $agenteNombre = trim($_POST['agente_nombre'] ?? '');
+            $nuevoCargo = trim($_POST['cargo'] ?? '');
+            $nuevoTelefono = trim($_POST['telefono'] ?? '');
+            $origenTicketId = intval($_POST['ticket_id'] ?? ($_POST['origen_ticket_id'] ?? 0));
+
+            // Si no se proporcionó agente_id, buscar por nombre/usuario
+            if ($agenteId <= 0 && !empty($agenteNombre)) {
+                $uDat = obtenerDatosAgente($pdo, $agenteNombre);
+                if ($uDat) {
+                    $agenteId = (int)$uDat['id'];
+                }
+            }
+
+            if ($agenteId > 0) {
+                try {
+                    asegurarColumnasUsuarios($pdo);
+                    $fotoUrl = null;
+                    if (isset($_FILES['foto_agente']) && $_FILES['foto_agente']['error'] === UPLOAD_ERR_OK) {
+                        $fileTmp = $_FILES['foto_agente']['tmp_name'];
+                        $fileName = $_FILES['foto_agente']['name'];
+                        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                        $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+                        if (in_array($fileExt, $extPermitidas)) {
+                            $dirUpload = __DIR__ . '/uploads/usuarios/';
+                            if (!is_dir($dirUpload)) {
+                                @mkdir($dirUpload, 0777, true);
+                            }
+                            $nuevoNombre = 'agente_' . $agenteId . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $fileExt;
+                            $destino = $dirUpload . $nuevoNombre;
+                            if (move_uploaded_file($fileTmp, $destino)) {
+                                $fotoUrl = 'uploads/usuarios/' . $nuevoNombre;
+                            }
+                        } else {
+                            $error = "Formato de imagen inválido. Solo se admiten archivos JPG, PNG, WEBP o GIF.";
+                        }
+                    }
+
+                    if (empty($error)) {
+                        if ($fotoUrl) {
+                            $stmtUpU = $pdo->prepare("UPDATE usuarios SET foto = :foto, cargo = COALESCE(NULLIF(:cargo, ''), cargo), telefono = COALESCE(NULLIF(:tel, ''), telefono) WHERE id = :id");
+                            $stmtUpU->execute([':foto' => $fotoUrl, ':cargo' => $nuevoCargo, ':tel' => $nuevoTelefono, ':id' => $agenteId]);
+                        } else {
+                            $stmtUpU = $pdo->prepare("UPDATE usuarios SET cargo = COALESCE(NULLIF(:cargo, ''), cargo), telefono = COALESCE(NULLIF(:tel, ''), telefono) WHERE id = :id");
+                            $stmtUpU->execute([':cargo' => $nuevoCargo, ':tel' => $nuevoTelefono, ':id' => $agenteId]);
+                        }
+                        $mensaje = "Fotografía y datos del especialista actualizados correctamente.";
+                    }
+                } catch (Throwable $eFoto) {
+                    $error = "Error al actualizar agente: " . $eFoto->getMessage();
+                }
+            } else {
+                $error = "No se localizó al usuario en la base de datos para asociarle la fotografía.";
+            }
+
+            if ($origenTicketId > 0) {
+                $_SESSION['redir_ticket_ver'] = $origenTicketId;
+            }
+        }
+    }
+
+    // 10. Eliminar Fotografía del Agente (Exclusivo SuperAdmin)
+    if ($accion === 'superadmin_eliminar_foto_agente') {
+        if (!$esSuperAdmin) {
+            $error = "Acceso denegado: Solo el rol SuperAdmin puede gestionar la fotografía del agente.";
+        } else {
+            $agenteId = intval($_POST['agente_id'] ?? 0);
+            $agenteNombre = trim($_POST['agente_nombre'] ?? '');
+            $origenTicketId = intval($_POST['ticket_id'] ?? ($_POST['origen_ticket_id'] ?? 0));
+
+            if ($agenteId <= 0 && !empty($agenteNombre)) {
+                $uDat = obtenerDatosAgente($pdo, $agenteNombre);
+                if ($uDat) {
+                    $agenteId = (int)$uDat['id'];
+                }
+            }
+
+            if ($agenteId > 0) {
+                try {
+                    $stmtDelF = $pdo->prepare("UPDATE usuarios SET foto = NULL WHERE id = ?");
+                    $stmtDelF->execute([$agenteId]);
+                    $mensaje = "Fotografía del agente eliminada correctamente.";
+                } catch (Throwable $eDelF) {
+                    $error = "Error al quitar fotografía: " . $eDelF->getMessage();
+                }
+            }
+
+            if ($origenTicketId > 0) {
+                $_SESSION['redir_ticket_ver'] = $origenTicketId;
+            }
+        }
+    }
+
     // Patrón Post/Redirect/Get: Previene duplicados al recargar con F5
     $_SESSION['flash_mensaje'] = $mensaje;
     $_SESSION['flash_error'] = $error;
@@ -1265,6 +1385,14 @@ if (!empty($ticketVerParam) && $pdo) {
                 $citaTicketActivo = $stmtCitaTk ? $stmtCitaTk->fetch(PDO::FETCH_ASSOC) : null;
             } catch (Throwable $eTkCita) {
                 $citaTicketActivo = null;
+            }
+
+            // Cargar datos y estadísticas del agente si es SuperAdmin
+            $datosAgenteTicket = null;
+            $statsAgenteTicket = null;
+            if ($esSuperAdmin && !empty($ticketActivo['asignado_a'])) {
+                $datosAgenteTicket = obtenerDatosAgente($pdo, $ticketActivo['asignado_a']);
+                $statsAgenteTicket = obtenerEstadisticasAgente($pdo, $ticketActivo['asignado_a'], $datosAgenteTicket['usuario'] ?? null);
             }
         }
     } catch (Throwable $eVer) {}
@@ -2595,9 +2723,14 @@ if (!empty($ticketVerParam) && $pdo) {
                             <span class="text-white"><?php echo formatearFechaHoraMensaje($ticketActivo['creado_en'] ?? 'now'); ?></span>
                         </div>
                         <?php if (!empty($ticketActivo['asignado_a'])): ?>
-                            <div>
+                            <div class="d-flex align-items-center flex-wrap gap-1">
                                 <i class="bi bi-headset text-warning me-1"></i> Técnico asignado: 
                                 <strong class="text-warning"><?php echo htmlspecialchars($ticketActivo['asignado_a']); ?></strong>
+                                <?php if ($esSuperAdmin): ?>
+                                    <button type="button" class="btn btn-sm btn-outline-info rounded-pill py-0 px-2 ms-1 d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.72rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')" title="Ver Ficha Técnica, Estadísticas y Fotografía (Solo SuperAdmin)">
+                                        <i class="bi bi-person-badge-fill text-warning"></i> Ficha & Métricas
+                                    </button>
+                                <?php endif; ?>
                             </div>
                         <?php else: ?>
                             <div>
@@ -3037,6 +3170,101 @@ if (!empty($ticketVerParam) && $pdo) {
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Tarjeta de Agente Asignado (Solo SuperAdmin) -->
+                        <?php if ($esSuperAdmin): ?>
+                            <div class="ticket-card p-4 mb-4" style="border-top: 3px solid #f59e0b; background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(4, 13, 26, 0.95) 100%);">
+                                <div class="d-flex align-items-center justify-content-between mb-3">
+                                    <h6 class="fw-bold text-white m-0 d-flex align-items-center gap-2">
+                                        <i class="bi bi-person-badge-fill text-warning"></i> Agente TI Asignado
+                                    </h6>
+                                    <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 rounded-pill px-2 py-0.5" style="font-size: 0.68rem;">
+                                        <i class="bi bi-shield-lock-fill me-1"></i> SuperAdmin
+                                    </span>
+                                </div>
+
+                                <?php if (!empty($ticketActivo['asignado_a'])): 
+                                    $agenteFoto = $datosAgenteTicket['foto'] ?? '';
+                                    $agenteCargo = $datosAgenteTicket['cargo'] ?? 'Especialista en Soporte TI';
+                                    $agenteTel = $datosAgenteTicket['telefono'] ?? '';
+                                ?>
+                                    <div class="d-flex align-items-center gap-3 mb-3 p-2.5 rounded-3 border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.03);">
+                                        <div class="position-relative flex-shrink-0">
+                                            <?php if (!empty($agenteFoto) && file_exists(__DIR__ . '/' . $agenteFoto)): ?>
+                                                <img src="<?php echo htmlspecialchars($agenteFoto); ?>" alt="Foto Agente" class="rounded-circle shadow" style="width: 58px; height: 58px; object-fit: cover; border: 2px solid #f59e0b;">
+                                            <?php else: ?>
+                                                <div class="rounded-circle d-flex align-items-center justify-content-center shadow" style="width: 58px; height: 58px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid #f59e0b; color: #f59e0b; font-size: 1.5rem;">
+                                                    <i class="bi bi-person-fill"></i>
+                                                </div>
+                                            <?php endif; ?>
+                                            <button type="button" class="btn btn-warning btn-sm position-absolute bottom-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center shadow" style="width: 22px; height: 22px; font-size: 0.7rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')" title="Cambiar fotografía del agente">
+                                                <i class="bi bi-camera-fill text-dark"></i>
+                                            </button>
+                                        </div>
+                                        <div class="overflow-hidden">
+                                            <div class="fw-bold text-white text-truncate" style="font-size: 0.95rem;">
+                                                <?php echo htmlspecialchars($ticketActivo['asignado_a']); ?>
+                                            </div>
+                                            <div class="text-warning small text-truncate" style="font-size: 0.75rem;">
+                                                <i class="bi bi-briefcase me-1"></i><?php echo htmlspecialchars($agenteCargo); ?>
+                                            </div>
+                                            <?php if (!empty($datosAgenteTicket['usuario'])): ?>
+                                                <div class="text-info font-monospace small" style="font-size: 0.72rem;">
+                                                    @<?php echo htmlspecialchars($datosAgenteTicket['usuario']); ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+
+                                    <!-- Mini KPIs de Rendimiento -->
+                                    <?php if ($statsAgenteTicket): ?>
+                                        <div class="row g-2 mb-3 text-center">
+                                            <div class="col-4">
+                                                <div class="p-2 rounded-2" style="background: rgba(14, 165, 233, 0.1); border: 1px solid rgba(56, 189, 248, 0.2);">
+                                                    <div class="text-secondary" style="font-size: 0.68rem;">ASIGNADOS</div>
+                                                    <div class="fw-bold text-info fs-6"><?php echo $statsAgenteTicket['total']; ?></div>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="p-2 rounded-2" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2);">
+                                                    <div class="text-secondary" style="font-size: 0.68rem;">EN PROCESO</div>
+                                                    <div class="fw-bold text-warning fs-6"><?php echo $statsAgenteTicket['en_proceso']; ?></div>
+                                                </div>
+                                            </div>
+                                            <div class="col-4">
+                                                <div class="p-2 rounded-2" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2);">
+                                                    <div class="text-secondary" style="font-size: 0.68rem;">RESUELTOS</div>
+                                                    <div class="fw-bold text-success fs-6"><?php echo $statsAgenteTicket['resueltos'] + $statsAgenteTicket['cerrados']; ?></div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Barra de Efectividad -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center mb-1 small">
+                                                <span class="text-secondary" style="font-size: 0.72rem;">Tasa de Resolución:</span>
+                                                <strong class="text-success" style="font-size: 0.75rem;"><?php echo $statsAgenteTicket['efectividad']; ?>%</strong>
+                                            </div>
+                                            <div class="progress" style="height: 6px; background: rgba(255, 255, 255, 0.08);">
+                                                <div class="progress-bar bg-success progress-bar-striped" role="progressbar" style="width: <?php echo $statsAgenteTicket['efectividad']; ?>%"></div>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <button type="button" class="btn btn-outline-warning w-100 btn-sm rounded-3 fw-bold d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')">
+                                        <i class="bi bi-camera-fill"></i> Foto y Estadísticas Completas
+                                    </button>
+                                <?php else: ?>
+                                    <div class="text-center py-3 text-secondary small">
+                                        <i class="bi bi-person-x fs-3 d-block text-secondary opacity-50 mb-1"></i>
+                                        Sin especialista asignado aún a este ticket.
+                                        <div class="mt-2 text-info" style="font-size: 0.72rem;">
+                                            Asigna a un técnico arriba para auditar su ficha y estadísticas.
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
 
                         <!-- Tarjeta de Cita Técnica Vinculada -->
                         <div class="ticket-card p-4 mb-4" style="border-top: 3px solid <?php echo $citaTicketActivo ? '#10b981' : '#f59e0b'; ?>;">
@@ -3674,9 +3902,16 @@ if (!empty($ticketVerParam) && $pdo) {
 
                                 <td>
                                     <?php if (!empty($asignado)): ?>
-                                        <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1">
-                                            <i class="bi bi-person-fill-check me-1"></i> <?php echo htmlspecialchars($asignado); ?>
-                                        </span>
+                                        <?php if ($esSuperAdmin): ?>
+                                            <button type="button" class="btn btn-sm p-1 px-2.5 rounded-pill d-inline-flex align-items-center gap-1.5 border border-info border-opacity-30 text-info shadow-sm" style="background: rgba(14, 165, 233, 0.12); font-size: 0.78rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($asignado)); ?>')" title="Ver Ficha Técnica y Estadísticas del Agente (SuperAdmin)">
+                                                <i class="bi bi-person-badge-fill text-warning"></i>
+                                                <span class="fw-semibold"><?php echo htmlspecialchars($asignado); ?></span>
+                                            </button>
+                                        <?php else: ?>
+                                            <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 px-2 py-1">
+                                                <i class="bi bi-person-fill-check me-1"></i> <?php echo htmlspecialchars($asignado); ?>
+                                            </span>
+                                        <?php endif; ?>
                                     <?php else: ?>
                                         <form method="POST" style="display:inline;">
                                             <input type="hidden" name="accion" value="autoasignar_ticket">
@@ -4831,6 +5066,242 @@ if (!empty($ticketVerParam) && $pdo) {
 </div>
 <?php endif; ?>
 
+<?php if ($esSuperAdmin): ?>
+<!-- ============================================================== -->
+<!-- MODAL: FICHA Y ESTADÍSTICAS DEL AGENTE (EXCLUSIVO SUPERADMIN) -->
+<!-- ============================================================== -->
+<div class="modal fade" id="modalAgenteSuperAdmin" tabindex="-1" aria-labelledby="modalAgenteSuperAdminLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+        <div class="modal-content" style="background: #040d1a; border: 1px solid rgba(245, 158, 11, 0.45); box-shadow: 0 25px 60px rgba(0,0,0,0.9); color: #fff; border-radius: 18px;">
+            
+            <div class="modal-header border-bottom border-secondary border-opacity-25" style="background: linear-gradient(90deg, rgba(245, 158, 11, 0.15) 0%, rgba(14, 165, 233, 0.08) 100%);">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="p-2 rounded-3" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b;">
+                        <i class="bi bi-person-bounding-box fs-5"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold text-white mb-0" id="modalAgenteSuperAdminLabel">
+                            Ficha Técnica y Rendimiento del Agente de Sistemas
+                        </h5>
+                        <div class="text-secondary small">Panel de auditoría y productividad exclusivo para SuperAdmin</div>
+                    </div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-warning text-dark fw-bold px-3 py-1.5 rounded-pill">
+                        <i class="bi bi-shield-lock-fill me-1"></i> ROL SUPERADMIN
+                    </span>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+            </div>
+
+            <div class="modal-body p-4">
+                <!-- Loader para llamadas AJAX -->
+                <div id="modalAgenteLoading" class="text-center py-5" style="display: none;">
+                    <div class="spinner-border text-warning" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Cargando datos...</span>
+                    </div>
+                    <div class="text-light mt-3 fw-semibold">Consultando métricas y ficha del agente...</div>
+                </div>
+
+                <div id="modalAgenteContenido">
+                    <div class="row g-4">
+                        <!-- Columna Izquierda: Perfil, Foto y Subida -->
+                        <div class="col-lg-4">
+                            <div class="p-3.5 rounded-4 h-100 border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.02);">
+                                
+                                <!-- Foto de Perfil Grande -->
+                                <div class="text-center mb-3">
+                                    <div class="position-relative d-inline-block">
+                                        <div id="modalAgenteFotoContenedor">
+                                            <img id="modalAgenteFotoImg" src="" alt="Foto Agente" class="rounded-circle shadow" style="width: 110px; height: 110px; object-fit: cover; border: 3px solid #f59e0b; display: none;">
+                                            <div id="modalAgenteFotoPlaceholder" class="rounded-circle shadow mx-auto d-flex align-items-center justify-content-center" style="width: 110px; height: 110px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 3px solid #f59e0b; color: #f59e0b; font-size: 3rem;">
+                                                <i class="bi bi-person-fill"></i>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <h5 class="fw-bold text-white mt-2 mb-1" id="modalAgenteNombreTxt">---</h5>
+                                    <div class="text-warning small fw-semibold" id="modalAgenteCargoTxt">Especialista en Soporte TI</div>
+                                    <div class="mt-1 d-flex align-items-center justify-content-center gap-1.5 flex-wrap">
+                                        <span class="badge bg-secondary bg-opacity-40 text-info font-monospace" id="modalAgenteUsuarioTxt">@usuario</span>
+                                        <span class="badge bg-primary bg-opacity-30 text-white border border-primary border-opacity-40" id="modalAgenteRolTxt">Admin</span>
+                                        <span class="badge bg-success bg-opacity-25 text-success border border-success" id="modalAgenteActivoTxt">Activo</span>
+                                    </div>
+                                </div>
+
+                                <!-- Formulario para Poner o Cambiar Foto -->
+                                <div class="p-3 rounded-3 mb-3 border border-warning border-opacity-30" style="background: rgba(245, 158, 11, 0.05);">
+                                    <label class="form-label text-warning small fw-bold text-uppercase d-flex align-items-center justify-content-between mb-2">
+                                        <span><i class="bi bi-camera-fill me-1"></i> Asignar / Cambiar Foto</span>
+                                        <span class="badge bg-secondary bg-opacity-40 text-light" style="font-size: 0.65rem;">JPG, PNG, WEBP</span>
+                                    </label>
+                                    
+                                    <form method="POST" enctype="multipart/form-data" action="tickets.php<?php echo !empty($ticketActivo['id']) ? ('?ver=' . $ticketActivo['id']) : ''; ?>">
+                                        <input type="hidden" name="accion" value="superadmin_actualizar_foto_agente">
+                                        <input type="hidden" name="agente_id" id="formFotoAgenteId" value="">
+                                        <input type="hidden" name="agente_nombre" id="formFotoAgenteNombre" value="">
+                                        <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id'] ?? 0; ?>">
+
+                                        <div class="mb-2">
+                                            <input type="file" name="foto_agente" id="inputFotoAgenteModal" class="form-control form-control-sm" accept=".jpg,.jpeg,.png,.webp,.gif" style="background: rgba(4, 13, 26, 0.9); color: #fff; border-color: rgba(245, 158, 11, 0.35); font-size: 0.78rem;" required onchange="previsualizarFotoModal(this)">
+                                        </div>
+
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <input type="text" name="cargo" id="formFotoAgenteCargo" class="form-control form-control-sm" placeholder="Cargo/Puesto" style="background: rgba(4, 13, 26, 0.9); color: #fff; border-color: rgba(255,255,255,0.15); font-size: 0.75rem;">
+                                            </div>
+                                            <div class="col-6">
+                                                <input type="text" name="telefono" id="formFotoAgenteTelefono" class="form-control form-control-sm" placeholder="Teléfono/Ext." style="background: rgba(4, 13, 26, 0.9); color: #fff; border-color: rgba(255,255,255,0.15); font-size: 0.75rem;">
+                                            </div>
+                                        </div>
+
+                                        <button type="submit" class="btn btn-warning btn-sm w-100 fw-bold text-dark py-1.5 shadow-sm">
+                                            <i class="bi bi-cloud-arrow-up-fill me-1"></i> Guardar Fotografía y Datos
+                                        </button>
+                                    </form>
+
+                                    <!-- Botón para Quitar Foto -->
+                                    <form method="POST" id="formEliminarFotoAgente" action="tickets.php<?php echo !empty($ticketActivo['id']) ? ('?ver=' . $ticketActivo['id']) : ''; ?>" class="mt-2" onsubmit="return confirm('¿Seguro que deseas eliminar la fotografía de este agente?');" style="display: none;">
+                                        <input type="hidden" name="accion" value="superadmin_eliminar_foto_agente">
+                                        <input type="hidden" name="agente_id" id="formDelFotoAgenteId" value="">
+                                        <input type="hidden" name="agente_nombre" id="formDelFotoAgenteNombre" value="">
+                                        <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id'] ?? 0; ?>">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm w-100 py-1" style="font-size: 0.75rem;">
+                                            <i class="bi bi-trash3 me-1"></i> Quitar Foto Actual
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <!-- Datos Detallados de Contacto y Sucursal -->
+                                <div class="d-flex flex-column gap-2 small">
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Correo:</span>
+                                        <span class="text-white text-truncate ms-2" id="modalAgenteEmailTxt" style="max-width: 170px;">---</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Sucursal:</span>
+                                        <span class="text-light fw-semibold text-truncate ms-2" id="modalAgenteAgenciaTxt">---</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Teléfono:</span>
+                                        <span class="text-white" id="modalAgenteTelTxt">---</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Áreas TI:</span>
+                                        <span class="text-info fw-bold" id="modalAgenteAreasTxt">TODOS</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1">
+                                        <span class="text-secondary">Fecha Alta:</span>
+                                        <span class="text-secondary font-monospace" id="modalAgenteFechaTxt">---</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Columna Derecha: Métricas y Estadísticas de Rendimiento -->
+                        <div class="col-lg-8">
+                            <h6 class="fw-bold text-info mb-3 d-flex align-items-center gap-2">
+                                <i class="bi bi-graph-up-arrow"></i> Desempeño y Métricas de Productividad en Tickets
+                            </h6>
+
+                            <!-- Matriz de Indicadores Clave (KPIs) -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-6 col-md-3">
+                                    <div class="p-3 rounded-3 text-center border border-info border-opacity-25" style="background: rgba(14, 165, 233, 0.08);">
+                                        <div class="text-secondary small" style="font-size: 0.72rem;">TOTAL TICKETS</div>
+                                        <div class="fs-4 fw-bold text-white mt-1" id="statModalTotal">0</div>
+                                        <div class="text-info small" style="font-size: 0.68rem;">Asignados</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="p-3 rounded-3 text-center border border-warning border-opacity-25" style="background: rgba(245, 158, 11, 0.08);">
+                                        <div class="text-secondary small" style="font-size: 0.72rem;">ABIERTOS</div>
+                                        <div class="fs-4 fw-bold text-warning mt-1" id="statModalAbiertos">0</div>
+                                        <div class="text-warning small" style="font-size: 0.68rem;">En espera</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="p-3 rounded-3 text-center border border-primary border-opacity-25" style="background: rgba(59, 130, 246, 0.08);">
+                                        <div class="text-secondary small" style="font-size: 0.72rem;">EN PROCESO</div>
+                                        <div class="fs-4 fw-bold text-info mt-1" id="statModalEnProceso">0</div>
+                                        <div class="text-info small" style="font-size: 0.68rem;">Atendiéndose</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <div class="p-3 rounded-3 text-center border border-success border-opacity-25" style="background: rgba(16, 185, 129, 0.08);">
+                                        <div class="text-secondary small" style="font-size: 0.72rem;">RESUELTOS / CERRADOS</div>
+                                        <div class="fs-4 fw-bold text-success mt-1" id="statModalResueltos">0</div>
+                                        <div class="text-success small" style="font-size: 0.68rem;">Solucionados</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Barra de Productividad y Efectividad -->
+                            <div class="p-3 rounded-3 mb-3 border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.02);">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <span class="small fw-bold text-white d-flex align-items-center gap-1.5">
+                                        <i class="bi bi-speedometer2 text-warning"></i> Tasa de Efectividad en Resolución
+                                    </span>
+                                    <span class="fs-6 fw-bold text-success" id="statModalEfectividad">0%</span>
+                                </div>
+                                <div class="progress" style="height: 10px; background: rgba(255, 255, 255, 0.08); border-radius: 6px;">
+                                    <div id="statModalEfectividadBar" class="progress-bar bg-success progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%;"></div>
+                                </div>
+                                <div class="d-flex justify-content-between mt-2 small text-secondary" style="font-size: 0.72rem;">
+                                    <span>Calculado sobre tickets resueltos y cerrados del total asignado.</span>
+                                    <span id="statModalReportesFirmadosTxt"><i class="bi bi-patch-check-fill text-success me-1"></i>0 Reportes Firmados</span>
+                                </div>
+                            </div>
+
+                            <!-- Distribución por Área de Sistemas -->
+                            <div class="mb-3">
+                                <h6 class="text-white small fw-bold text-uppercase mb-2 d-flex align-items-center gap-1.5">
+                                    <i class="bi bi-diagram-3 text-info"></i> Distribución de Carga por Área de Sistemas
+                                </h6>
+                                <div id="statModalAreasContainer" class="d-flex flex-column gap-2">
+                                    <!-- Generado dinámicamente -->
+                                </div>
+                            </div>
+
+                            <!-- Historial de Últimos Tickets Atendidos -->
+                            <div>
+                                <h6 class="text-white small fw-bold text-uppercase mb-2 d-flex align-items-center gap-1.5">
+                                    <i class="bi bi-clock-history text-warning"></i> Últimos Requerimientos Asignados
+                                </h6>
+                                <div class="table-responsive rounded-3 border border-secondary border-opacity-25" style="max-height: 220px; overflow-y: auto;">
+                                    <table class="table table-sm table-dark table-hover mb-0" style="font-size: 0.78rem;">
+                                        <thead>
+                                            <tr style="background: rgba(15, 23, 42, 0.9);">
+                                                <th>Folio</th>
+                                                <th>Área</th>
+                                                <th>Asunto</th>
+                                                <th>Sucursal</th>
+                                                <th>Estado</th>
+                                                <th class="text-center">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="statModalTicketsTbody">
+                                            <tr><td colspan="6" class="text-center text-secondary py-3">Sin tickets registrados aún.</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-top border-secondary border-opacity-25" style="background: rgba(14, 165, 233, 0.04);">
+                <button type="button" class="btn btn-outline-secondary px-4 rounded-3 text-white" data-bs-dismiss="modal">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 function imprimirReporteServicioOficial() {
     window.open('reporte_servicio_imprimir.php?id=<?php echo $ticketActivo['id'] ?? 0; ?>&auto=1', '_blank');
@@ -4839,6 +5310,163 @@ function imprimirReporteServicioOficial() {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+function previsualizarFotoModal(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const imgFoto = document.getElementById('modalAgenteFotoImg');
+            const phFoto = document.getElementById('modalAgenteFotoPlaceholder');
+            if (imgFoto) {
+                imgFoto.src = e.target.result;
+                imgFoto.style.display = 'inline-block';
+            }
+            if (phFoto) phFoto.style.display = 'none';
+        }
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+
+function abrirModalAgenteSuperAdmin(nombreAgente) {
+    if (!nombreAgente || !nombreAgente.trim()) return;
+    const modalEl = document.getElementById('modalAgenteSuperAdmin');
+    if (!modalEl) return;
+
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+
+    const loading = document.getElementById('modalAgenteLoading');
+    const contenido = document.getElementById('modalAgenteContenido');
+    if (loading) loading.style.display = 'block';
+    if (contenido) contenido.style.display = 'none';
+
+    fetch('tickets.php?ajax_agente_stats=1&agente=' + encodeURIComponent(nombreAgente))
+        .then(res => res.json())
+        .then(data => {
+            if (loading) loading.style.display = 'none';
+            if (contenido) contenido.style.display = 'block';
+
+            if (data.status === 'ok') {
+                const u = data.agente || {};
+                const s = data.stats || {};
+
+                // Actualizar Foto
+                const imgFoto = document.getElementById('modalAgenteFotoImg');
+                const phFoto = document.getElementById('modalAgenteFotoPlaceholder');
+                const formDel = document.getElementById('formEliminarFotoAgente');
+
+                if (u.foto && u.foto.trim() !== '') {
+                    if (imgFoto) {
+                        imgFoto.src = u.foto;
+                        imgFoto.style.display = 'inline-block';
+                    }
+                    if (phFoto) phFoto.style.display = 'none';
+                    if (formDel) formDel.style.display = 'block';
+                } else {
+                    if (imgFoto) {
+                        imgFoto.src = '';
+                        imgFoto.style.display = 'none';
+                    }
+                    if (phFoto) phFoto.style.display = 'flex';
+                    if (formDel) formDel.style.display = 'none';
+                }
+
+                // Datos de Usuario
+                document.getElementById('modalAgenteNombreTxt').innerText = u.nombre || nombreAgente;
+                document.getElementById('modalAgenteCargoTxt').innerText = u.cargo || 'Especialista en Soporte TI';
+                document.getElementById('modalAgenteUsuarioTxt').innerText = '@' + (u.usuario || 'agente');
+                document.getElementById('modalAgenteRolTxt').innerText = u.rol || 'Admin';
+                document.getElementById('modalAgenteActivoTxt').innerText = (u.activo == 1 || u.activo === undefined) ? 'Activo' : 'Inactivo';
+                document.getElementById('modalAgenteEmailTxt').innerText = u.email || 'No registrado';
+                document.getElementById('modalAgenteAgenciaTxt').innerText = u.agencia || 'Oficina Central Grupo Huerta';
+                document.getElementById('modalAgenteTelTxt').innerText = u.telefono || 'Sin registrar';
+                document.getElementById('modalAgenteAreasTxt').innerText = u.areas_tickets || 'TODOS';
+                document.getElementById('modalAgenteFechaTxt').innerText = u.creado_en || '---';
+
+                // Campos del Formulario de Fotografía
+                document.getElementById('formFotoAgenteId').value = u.id || 0;
+                document.getElementById('formFotoAgenteNombre').value = u.nombre || nombreAgente;
+                document.getElementById('formFotoAgenteCargo').value = u.cargo || '';
+                document.getElementById('formFotoAgenteTelefono').value = u.telefono || '';
+                document.getElementById('formDelFotoAgenteId').value = u.id || 0;
+                document.getElementById('formDelFotoAgenteNombre').value = u.nombre || nombreAgente;
+
+                // Estadísticas KPIs
+                document.getElementById('statModalTotal').innerText = s.total || 0;
+                document.getElementById('statModalAbiertos').innerText = s.abiertos || 0;
+                document.getElementById('statModalEnProceso').innerText = s.en_proceso || 0;
+                document.getElementById('statModalResueltos').innerText = (s.resueltos || 0) + (s.cerrados || 0);
+
+                const efect = s.efectividad !== undefined ? s.efectividad : 0;
+                document.getElementById('statModalEfectividad').innerText = efect + '%';
+                const bar = document.getElementById('statModalEfectividadBar');
+                if (bar) bar.style.width = efect + '%';
+
+                document.getElementById('statModalReportesFirmadosTxt').innerHTML = '<i class="bi bi-patch-check-fill text-success me-1"></i>' + (s.con_reporte_firmado || 0) + ' Reportes Firmados Digitalmente';
+
+                // Distribución de Áreas
+                const areasCont = document.getElementById('statModalAreasContainer');
+                if (areasCont) {
+                    if (s.por_area && s.por_area.length > 0) {
+                        let htmlAreas = '';
+                        s.por_area.forEach(a => {
+                            const cantA = parseInt(a.cant) || 0;
+                            const pctA = s.total > 0 ? Math.round((cantA / s.total) * 100) : 0;
+                            htmlAreas += `
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-center mb-1" style="font-size: 0.75rem;">
+                                        <span class="text-light fw-semibold">${a.area_sistemas || 'INFRAESTRUCTURA'}</span>
+                                        <span class="text-secondary">${cantA} tickets (${pctA}%)</span>
+                                    </div>
+                                    <div class="progress" style="height: 6px; background: rgba(255, 255, 255, 0.08);">
+                                        <div class="progress-bar bg-info" style="width: ${pctA}%"></div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        areasCont.innerHTML = htmlAreas;
+                    } else {
+                        areasCont.innerHTML = '<div class="text-secondary small">Sin distribución de áreas disponible.</div>';
+                    }
+                }
+
+                // Tabla de Últimos Tickets
+                const tbody = document.getElementById('statModalTicketsTbody');
+                if (tbody) {
+                    if (s.ultimos_tickets && s.ultimos_tickets.length > 0) {
+                        let htmlTk = '';
+                        s.ultimos_tickets.forEach(t => {
+                            const stClass = (t.estado === 'Resuelto' || t.estado === 'Cerrado') ? 'badge bg-success' : (t.estado === 'En Proceso' ? 'badge bg-info text-dark' : 'badge bg-warning text-dark');
+                            htmlTk += `
+                                <tr>
+                                    <td class="font-monospace text-info fw-bold">${t.folio || ('#TK-' + t.id)}</td>
+                                    <td><span class="badge bg-secondary bg-opacity-40 text-light">${t.area_sistemas || 'TI'}</span></td>
+                                    <td class="text-truncate text-white" style="max-width: 140px;" title="${t.titulo || ''}">${t.titulo || ''}</td>
+                                    <td class="text-secondary">${t.solicitante_agencia || 'General'}</td>
+                                    <td><span class="${stClass} py-0 px-1.5" style="font-size: 0.68rem;">${t.estado || 'Abierto'}</span></td>
+                                    <td class="text-center">
+                                        <a href="tickets.php?ver=${t.id}" class="btn btn-xs btn-outline-info rounded-pill py-0 px-2" style="font-size: 0.7rem;">
+                                            Ver
+                                        </a>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                        tbody.innerHTML = htmlTk;
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-3">Sin tickets recientes asignados.</td></tr>';
+                    }
+                }
+            } else {
+                alert('No se pudieron consultar los datos del agente: ' + (data.message || 'Error desconocido'));
+            }
+        })
+        .catch(err => {
+            if (loading) loading.style.display = 'none';
+            if (contenido) contenido.style.display = 'block';
+            console.error('Error al consultar agente:', err);
+        });
+}
+
 const agenciasData = <?php echo json_encode($agenciasList); ?>;
 const totalesGlobales = {
     total: <?php echo $totalTickets; ?>,
