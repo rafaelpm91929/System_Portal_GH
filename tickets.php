@@ -570,18 +570,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $tActual = $stmtCheckT->fetch(PDO::FETCH_ASSOC);
 
                 if ($tActual) {
-                    $puedeModificar = false;
-                    if ($esAdmin) {
-                        $puedeModificar = true;
-                    } else {
-                        if (!empty($tActual['solicitante_id']) && (int)$tActual['solicitante_id'] === (int)$usuarioId) $puedeModificar = true;
-                        if (!empty($tActual['solicitante_usuario']) && !empty($loginUsuario) && strtolower($tActual['solicitante_usuario']) === strtolower($loginUsuario)) $puedeModificar = true;
-                        if (!empty($tActual['solicitante_email']) && !empty($emailUsuario) && strtolower($tActual['solicitante_email']) === strtolower($emailUsuario)) $puedeModificar = true;
-                        if (!empty($tActual['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($tActual['solicitante_nombre']) === strtolower($nombreUsuario)) $puedeModificar = true;
-                    }
-
-                    if (!$puedeModificar) {
-                        $error = "No cuentas con autorización para modificar este ticket.";
+                    if (!$esAdmin) {
+                        $error = "No cuentas con autorización para modificar este ticket. Los requerimientos no pueden ser alterados una vez generados por los usuarios.";
                     } else {
                         $archivoUrl = $tActual['archivo_adjunto'];
                         if (isset($_FILES['archivo_adjunto']) && $_FILES['archivo_adjunto']['error'] === UPLOAD_ERR_OK) {
@@ -716,8 +706,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     $fechaActual
                 ]);
 
-                // Actualizar estado si el usuario seleccionó uno al contestar
-                if (!empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
+                // Actualizar estado si el administrador seleccionó uno al contestar
+                if ($esAdmin && !empty($cambioEstado) && in_array($cambioEstado, ['Abierto', 'En Proceso', 'Resuelto', 'Cerrado'])) {
                     $stmtUpSt = $pdo->prepare("UPDATE tickets_soporte SET estado = :est, actualizado_en = :act WHERE id = :id");
                     $stmtUpSt->execute([':est' => $cambioEstado, ':act' => $fechaActual, ':id' => $ticketId]);
                 } else {
@@ -740,7 +730,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         'mensaje'       => $textoMensaje,
                         'creado_en'     => $fechaActual
                     ];
-                    if (!empty($cambioEstado)) {
+                    if ($esAdmin && !empty($cambioEstado)) {
                         $postFields['cambio_estado'] = $cambioEstado;
                     }
                     if ($archivoMensaje && file_exists(__DIR__ . '/' . $archivoMensaje)) {
@@ -873,12 +863,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         }
     }
 
-    // 3. Actualizar Estado / Seguimiento de Ticket
+    // 3. Actualizar Estado / Seguimiento de Ticket (Solo Administrador)
     elseif ($accion === 'actualizar_ticket') {
-        $ticketId = intval($_POST['ticket_id'] ?? 0);
-        $nuevoEstado = trim($_POST['estado'] ?? 'Abierto');
-        $asignadoA = trim($_POST['asignado_a'] ?? '');
-        $notas = trim($_POST['notas_resolucion'] ?? '');
+        if (!$esAdmin) {
+            $error = "No cuentas con autorización para modificar el seguimiento o estado del ticket.";
+        } else {
+            $ticketId = intval($_POST['ticket_id'] ?? 0);
+            $nuevoEstado = trim($_POST['estado'] ?? 'Abierto');
+            $asignadoA = trim($_POST['asignado_a'] ?? '');
+            $notas = trim($_POST['notas_resolucion'] ?? '');
 
         if ($ticketId > 0) {
             try {
@@ -899,6 +892,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             }
         }
     }
+}
 
     // 3. Eliminar Ticket (Solo Administradores)
     elseif ($accion === 'eliminar_ticket' && $esAdmin) {
@@ -1807,8 +1801,8 @@ if ($ticketSeleccionado) {
                                                         (!empty($t['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($t['solicitante_nombre']) === strtolower($nombreUsuario))
                                                     );
                                                 ?>
-                                                <?php if ($esPropioFila): ?>
-                                                    <!-- Modificar Ticket -->
+                                                <?php if ($esAdmin): ?>
+                                                    <!-- Modificar Ticket (Solo Administrador) -->
                                                     <a href="tickets.php?ver=<?php echo $t['id']; ?>&editar=1" class="btn-action-icon text-warning" title="Modificar este Ticket">
                                                         <i class="bi bi-pencil-fill"></i>
                                                     </a>
@@ -2002,11 +1996,7 @@ if ($ticketSeleccionado) {
                                 <div class="fs-4 font-monospace fw-bold text-info"><?php echo htmlspecialchars($ticketSeleccionado['folio'] ?? ('#TK-' . $ticketSeleccionado['id'])); ?></div>
                             </div>
                             <?php 
-                                $puedeEditarTicket = $esAdmin || (
-                                    (!empty($ticketSeleccionado['solicitante_id']) && (int)$ticketSeleccionado['solicitante_id'] === (int)$usuarioId) ||
-                                    (!empty($ticketSeleccionado['solicitante_usuario']) && !empty($loginUsuario) && strtolower($ticketSeleccionado['solicitante_usuario']) === strtolower($loginUsuario)) ||
-                                    (!empty($ticketSeleccionado['solicitante_nombre']) && !empty($nombreUsuario) && strtolower($ticketSeleccionado['solicitante_nombre']) === strtolower($nombreUsuario))
-                                );
+                                $puedeEditarTicket = $esAdmin;
                             ?>
                             <?php if ($puedeEditarTicket): ?>
                                 <button type="button" class="btn btn-warning btn-sm rounded-3 px-3 py-2 fw-bold text-dark d-inline-flex align-items-center gap-1.5 shadow" data-bs-toggle="modal" data-bs-target="#modalModificarTicket" title="Modificar requerimiento o estado del ticket">
@@ -2657,12 +2647,13 @@ if ($ticketSeleccionado) {
                             </div>
 
                             <div class="row g-3 align-items-end mb-3">
-                                <div class="col-md-6">
+                                <div class="<?php echo $esAdmin ? 'col-md-6' : 'col-12'; ?>">
                                     <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
                                         <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i> Adjuntar PDF o Evidencia (opcional)
                                     </label>
                                     <input type="file" name="adjunto_mensaje" class="form-control form-control-sm rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(255, 255, 255, 0.15);" accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt,.zip">
                                 </div>
+                                <?php if ($esAdmin): ?>
                                 <div class="col-md-6">
                                     <label class="text-secondary small fw-bold text-uppercase d-block mb-1" style="font-size: 0.75rem;">
                                         <i class="bi bi-clock-history me-1"></i> Actualizar estado del ticket (opcional)
@@ -2675,6 +2666,7 @@ if ($ticketSeleccionado) {
                                         <option value="Cerrado">Cambiar a: Cerrado (Finalizar ticket)</option>
                                     </select>
                                 </div>
+                                <?php endif; ?>
                             </div>
 
                             <div class="text-end">
@@ -2726,8 +2718,9 @@ if ($ticketSeleccionado) {
                 <?php endif; ?>
 
                 <!-- ============================================== -->
-                <!-- MODAL: MODIFICAR TICKET (SOLICITANTE / ADMIN) -->
+                <!-- MODAL: MODIFICAR TICKET (SOLO ADMIN) -->
                 <!-- ============================================== -->
+                <?php if ($esAdmin): ?>
                 <div class="modal fade" id="modalModificarTicket" tabindex="-1" aria-hidden="true">
                     <div class="modal-dialog modal-dialog-centered modal-lg">
                         <div class="modal-content" style="background: #0b1a30; border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 18px; box-shadow: 0 15px 40px rgba(0,0,0,0.7);">
@@ -2836,6 +2829,7 @@ if ($ticketSeleccionado) {
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
 
             </div>
         <?php endif; ?>
