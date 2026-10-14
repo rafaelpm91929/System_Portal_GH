@@ -259,22 +259,84 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                 if (!$accesoTodasAreas && !in_array($areaTicket, $areasAutorizadas)) {
                     $error = "Acceso denegado: No tienes autorización para modificar tickets del área '$areaTicket'.";
                 } else {
-                    $stmt = $pdo->prepare("
-                        UPDATE tickets_soporte 
-                        SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas 
-                        WHERE id = :id
-                    ");
-                    $stmt->execute([
-                        ':estado'    => $nuevoEstado,
-                        ':asignado'  => $asignadoA,
-                        ':prioridad' => $prioridad,
-                        ':notas'     => $notasResolucion,
-                        ':id'        => $ticketId
-                    ]);
+                    // Procesar archivo de evidencia (PDF, fotos, Excel, etc.)
+                    $archivoEvidenciaUrl = null;
+                    if (isset($_FILES['archivo_evidencia']) && $_FILES['archivo_evidencia']['error'] === UPLOAD_ERR_OK) {
+                        $fileTmp = $_FILES['archivo_evidencia']['tmp_name'];
+                        $fileName = $_FILES['archivo_evidencia']['name'];
+                        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                        $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf', 'xls', 'xlsx', 'csv', 'doc', 'docx', 'txt', 'zip'];
+
+                        if (in_array($fileExt, $extPermitidas)) {
+                            $dirUpload = __DIR__ . '/uploads/tickets/';
+                            if (!is_dir($dirUpload)) @mkdir($dirUpload, 0777, true);
+                            $nuevoNombre = 'evidencia_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $fileExt;
+                            if (move_uploaded_file($fileTmp, $dirUpload . $nuevoNombre)) {
+                                $archivoEvidenciaUrl = 'uploads/tickets/' . $nuevoNombre;
+                            }
+                        }
+                    }
+
+                    $fechaAct = date('Y-m-d H:i:s');
+
+                    if ($archivoEvidenciaUrl !== null) {
+                        $stmt = $pdo->prepare("
+                            UPDATE tickets_soporte 
+                            SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas, evidencia_resolucion = :evidencia, actualizado_en = :act 
+                            WHERE id = :id
+                        ");
+                        $stmt->execute([
+                            ':estado'    => $nuevoEstado,
+                            ':asignado'  => $asignadoA,
+                            ':prioridad' => $prioridad,
+                            ':notas'     => $notasResolucion,
+                            ':evidencia' => $archivoEvidenciaUrl,
+                            ':act'       => $fechaAct,
+                            ':id'        => $ticketId
+                        ]);
+
+                        // Registrar la evidencia en el hilo de la conversación
+                        try {
+                            $msgTextoEvidencia = !empty($notasResolucion) 
+                                ? "📎 Evidencia de gestión adjuntada:\n" . $notasResolucion 
+                                : "📎 Evidencia de atención adjuntada por el especialista (" . ($asignadoA ?: $nombreUsuario) . ").";
+                            $stmtMsgEv = $pdo->prepare("
+                                INSERT INTO tickets_mensajes
+                                (ticket_id, autor_id, autor_usuario, autor_nombre, autor_email, autor_rol, autor_agencia, mensaje, archivo_adjunto, es_nota_interna, creado_en)
+                                VALUES
+                                (:tk, :aut_id, :aut_usr, :aut_nom, :aut_em, 'agente', :aut_ag, :msg, :adj, 0, :creado_en)
+                            ");
+                            $stmtMsgEv->execute([
+                                ':tk'        => $ticketId,
+                                ':aut_id'    => $usuarioId,
+                                ':aut_usr'   => $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? ''),
+                                ':aut_nom'   => $nombreUsuario,
+                                ':aut_em'    => $_SESSION['usuario_email'] ?? '',
+                                ':aut_ag'    => $agenciaUsuario,
+                                ':msg'       => $msgTextoEvidencia,
+                                ':adj'       => $archivoEvidenciaUrl,
+                                ':creado_en' => $fechaAct
+                            ]);
+                        } catch (Throwable $eMsgEv) {}
+                    } else {
+                        $stmt = $pdo->prepare("
+                            UPDATE tickets_soporte 
+                            SET estado = :estado, asignado_a = :asignado, prioridad = :prioridad, notas_resolucion = :notas, actualizado_en = :act 
+                            WHERE id = :id
+                        ");
+                        $stmt->execute([
+                            ':estado'    => $nuevoEstado,
+                            ':asignado'  => $asignadoA,
+                            ':prioridad' => $prioridad,
+                            ':notas'     => $notasResolucion,
+                            ':act'       => $fechaAct,
+                            ':id'        => $ticketId
+                        ]);
+                    }
 
                     // Notificar a la agencia sucursal en tiempo real si tiene endpoint configurado
                     try {
-                        $stmtTInfo = $pdo->prepare("SELECT folio, solicitante_agencia FROM tickets_soporte WHERE id = ?");
+                        $stmtTInfo = $pdo->prepare("SELECT folio, solicitante_agencia, evidencia_resolucion FROM tickets_soporte WHERE id = ?");
                         $stmtTInfo->execute([$ticketId]);
                         $tInfo = $stmtTInfo->fetch(PDO::FETCH_ASSOC);
 
@@ -285,16 +347,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                                 $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
                             }
 
-                            $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GedasDivolavilla2026!';
+                            $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
                             $postDataWh = [
-                                'token'            => $tokenWh,
-                                'folio'            => $tInfo['folio'],
-                                'estado'           => $nuevoEstado,
-                                'asignado_a'       => $asignadoA,
-                                'prioridad'        => $prioridad,
-                                'notas_resolucion' => $notasResolucion,
-                                'actualizado_en'   => date('Y-m-d H:i:s')
+                                'token'               => $tokenWh,
+                                'folio'               => $tInfo['folio'],
+                                'estado'              => $nuevoEstado,
+                                'asignado_a'          => $asignadoA,
+                                'prioridad'           => $prioridad,
+                                'notas_resolucion'    => $notasResolucion,
+                                'evidencia_resolucion'=> $archivoEvidenciaUrl ?: ($tInfo['evidencia_resolucion'] ?? null),
+                                'actualizado_en'      => $fechaAct
                             ];
+
+                            if ($archivoEvidenciaUrl && file_exists(__DIR__ . '/' . $archivoEvidenciaUrl)) {
+                                $postDataWh['archivo_base64'] = base64_encode(file_get_contents(__DIR__ . '/' . $archivoEvidenciaUrl));
+                                $postDataWh['archivo_nombre'] = basename($archivoEvidenciaUrl);
+                                $postDataWh['mensaje'] = !empty($notasResolucion) ? $notasResolucion : "Evidencia de atención técnica adjuntada.";
+                                $postDataWh['autor_nombre'] = $nombreUsuario;
+                                $postDataWh['autor_rol'] = 'agente';
+                            }
 
                             $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
                             curl_setopt_array($chWh, [
@@ -2516,7 +2587,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                 <i class="bi bi-sliders2 text-info"></i> Gestión del Ticket
                             </h5>
 
-                            <form method="POST">
+                            <form method="POST" enctype="multipart/form-data">
                                 <input type="hidden" name="accion" value="actualizar_ticket">
                                 <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id']; ?>">
                                 <input type="hidden" name="redirect_ver" value="1">
@@ -2554,6 +2625,45 @@ if (!empty($ticketVerParam) && $pdo) {
                                 <div class="mb-3">
                                     <label class="form-label small text-secondary fw-semibold">Bitácora / Notas de Solución</label>
                                     <textarea name="notas_resolucion" class="form-control" rows="3" placeholder="Diagnóstico, solución técnica aplicada o motivo de cierre..." style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35); font-size: 0.88rem;"><?php echo htmlspecialchars($ticketActivo['notas_resolucion'] ?? ''); ?></textarea>
+                                </div>
+
+                                <!-- Evidencia (PDF, fotos, Excel, etc.) -->
+                                <div class="mb-3">
+                                    <label class="form-label small text-secondary fw-semibold d-flex align-items-center justify-content-between mb-1">
+                                        <span><i class="bi bi-paperclip text-info me-1"></i> Evidencia (PDF, fotos, Excel, etc.)</span>
+                                        <span class="badge bg-secondary bg-opacity-25 text-light" style="font-size: 0.68rem;">Opcional</span>
+                                    </label>
+                                    <input type="file" name="archivo_evidencia" class="form-control" style="background: rgba(4, 13, 26, 0.85); color: #fff; border-color: rgba(56, 189, 248, 0.35); font-size: 0.84rem;" accept=".pdf,image/*,.xls,.xlsx,.csv,.doc,.docx,.txt,.zip">
+                                    <div class="form-text text-secondary mt-1" style="font-size: 0.72rem;">
+                                        Adjunta comprobantes, reportes PDF, fotos/capturas o archivos Excel de la atención.
+                                    </div>
+                                    <?php if (!empty($ticketActivo['evidencia_resolucion'])): 
+                                        $evUrl = $ticketActivo['evidencia_resolucion'];
+                                        $evExt = strtolower(pathinfo($evUrl, PATHINFO_EXTENSION));
+                                        $esEvPdf = ($evExt === 'pdf');
+                                        $esEvImg = in_array($evExt, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                                        $esEvXls = in_array($evExt, ['xls', 'xlsx', 'csv']);
+                                    ?>
+                                        <div class="mt-2 p-2 rounded-2 border border-info border-opacity-30 d-flex align-items-center justify-content-between" style="background: rgba(14, 165, 233, 0.1);">
+                                            <div class="d-flex align-items-center gap-2 text-truncate me-2">
+                                                <?php if ($esEvPdf): ?>
+                                                    <i class="bi bi-file-earmark-pdf-fill text-danger fs-5 flex-shrink-0"></i>
+                                                <?php elseif ($esEvXls): ?>
+                                                    <i class="bi bi-file-earmark-excel-fill text-success fs-5 flex-shrink-0"></i>
+                                                <?php elseif ($esEvImg): ?>
+                                                    <i class="bi bi-file-earmark-image-fill text-info fs-5 flex-shrink-0"></i>
+                                                <?php else: ?>
+                                                    <i class="bi bi-paperclip text-info fs-5 flex-shrink-0"></i>
+                                                <?php endif; ?>
+                                                <span class="small text-white text-truncate" title="<?php echo htmlspecialchars(basename($evUrl)); ?>" style="font-size: 0.78rem;">
+                                                    <?php echo htmlspecialchars(basename($evUrl)); ?>
+                                                </span>
+                                            </div>
+                                            <a href="<?php echo htmlspecialchars($evUrl); ?>" target="_blank" download class="btn btn-sm btn-outline-info rounded-pill py-0.5 px-2.5 text-nowrap" style="font-size: 0.72rem;">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i> Ver Evidencia
+                                            </a>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
 
                                 <button type="submit" class="btn btn-info w-100 fw-bold rounded-3 text-dark py-2 shadow">
@@ -3734,7 +3844,7 @@ if (!empty($ticketVerParam) && $pdo) {
 <div class="modal fade" id="modalAtenderTicket" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content">
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="accion" value="actualizar_ticket">
                 <input type="hidden" name="ticket_id" id="atenderTicketId">
 
@@ -3797,6 +3907,17 @@ if (!empty($ticketVerParam) && $pdo) {
                         <div class="col-12">
                             <label class="form-label small text-secondary fw-semibold">Bitácora / Notas de Resolución del Agente</label>
                             <textarea name="notas_resolucion" id="atenderNotas" class="form-control" rows="4" placeholder="Escribe aquí las acciones realizadas, diagnóstico, solución aplicada o motivo de cierre..."></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small text-secondary fw-semibold d-flex align-items-center justify-content-between mb-1">
+                                <span><i class="bi bi-paperclip text-info me-1"></i> Evidencia (PDF, fotos, Excel, etc.)</span>
+                                <span class="badge bg-secondary bg-opacity-25 text-light" style="font-size: 0.68rem;">Opcional</span>
+                            </label>
+                            <input type="file" name="archivo_evidencia" class="form-control" accept=".pdf,image/*,.xls,.xlsx,.csv,.doc,.docx,.txt,.zip">
+                            <div class="form-text text-secondary" style="font-size: 0.72rem;">
+                                Adjunta comprobantes, reportes PDF, capturas de pantalla o archivos de Excel de la atención.
+                            </div>
                         </div>
                     </div>
                 </div>
