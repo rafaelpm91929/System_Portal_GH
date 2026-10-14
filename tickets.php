@@ -300,6 +300,17 @@ function sincronizarTicketsConCentral($pdo) {
                         prioridad = :prioridad,
                         evidencia_resolucion = COALESCE(NULLIF(:evidencia, ''), evidencia_resolucion),
                         solicitante_usuario = COALESCE(NULLIF(solicitante_usuario, ''), :sol_usr),
+                        requiere_firma_reporte = COALESCE(:req_firma, requiere_firma_reporte),
+                        reporte_orden_no = COALESCE(NULLIF(:rep_orden, ''), reporte_orden_no),
+                        reporte_problema = COALESCE(NULLIF(:rep_prob, ''), reporte_problema),
+                        reporte_trabajo_solicitado = COALESCE(NULLIF(:rep_sol, ''), reporte_trabajo_solicitado),
+                        reporte_observaciones = COALESCE(NULLIF(:rep_obs, ''), reporte_observaciones),
+                        reporte_trabajos_realizados = COALESCE(NULLIF(:rep_real, ''), reporte_trabajos_realizados),
+                        reporte_tecnico_nombre = COALESCE(NULLIF(:rep_tec, ''), reporte_tecnico_nombre),
+                        reporte_firmado = CASE WHEN :rep_firmado = 1 THEN 1 ELSE reporte_firmado END,
+                        reporte_firma_digital = COALESCE(NULLIF(:rep_firma_img, ''), reporte_firma_digital),
+                        reporte_firmado_por = COALESCE(NULLIF(:rep_firmado_por, ''), reporte_firmado_por),
+                        reporte_firmado_en = COALESCE(NULLIF(:rep_firmado_en, ''), reporte_firmado_en),
                         actualizado_en = :act
                     WHERE folio = :folio
                 ");
@@ -319,14 +330,25 @@ function sincronizarTicketsConCentral($pdo) {
 
                     if ($existe) {
                         $stmtUpd->execute([
-                            ':estado'    => $tc['estado'] ?? 'Abierto',
-                            ':asignado'  => $tc['asignado_a'] ?? '',
-                            ':notas'     => $tc['notas_resolucion'] ?? '',
-                            ':evidencia' => $tc['evidencia_resolucion'] ?? '',
-                            ':prioridad' => $tc['prioridad'] ?? 'Media',
-                            ':sol_usr'   => $tc['solicitante_usuario'] ?? '',
-                            ':act'       => $tc['actualizado_en'] ?? date('Y-m-d H:i:s'),
-                            ':folio'     => $tc['folio']
+                            ':estado'          => $tc['estado'] ?? 'Abierto',
+                            ':asignado'        => $tc['asignado_a'] ?? '',
+                            ':notas'           => $tc['notas_resolucion'] ?? '',
+                            ':evidencia'       => $tc['evidencia_resolucion'] ?? '',
+                            ':prioridad'       => $tc['prioridad'] ?? 'Media',
+                            ':sol_usr'         => $tc['solicitante_usuario'] ?? '',
+                            ':req_firma'       => isset($tc['requiere_firma_reporte']) ? (int)$tc['requiere_firma_reporte'] : null,
+                            ':rep_orden'       => $tc['reporte_orden_no'] ?? '',
+                            ':rep_prob'        => $tc['reporte_problema'] ?? '',
+                            ':rep_sol'         => $tc['reporte_trabajo_solicitado'] ?? '',
+                            ':rep_obs'         => $tc['reporte_observaciones'] ?? '',
+                            ':rep_real'        => $tc['reporte_trabajos_realizados'] ?? '',
+                            ':rep_tec'         => $tc['reporte_tecnico_nombre'] ?? '',
+                            ':rep_firmado'     => !empty($tc['reporte_firmado']) ? 1 : 0,
+                            ':rep_firma_img'   => $tc['reporte_firma_digital'] ?? '',
+                            ':rep_firmado_por' => $tc['reporte_firmado_por'] ?? '',
+                            ':rep_firmado_en'  => $tc['reporte_firmado_en'] ?? null,
+                            ':act'             => $tc['actualizado_en'] ?? date('Y-m-d H:i:s'),
+                            ':folio'           => $tc['folio']
                         ]);
                     } else {
                         $stmtIns->execute([
@@ -745,6 +767,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
             } catch (Throwable $t) {
                 $error = "Error al guardar el mensaje: " . $t->getMessage();
             }
+        }
+    }
+
+    // 2.5 Firmar Digitalmente Reporte de Servicio de Infraestructura por el Solicitante
+    elseif ($accion === 'firmar_reporte_usuario') {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        $firmaBase64 = trim($_POST['reporte_firma_digital'] ?? '');
+        $firmadoPor = trim($_POST['reporte_firmado_por'] ?? $nombreUsuario);
+
+        if ($ticketId > 0 && !empty($firmaBase64)) {
+            try {
+                $stmtTk = $pdo->prepare("SELECT * FROM tickets_soporte WHERE id = ?");
+                $stmtTk->execute([$ticketId]);
+                $tk = $stmtTk->fetch(PDO::FETCH_ASSOC);
+
+                if ($tk && !empty($tk['requiere_firma_reporte'])) {
+                    $fechaFirma = date('Y-m-d H:i:s');
+                    $folioTk = $tk['folio'] ?? ('TK-' . $ticketId);
+
+                    // 1. Guardar localmente en la agencia
+                    $stmtFirmaLoc = $pdo->prepare("
+                        UPDATE tickets_soporte 
+                        SET reporte_firmado = 1,
+                            reporte_firma_digital = :firma,
+                            reporte_firmado_por = :por,
+                            reporte_firmado_en = :fec,
+                            actualizado_en = :fec
+                        WHERE id = :id
+                    ");
+                    $stmtFirmaLoc->execute([
+                        ':firma' => $firmaBase64,
+                        ':por'   => $firmadoPor,
+                        ':fec'   => $fechaFirma,
+                        ':id'    => $ticketId
+                    ]);
+
+                    // 2. Registrar en la conversación del ticket local
+                    try {
+                        $avisoFirma = "✍️ El solicitante " . $firmadoPor . " ha firmado digitalmente el Reporte Oficial de Servicio Técnico (Orden No. " . $folioTk . ").";
+                        $stmtMsgLoc = $pdo->prepare("
+                            INSERT INTO tickets_mensajes
+                            (ticket_id, folio, autor_usuario, autor_nombre, autor_rol, mensaje, creado_en)
+                            VALUES
+                            (?, ?, ?, ?, 'solicitante', ?, ?)
+                        ");
+                        $stmtMsgLoc->execute([$ticketId, $folioTk, $loginUsuario, $firmadoPor, $avisoFirma, $fechaFirma]);
+                    } catch (Throwable $eMsgL) {}
+
+                    // 3. Enviar la firma inmediatamente a Central TI (portal.grupohuerta.mx)
+                    try {
+                        $identidad = obtenerIdentidadAgenciaActual($pdo);
+                        $tokenCentral = $tokenAgencia ?: ($identidad['token'] ?? 'GH_SISTEMAS_TICKETS_2026!');
+                        $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php';
+                        $payloadFirma = [
+                            'token'                 => $tokenCentral,
+                            'accion'                => 'firmar_reporte',
+                            'folio'                 => $folioTk,
+                            'ticket_id'             => $ticketId,
+                            'reporte_firma_digital' => $firmaBase64,
+                            'reporte_firmado_por'   => $firmadoPor,
+                            'reporte_firmado_en'    => $fechaFirma
+                        ];
+
+                        $chSign = curl_init($urlCentral);
+                        curl_setopt_array($chSign, [
+                            CURLOPT_RETURNTRANSFER => true,
+                            CURLOPT_POST           => true,
+                            CURLOPT_POSTFIELDS     => json_encode($payloadFirma),
+                            CURLOPT_TIMEOUT        => 8,
+                            CURLOPT_SSL_VERIFYPEER => false,
+                            CURLOPT_HTTPHEADER     => [
+                                'Content-Type: application/json',
+                                'Authorization: Bearer ' . $tokenCentral,
+                                'User-Agent: PortalAgencia/2.0'
+                            ]
+                        ]);
+                        @curl_exec($chSign);
+                        @curl_close($chSign);
+                    } catch (Throwable $eSignRem) {}
+
+                    header("Location: tickets.php?ver=" . $ticketId . "&firmado_ok=1#reporte_servicio");
+                    exit();
+                } else {
+                    $error = "El ticket no requiere firma de reporte o no fue encontrado.";
+                }
+            } catch (Throwable $eSignErr) {
+                $error = "Error al guardar firma digital: " . $eSignErr->getMessage();
+            }
+        } else {
+            $error = "La firma digital es requerida para confirmar el reporte.";
         }
     }
 
@@ -2080,6 +2192,289 @@ if ($ticketSeleccionado) {
                     </div>
                 <?php endif; ?>
 
+                <!-- ======================================================= -->
+                <!-- APARTADO DE FIRMA DIGITAL / REPORTE DE SERVICIO TÉCNICO -->
+                <!-- Solo aparece si el técnico de TI habilitó el reporte    -->
+                <!-- ======================================================= -->
+                <?php if (!empty($ticketSeleccionado['requiere_firma_reporte'])): 
+                    $repOrdenNo = !empty($ticketSeleccionado['reporte_orden_no']) ? $ticketSeleccionado['reporte_orden_no'] : ($ticketSeleccionado['folio'] ?? ('TK-' . $ticketSeleccionado['id']));
+                    $repProblema = !empty($ticketSeleccionado['reporte_problema']) ? $ticketSeleccionado['reporte_problema'] : ($ticketSeleccionado['descripcion'] ?? '');
+                    $repTrabajoSol = $ticketSeleccionado['reporte_trabajo_solicitado'] ?? '';
+                    $repObservaciones = $ticketSeleccionado['reporte_observaciones'] ?? '';
+                    $repTrabajosReal = $ticketSeleccionado['reporte_trabajos_realizados'] ?? '';
+                    $repTecnico = !empty($ticketSeleccionado['reporte_tecnico_nombre']) ? $ticketSeleccionado['reporte_tecnico_nombre'] : (!empty($ticketSeleccionado['asignado_a']) ? $ticketSeleccionado['asignado_a'] : 'Dirección Central de Sistemas');
+                    $repFirmado = !empty($ticketSeleccionado['reporte_firmado']);
+                    $repFirmaImg = $ticketSeleccionado['reporte_firma_digital'] ?? '';
+                    $repFirmadoPor = $ticketSeleccionado['reporte_firmado_por'] ?? '';
+                    $repFirmadoEn = $ticketSeleccionado['reporte_firmado_en'] ?? '';
+                ?>
+                    <div class="detail-card mb-4" id="reporte_servicio" style="border-color: <?php echo $repFirmado ? 'rgba(16, 185, 129, 0.45)' : 'rgba(245, 158, 11, 0.55)'; ?>; background: <?php echo $repFirmado ? 'linear-gradient(145deg, #062319 0%, #03140e 100%)' : 'linear-gradient(145deg, #1f1604 0%, #0d0a02 100%)'; ?>; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+                        
+                        <!-- Encabezado del Formato -->
+                        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 pb-3 border-bottom border-secondary border-opacity-25">
+                            <div>
+                                <div class="d-flex align-items-center gap-2 mb-1">
+                                    <span class="badge <?php echo $repFirmado ? 'bg-success' : 'bg-warning text-dark'; ?> fw-bold px-2.5 py-1">
+                                        <i class="bi <?php echo $repFirmado ? 'bi-patch-check-fill' : 'bi-pen-fill'; ?> me-1"></i>
+                                        <?php echo $repFirmado ? 'REPORTE FIRMADO DIGITALMENTE' : 'FIRMA DIGITAL REQUERIDA'; ?>
+                                    </span>
+                                    <span class="badge bg-secondary bg-opacity-30 text-light font-monospace">
+                                        ORDEN NO. <strong class="text-info"><?php echo htmlspecialchars($repOrdenNo); ?></strong>
+                                    </span>
+                                </div>
+                                <h5 class="fw-bold text-white mb-0">
+                                    Formato Oficial de Servicio Técnico &bull; Área Infraestructura
+                                </h5>
+                            </div>
+                            <?php if ($repFirmado): ?>
+                                <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1.5" onclick="imprimirReporteServicioAgencia()">
+                                    <i class="bi bi-printer-fill"></i> Imprimir / Guardar PDF
+                                </button>
+                            <?php endif; ?>
+                        </div>
+
+                        <?php if (isset($_GET['firmado_ok'])): ?>
+                            <div class="alert alert-success d-flex align-items-center gap-2 rounded-3 mb-3 py-2 px-3">
+                                <i class="bi bi-check-circle-fill fs-5"></i>
+                                <div>¡Firma digital registrada y sincronizada correctamente con la Dirección de Sistemas!</div>
+                            </div>
+                        <?php endif; ?>
+
+                        <!-- Cuerpo del Reporte -->
+                        <div class="rounded-3 p-3 p-md-4 mb-3" style="background: rgba(3, 11, 23, 0.7); border: 1px solid rgba(255, 255, 255, 0.1);">
+                            
+                            <!-- Metadatos Básicos -->
+                            <div class="row g-3 mb-3 pb-3 border-bottom border-secondary border-opacity-20 text-white" style="font-size: 0.88rem;">
+                                <div class="col-sm-6 col-md-3">
+                                    <span class="text-secondary small d-block text-uppercase fw-semibold">Orden NO:</span>
+                                    <strong class="text-info font-monospace fs-6"><?php echo htmlspecialchars($repOrdenNo); ?></strong>
+                                </div>
+                                <div class="col-sm-6 col-md-3">
+                                    <span class="text-secondary small d-block text-uppercase fw-semibold">Técnico que Atendió:</span>
+                                    <strong class="text-white"><?php echo htmlspecialchars($repTecnico); ?></strong>
+                                </div>
+                                <div class="col-sm-6 col-md-3">
+                                    <span class="text-secondary small d-block text-uppercase fw-semibold">Solicitante:</span>
+                                    <span class="text-light"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_nombre'] ?? 'Solicitante'); ?></span>
+                                </div>
+                                <div class="col-sm-6 col-md-3">
+                                    <span class="text-secondary small d-block text-uppercase fw-semibold">Área:</span>
+                                    <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-30">INFRAESTRUCTURA</span>
+                                </div>
+                            </div>
+
+                            <!-- 1. Necesidad o Problema -->
+                            <div class="mb-3">
+                                <div class="text-secondary small fw-bold text-uppercase mb-1">
+                                    <i class="bi bi-exclamation-circle text-info me-1"></i> Necesidad o Problema:
+                                </div>
+                                <div class="p-2.5 px-3 rounded-2 text-white" style="background: rgba(4, 13, 26, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.9rem; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repProblema); ?>
+                                </div>
+                            </div>
+
+                            <!-- 2. Trabajo Solicitado -->
+                            <div class="mb-3">
+                                <div class="text-secondary small fw-bold text-uppercase mb-1">
+                                    <i class="bi bi-card-checklist text-info me-1"></i> Trabajo Solicitado (Llenado por Técnico):
+                                </div>
+                                <div class="p-2.5 px-3 rounded-2 text-white" style="background: rgba(4, 13, 26, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.9rem; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repTrabajoSol ?: 'Revisión y soporte de infraestructura.'); ?>
+                                </div>
+                            </div>
+
+                            <!-- 3. Trabajos Realizados -->
+                            <div class="mb-3">
+                                <div class="text-secondary small fw-bold text-uppercase mb-1">
+                                    <i class="bi bi-tools text-info me-1"></i> Trabajos Realizados:
+                                </div>
+                                <div class="p-2.5 px-3 rounded-2 text-white" style="background: rgba(4, 13, 26, 0.85); border: 1px solid rgba(56, 189, 248, 0.25); font-size: 0.92rem; line-height: 1.6; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repTrabajosReal ?: 'Trabajos concluidos de conformidad.'); ?>
+                                </div>
+                            </div>
+
+                            <!-- 4. Observaciones -->
+                            <div class="mb-3">
+                                <div class="text-secondary small fw-bold text-uppercase mb-1">
+                                    <i class="bi bi-chat-square-text text-info me-1"></i> Observaciones:
+                                </div>
+                                <div class="p-2.5 px-3 rounded-2 text-white" style="background: rgba(4, 13, 26, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); font-size: 0.9rem; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repObservaciones ?: 'Sin observaciones adicionales.'); ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <?php if ($repFirmado): ?>
+                            <!-- SECCIÓN: FIRMA YA REGISTRADA -->
+                            <div class="p-3 rounded-3 border border-success border-opacity-40 d-flex flex-wrap align-items-center justify-content-between gap-3" style="background: rgba(16, 185, 129, 0.08);">
+                                <div class="d-flex align-items-center gap-3">
+                                    <?php if (!empty($repFirmaImg)): ?>
+                                        <div class="p-2 bg-white rounded-2 shadow-sm text-center" style="max-width: 220px;">
+                                            <img src="<?php echo htmlspecialchars($repFirmaImg); ?>" alt="Firma Digital" style="max-height: 70px; max-width: 200px; object-fit: contain;">
+                                        </div>
+                                    <?php endif; ?>
+                                    <div>
+                                        <div class="text-success fw-bold d-flex align-items-center gap-1.5">
+                                            <i class="bi bi-check-circle-fill"></i> Conformidad Certificada Digitalmente
+                                        </div>
+                                        <div class="text-white small">
+                                            Firmado por: <strong><?php echo htmlspecialchars($repFirmadoPor); ?></strong>
+                                        </div>
+                                        <div class="text-secondary" style="font-size: 0.75rem;">
+                                            Fecha y hora: <?php echo formatearFechaHoraMensaje($repFirmadoEn); ?>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1.5 fw-semibold" onclick="imprimirReporteServicioAgencia()">
+                                        <i class="bi bi-printer me-1"></i> Imprimir Reporte Oficial
+                                    </button>
+                                </div>
+                            </div>
+
+                        <?php else: ?>
+                            <!-- SECCIÓN: RECUADRO INTERACTIVO DE FIRMA DIGITAL -->
+                            <div class="p-3 p-md-4 rounded-3 border border-warning border-opacity-40" style="background: rgba(245, 158, 11, 0.06);">
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <i class="bi bi-pencil-fill text-warning fs-5"></i>
+                                    <h6 class="fw-bold text-white mb-0">Firmar Formato de Reporte de Servicio Técnico</h6>
+                                </div>
+                                <p class="text-secondary small mb-3">
+                                    Dibuja tu firma digital en el recuadro a continuación usando tu <strong>mouse</strong>, <strong>dedo</strong> o <strong>pantalla táctil</strong> para certificar de conformidad los trabajos de infraestructura realizados:
+                                </p>
+
+                                <div class="row g-3 align-items-end">
+                                    <div class="col-lg-7">
+                                        <div class="d-flex align-items-center justify-content-between mb-1">
+                                            <label class="form-label text-secondary small fw-bold text-uppercase mb-0">
+                                                <i class="bi bi-brush text-warning me-1"></i> Área de Trazo de Firma Digital:
+                                            </label>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2 text-white-50" style="font-size: 0.72rem;" onclick="limpiarCanvasFirma()">
+                                                <i class="bi bi-eraser me-1"></i> Limpiar Trazo
+                                            </button>
+                                        </div>
+                                        <div class="position-relative" style="background: #ffffff; border-radius: 8px; border: 2px dashed #0284c7; overflow: hidden;">
+                                            <canvas id="firmaDigitalCanvas" width="600" height="170" style="background: #ffffff; width: 100%; height: 170px; display: block; cursor: crosshair; touch-action: none;"></canvas>
+                                            <div class="position-absolute bottom-0 start-0 w-100 text-center pb-1 text-muted pe-none" style="font-size: 0.7rem; opacity: 0.45; border-top: 1px dotted #cbd5e1;">
+                                                Línea de firma &bull; Firma sobre este espacio
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-lg-5">
+                                        <form id="formFirmaDigital" method="POST" action="tickets.php?ver=<?php echo $ticketSeleccionado['id']; ?>">
+                                            <input type="hidden" name="accion" value="firmar_reporte_usuario">
+                                            <input type="hidden" name="ticket_id" value="<?php echo $ticketSeleccionado['id']; ?>">
+                                            <input type="hidden" name="reporte_firma_digital" id="hiddenFirmaDigital" value="">
+
+                                            <div class="mb-3">
+                                                <label class="form-label text-secondary small fw-bold text-uppercase">
+                                                    <i class="bi bi-person-check text-info me-1"></i> Nombre de Quien Firma:
+                                                </label>
+                                                <input type="text" name="reporte_firmado_por" id="inputFirmadoPor" class="form-control rounded-3" style="background: #061325; color: #fff; border: 1px solid rgba(56, 189, 248, 0.4);" value="<?php echo htmlspecialchars($nombreUsuario); ?>" placeholder="Escribe tu nombre completo..." required>
+                                                <div class="form-text text-secondary" style="font-size: 0.72rem;">Nombre que figurará en el comprobante de conformidad.</div>
+                                            </div>
+
+                                            <button type="button" class="btn btn-success w-100 py-2.5 rounded-3 fw-bold shadow-lg d-flex align-items-center justify-content-center gap-2" onclick="enviarFirmaDigital()">
+                                                <i class="bi bi-check2-circle fs-5"></i>
+                                                <span>Confirmar y Enviar Firma Digital</span>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- HOJA OCULTA PARA IMPRESIÓN OFICIAL -->
+                    <div id="hojaReporteOficialAgencia" class="d-none">
+                        <div style="background: #ffffff; color: #0f172a; padding: 30px; font-family: sans-serif;">
+                            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px;">
+                                <div>
+                                    <h2 style="margin: 0; color: #0284c7; font-weight: 800;">GRUPO HUERTA</h2>
+                                    <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Dirección Central de Sistemas &bull; Infraestructura y Soporte</div>
+                                    <h4 style="margin: 8px 0 0 0; color: #0f172a;">FORMATO DE REPORTE Y CONFORMIDAD DE SERVICIO TÉCNICO</h4>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="background: #0f172a; color: #fff; padding: 6px 14px; font-weight: 700; font-family: monospace; font-size: 14px; border-radius: 4px; display: inline-block;">
+                                        ORDEN NO. <?php echo htmlspecialchars($repOrdenNo); ?>
+                                    </div>
+                                    <div style="font-size: 12px; color: #64748b; margin-top: 6px;">Fecha: <?php echo htmlspecialchars(date('d/m/Y', strtotime($ticketSeleccionado['creado_en']))); ?></div>
+                                </div>
+                            </div>
+
+                            <table style="width: 100%; font-size: 13px; margin-bottom: 20px; border-collapse: collapse;">
+                                <tr>
+                                    <td style="padding: 6px; font-weight: 700; color: #475569; width: 25%;">Agencia Solicitante:</td>
+                                    <td style="padding: 6px; font-weight: 700; color: #0f172a;"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_agencia'] ?? 'Agencia'); ?></td>
+                                    <td style="padding: 6px; font-weight: 700; color: #475569; width: 25%;">Técnico Responsable:</td>
+                                    <td style="padding: 6px; font-weight: 700; color: #0f172a;"><?php echo htmlspecialchars($repTecnico); ?></td>
+                                </tr>
+                                <tr>
+                                    <td style="padding: 6px; font-weight: 700; color: #475569;">Solicitante del Ticket:</td>
+                                    <td style="padding: 6px; color: #0f172a;"><?php echo htmlspecialchars($ticketSeleccionado['solicitante_nombre'] ?? 'Solicitante'); ?></td>
+                                    <td style="padding: 6px; font-weight: 700; color: #475569;">Área Especializada:</td>
+                                    <td style="padding: 6px; font-weight: 700; color: #0284c7;">INFRAESTRUCTURA (REDES / SITE / HARDWARE)</td>
+                                </tr>
+                            </table>
+
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">1. Necesidad o Problema Reportado:</div>
+                                <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repProblema); ?>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">2. Trabajo Solicitado:</div>
+                                <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repTrabajoSol ?: 'Atención y soporte técnico de infraestructura.'); ?>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">3. Trabajos Realizados por el Técnico:</div>
+                                <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repTrabajosReal ?: 'Trabajos concluidos.'); ?>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: 24px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">4. Observaciones y Recomendaciones:</div>
+                                <div style="padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 13px; line-height: 1.5; white-space: pre-line;">
+                                    <?php echo htmlspecialchars($repObservaciones ?: 'Sin observaciones adicionales.'); ?>
+                                </div>
+                            </div>
+
+                            <table style="width: 100%; margin-top: 40px; border-top: 1px solid #cbd5e1; padding-top: 20px;">
+                                <tr>
+                                    <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                                        <div style="height: 80px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px;">
+                                            <?php echo htmlspecialchars($repTecnico); ?>
+                                        </div>
+                                        <div style="border-top: 1px solid #000; width: 75%; margin: 0 auto; padding-top: 6px; font-size: 12px; font-weight: 700;">
+                                            Técnico Responsable<br><span style="font-size: 10px; color: #64748b; font-weight: normal;">Dirección Central de Sistemas</span>
+                                        </div>
+                                    </td>
+                                    <td style="width: 50%; text-align: center; vertical-align: bottom;">
+                                        <div style="height: 80px; display: flex; align-items: center; justify-content: center;">
+                                            <?php if (!empty($repFirmaImg)): ?>
+                                                <img src="<?php echo htmlspecialchars($repFirmaImg); ?>" style="max-height: 75px; max-width: 220px;">
+                                            <?php else: ?>
+                                                <span style="color: #64748b; font-style: italic;">Pendiente de firma</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div style="border-top: 1px solid #000; width: 75%; margin: 0 auto; padding-top: 6px; font-size: 12px; font-weight: 700;">
+                                            <?php echo htmlspecialchars($repFirmadoPor ?: ($ticketSeleccionado['solicitante_nombre'] ?? 'Solicitante')); ?><br>
+                                            <span style="font-size: 10px; color: #16a34a; font-weight: 700;">Firma Digital de Conformidad &bull; <?php echo formatearFechaHoraMensaje($repFirmadoEn); ?></span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <!-- Hilo de Mensajes y Respuestas -->
                 <div class="detail-card" id="conversacion">
                     <h5 class="fw-bold text-white mb-3 d-flex align-items-center gap-2">
@@ -2469,6 +2864,118 @@ if ($ticketSeleccionado) {
         document.getElementById('buscadorTickets').value = '';
         filtrarTicketsEnVivo();
     }
+
+    // ==========================================
+    // FIRMA DIGITAL TÁCTIL Y MOUSE (HTML5 CANVAS)
+    // ==========================================
+    let canvasFirma = null;
+    let ctxFirma = null;
+    let trazandoFirma = false;
+    let tieneTrazosFirma = false;
+
+    function inicializarCanvasFirma() {
+        canvasFirma = document.getElementById('firmaDigitalCanvas');
+        if (!canvasFirma) return;
+        ctxFirma = canvasFirma.getContext('2d');
+        
+        ctxFirma.strokeStyle = '#022c5e';
+        ctxFirma.lineWidth = 2.8;
+        ctxFirma.lineCap = 'round';
+        ctxFirma.lineJoin = 'round';
+
+        function getPos(e) {
+            const rect = canvasFirma.getBoundingClientRect();
+            const scaleX = canvasFirma.width / rect.width;
+            const scaleY = canvasFirma.height / rect.height;
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: (e.touches[0].clientX - rect.left) * scaleX,
+                    y: (e.touches[0].clientY - rect.top) * scaleY
+                };
+            }
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function empezarTrazo(e) {
+            e.preventDefault();
+            trazandoFirma = true;
+            tieneTrazosFirma = true;
+            const pos = getPos(e);
+            ctxFirma.beginPath();
+            ctxFirma.moveTo(pos.x, pos.y);
+        }
+
+        function moverTrazo(e) {
+            if (!trazandoFirma) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            ctxFirma.lineTo(pos.x, pos.y);
+            ctxFirma.stroke();
+        }
+
+        function terminarTrazo(e) {
+            if (!trazandoFirma) return;
+            e.preventDefault();
+            trazandoFirma = false;
+        }
+
+        canvasFirma.addEventListener('mousedown', empezarTrazo);
+        canvasFirma.addEventListener('mousemove', moverTrazo);
+        window.addEventListener('mouseup', terminarTrazo);
+
+        canvasFirma.addEventListener('touchstart', empezarTrazo, { passive: false });
+        canvasFirma.addEventListener('touchmove', moverTrazo, { passive: false });
+        window.addEventListener('touchend', terminarTrazo, { passive: false });
+    }
+
+    function limpiarCanvasFirma() {
+        if (!canvasFirma || !ctxFirma) return;
+        ctxFirma.clearRect(0, 0, canvasFirma.width, canvasFirma.height);
+        tieneTrazosFirma = false;
+    }
+
+    function enviarFirmaDigital() {
+        if (!tieneTrazosFirma) {
+            alert('Por favor realiza tu trazo de firma en el recuadro blanco antes de confirmar.');
+            return;
+        }
+        const inputNom = document.getElementById('inputFirmadoPor');
+        const nombre = (inputNom ? inputNom.value : '').trim();
+        if (!nombre) {
+            alert('Por favor escribe tu nombre completo para certificar la firma.');
+            return;
+        }
+        const dataUrl = canvasFirma.toDataURL('image/png');
+        document.getElementById('hiddenFirmaDigital').value = dataUrl;
+        document.getElementById('formFirmaDigital').submit();
+    }
+
+    function imprimirReporteServicioAgencia() {
+        const el = document.getElementById('hojaReporteOficialAgencia');
+        if (!el) {
+            window.print();
+            return;
+        }
+        const ventana = window.open('', '_blank', 'width=900,height=1100');
+        ventana.document.write('<!DOCTYPE html><html><head><title>Reporte de Servicio Técnico - Grupo Huerta</title>');
+        ventana.document.write('<style>body{background:#fff;margin:0;padding:25px;font-family:sans-serif;}@media print{@page{margin:15mm;}}</style>');
+        ventana.document.write('</head><body>');
+        ventana.document.write(el.innerHTML);
+        ventana.document.write('</body></html>');
+        ventana.document.close();
+        ventana.focus();
+        setTimeout(() => {
+            ventana.print();
+            ventana.close();
+        }, 600);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        inicializarCanvasFirma();
+    });
 </script>
 <?php include_once 'pwa_body.php'; ?>
 </body>

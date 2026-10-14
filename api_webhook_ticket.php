@@ -139,6 +139,41 @@ try {
         ]);
     }
 
+    // Si viene información del reporte de servicio técnico (Infraestructura)
+    if (isset($datos['requiere_firma_reporte']) || isset($_POST['requiere_firma_reporte']) || ($datos['accion'] ?? '') === 'reporte_servicio') {
+        $reqFirma = intval($datos['requiere_firma_reporte'] ?? ($_POST['requiere_firma_reporte'] ?? 1));
+        $repOrden = trim($datos['reporte_orden_no'] ?? ($_POST['reporte_orden_no'] ?? $folio));
+        $repProb  = trim($datos['reporte_problema'] ?? ($_POST['reporte_problema'] ?? ''));
+        $repSol   = trim($datos['reporte_trabajo_solicitado'] ?? ($_POST['reporte_trabajo_solicitado'] ?? ''));
+        $repObs   = trim($datos['reporte_observaciones'] ?? ($_POST['reporte_observaciones'] ?? ''));
+        $repReal  = trim($datos['reporte_trabajos_realizados'] ?? ($_POST['reporte_trabajos_realizados'] ?? ''));
+        $repTec   = trim($datos['reporte_tecnico_nombre'] ?? ($_POST['reporte_tecnico_nombre'] ?? ''));
+
+        $stmtRep = $pdo->prepare("
+            UPDATE tickets_soporte 
+            SET requiere_firma_reporte = :req,
+                reporte_orden_no = :ord,
+                reporte_problema = :prob,
+                reporte_trabajo_solicitado = :sol,
+                reporte_observaciones = :obs,
+                reporte_trabajos_realizados = :real,
+                reporte_tecnico_nombre = :tec,
+                actualizado_en = :act
+            WHERE folio = :folio
+        ");
+        $stmtRep->execute([
+            ':req'   => $reqFirma,
+            ':ord'   => $repOrden,
+            ':prob'  => $repProb,
+            ':sol'   => $repSol,
+            ':obs'   => $repObs,
+            ':real'  => $repReal,
+            ':tec'   => $repTec,
+            ':act'   => $actualizadoEn,
+            ':folio' => $folio
+        ]);
+    }
+
     $filasAfectadas = $stmt->rowCount();
 
     // Si viene un mensaje en el webhook, insertarlo en tickets_mensajes

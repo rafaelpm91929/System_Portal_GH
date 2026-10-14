@@ -397,6 +397,30 @@ function asegurarTablaTickets($pdo = null) {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN evidencia_resolucion VARCHAR(255) NULL;");
         } catch (Throwable $eAlt2) {}
 
+        // Migración automática de columnas para Reporte de Servicio y Firma Digital (Infraestructura)
+        $columnasReporte = [
+            'requiere_firma_reporte'      => "TINYINT(1) DEFAULT 0",
+            'reporte_orden_no'            => "VARCHAR(50) NULL",
+            'reporte_problema'            => "TEXT NULL",
+            'reporte_trabajo_solicitado'  => "TEXT NULL",
+            'reporte_observaciones'       => "TEXT NULL",
+            'reporte_trabajos_realizados' => "TEXT NULL",
+            'reporte_tecnico_nombre'      => "VARCHAR(150) NULL",
+            'reporte_firmado'             => "TINYINT(1) DEFAULT 0",
+            'reporte_firma_digital'       => ($driver === 'sqlite' ? "TEXT NULL" : "MEDIUMTEXT NULL"),
+            'reporte_firmado_por'         => "VARCHAR(150) NULL",
+            'reporte_firmado_en'          => "DATETIME NULL"
+        ];
+        foreach ($columnasReporte as $col => $tipoCol) {
+            try {
+                $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN `{$col}` {$tipoCol};");
+            } catch (Throwable $eCol) {
+                try {
+                    $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN {$col} {$tipoCol};");
+                } catch (Throwable $eCol2) {}
+            }
+        }
+
         // Tabla de mensajes / contestaciones de chat de soporte
         if ($driver === 'sqlite') {
             $pdo->exec("
