@@ -483,6 +483,8 @@ function asegurarTablaCitas($pdo = null) {
                 CREATE TABLE IF NOT EXISTS citas_soporte (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     folio TEXT,
+                    ticket_id INTEGER NULL,
+                    ticket_folio TEXT NULL,
                     agencia TEXT NOT NULL,
                     area_sistemas TEXT DEFAULT 'INFRAESTRUCTURA',
                     tipo_cita TEXT DEFAULT 'Presencial',
@@ -496,6 +498,8 @@ function asegurarTablaCitas($pdo = null) {
                     hora_cita TEXT NOT NULL,
                     estado TEXT DEFAULT 'Programada',
                     notas_atencion TEXT,
+                    motivo_reprogramacion TEXT NULL,
+                    historial_cambios TEXT NULL,
                     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
                     actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
@@ -505,6 +509,8 @@ function asegurarTablaCitas($pdo = null) {
                 CREATE TABLE IF NOT EXISTS `citas_soporte` (
                     `id` INT AUTO_INCREMENT PRIMARY KEY,
                     `folio` VARCHAR(50),
+                    `ticket_id` INT NULL,
+                    `ticket_folio` VARCHAR(50) NULL,
                     `agencia` VARCHAR(100) NOT NULL,
                     `area_sistemas` VARCHAR(100) DEFAULT 'INFRAESTRUCTURA',
                     `tipo_cita` VARCHAR(50) DEFAULT 'Presencial',
@@ -518,10 +524,47 @@ function asegurarTablaCitas($pdo = null) {
                     `hora_cita` VARCHAR(20) NOT NULL,
                     `estado` VARCHAR(50) DEFAULT 'Programada',
                     `notas_atencion` TEXT,
+                    `motivo_reprogramacion` TEXT NULL,
+                    `historial_cambios` TEXT NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+        }
+
+        // Auto-migración si la tabla ya existía previamente
+        $cols = [];
+        try {
+            $stmtCols = $pdo->query("PRAGMA table_info(citas_soporte)");
+            if ($stmtCols) {
+                while ($r = $stmtCols->fetch(PDO::FETCH_ASSOC)) {
+                    $cols[] = strtolower($r['name'] ?? '');
+                }
+            }
+        } catch (Throwable $eColsSqlite) {
+            try {
+                $stmtCols = $pdo->query("SHOW COLUMNS FROM citas_soporte");
+                if ($stmtCols) {
+                    while ($r = $stmtCols->fetch(PDO::FETCH_ASSOC)) {
+                        $cols[] = strtolower($r['Field'] ?? '');
+                    }
+                }
+            } catch (Throwable $eColsMysql) {}
+        }
+
+        if (!empty($cols)) {
+            if (!in_array('ticket_id', $cols)) {
+                @$pdo->exec("ALTER TABLE citas_soporte ADD COLUMN ticket_id INT NULL");
+            }
+            if (!in_array('ticket_folio', $cols)) {
+                @$pdo->exec("ALTER TABLE citas_soporte ADD COLUMN ticket_folio VARCHAR(50) NULL");
+            }
+            if (!in_array('motivo_reprogramacion', $cols)) {
+                @$pdo->exec("ALTER TABLE citas_soporte ADD COLUMN motivo_reprogramacion TEXT NULL");
+            }
+            if (!in_array('historial_cambios', $cols)) {
+                @$pdo->exec("ALTER TABLE citas_soporte ADD COLUMN historial_cambios TEXT NULL");
+            }
         }
     } catch (Throwable $e) {}
 }
