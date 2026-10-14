@@ -175,6 +175,80 @@ if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion' || 
     }
 }
 
+// Acción de firma digital de reporte de servicio técnico (Infraestructura)
+if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
+    $folioReq = trim($datos['folio'] ?? ($_POST['folio'] ?? ''));
+    $ticketIdReq = intval($datos['ticket_id'] ?? ($_POST['ticket_id'] ?? 0));
+    $firmaDigital = trim($datos['reporte_firma_digital'] ?? ($_POST['reporte_firma_digital'] ?? ($datos['firma_base64'] ?? '')));
+    $firmadoPor = trim($datos['reporte_firmado_por'] ?? ($_POST['reporte_firmado_por'] ?? 'Usuario'));
+    $firmadoEn = trim($datos['reporte_firmado_en'] ?? ($_POST['reporte_firmado_en'] ?? date('Y-m-d H:i:s')));
+
+    if (empty($firmaDigital) || (empty($folioReq) && $ticketIdReq <= 0)) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'mensaje' => 'Firma digital y folio/ticket_id son requeridos.'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        $stmtFind = $pdo->prepare("SELECT id, folio, solicitante_nombre FROM tickets_soporte WHERE " . ($ticketIdReq > 0 ? "id = ?" : "folio = ?"));
+        $stmtFind->execute([$ticketIdReq > 0 ? $ticketIdReq : $folioReq]);
+        $targetTicket = $stmtFind->fetch(PDO::FETCH_ASSOC);
+
+        if (!$targetTicket) {
+            http_response_code(404);
+            echo json_encode(['status' => 'error', 'mensaje' => 'Ticket no encontrado.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $targetId = $targetTicket['id'];
+        $folioOficial = $targetTicket['folio'];
+
+        $stmtUpdF = $pdo->prepare("
+            UPDATE tickets_soporte 
+            SET reporte_firmado = 1,
+                reporte_firma_digital = :firma,
+                reporte_firmado_por = :por,
+                reporte_firmado_en = :fec,
+                actualizado_en = :fec
+            WHERE id = :id
+        ");
+        $stmtUpdF->execute([
+            ':firma' => $firmaDigital,
+            ':por'   => $firmadoPor,
+            ':fec'   => $firmadoEn,
+            ':id'    => $targetId
+        ]);
+
+        // Registrar aviso en la conversación del ticket
+        try {
+            $msgFirma = "✍️ El solicitante " . $firmadoPor . " ha firmado digitalmente el Reporte Oficial de Servicio Técnico (Orden No. " . $folioOficial . ").";
+            $stmtMsgF = $pdo->prepare("
+                INSERT INTO tickets_mensajes
+                (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, creado_en)
+                VALUES
+                (?, ?, ?, 'usuario', 'Sucursal', ?, ?)
+            ");
+            $stmtMsgF->execute([$targetId, 'firma_digital', $firmadoPor, $msgFirma, $firmadoEn]);
+        } catch (Throwable $eMsgF) {}
+
+        echo json_encode([
+            'status'             => 'ok',
+            'mensaje'            => 'Reporte de servicio firmado digitalmente y registrado en Central TI.',
+            'ticket_id'          => $targetId,
+            'folio'              => $folioOficial,
+            'reporte_firmado'    => 1,
+            'reporte_firmado_por'=> $firmadoPor,
+            'reporte_firmado_en' => $firmadoEn
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+
+    } catch (Throwable $eSign) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'mensaje' => 'Error al guardar firma en Central: ' . $eSign->getMessage()], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $agenciaNombre = trim($datos['agencia'] ?? ($datos['solicitante_agencia'] ?? 'Agencia Desconocida'));
 if (stripos($agenciaNombre, 'divol') !== false) {
     $agenciaNombre = 'Divol La Villa';

@@ -133,7 +133,7 @@ if (!empty($desdeFecha)) {
     $params[] = $desdeFecha;
 }
 
-$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, evidencia_resolucion, creado_en, actualizado_en, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, (SELECT COUNT(*) FROM tickets_mensajes WHERE ticket_id = tickets_soporte.id) AS total_mensajes FROM tickets_soporte";
+$sql = "SELECT id, folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, evidencia_resolucion, requiere_firma_reporte, reporte_orden_no, reporte_problema, reporte_trabajo_solicitado, reporte_observaciones, reporte_trabajos_realizados, reporte_tecnico_nombre, reporte_firmado, reporte_firma_digital, reporte_firmado_por, reporte_firmado_en, creado_en, actualizado_en, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, (SELECT COUNT(*) FROM tickets_mensajes WHERE ticket_id = tickets_soporte.id) AS total_mensajes FROM tickets_soporte";
 if (!empty($whereClauses)) {
     $sql .= " WHERE " . implode(' AND ', $whereClauses);
 }
