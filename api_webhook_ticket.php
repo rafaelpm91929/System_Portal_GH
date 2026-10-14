@@ -85,24 +85,59 @@ if (empty($folio)) {
     exit;
 }
 
+$evidenciaResolucion = trim($datos['evidencia_resolucion'] ?? ($_POST['evidencia_resolucion'] ?? ''));
+$evBase64 = $datos['evidencia_base64'] ?? ($_POST['evidencia_base64'] ?? '');
+$evNombre = $datos['evidencia_nombre'] ?? ($_POST['evidencia_nombre'] ?? '');
+if (!empty($evBase64) && !empty($evNombre)) {
+    $dirUpload = __DIR__ . '/uploads/tickets/';
+    if (!is_dir($dirUpload)) @mkdir($dirUpload, 0777, true);
+    $extE = strtolower(pathinfo($evNombre, PATHINFO_EXTENSION));
+    $nomEvGuardar = 'evidencia_wh_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $extE;
+    if (@file_put_contents($dirUpload . $nomEvGuardar, base64_decode($evBase64))) {
+        $evidenciaResolucion = 'uploads/tickets/' . $nomEvGuardar;
+    }
+}
+
 try {
-    $stmt = $pdo->prepare("
-        UPDATE tickets_soporte 
-        SET estado = :estado, 
-            asignado_a = :asignado, 
-            prioridad = :prioridad, 
-            notas_resolucion = :notas, 
-            actualizado_en = :act 
-        WHERE folio = :folio
-    ");
-    $stmt->execute([
-        ':estado'    => $estado,
-        ':asignado'  => $asignadoA,
-        ':prioridad' => $prioridad,
-        ':notas'     => $notasResolucion,
-        ':act'       => $actualizadoEn,
-        ':folio'     => $folio
-    ]);
+    if (!empty($evidenciaResolucion)) {
+        $stmt = $pdo->prepare("
+            UPDATE tickets_soporte 
+            SET estado = :estado, 
+                asignado_a = :asignado, 
+                prioridad = :prioridad, 
+                notas_resolucion = :notas, 
+                evidencia_resolucion = :evidencia,
+                actualizado_en = :act 
+            WHERE folio = :folio
+        ");
+        $stmt->execute([
+            ':estado'    => $estado,
+            ':asignado'  => $asignadoA,
+            ':prioridad' => $prioridad,
+            ':notas'     => $notasResolucion,
+            ':evidencia' => $evidenciaResolucion,
+            ':act'       => $actualizadoEn,
+            ':folio'     => $folio
+        ]);
+    } else {
+        $stmt = $pdo->prepare("
+            UPDATE tickets_soporte 
+            SET estado = :estado, 
+                asignado_a = :asignado, 
+                prioridad = :prioridad, 
+                notas_resolucion = :notas, 
+                actualizado_en = :act 
+            WHERE folio = :folio
+        ");
+        $stmt->execute([
+            ':estado'    => $estado,
+            ':asignado'  => $asignadoA,
+            ':prioridad' => $prioridad,
+            ':notas'     => $notasResolucion,
+            ':act'       => $actualizadoEn,
+            ':folio'     => $folio
+        ]);
+    }
 
     $filasAfectadas = $stmt->rowCount();
 

@@ -392,6 +392,11 @@ function asegurarTablaTickets($pdo = null) {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
         } catch (Throwable $eAlt) {}
 
+        // Migración automática de columna evidencia_resolucion
+        try {
+            $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN evidencia_resolucion VARCHAR(255) NULL;");
+        } catch (Throwable $eAlt2) {}
+
         // Tabla de mensajes / contestaciones de chat de soporte
         if ($driver === 'sqlite') {
             $pdo->exec("

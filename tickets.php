@@ -298,6 +298,7 @@ function sincronizarTicketsConCentral($pdo) {
                         asignado_a = :asignado, 
                         notas_resolucion = :notas, 
                         prioridad = :prioridad,
+                        evidencia_resolucion = COALESCE(NULLIF(:evidencia, ''), evidencia_resolucion),
                         solicitante_usuario = COALESCE(NULLIF(solicitante_usuario, ''), :sol_usr),
                         actualizado_en = :act
                     WHERE folio = :folio
@@ -305,8 +306,8 @@ function sincronizarTicketsConCentral($pdo) {
 
                 $stmtIns = $pdo->prepare("
                     INSERT INTO tickets_soporte 
-                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, creado_en, actualizado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (folio, area_sistemas, titulo, descripcion, prioridad, estado, asignado_a, notas_resolucion, evidencia_resolucion, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, creado_en, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ");
 
                 foreach ($dec['tickets'] as $tc) {
@@ -321,6 +322,7 @@ function sincronizarTicketsConCentral($pdo) {
                             ':estado'    => $tc['estado'] ?? 'Abierto',
                             ':asignado'  => $tc['asignado_a'] ?? '',
                             ':notas'     => $tc['notas_resolucion'] ?? '',
+                            ':evidencia' => $tc['evidencia_resolucion'] ?? '',
                             ':prioridad' => $tc['prioridad'] ?? 'Media',
                             ':sol_usr'   => $tc['solicitante_usuario'] ?? '',
                             ':act'       => $tc['actualizado_en'] ?? date('Y-m-d H:i:s'),
@@ -336,6 +338,7 @@ function sincronizarTicketsConCentral($pdo) {
                             $tc['estado'] ?? 'Abierto',
                             $tc['asignado_a'] ?? '',
                             $tc['notas_resolucion'] ?? '',
+                            $tc['evidencia_resolucion'] ?? '',
                             $tc['solicitante_usuario'] ?? '',
                             $tc['solicitante_nombre'] ?? 'Usuario',
                             $tc['solicitante_email'] ?? '',
@@ -1988,7 +1991,7 @@ if ($ticketSeleccionado) {
                 </div>
 
                 <!-- Respuesta de Central Sistemas si existe -->
-                <?php if (!empty(trim($ticketSeleccionado['notas_resolucion'] ?? ''))): ?>
+                <?php if (!empty(trim($ticketSeleccionado['notas_resolucion'] ?? '')) || !empty($ticketSeleccionado['evidencia_resolucion'])): ?>
                     <div class="detail-card" style="border-color: rgba(56, 189, 248, 0.45); background: linear-gradient(145deg, #09213d 0%, #06182c 100%);">
                         <div class="d-flex align-items-center justify-content-between mb-2">
                             <h5 class="fw-bold text-info mb-0 d-flex align-items-center gap-2">
@@ -1998,9 +2001,82 @@ if ($ticketSeleccionado) {
                                 <?php echo !empty($ticketSeleccionado['asignado_a']) ? htmlspecialchars($ticketSeleccionado['asignado_a']) : 'Dirección Central TI'; ?>
                             </span>
                         </div>
-                        <div class="p-3 rounded-3 text-white mt-3" style="background: rgba(3, 11, 23, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">
-                            <?php echo htmlspecialchars($ticketSeleccionado['notas_resolucion']); ?>
-                        </div>
+                        <?php if (!empty(trim($ticketSeleccionado['notas_resolucion'] ?? ''))): ?>
+                            <div class="p-3 rounded-3 text-white mt-3" style="background: rgba(3, 11, 23, 0.7); border: 1px solid rgba(56, 189, 248, 0.3); font-size: 0.95rem; line-height: 1.6; white-space: pre-line;">
+                                <?php echo htmlspecialchars($ticketSeleccionado['notas_resolucion']); ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($ticketSeleccionado['evidencia_resolucion'])): 
+                            $rawEvT = trim($ticketSeleccionado['evidencia_resolucion']);
+                            $extEvT = strtolower(pathinfo($rawEvT, PATHINFO_EXTENSION));
+                            $esEvPdf = ($extEvT === 'pdf');
+                            $esEvImg = in_array($extEvT, ['jpg', 'jpeg', 'png', 'webp', 'gif']);
+                            $esEvXls = in_array($extEvT, ['xls', 'xlsx', 'csv']);
+
+                            if (str_starts_with($rawEvT, 'http://') || str_starts_with($rawEvT, 'https://')) {
+                                $urlEvT = $rawEvT;
+                            } elseif (file_exists(__DIR__ . '/' . $rawEvT)) {
+                                $urlEvT = $rawEvT;
+                            } else {
+                                $urlEvT = 'https://portal.grupohuerta.mx/' . ltrim($rawEvT, '/');
+                            }
+                            $nombreEvT = basename($rawEvT);
+                        ?>
+                            <div class="mt-3 pt-3 border-top border-secondary border-opacity-25">
+                                <div class="text-secondary small fw-bold text-uppercase mb-2">
+                                    <i class="bi bi-paperclip text-info me-1"></i> Evidencia Adjunta de la Solución:
+                                </div>
+                                <?php if ($esEvPdf): ?>
+                                    <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3" style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); max-width: 520px;">
+                                        <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                            <i class="bi bi-file-earmark-pdf-fill text-danger fs-2 flex-shrink-0"></i>
+                                            <div class="text-truncate">
+                                                <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars($nombreEvT); ?>">
+                                                    <?php echo htmlspecialchars($nombreEvT); ?>
+                                                </div>
+                                                <div class="text-secondary" style="font-size: 0.73rem;">Documento PDF &bull; Evidencia técnica</div>
+                                            </div>
+                                        </div>
+                                        <a href="<?php echo htmlspecialchars($urlEvT); ?>" target="_blank" download class="btn btn-sm btn-danger rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                            <i class="bi bi-file-pdf me-1"></i> Abrir / Descargar PDF
+                                        </a>
+                                    </div>
+                                <?php elseif ($esEvXls): ?>
+                                    <div class="d-flex align-items-center justify-content-between p-2.5 px-3 rounded-3" style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); max-width: 520px;">
+                                        <div class="d-flex align-items-center gap-2.5 overflow-hidden">
+                                            <i class="bi bi-file-earmark-excel-fill text-success fs-2 flex-shrink-0"></i>
+                                            <div class="text-truncate">
+                                                <div class="text-white fw-bold small text-truncate" title="<?php echo htmlspecialchars($nombreEvT); ?>">
+                                                    <?php echo htmlspecialchars($nombreEvT); ?>
+                                                </div>
+                                                <div class="text-secondary" style="font-size: 0.73rem;">Hoja de cálculo / Reporte Excel</div>
+                                            </div>
+                                        </div>
+                                        <a href="<?php echo htmlspecialchars($urlEvT); ?>" target="_blank" download class="btn btn-sm btn-success rounded-pill px-3 py-1 text-nowrap ms-2 fw-semibold d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.78rem;">
+                                            <i class="bi bi-download me-1"></i> Descargar Excel
+                                        </a>
+                                    </div>
+                                <?php elseif ($esEvImg): ?>
+                                    <div class="mb-2">
+                                        <a href="<?php echo htmlspecialchars($urlEvT); ?>" target="_blank" title="Ver imagen completa">
+                                            <img src="<?php echo htmlspecialchars($urlEvT); ?>" alt="Evidencia" class="preview-img" style="border: 1px solid rgba(255,255,255,0.15); border-radius: 8px;">
+                                        </a>
+                                    </div>
+                                    <div>
+                                        <a href="<?php echo htmlspecialchars($urlEvT); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
+                                            <i class="bi bi-image me-1"></i> Ver imagen completa
+                                        </a>
+                                    </div>
+                                <?php else: ?>
+                                    <div>
+                                        <a href="<?php echo htmlspecialchars($urlEvT); ?>" target="_blank" class="btn btn-outline-info btn-sm rounded-3 px-3 fw-semibold">
+                                            <i class="bi bi-box-arrow-up-right me-1"></i> Ver / Descargar Evidencia (<?php echo strtoupper($extEvT); ?>)
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
 
