@@ -1543,4 +1543,70 @@ function obtenerEstadisticasAgente($pdo, $nombreAgente, $usuarioAgente = null) {
 
     return $stats;
 }
+
+/**
+ * Obtiene todos los agentes que tienen acceso al módulo de tickets y cuentan con áreas de atención asignadas
+ */
+function obtenerAgentesConAccesoTickets($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return [];
+    asegurarColumnasUsuarios($pdo);
+    try {
+        $sql = "
+            SELECT DISTINCT 
+                u.id, u.usuario, u.nombre, u.email, u.rol, u.agencia, u.activo, 
+                COALESCE(NULLIF(TRIM(u.areas_tickets), ''), CASE WHEN LOWER(u.rol) = 'superadmin' THEN 'TODOS' ELSE '' END) AS areas_tickets, 
+                u.foto, u.cargo, u.telefono, u.creado_en
+            FROM usuarios u
+            LEFT JOIN usuario_permisos up ON u.id = up.usuario_id AND up.modulo_clave = 'tickets'
+            WHERE u.activo = 1
+              AND (
+                  LOWER(u.rol) = 'superadmin'
+                  OR (
+                      (up.puede_ver = 1 OR LOWER(u.rol) = 'admin')
+                      AND u.areas_tickets IS NOT NULL 
+                      AND TRIM(u.areas_tickets) != '' 
+                      AND UPPER(u.areas_tickets) != 'NINGUNA'
+                  )
+              )
+            ORDER BY 
+                CASE WHEN LOWER(u.rol) = 'superadmin' THEN 1 WHEN LOWER(u.rol) = 'admin' THEN 2 ELSE 3 END,
+                u.nombre ASC
+        ";
+        $stmt = $pdo->query($sql);
+        $agentes = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+        if (!empty($agentes)) {
+            return $agentes;
+        }
+
+        // Fallback si usuario_permisos aún no tiene registros pero usuarios tienen áreas
+        $sqlFallback = "
+            SELECT 
+                id, usuario, nombre, email, rol, agencia, activo, 
+                COALESCE(NULLIF(TRIM(areas_tickets), ''), CASE WHEN LOWER(rol) = 'superadmin' THEN 'TODOS' ELSE '' END) AS areas_tickets, 
+                foto, cargo, telefono, creado_en
+            FROM usuarios
+            WHERE activo = 1 
+              AND (
+                  LOWER(rol) = 'superadmin'
+                  OR (
+                      LOWER(rol) = 'admin'
+                      AND areas_tickets IS NOT NULL 
+                      AND TRIM(areas_tickets) != '' 
+                      AND UPPER(areas_tickets) != 'NINGUNA'
+                  )
+                  OR (areas_tickets IS NOT NULL AND TRIM(areas_tickets) != '' AND UPPER(areas_tickets) != 'NINGUNA')
+              )
+            ORDER BY 
+                CASE WHEN LOWER(rol) = 'superadmin' THEN 1 WHEN LOWER(rol) = 'admin' THEN 2 ELSE 3 END,
+                nombre ASC
+        ";
+        $stmtFb = $pdo->query($sqlFallback);
+        return $stmtFb ? $stmtFb->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $t) {
+        return [];
+    }
+}
 ?>

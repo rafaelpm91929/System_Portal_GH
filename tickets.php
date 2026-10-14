@@ -1042,6 +1042,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
 
             if ($origenTicketId > 0) {
                 $_SESSION['redir_ticket_ver'] = $origenTicketId;
+            } else {
+                $_SESSION['tab_activa'] = 'agentes';
             }
         }
     }
@@ -1074,6 +1076,8 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
 
             if ($origenTicketId > 0) {
                 $_SESSION['redir_ticket_ver'] = $origenTicketId;
+            } else {
+                $_SESSION['tab_activa'] = 'agentes';
             }
         }
     }
@@ -1397,6 +1401,9 @@ if (!empty($ticketVerParam) && $pdo) {
         }
     } catch (Throwable $eVer) {}
 }
+
+// Carga de lista de agentes con acceso y áreas de atención (Exclusivo SuperAdmin)
+$agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo) : [];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -2526,6 +2533,15 @@ if (!empty($ticketVerParam) && $pdo) {
                 <span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25" style="font-size: 0.65rem;">Métricas</span>
             </button>
 
+            <?php if ($esSuperAdmin): ?>
+            <!-- Botón 4: Agentes (Exclusivo SuperAdmin) -->
+            <button type="button" class="sidebar-btn" id="sidebarBtn_agentes" onclick="cambiarTab('agentes')">
+                <i class="bi bi-people-fill text-warning"></i>
+                <span class="flex-grow-1">Agentes</span>
+                <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30 font-monospace" style="font-size: 0.68rem;"><?php echo count($agentesTickets); ?></span>
+            </button>
+            <?php endif; ?>
+
             <div class="sidebar-group-title mt-3">NAVEGACIÓN SISTEMA</div>
             <a href="menu.php" class="sidebar-btn text-secondary">
                 <i class="bi bi-arrow-left-circle"></i>
@@ -2723,14 +2739,9 @@ if (!empty($ticketVerParam) && $pdo) {
                             <span class="text-white"><?php echo formatearFechaHoraMensaje($ticketActivo['creado_en'] ?? 'now'); ?></span>
                         </div>
                         <?php if (!empty($ticketActivo['asignado_a'])): ?>
-                            <div class="d-flex align-items-center flex-wrap gap-1">
+                            <div>
                                 <i class="bi bi-headset text-warning me-1"></i> Técnico asignado: 
                                 <strong class="text-warning"><?php echo htmlspecialchars($ticketActivo['asignado_a']); ?></strong>
-                                <?php if ($esSuperAdmin): ?>
-                                    <button type="button" class="btn btn-sm btn-outline-info rounded-pill py-0 px-2 ms-1 d-inline-flex align-items-center gap-1 shadow-sm" style="font-size: 0.72rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')" title="Ver Ficha Técnica, Estadísticas y Fotografía (Solo SuperAdmin)">
-                                        <i class="bi bi-person-badge-fill text-warning"></i> Ficha & Métricas
-                                    </button>
-                                <?php endif; ?>
                             </div>
                         <?php else: ?>
                             <div>
@@ -3170,101 +3181,6 @@ if (!empty($ticketVerParam) && $pdo) {
                                 </div>
                             </div>
                         </div>
-
-                        <!-- Tarjeta de Agente Asignado (Solo SuperAdmin) -->
-                        <?php if ($esSuperAdmin): ?>
-                            <div class="ticket-card p-4 mb-4" style="border-top: 3px solid #f59e0b; background: linear-gradient(180deg, rgba(245, 158, 11, 0.08) 0%, rgba(4, 13, 26, 0.95) 100%);">
-                                <div class="d-flex align-items-center justify-content-between mb-3">
-                                    <h6 class="fw-bold text-white m-0 d-flex align-items-center gap-2">
-                                        <i class="bi bi-person-badge-fill text-warning"></i> Agente TI Asignado
-                                    </h6>
-                                    <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 rounded-pill px-2 py-0.5" style="font-size: 0.68rem;">
-                                        <i class="bi bi-shield-lock-fill me-1"></i> SuperAdmin
-                                    </span>
-                                </div>
-
-                                <?php if (!empty($ticketActivo['asignado_a'])): 
-                                    $agenteFoto = $datosAgenteTicket['foto'] ?? '';
-                                    $agenteCargo = $datosAgenteTicket['cargo'] ?? 'Especialista en Soporte TI';
-                                    $agenteTel = $datosAgenteTicket['telefono'] ?? '';
-                                ?>
-                                    <div class="d-flex align-items-center gap-3 mb-3 p-2.5 rounded-3 border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.03);">
-                                        <div class="position-relative flex-shrink-0">
-                                            <?php if (!empty($agenteFoto) && file_exists(__DIR__ . '/' . $agenteFoto)): ?>
-                                                <img src="<?php echo htmlspecialchars($agenteFoto); ?>" alt="Foto Agente" class="rounded-circle shadow" style="width: 58px; height: 58px; object-fit: cover; border: 2px solid #f59e0b;">
-                                            <?php else: ?>
-                                                <div class="rounded-circle d-flex align-items-center justify-content-center shadow" style="width: 58px; height: 58px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2px solid #f59e0b; color: #f59e0b; font-size: 1.5rem;">
-                                                    <i class="bi bi-person-fill"></i>
-                                                </div>
-                                            <?php endif; ?>
-                                            <button type="button" class="btn btn-warning btn-sm position-absolute bottom-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center shadow" style="width: 22px; height: 22px; font-size: 0.7rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')" title="Cambiar fotografía del agente">
-                                                <i class="bi bi-camera-fill text-dark"></i>
-                                            </button>
-                                        </div>
-                                        <div class="overflow-hidden">
-                                            <div class="fw-bold text-white text-truncate" style="font-size: 0.95rem;">
-                                                <?php echo htmlspecialchars($ticketActivo['asignado_a']); ?>
-                                            </div>
-                                            <div class="text-warning small text-truncate" style="font-size: 0.75rem;">
-                                                <i class="bi bi-briefcase me-1"></i><?php echo htmlspecialchars($agenteCargo); ?>
-                                            </div>
-                                            <?php if (!empty($datosAgenteTicket['usuario'])): ?>
-                                                <div class="text-info font-monospace small" style="font-size: 0.72rem;">
-                                                    @<?php echo htmlspecialchars($datosAgenteTicket['usuario']); ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-
-                                    <!-- Mini KPIs de Rendimiento -->
-                                    <?php if ($statsAgenteTicket): ?>
-                                        <div class="row g-2 mb-3 text-center">
-                                            <div class="col-4">
-                                                <div class="p-2 rounded-2" style="background: rgba(14, 165, 233, 0.1); border: 1px solid rgba(56, 189, 248, 0.2);">
-                                                    <div class="text-secondary" style="font-size: 0.68rem;">ASIGNADOS</div>
-                                                    <div class="fw-bold text-info fs-6"><?php echo $statsAgenteTicket['total']; ?></div>
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="p-2 rounded-2" style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.2);">
-                                                    <div class="text-secondary" style="font-size: 0.68rem;">EN PROCESO</div>
-                                                    <div class="fw-bold text-warning fs-6"><?php echo $statsAgenteTicket['en_proceso']; ?></div>
-                                                </div>
-                                            </div>
-                                            <div class="col-4">
-                                                <div class="p-2 rounded-2" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2);">
-                                                    <div class="text-secondary" style="font-size: 0.68rem;">RESUELTOS</div>
-                                                    <div class="fw-bold text-success fs-6"><?php echo $statsAgenteTicket['resueltos'] + $statsAgenteTicket['cerrados']; ?></div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <!-- Barra de Efectividad -->
-                                        <div class="mb-3">
-                                            <div class="d-flex justify-content-between align-items-center mb-1 small">
-                                                <span class="text-secondary" style="font-size: 0.72rem;">Tasa de Resolución:</span>
-                                                <strong class="text-success" style="font-size: 0.75rem;"><?php echo $statsAgenteTicket['efectividad']; ?>%</strong>
-                                            </div>
-                                            <div class="progress" style="height: 6px; background: rgba(255, 255, 255, 0.08);">
-                                                <div class="progress-bar bg-success progress-bar-striped" role="progressbar" style="width: <?php echo $statsAgenteTicket['efectividad']; ?>%"></div>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-
-                                    <button type="button" class="btn btn-outline-warning w-100 btn-sm rounded-3 fw-bold d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($ticketActivo['asignado_a'])); ?>')">
-                                        <i class="bi bi-camera-fill"></i> Foto y Estadísticas Completas
-                                    </button>
-                                <?php else: ?>
-                                    <div class="text-center py-3 text-secondary small">
-                                        <i class="bi bi-person-x fs-3 d-block text-secondary opacity-50 mb-1"></i>
-                                        Sin especialista asignado aún a este ticket.
-                                        <div class="mt-2 text-info" style="font-size: 0.72rem;">
-                                            Asigna a un técnico arriba para auditar su ficha y estadísticas.
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
 
                         <!-- Tarjeta de Cita Técnica Vinculada -->
                         <div class="ticket-card p-4 mb-4" style="border-top: 3px solid <?php echo $citaTicketActivo ? '#10b981' : '#f59e0b'; ?>;">
@@ -4395,6 +4311,245 @@ if (!empty($ticketVerParam) && $pdo) {
         </div>
     </div> <!-- /#seccionTab_estadisticas -->
 
+    <?php if ($esSuperAdmin): ?>
+    <!-- ======================================================= -->
+    <!-- SECCIÓN 4: AGENTES Y ESPECIALISTAS TI (SOLO SUPERADMIN) -->
+    <!-- ======================================================= -->
+    <div id="seccionTab_agentes" class="tab-seccion" style="display: none;">
+        <!-- Encabezado de Agentes -->
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 rounded-pill px-3 py-1 fw-bold">
+                        <i class="bi bi-shield-lock-fill me-1"></i> Control SuperAdmin
+                    </span>
+                    <span class="text-secondary small">&bull; Directorio de Mesa de Ayuda TI</span>
+                </div>
+                <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    <i class="bi bi-people-fill text-warning"></i> Agentes y Especialistas TI
+                </h3>
+                <p class="text-secondary mb-0 small">
+                    Directorio del personal con acceso al módulo de tickets y áreas de atención asignadas. Administra su fotografía y audita su productividad.
+                </p>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <span class="badge bg-dark border border-secondary text-warning px-3 py-2 fs-6 rounded-3 shadow-sm">
+                    <i class="bi bi-person-check-fill me-1 text-success"></i> <?php echo count($agentesTickets); ?> Agentes Habilitados
+                </span>
+            </div>
+        </div>
+
+        <!-- Barra de búsqueda rápida de agentes -->
+        <div class="ticket-card p-3 mb-4" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-7 col-lg-8">
+                    <div class="input-group">
+                        <span class="input-group-text bg-dark border-secondary border-opacity-50 text-secondary">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" id="filtroAgentesInput" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Buscar especialista por nombre, @usuario, correo o área asignada..." oninput="filtrarAgentesGrid()">
+                        <button type="button" class="btn btn-outline-secondary text-secondary border-secondary border-opacity-50" onclick="document.getElementById('filtroAgentesInput').value=''; filtrarAgentesGrid();" title="Limpiar búsqueda">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-5 col-lg-4 text-md-end text-secondary small">
+                    <i class="bi bi-info-circle text-info me-1"></i> Agentes con permisos en tickets y áreas asignadas.
+                </div>
+            </div>
+        </div>
+
+        <!-- Grid de Agentes -->
+        <?php if (empty($agentesTickets)): ?>
+            <div class="ticket-card text-center py-5">
+                <i class="bi bi-people text-secondary opacity-50 d-block mb-3" style="font-size: 3.5rem;"></i>
+                <h5 class="fw-bold text-white mb-2">No se encontraron agentes configurados</h5>
+                <p class="text-secondary small mb-3" style="max-width: 500px; margin: 0 auto;">
+                    Para que los usuarios aparezcan en este listado, deben tener acceso al módulo de tickets y al menos un área de Sistemas asignada.
+                </p>
+                <a href="usuarios.php" class="btn btn-warning btn-sm rounded-pill px-4 fw-bold">
+                    <i class="bi bi-person-plus-fill me-1"></i> Gestionar en Módulo de Usuarios
+                </a>
+            </div>
+        <?php else: ?>
+            <div class="row g-3" id="gridAgentesTickets">
+                <?php foreach ($agentesTickets as $ag): 
+                    $agId = (int)($ag['id'] ?? 0);
+                    $agNombre = !empty($ag['nombre']) ? $ag['nombre'] : $ag['usuario'];
+                    $agUser = $ag['usuario'] ?? '';
+                    $agFoto = $ag['foto'] ?? '';
+                    $agCargo = !empty($ag['cargo']) ? $ag['cargo'] : 'Especialista en Soporte TI';
+                    $agEmail = $ag['email'] ?? '';
+                    $agTel = $ag['telefono'] ?? '';
+                    $agAgencia = !empty($ag['agencia']) ? $ag['agencia'] : 'Dirección General TI';
+                    $agRol = strtoupper($ag['rol'] ?? 'AGENTE');
+                    $agAreasRaw = trim($ag['areas_tickets'] ?? '');
+
+                    // Analizar áreas asignadas
+                    $esAccesoTotalAreas = ($agRol === 'SUPERADMIN' || strtoupper($agAreasRaw) === 'TODOS' || $agAreasRaw === '*');
+                    $agAreasList = [];
+                    if (!$esAccesoTotalAreas && !empty($agAreasRaw)) {
+                        $partes = array_map('trim', explode(',', strtoupper($agAreasRaw)));
+                        foreach ($partes as $p) {
+                            if (isset($AREAS_SISTEMAS_CATALOGO[$p])) {
+                                $agAreasList[] = $p;
+                            }
+                        }
+                    }
+
+                    // Métricas de tickets para este agente
+                    $stAg = obtenerEstadisticasAgente($pdo, $agNombre, $agUser);
+                    $totalResueltos = ($stAg['resueltos'] ?? 0) + ($stAg['cerrados'] ?? 0);
+                    $tasaEfectiva = $stAg['efectividad'] ?? 0;
+                    $tieneFotoValida = (!empty($agFoto) && file_exists(__DIR__ . '/' . $agFoto));
+                ?>
+                    <div class="col-12 col-md-6 col-xl-4 agente-card-item" 
+                         data-nombre="<?php echo htmlspecialchars(strtolower($agNombre)); ?>" 
+                         data-usuario="<?php echo htmlspecialchars(strtolower($agUser)); ?>" 
+                         data-email="<?php echo htmlspecialchars(strtolower($agEmail)); ?>" 
+                         data-areas="<?php echo htmlspecialchars(strtolower($agAreasRaw)); ?>" 
+                         data-cargo="<?php echo htmlspecialchars(strtolower($agCargo)); ?>">
+                        <div class="ticket-card p-4 h-100 d-flex flex-column" style="background: linear-gradient(180deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.95) 100%); border: 1px solid rgba(255, 255, 255, 0.08); border-top: 3.5px solid #f59e0b; border-radius: 14px;">
+                            
+                            <!-- Header de la Tarjeta: Avatar y Datos Principales -->
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <div class="position-relative flex-shrink-0">
+                                    <?php if ($tieneFotoValida): ?>
+                                        <img src="<?php echo htmlspecialchars($agFoto); ?>" alt="Foto <?php echo htmlspecialchars($agNombre); ?>" class="rounded-circle shadow" style="width: 66px; height: 66px; object-fit: cover; border: 2.5px solid #f59e0b;">
+                                    <?php else: ?>
+                                        <div class="rounded-circle d-flex align-items-center justify-content-center shadow" style="width: 66px; height: 66px; background: linear-gradient(135deg, #1e293b, #0f172a); border: 2.5px solid #f59e0b; color: #f59e0b; font-size: 1.7rem;">
+                                            <i class="bi bi-person-fill"></i>
+                                        </div>
+                                    <?php endif; ?>
+                                    <button type="button" class="btn btn-warning btn-sm position-absolute bottom-0 end-0 rounded-circle p-0 d-flex align-items-center justify-content-center shadow" style="width: 24px; height: 24px; font-size: 0.72rem;" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($agNombre)); ?>')" title="Asignar o cambiar foto del agente">
+                                        <i class="bi bi-camera-fill text-dark"></i>
+                                    </button>
+                                </div>
+                                <div class="overflow-hidden flex-grow-1">
+                                    <div class="fw-bold text-white fs-6 text-truncate" title="<?php echo htmlspecialchars($agNombre); ?>">
+                                        <?php echo htmlspecialchars($agNombre); ?>
+                                    </div>
+                                    <div class="text-warning small text-truncate fw-semibold" style="font-size: 0.78rem;">
+                                        <i class="bi bi-briefcase me-1"></i><?php echo htmlspecialchars($agCargo); ?>
+                                    </div>
+                                    <div class="d-flex align-items-center gap-1.5 flex-wrap mt-1">
+                                        <span class="badge bg-secondary bg-opacity-40 text-info font-monospace" style="font-size: 0.7rem;">
+                                            @<?php echo htmlspecialchars($agUser); ?>
+                                        </span>
+                                        <span class="badge <?php echo $agRol === 'SUPERADMIN' ? 'bg-warning text-dark fw-bold' : ($agRol === 'ADMIN' ? 'bg-primary bg-opacity-30 text-info border border-info border-opacity-30' : 'bg-secondary bg-opacity-30 text-light'); ?>" style="font-size: 0.65rem;">
+                                            <?php echo htmlspecialchars($agRol); ?>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Información de Contacto y Sucursal -->
+                            <div class="p-2.5 rounded-3 mb-3 border border-secondary border-opacity-25" style="background: rgba(255, 255, 255, 0.02); font-size: 0.76rem;">
+                                <div class="d-flex align-items-center justify-content-between mb-1">
+                                    <span class="text-secondary"><i class="bi bi-building me-1 text-info"></i> Agencia:</span>
+                                    <span class="text-light fw-semibold text-truncate ms-2" style="max-width: 170px;" title="<?php echo htmlspecialchars($agAgencia); ?>">
+                                        <?php echo htmlspecialchars($agAgencia); ?>
+                                    </span>
+                                </div>
+                                <?php if (!empty($agEmail)): ?>
+                                    <div class="d-flex align-items-center justify-content-between mb-1">
+                                        <span class="text-secondary"><i class="bi bi-envelope me-1 text-info"></i> Correo:</span>
+                                        <a href="mailto:<?php echo htmlspecialchars($agEmail); ?>" class="text-info text-decoration-none text-truncate ms-2" style="max-width: 170px;" title="<?php echo htmlspecialchars($agEmail); ?>">
+                                            <?php echo htmlspecialchars($agEmail); ?>
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
+                                <?php if (!empty($agTel)): ?>
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <span class="text-secondary"><i class="bi bi-telephone me-1 text-success"></i> Tel / Ext:</span>
+                                        <span class="text-white fw-semibold"><?php echo htmlspecialchars($agTel); ?></span>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- Áreas de Atención Asignadas -->
+                            <div class="mb-3">
+                                <div class="d-flex align-items-center justify-content-between mb-1.5">
+                                    <span class="text-secondary small fw-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">ÁREAS ASIGNADAS:</span>
+                                    <?php if ($esAccesoTotalAreas): ?>
+                                        <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30" style="font-size: 0.65rem;">Acceso Total</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-dark text-secondary border border-secondary" style="font-size: 0.65rem;"><?php echo count($agAreasList); ?> Áreas</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <?php if ($esAccesoTotalAreas): ?>
+                                        <span class="badge rounded-pill bg-warning bg-opacity-25 text-warning border border-warning border-opacity-40 px-2 py-1" style="font-size: 0.72rem;">
+                                            <i class="bi bi-stars me-1"></i> Todas las Áreas de Sistemas
+                                        </span>
+                                    <?php elseif (empty($agAreasList)): ?>
+                                        <span class="badge bg-secondary bg-opacity-25 text-secondary" style="font-size: 0.72rem;">
+                                            <i class="bi bi-slash-circle me-1"></i> Sin áreas específicas
+                                        </span>
+                                    <?php else: ?>
+                                        <?php foreach ($agAreasList as $ak): 
+                                            $infA = $AREAS_SISTEMAS_CATALOGO[$ak] ?? null;
+                                        ?>
+                                            <span class="badge rounded-pill px-2 py-1" style="background: <?php echo $infA['bg'] ?? 'rgba(56, 189, 248, 0.18)'; ?>; color: <?php echo $infA['color'] ?? '#38bdf8'; ?>; border: 1px solid <?php echo $infA['border'] ?? 'rgba(56, 189, 248, 0.4)'; ?>; font-size: 0.7rem;">
+                                                <i class="bi <?php echo $infA['icono'] ?? 'bi-tag'; ?> me-1"></i><?php echo htmlspecialchars($ak); ?>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <!-- Métricas Rápidas y Rendimiento -->
+                            <div class="mb-3">
+                                <div class="row g-1 text-center mb-2">
+                                    <div class="col-4">
+                                        <div class="p-2 rounded-2" style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(56, 189, 248, 0.2);">
+                                            <div class="text-secondary" style="font-size: 0.65rem;">ASIGNADOS</div>
+                                            <div class="fw-bold text-info fs-6"><?php echo (int)($stAg['total'] ?? 0); ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 rounded-2" style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2);">
+                                            <div class="text-secondary" style="font-size: 0.65rem;">EN ATENCIÓN</div>
+                                            <div class="fw-bold text-warning fs-6"><?php echo (int)($stAg['en_proceso'] ?? 0); ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="p-2 rounded-2" style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2);">
+                                            <div class="text-secondary" style="font-size: 0.65rem;">RESUELTOS</div>
+                                            <div class="fw-bold text-success fs-6"><?php echo $totalResueltos; ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Barra de Efectividad -->
+                                <div>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <span class="text-secondary" style="font-size: 0.7rem;">Tasa de Efectividad:</span>
+                                        <strong class="text-success" style="font-size: 0.72rem;"><?php echo $tasaEfectiva; ?>%</strong>
+                                    </div>
+                                    <div class="progress" style="height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 4px;">
+                                        <div class="progress-bar bg-success progress-bar-striped" role="progressbar" style="width: <?php echo min(100, $tasaEfectiva); ?>%;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botones de Acción de la Tarjeta -->
+                            <div class="mt-auto pt-3 border-top border-secondary border-opacity-25 d-flex gap-2">
+                                <button type="button" class="btn btn-outline-warning btn-sm w-50 rounded-3 fw-bold d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($agNombre)); ?>')" title="Asignar o cambiar foto de perfil">
+                                    <i class="bi bi-camera-fill"></i> Foto
+                                </button>
+                                <button type="button" class="btn btn-outline-info btn-sm w-50 rounded-3 fw-bold d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="abrirModalAgenteSuperAdmin('<?php echo htmlspecialchars(addslashes($agNombre)); ?>')" title="Ver estadísticas completas, historial de tickets y citas">
+                                    <i class="bi bi-bar-chart-fill"></i> Estadísticas
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+    </div> <!-- /#seccionTab_agentes -->
+    <?php endif; ?>
+
 </div> <!-- /.main-container -->
 </div> <!-- /.app-content -->
 </div> <!-- /.app-layout -->
@@ -5481,7 +5636,7 @@ let filtroCitaEstadoActual = 'TODOS';
 
 // Control de Tabs en Menú Lateral
 function cambiarTab(tabName, updateUrl = true) {
-    const tabsPermitidos = ['tickets', 'citas', 'estadisticas'];
+    const tabsPermitidos = ['tickets', 'citas', 'estadisticas'<?php echo $esSuperAdmin ? ", 'agentes'" : ""; ?>];
     if (!tabsPermitidos.includes(tabName)) {
         tabName = 'tickets';
     }
@@ -5516,6 +5671,8 @@ function cambiarTab(tabName, updateUrl = true) {
             titleEl.innerHTML = '<i class="bi bi-calendar-event-fill text-success me-1"></i> Agenda de Citas Técnicas';
         } else if (tabName === 'estadisticas') {
             titleEl.innerHTML = '<i class="bi bi-bar-chart-line-fill text-primary me-1"></i> Estadísticas e Inteligencia TI';
+        } else if (tabName === 'agentes') {
+            titleEl.innerHTML = '<i class="bi bi-people-fill text-warning me-1"></i> Agentes y Especialistas TI';
         }
     }
 
@@ -5546,6 +5703,22 @@ function cambiarTab(tabName, updateUrl = true) {
 
     // Cerrar sidebar en dispositivos móviles
     cerrarSidebarMobile();
+}
+
+// Búsqueda en tiempo real en la cuadrícula de agentes (SuperAdmin)
+function filtrarAgentesGrid() {
+    const input = document.getElementById('filtroAgentesInput');
+    const query = input ? input.value.toLowerCase().trim() : '';
+    const cards = document.querySelectorAll('.agente-card-item');
+    cards.forEach(card => {
+        const nombre = (card.getAttribute('data-nombre') || '').toLowerCase();
+        const user = (card.getAttribute('data-usuario') || '').toLowerCase();
+        const email = (card.getAttribute('data-email') || '').toLowerCase();
+        const areas = (card.getAttribute('data-areas') || '').toLowerCase();
+        const cargo = (card.getAttribute('data-cargo') || '').toLowerCase();
+        const coincide = !query || nombre.includes(query) || user.includes(query) || email.includes(query) || areas.includes(query) || cargo.includes(query);
+        card.style.display = coincide ? 'block' : 'none';
+    });
 }
 
 function toggleSidebar() {
@@ -6437,12 +6610,14 @@ window.addEventListener('DOMContentLoaded', () => {
         const secTickets = document.getElementById('seccionTab_tickets');
         const secCitas = document.getElementById('seccionTab_citas');
         const secStats = document.getElementById('seccionTab_estadisticas');
+        const secAgentes = document.getElementById('seccionTab_agentes');
         if (secDetalle) secDetalle.style.display = 'block';
         if (secTickets) secTickets.style.display = 'none';
         if (secCitas) secCitas.style.display = 'none';
         if (secStats) secStats.style.display = 'none';
+        if (secAgentes) secAgentes.style.display = 'none';
 
-        ['tickets', 'citas', 'estadisticas'].forEach(t => {
+        ['tickets', 'citas', 'estadisticas', 'agentes'].forEach(t => {
             const btn = document.getElementById('sidebarBtn_' + t);
             if (btn) btn.classList.remove('active');
         });
