@@ -190,9 +190,17 @@ if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
     }
 
     try {
-        $stmtFind = $pdo->prepare("SELECT id, folio, solicitante_nombre FROM tickets_soporte WHERE " . ($ticketIdReq > 0 ? "id = ?" : "folio = ?"));
-        $stmtFind->execute([$ticketIdReq > 0 ? $ticketIdReq : $folioReq]);
-        $targetTicket = $stmtFind->fetch(PDO::FETCH_ASSOC);
+        $targetTicket = null;
+        if (!empty($folioReq)) {
+            $stmtFind = $pdo->prepare("SELECT id, folio, solicitante_nombre, solicitante_agencia FROM tickets_soporte WHERE folio = ? LIMIT 1");
+            $stmtFind->execute([$folioReq]);
+            $targetTicket = $stmtFind->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$targetTicket && $ticketIdReq > 0) {
+            $stmtFind = $pdo->prepare("SELECT id, folio, solicitante_nombre, solicitante_agencia FROM tickets_soporte WHERE id = ? LIMIT 1");
+            $stmtFind->execute([$ticketIdReq]);
+            $targetTicket = $stmtFind->fetch(PDO::FETCH_ASSOC);
+        }
 
         if (!$targetTicket) {
             http_response_code(404);
@@ -205,7 +213,8 @@ if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
 
         $stmtUpdF = $pdo->prepare("
             UPDATE tickets_soporte 
-            SET reporte_firmado = 1,
+            SET requiere_firma_reporte = 1,
+                reporte_firmado = 1,
                 reporte_firma_digital = :firma,
                 reporte_firmado_por = :por,
                 reporte_firmado_en = :fec_rep,
@@ -231,6 +240,43 @@ if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
             ");
             $stmtMsgF->execute([$targetId, 'firma_digital', $firmadoPor, $msgFirma, $firmadoEn]);
         } catch (Throwable $eMsgF) {}
+
+        // Disparar Webhook de vuelta a la agencia para sincronización inmediata
+        try {
+            if (!empty($targetTicket['solicitante_agencia'])) {
+                $agKey = strpos(strtolower($targetTicket['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
+                $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
+                    $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
+                }
+                $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
+                $postDataWh = [
+                    'token'                  => $tokenWh,
+                    'folio'                  => $folioOficial,
+                    'accion'                 => 'reporte_firmado',
+                    'requiere_firma_reporte' => 1,
+                    'reporte_firmado'        => 1,
+                    'reporte_firma_digital'  => $firmaDigital,
+                    'reporte_firmado_por'    => $firmadoPor,
+                    'reporte_firmado_en'     => $firmadoEn,
+                    'actualizado_en'         => $firmadoEn
+                ];
+                $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
+                curl_setopt_array($chWh, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
+                    CURLOPT_TIMEOUT        => 4,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_HTTPHEADER     => [
+                        'Authorization: Bearer ' . $tokenWh,
+                        'Content-Type: application/x-www-form-urlencoded'
+                    ]
+                ]);
+                @curl_exec($chWh);
+                @curl_close($chWh);
+            }
+        } catch (Throwable $eWhF) {}
 
         echo json_encode([
             'status'             => 'ok',

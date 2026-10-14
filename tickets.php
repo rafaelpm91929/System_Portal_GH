@@ -2789,7 +2789,7 @@ if (!empty($ticketVerParam) && $pdo) {
                                 $esInfraestructura = ($ticketActivo && strtoupper(trim($ticketActivo['area_sistemas'] ?? '')) === 'INFRAESTRUCTURA');
                                 if ($esInfraestructura): 
                                     $reporteHabilitado = !empty($ticketActivo['requiere_firma_reporte']);
-                                    $reporteFirmado = !empty($ticketActivo['reporte_firmado']);
+                                    $reporteFirmado = !empty($ticketActivo['reporte_firmado']) || !empty($ticketActivo['reporte_firma_digital']);
                                 ?>
                                     <div class="mt-3 pt-3 border-top border-secondary border-opacity-30">
                                         <div class="d-flex align-items-center justify-content-between mb-2">
@@ -4250,7 +4250,7 @@ if (!empty($ticketVerParam) && $pdo) {
     $repObservaciones = $ticketActivo['reporte_observaciones'] ?? '';
     $repTrabajosReal = $ticketActivo['reporte_trabajos_realizados'] ?? '';
     $repTecnico = !empty($ticketActivo['reporte_tecnico_nombre']) ? $ticketActivo['reporte_tecnico_nombre'] : (!empty($ticketActivo['asignado_a']) ? $ticketActivo['asignado_a'] : $nombreUsuario);
-    $repFirmado = !empty($ticketActivo['reporte_firmado']);
+    $repFirmado = !empty($ticketActivo['reporte_firmado']) || !empty($ticketActivo['reporte_firma_digital']);
     $repFirmaImg = $ticketActivo['reporte_firma_digital'] ?? '';
     $repFirmadoPor = $ticketActivo['reporte_firmado_por'] ?? '';
     $repFirmadoEn = $ticketActivo['reporte_firmado_en'] ?? '';
