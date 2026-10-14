@@ -83,13 +83,18 @@ $firmaImg      = $ticket['reporte_firma_digital'] ?? '';
 $firmadoPor    = !empty($ticket['reporte_firmado_por']) ? $ticket['reporte_firmado_por'] : ($ticket['solicitante_nombre'] ?? 'Solicitante');
 $firmadoEn     = !empty($ticket['reporte_firmado_en']) ? $ticket['reporte_firmado_en'] : date('Y-m-d H:i:s');
 $autoPrint     = isset($_GET['auto']) || isset($_GET['autoprint']);
+
+$logoIzqPath = __DIR__ . '/uploads/reporte_logo_izq.png';
+$logoDerPath = __DIR__ . '/uploads/reporte_logo_der.png';
+$logoIzqSrc  = file_exists($logoIzqPath) ? ('data:image/png;base64,' . base64_encode(file_get_contents($logoIzqPath))) : 'uploads/reporte_logo_izq.png';
+$logoDerSrc  = file_exists($logoDerPath) ? ('data:image/png;base64,' . base64_encode(file_get_contents($logoDerPath))) : 'uploads/reporte_logo_der.png';
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reporte de Servicio Técnico - Orden No. <?php echo htmlspecialchars($ordenNo); ?> - Grupo Huerta</title>
+    <title>Reporte de Mantenimiento TI - Orden No. <?php echo htmlspecialchars($ordenNo); ?> - Grupo Huerta</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -218,31 +223,47 @@ $autoPrint     = isset($_GET['auto']) || isset($_GET['autoprint']);
     <!-- HOJA OFICIAL MEMBRETADA -->
     <div class="hoja-documento" id="hojaImpresion">
         
-        <!-- Membrete Superior -->
-        <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3" style="border-color: #0284c7 !important; border-bottom-width: 3px !important;">
-            <div>
-                <div class="header-logo-text">GRUPO HUERTA</div>
-                <div style="font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 1px; text-transform: uppercase;">
-                    Dirección Central de Sistemas &bull; Soporte e Infraestructura TI
+        <!-- Membrete Superior Oficial con Logos y Título Centrado -->
+        <div class="d-flex align-items-center justify-content-between border-bottom pb-3 mb-3" style="border-color: #0f172a !important; border-bottom-width: 2px !important;">
+            <!-- Logo Izquierdo GH Grupo Huerta -->
+            <div style="flex: 0 0 160px;">
+                <img src="<?php echo $logoIzqSrc; ?>" alt="GH Grupo Huerta" style="max-height: 52px; max-width: 155px; object-fit: contain;">
+            </div>
+
+            <!-- Título Central en Azul Marino Oficial -->
+            <div class="text-center flex-grow-1 px-2">
+                <div style="color: #002060; font-weight: 900; font-size: 19px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                    REPORTE DE MANTENIMIENTO TI
                 </div>
-                <div class="fw-bold text-dark mt-1" style="font-size: 15px;">
-                    FORMATO DE REPORTE Y CONFORMIDAD DE SERVICIO TÉCNICO
+                <div style="color: #002060; font-weight: 900; font-size: 18px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                    GRUPO HUERTA
                 </div>
             </div>
-            <div class="text-end">
-                <div class="badge-orden">
+
+            <!-- Logo Derecho Sello Circular Departamental y Agencias -->
+            <div style="flex: 0 0 160px;" class="text-end">
+                <img src="<?php echo $logoDerSrc; ?>" alt="Sistemas Grupo Huerta" style="max-height: 78px; max-width: 82px; object-fit: contain;">
+            </div>
+        </div>
+
+        <!-- Sub-barra: Orden y Estatus -->
+        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom" style="border-color: #e2e8f0;">
+            <div class="d-flex align-items-center gap-2">
+                <div class="badge-orden" style="background: #002060; color: #fff; font-size: 13px; font-weight: 700; padding: 5px 12px; border-radius: 4px;">
                     ORDEN NO. <?php echo htmlspecialchars($ordenNo); ?>
                 </div>
-                <div class="text-muted small mt-1" style="font-size: 11.5px;">
-                    Fecha: <?php echo htmlspecialchars(date('d/m/Y', strtotime($ticket['creado_en']))); ?>
-                </div>
+                <span class="text-muted small fw-semibold">
+                    Fecha de Creación: <strong class="text-dark"><?php echo htmlspecialchars(date('d/m/Y', strtotime($ticket['creado_en']))); ?></strong>
+                </span>
+            </div>
+            <div>
                 <?php if ($firmado): ?>
-                    <div class="badge bg-success bg-opacity-10 text-success border border-success mt-1 fw-bold" style="font-size: 10px;">
-                        ✓ CERTIFICADO DIGITALMENTE
+                    <div class="badge bg-success bg-opacity-10 text-success border border-success fw-bold px-3 py-1.5" style="font-size: 11px;">
+                        <i class="bi bi-patch-check-fill me-1"></i> CERTIFICADO DIGITALMENTE
                     </div>
                 <?php else: ?>
-                    <div class="badge bg-warning text-dark mt-1 fw-bold" style="font-size: 10px;">
-                        PENDIENTE DE FIRMA
+                    <div class="badge bg-warning text-dark fw-bold px-3 py-1.5" style="font-size: 11px;">
+                        <i class="bi bi-clock-history me-1"></i> PENDIENTE DE FIRMA DIGITAL
                     </div>
                 <?php endif; ?>
             </div>
