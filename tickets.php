@@ -300,7 +300,7 @@ function sincronizarTicketsConCentral($pdo) {
                         prioridad = :prioridad,
                         evidencia_resolucion = COALESCE(NULLIF(:evidencia, ''), evidencia_resolucion),
                         solicitante_usuario = COALESCE(NULLIF(solicitante_usuario, ''), :sol_usr),
-                        requiere_firma_reporte = COALESCE(:req_firma, requiere_firma_reporte),
+                        requiere_firma_reporte = CASE WHEN :req_firma = 1 OR :rep_firmado = 1 THEN 1 ELSE requiere_firma_reporte END,
                         reporte_orden_no = COALESCE(NULLIF(:rep_orden, ''), reporte_orden_no),
                         reporte_problema = COALESCE(NULLIF(:rep_prob, ''), reporte_problema),
                         reporte_trabajo_solicitado = COALESCE(NULLIF(:rep_sol, ''), reporte_trabajo_solicitado),
@@ -782,14 +782,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $stmtTk->execute([$ticketId]);
                 $tk = $stmtTk->fetch(PDO::FETCH_ASSOC);
 
-                if ($tk && !empty($tk['requiere_firma_reporte'])) {
+                if ($tk) {
                     $fechaFirma = date('Y-m-d H:i:s');
                     $folioTk = $tk['folio'] ?? ('TK-' . $ticketId);
 
                     // 1. Guardar localmente en la agencia
                     $stmtFirmaLoc = $pdo->prepare("
                         UPDATE tickets_soporte 
-                        SET reporte_firmado = 1,
+                        SET requiere_firma_reporte = 1,
+                            reporte_firmado = 1,
                             reporte_firma_digital = :firma,
                             reporte_firmado_por = :por,
                             reporte_firmado_en = :fec_rep,
@@ -835,7 +836,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             'token'                 => $tokenCentral,
                             'accion'                => 'firmar_reporte',
                             'folio'                 => $folioTk,
-                            'ticket_id'             => $ticketId,
                             'reporte_firma_digital' => $firmaBase64,
                             'reporte_firmado_por'   => $firmadoPor,
                             'reporte_firmado_en'    => $fechaFirma
@@ -1976,11 +1976,11 @@ if ($ticketSeleccionado) {
                                 <span class="badge rounded-pill <?php echo $tSelEstClass; ?> px-3 py-1" style="font-size: 0.85rem;">
                                     <i class="bi bi-clock-history me-1"></i> <?php echo htmlspecialchars($ticketSeleccionado['estado'] ?? 'Abierto'); ?>
                                 </span>
-                                <?php if (!empty($ticketSeleccionado['reporte_firmado'])): ?>
+                                <?php if (!empty($ticketSeleccionado['reporte_firmado']) || !empty($ticketSeleccionado['reporte_firma_digital'])): ?>
                                     <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>&auto=1" target="_blank" class="badge rounded-pill bg-danger px-3 py-1.5 text-decoration-none fw-bold shadow-sm d-inline-flex align-items-center gap-1.5" style="font-size: 0.85rem;" title="Descargar Reporte Oficial en PDF">
                                         <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF Firmado
                                     </a>
-                                <?php elseif (!empty($ticketSeleccionado['requiere_firma_reporte'])): ?>
+                                <?php elseif (!empty($ticketSeleccionado['requiere_firma_reporte']) || !empty($ticketSeleccionado['reporte_trabajos_realizados'])): ?>
                                     <a href="#reporte_servicio" class="badge rounded-pill bg-warning text-dark px-3 py-1.5 text-decoration-none fw-bold shadow-sm d-inline-flex align-items-center gap-1" style="font-size: 0.85rem;">
                                         <i class="bi bi-pen-fill"></i> Firma Digital Pendiente
                                     </a>
@@ -2214,16 +2214,20 @@ if ($ticketSeleccionado) {
 
                 <!-- ======================================================= -->
                 <!-- APARTADO DE FIRMA DIGITAL / REPORTE DE SERVICIO TÉCNICO -->
-                <!-- Solo aparece si el técnico de TI habilitó el reporte    -->
                 <!-- ======================================================= -->
-                <?php if (!empty($ticketSeleccionado['requiere_firma_reporte'])): 
+                <?php 
+                $mostrarSeccionReporte = !empty($ticketSeleccionado['requiere_firma_reporte']) 
+                                      || !empty($ticketSeleccionado['reporte_firmado']) 
+                                      || !empty($ticketSeleccionado['reporte_firma_digital'])
+                                      || !empty($ticketSeleccionado['reporte_trabajos_realizados']);
+                if ($mostrarSeccionReporte): 
                     $repOrdenNo = !empty($ticketSeleccionado['reporte_orden_no']) ? $ticketSeleccionado['reporte_orden_no'] : ($ticketSeleccionado['folio'] ?? ('TK-' . $ticketSeleccionado['id']));
                     $repProblema = !empty($ticketSeleccionado['reporte_problema']) ? $ticketSeleccionado['reporte_problema'] : ($ticketSeleccionado['descripcion'] ?? '');
                     $repTrabajoSol = $ticketSeleccionado['reporte_trabajo_solicitado'] ?? '';
                     $repObservaciones = $ticketSeleccionado['reporte_observaciones'] ?? '';
                     $repTrabajosReal = $ticketSeleccionado['reporte_trabajos_realizados'] ?? '';
                     $repTecnico = !empty($ticketSeleccionado['reporte_tecnico_nombre']) ? $ticketSeleccionado['reporte_tecnico_nombre'] : (!empty($ticketSeleccionado['asignado_a']) ? $ticketSeleccionado['asignado_a'] : 'Dirección Central de Sistemas');
-                    $repFirmado = !empty($ticketSeleccionado['reporte_firmado']);
+                    $repFirmado = !empty($ticketSeleccionado['reporte_firmado']) || !empty($ticketSeleccionado['reporte_firma_digital']);
                     $repFirmaImg = $ticketSeleccionado['reporte_firma_digital'] ?? '';
                     $repFirmadoPor = $ticketSeleccionado['reporte_firmado_por'] ?? '';
                     $repFirmadoEn = $ticketSeleccionado['reporte_firmado_en'] ?? '';

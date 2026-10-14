@@ -140,7 +140,7 @@ try {
     }
 
     // Si viene información del reporte de servicio técnico (Infraestructura)
-    if (isset($datos['requiere_firma_reporte']) || isset($_POST['requiere_firma_reporte']) || ($datos['accion'] ?? '') === 'reporte_servicio') {
+    if (isset($datos['requiere_firma_reporte']) || isset($_POST['requiere_firma_reporte']) || ($datos['accion'] ?? '') === 'reporte_servicio' || ($datos['accion'] ?? '') === 'reporte_firmado' || isset($datos['reporte_firmado'])) {
         $reqFirma = intval($datos['requiere_firma_reporte'] ?? ($_POST['requiere_firma_reporte'] ?? 1));
         $repOrden = trim($datos['reporte_orden_no'] ?? ($_POST['reporte_orden_no'] ?? $folio));
         $repProb  = trim($datos['reporte_problema'] ?? ($_POST['reporte_problema'] ?? ''));
@@ -149,28 +149,41 @@ try {
         $repReal  = trim($datos['reporte_trabajos_realizados'] ?? ($_POST['reporte_trabajos_realizados'] ?? ''));
         $repTec   = trim($datos['reporte_tecnico_nombre'] ?? ($_POST['reporte_tecnico_nombre'] ?? ''));
 
+        $repFirmado = isset($datos['reporte_firmado']) ? intval($datos['reporte_firmado']) : (isset($_POST['reporte_firmado']) ? intval($_POST['reporte_firmado']) : 0);
+        $repFirmaImg = trim($datos['reporte_firma_digital'] ?? ($_POST['reporte_firma_digital'] ?? ''));
+        $repFirmadoPor = trim($datos['reporte_firmado_por'] ?? ($_POST['reporte_firmado_por'] ?? ''));
+        $repFirmadoEn = trim($datos['reporte_firmado_en'] ?? ($_POST['reporte_firmado_en'] ?? ''));
+
         $stmtRep = $pdo->prepare("
             UPDATE tickets_soporte 
-            SET requiere_firma_reporte = :req,
-                reporte_orden_no = :ord,
-                reporte_problema = :prob,
-                reporte_trabajo_solicitado = :sol,
-                reporte_observaciones = :obs,
-                reporte_trabajos_realizados = :real,
-                reporte_tecnico_nombre = :tec,
+            SET requiere_firma_reporte = CASE WHEN :req = 1 OR :firmado = 1 THEN 1 ELSE requiere_firma_reporte END,
+                reporte_orden_no = COALESCE(NULLIF(:ord, ''), reporte_orden_no),
+                reporte_problema = COALESCE(NULLIF(:prob, ''), reporte_problema),
+                reporte_trabajo_solicitado = COALESCE(NULLIF(:sol, ''), reporte_trabajo_solicitado),
+                reporte_observaciones = COALESCE(NULLIF(:obs, ''), reporte_observaciones),
+                reporte_trabajos_realizados = COALESCE(NULLIF(:real, ''), reporte_trabajos_realizados),
+                reporte_tecnico_nombre = COALESCE(NULLIF(:tec, ''), reporte_tecnico_nombre),
+                reporte_firmado = CASE WHEN :firmado = 1 THEN 1 ELSE reporte_firmado END,
+                reporte_firma_digital = COALESCE(NULLIF(:firma_img, ''), reporte_firma_digital),
+                reporte_firmado_por = COALESCE(NULLIF(:firmado_por, ''), reporte_firmado_por),
+                reporte_firmado_en = COALESCE(NULLIF(:firmado_en, ''), reporte_firmado_en),
                 actualizado_en = :act
             WHERE folio = :folio
         ");
         $stmtRep->execute([
-            ':req'   => $reqFirma,
-            ':ord'   => $repOrden,
-            ':prob'  => $repProb,
-            ':sol'   => $repSol,
-            ':obs'   => $repObs,
-            ':real'  => $repReal,
-            ':tec'   => $repTec,
-            ':act'   => $actualizadoEn,
-            ':folio' => $folio
+            ':req'         => $reqFirma,
+            ':ord'         => $repOrden,
+            ':prob'        => $repProb,
+            ':sol'         => $repSol,
+            ':obs'         => $repObs,
+            ':real'        => $repReal,
+            ':tec'         => $repTec,
+            ':firmado'     => $repFirmado,
+            ':firma_img'   => $repFirmaImg,
+            ':firmado_por' => $repFirmadoPor,
+            ':firmado_en'  => $repFirmadoEn,
+            ':act'         => $actualizadoEn,
+            ':folio'       => $folio
         ]);
     }
 
