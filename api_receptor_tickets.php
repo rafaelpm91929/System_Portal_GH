@@ -208,15 +208,16 @@ if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
             SET reporte_firmado = 1,
                 reporte_firma_digital = :firma,
                 reporte_firmado_por = :por,
-                reporte_firmado_en = :fec,
-                actualizado_en = :fec
+                reporte_firmado_en = :fec_rep,
+                actualizado_en = :fec_act
             WHERE id = :id
         ");
         $stmtUpdF->execute([
-            ':firma' => $firmaDigital,
-            ':por'   => $firmadoPor,
-            ':fec'   => $firmadoEn,
-            ':id'    => $targetId
+            ':firma'   => $firmaDigital,
+            ':por'     => $firmadoPor,
+            ':fec_rep' => $firmadoEn,
+            ':fec_act' => $firmadoEn,
+            ':id'      => $targetId
         ]);
 
         // Registrar aviso en la conversación del ticket

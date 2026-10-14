@@ -2807,6 +2807,11 @@ if (!empty($ticketVerParam) && $pdo) {
                                             </span>
                                             <i class="bi bi-chevron-right small text-secondary"></i>
                                         </button>
+                                        <?php if ($reporteFirmado || $reporteHabilitado): ?>
+                                            <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketActivo['id']; ?>&auto=1" target="_blank" class="btn btn-sm btn-outline-danger w-100 fw-semibold rounded-3 py-1.5 mt-2 d-flex align-items-center justify-content-center gap-1.5 shadow-sm">
+                                                <i class="bi bi-file-earmark-pdf-fill"></i> Descargar / Imprimir PDF
+                                            </a>
+                                        <?php endif; ?>
                                         <div class="form-text text-secondary mt-1" style="font-size: 0.72rem;">
                                             <?php if ($reporteFirmado): ?>
                                                 <span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Firmado digitalmente por <strong><?php echo htmlspecialchars($ticketActivo['reporte_firmado_por'] ?? 'el usuario'); ?></strong></span>
@@ -4283,9 +4288,9 @@ if (!empty($ticketVerParam) && $pdo) {
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-light rounded-pill px-3 py-1.5 fw-semibold d-flex align-items-center gap-1.5" onclick="imprimirReporteServicioOficial()">
-                            <i class="bi bi-printer-fill text-info"></i> Imprimir / Guardar PDF
-                        </button>
+                        <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketActivo['id']; ?>&auto=1" target="_blank" class="btn btn-sm btn-danger rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow">
+                            <i class="bi bi-file-earmark-pdf-fill"></i> Guardar PDF / Imprimir
+                        </a>
                     </div>
 
                     <!-- HOJA MEMBRETADA OFICIAL ESTILIZADA -->
@@ -4459,10 +4464,10 @@ if (!empty($ticketVerParam) && $pdo) {
 
                     <div class="d-flex align-items-center justify-content-between pt-2">
                         <div>
-                            <?php if ($repFirmado): ?>
-                                <button type="button" class="btn btn-outline-info rounded-3 px-3 py-2 fw-semibold" onclick="imprimirReporteServicioOficial()">
-                                    <i class="bi bi-printer me-1"></i> Imprimir Reporte Firmado
-                                </button>
+                            <?php if ($repFirmado || $repHabilitado): ?>
+                                <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketActivo['id']; ?>&auto=1" target="_blank" class="btn btn-outline-info rounded-3 px-3 py-2 fw-semibold">
+                                    <i class="bi bi-file-earmark-pdf-fill me-1 text-danger"></i> Ver / Descargar PDF Oficial
+                                </a>
                             <?php endif; ?>
                         </div>
                         <div class="d-flex align-items-center gap-2">
@@ -4483,24 +4488,7 @@ if (!empty($ticketVerParam) && $pdo) {
 
 <script>
 function imprimirReporteServicioOficial() {
-    const el = document.getElementById('hojaReporteOficial');
-    if (!el) {
-        window.print();
-        return;
-    }
-    const ventana = window.open('', '_blank', 'width=900,height=1100');
-    ventana.document.write('<!DOCTYPE html><html><head><title>Reporte de Servicio Técnico - Grupo Huerta</title>');
-    ventana.document.write('<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">');
-    ventana.document.write('<style>body{background:#fff;padding:25px;font-family:sans-serif;}@media print{@page{margin:15mm;}}</style>');
-    ventana.document.write('</head><body>');
-    ventana.document.write(el.outerHTML);
-    ventana.document.write('</body></html>');
-    ventana.document.close();
-    ventana.focus();
-    setTimeout(() => {
-        ventana.print();
-        ventana.close();
-    }, 600);
+    window.open('reporte_servicio_imprimir.php?id=<?php echo $ticketActivo['id'] ?? 0; ?>&auto=1', '_blank');
 }
 </script>
 
