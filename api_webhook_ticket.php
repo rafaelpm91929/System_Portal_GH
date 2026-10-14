@@ -99,47 +99,55 @@ if (!empty($evBase64) && !empty($evNombre)) {
 }
 
 try {
-    if (!empty($evidenciaResolucion)) {
-        $stmt = $pdo->prepare("
-            UPDATE tickets_soporte 
-            SET estado = :estado, 
-                asignado_a = :asignado, 
-                prioridad = :prioridad, 
-                notas_resolucion = :notas, 
-                evidencia_resolucion = :evidencia,
-                actualizado_en = :act 
-            WHERE folio = :folio
-        ");
-        $stmt->execute([
-            ':estado'    => $estado,
-            ':asignado'  => $asignadoA,
-            ':prioridad' => $prioridad,
-            ':notas'     => $notasResolucion,
-            ':evidencia' => $evidenciaResolucion,
-            ':act'       => $actualizadoEn,
-            ':folio'     => $folio
-        ]);
-    } else {
-        $stmt = $pdo->prepare("
-            UPDATE tickets_soporte 
-            SET estado = :estado, 
-                asignado_a = :asignado, 
-                prioridad = :prioridad, 
-                notas_resolucion = :notas, 
-                actualizado_en = :act 
-            WHERE folio = :folio
-        ");
-        $stmt->execute([
-            ':estado'    => $estado,
-            ':asignado'  => $asignadoA,
-            ':prioridad' => $prioridad,
-            ':notas'     => $notasResolucion,
-            ':act'       => $actualizadoEn,
-            ':folio'     => $folio
-        ]);
+    // 1. Actualizar datos de atención técnica sólo si vienen especificados
+    $tieneDatosAtencion = isset($datos['estado']) || isset($_POST['estado']) 
+                       || isset($datos['asignado_a']) || isset($_POST['asignado_a'])
+                       || isset($datos['notas_resolucion']) || isset($_POST['notas_resolucion'])
+                       || !empty($evidenciaResolucion);
+
+    if ($tieneDatosAtencion) {
+        if (!empty($evidenciaResolucion)) {
+            $stmt = $pdo->prepare("
+                UPDATE tickets_soporte 
+                SET estado = COALESCE(NULLIF(:estado, ''), estado), 
+                    asignado_a = COALESCE(NULLIF(:asignado, ''), asignado_a), 
+                    prioridad = COALESCE(NULLIF(:prioridad, ''), prioridad), 
+                    notas_resolucion = COALESCE(NULLIF(:notas, ''), notas_resolucion), 
+                    evidencia_resolucion = :evidencia,
+                    actualizado_en = :act 
+                WHERE folio = :folio
+            ");
+            $stmt->execute([
+                ':estado'    => $estado,
+                ':asignado'  => $asignadoA,
+                ':prioridad' => $prioridad,
+                ':notas'     => $notasResolucion,
+                ':evidencia' => $evidenciaResolucion,
+                ':act'       => $actualizadoEn,
+                ':folio'     => $folio
+            ]);
+        } else {
+            $stmt = $pdo->prepare("
+                UPDATE tickets_soporte 
+                SET estado = COALESCE(NULLIF(:estado, ''), estado), 
+                    asignado_a = COALESCE(NULLIF(:asignado, ''), asignado_a), 
+                    prioridad = COALESCE(NULLIF(:prioridad, ''), prioridad), 
+                    notas_resolucion = COALESCE(NULLIF(:notas, ''), notas_resolucion), 
+                    actualizado_en = :act 
+                WHERE folio = :folio
+            ");
+            $stmt->execute([
+                ':estado'    => $estado,
+                ':asignado'  => $asignadoA,
+                ':prioridad' => $prioridad,
+                ':notas'     => $notasResolucion,
+                ':act'       => $actualizadoEn,
+                ':folio'     => $folio
+            ]);
+        }
     }
 
-    // Si viene información del reporte de servicio técnico (Infraestructura)
+    // 2. Si viene información del reporte de servicio técnico (Infraestructura)
     if (isset($datos['requiere_firma_reporte']) || isset($_POST['requiere_firma_reporte']) || ($datos['accion'] ?? '') === 'reporte_servicio' || ($datos['accion'] ?? '') === 'reporte_firmado' || isset($datos['reporte_firmado'])) {
         $reqFirma = intval($datos['requiere_firma_reporte'] ?? ($_POST['requiere_firma_reporte'] ?? 1));
         $repOrden = trim($datos['reporte_orden_no'] ?? ($_POST['reporte_orden_no'] ?? $folio));
@@ -156,34 +164,35 @@ try {
 
         $stmtRep = $pdo->prepare("
             UPDATE tickets_soporte 
-            SET requiere_firma_reporte = CASE WHEN :req = 1 OR :firmado = 1 THEN 1 ELSE requiere_firma_reporte END,
+            SET requiere_firma_reporte = CASE WHEN :req = 1 OR :firmado_a = 1 THEN 1 ELSE requiere_firma_reporte END,
                 reporte_orden_no = COALESCE(NULLIF(:ord, ''), reporte_orden_no),
                 reporte_problema = COALESCE(NULLIF(:prob, ''), reporte_problema),
                 reporte_trabajo_solicitado = COALESCE(NULLIF(:sol, ''), reporte_trabajo_solicitado),
                 reporte_observaciones = COALESCE(NULLIF(:obs, ''), reporte_observaciones),
                 reporte_trabajos_realizados = COALESCE(NULLIF(:real, ''), reporte_trabajos_realizados),
                 reporte_tecnico_nombre = COALESCE(NULLIF(:tec, ''), reporte_tecnico_nombre),
-                reporte_firmado = CASE WHEN :firmado = 1 THEN 1 ELSE reporte_firmado END,
+                reporte_firmado = CASE WHEN :firmado_b = 1 THEN 1 ELSE reporte_firmado END,
                 reporte_firma_digital = COALESCE(NULLIF(:firma_img, ''), reporte_firma_digital),
                 reporte_firmado_por = COALESCE(NULLIF(:firmado_por, ''), reporte_firmado_por),
                 reporte_firmado_en = COALESCE(NULLIF(:firmado_en, ''), reporte_firmado_en),
-                actualizado_en = :act
-            WHERE folio = :folio
+                actualizado_en = :act_rep
+            WHERE folio = :folio_rep
         ");
         $stmtRep->execute([
             ':req'         => $reqFirma,
+            ':firmado_a'   => $repFirmado,
             ':ord'         => $repOrden,
             ':prob'        => $repProb,
             ':sol'         => $repSol,
             ':obs'         => $repObs,
             ':real'        => $repReal,
             ':tec'         => $repTec,
-            ':firmado'     => $repFirmado,
+            ':firmado_b'   => $repFirmado,
             ':firma_img'   => $repFirmaImg,
             ':firmado_por' => $repFirmadoPor,
             ':firmado_en'  => $repFirmadoEn,
-            ':act'         => $actualizadoEn,
-            ':folio'       => $folio
+            ':act_rep'     => $actualizadoEn,
+            ':folio_rep'   => $folio
         ]);
     }
 

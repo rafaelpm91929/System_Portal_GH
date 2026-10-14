@@ -300,14 +300,14 @@ function sincronizarTicketsConCentral($pdo) {
                         prioridad = :prioridad,
                         evidencia_resolucion = COALESCE(NULLIF(:evidencia, ''), evidencia_resolucion),
                         solicitante_usuario = COALESCE(NULLIF(solicitante_usuario, ''), :sol_usr),
-                        requiere_firma_reporte = CASE WHEN :req_firma = 1 OR :rep_firmado = 1 THEN 1 ELSE requiere_firma_reporte END,
+                        requiere_firma_reporte = CASE WHEN :req_firma = 1 OR :rep_firmado_a = 1 THEN 1 ELSE requiere_firma_reporte END,
                         reporte_orden_no = COALESCE(NULLIF(:rep_orden, ''), reporte_orden_no),
                         reporte_problema = COALESCE(NULLIF(:rep_prob, ''), reporte_problema),
                         reporte_trabajo_solicitado = COALESCE(NULLIF(:rep_sol, ''), reporte_trabajo_solicitado),
                         reporte_observaciones = COALESCE(NULLIF(:rep_obs, ''), reporte_observaciones),
                         reporte_trabajos_realizados = COALESCE(NULLIF(:rep_real, ''), reporte_trabajos_realizados),
                         reporte_tecnico_nombre = COALESCE(NULLIF(:rep_tec, ''), reporte_tecnico_nombre),
-                        reporte_firmado = CASE WHEN :rep_firmado = 1 THEN 1 ELSE reporte_firmado END,
+                        reporte_firmado = CASE WHEN :rep_firmado_b = 1 THEN 1 ELSE reporte_firmado END,
                         reporte_firma_digital = COALESCE(NULLIF(:rep_firma_img, ''), reporte_firma_digital),
                         reporte_firmado_por = COALESCE(NULLIF(:rep_firmado_por, ''), reporte_firmado_por),
                         reporte_firmado_en = COALESCE(NULLIF(:rep_firmado_en, ''), reporte_firmado_en),
@@ -329,6 +329,7 @@ function sincronizarTicketsConCentral($pdo) {
                     $existe = $stmtChk->fetchColumn();
 
                     if ($existe) {
+                        $valFirmado = !empty($tc['reporte_firmado']) ? 1 : 0;
                         $stmtUpd->execute([
                             ':estado'          => $tc['estado'] ?? 'Abierto',
                             ':asignado'        => $tc['asignado_a'] ?? '',
@@ -343,7 +344,8 @@ function sincronizarTicketsConCentral($pdo) {
                             ':rep_obs'         => $tc['reporte_observaciones'] ?? '',
                             ':rep_real'        => $tc['reporte_trabajos_realizados'] ?? '',
                             ':rep_tec'         => $tc['reporte_tecnico_nombre'] ?? '',
-                            ':rep_firmado'     => !empty($tc['reporte_firmado']) ? 1 : 0,
+                            ':rep_firmado_a'   => $valFirmado,
+                            ':rep_firmado_b'   => $valFirmado,
                             ':rep_firma_img'   => $tc['reporte_firma_digital'] ?? '',
                             ':rep_firmado_por' => $tc['reporte_firmado_por'] ?? '',
                             ':rep_firmado_en'  => $tc['reporte_firmado_en'] ?? null,
