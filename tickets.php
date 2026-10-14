@@ -2227,9 +2227,32 @@ if ($ticketSeleccionado) {
                     $repFirmaImg = $ticketSeleccionado['reporte_firma_digital'] ?? '';
                     $repFirmadoPor = $ticketSeleccionado['reporte_firmado_por'] ?? '';
                     $repFirmadoEn = $ticketSeleccionado['reporte_firmado_en'] ?? '';
+
+                    $logoIzqPath = __DIR__ . '/uploads/reporte_logo_izq.png';
+                    $logoDerPath = __DIR__ . '/uploads/reporte_logo_der.png';
+                    $logoIzqSrc  = file_exists($logoIzqPath) ? ('data:image/png;base64,' . base64_encode(file_get_contents($logoIzqPath))) : 'uploads/reporte_logo_izq.png';
+                    $logoDerSrc  = file_exists($logoDerPath) ? ('data:image/png;base64,' . base64_encode(file_get_contents($logoDerPath))) : 'uploads/reporte_logo_der.png';
                 ?>
                     <div class="detail-card mb-4" id="reporte_servicio" style="border-color: <?php echo $repFirmado ? 'rgba(16, 185, 129, 0.45)' : 'rgba(245, 158, 11, 0.55)'; ?>; background: <?php echo $repFirmado ? 'linear-gradient(145deg, #062319 0%, #03140e 100%)' : 'linear-gradient(145deg, #1f1604 0%, #0d0a02 100%)'; ?>; box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
                         
+                        <!-- Banner Oficial Membretado Grupo Huerta -->
+                        <div class="bg-white p-3 rounded-3 mb-3 d-flex align-items-center justify-content-between border shadow-sm" style="border-color: #cbd5e1;">
+                            <div style="flex: 0 0 130px;">
+                                <img src="<?php echo $logoIzqSrc; ?>" alt="GH Grupo Huerta" style="max-height: 44px; max-width: 125px; object-fit: contain;">
+                            </div>
+                            <div class="text-center flex-grow-1 px-2">
+                                <div style="color: #002060; font-weight: 900; font-size: 16px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                                    REPORTE DE MANTENIMIENTO TI
+                                </div>
+                                <div style="color: #002060; font-weight: 900; font-size: 15px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                                    GRUPO HUERTA
+                                </div>
+                            </div>
+                            <div style="flex: 0 0 130px;" class="text-end">
+                                <img src="<?php echo $logoDerSrc; ?>" alt="Sistemas Grupo Huerta" style="max-height: 60px; max-width: 65px; object-fit: contain;">
+                            </div>
+                        </div>
+
                         <!-- Encabezado del Formato -->
                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 pb-3 border-bottom border-secondary border-opacity-25">
                             <div>
@@ -2425,18 +2448,28 @@ if ($ticketSeleccionado) {
                     <!-- HOJA OCULTA PARA IMPRESIÓN OFICIAL -->
                     <div id="hojaReporteOficialAgencia" class="d-none">
                         <div style="background: #ffffff; color: #0f172a; padding: 30px; font-family: sans-serif;">
-                            <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px;">
-                                <div>
-                                    <h2 style="margin: 0; color: #0284c7; font-weight: 800;">GRUPO HUERTA</h2>
-                                    <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Dirección Central de Sistemas &bull; Infraestructura y Soporte</div>
-                                    <h4 style="margin: 8px 0 0 0; color: #0f172a;">FORMATO DE REPORTE Y CONFORMIDAD DE SERVICIO TÉCNICO</h4>
+                            <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #0f172a; padding-bottom: 12px; margin-bottom: 15px;">
+                                <div style="flex: 0 0 140px;">
+                                    <img src="<?php echo $logoIzqSrc; ?>" alt="GH Grupo Huerta" style="max-height: 48px; max-width: 135px; object-fit: contain;">
                                 </div>
-                                <div style="text-align: right;">
-                                    <div style="background: #0f172a; color: #fff; padding: 6px 14px; font-weight: 700; font-family: monospace; font-size: 14px; border-radius: 4px; display: inline-block;">
-                                        ORDEN NO. <?php echo htmlspecialchars($repOrdenNo); ?>
+                                <div style="text-align: center; flex: 1; padding: 0 10px;">
+                                    <div style="color: #002060; font-weight: 900; font-size: 18px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                                        REPORTE DE MANTENIMIENTO TI
                                     </div>
-                                    <div style="font-size: 12px; color: #64748b; margin-top: 6px;">Fecha: <?php echo htmlspecialchars(date('d/m/Y', strtotime($ticketSeleccionado['creado_en']))); ?></div>
+                                    <div style="color: #002060; font-weight: 900; font-size: 17px; letter-spacing: 0.5px; line-height: 1.2; text-transform: uppercase;">
+                                        GRUPO HUERTA
+                                    </div>
                                 </div>
+                                <div style="flex: 0 0 140px; text-align: right;">
+                                    <img src="<?php echo $logoDerSrc; ?>" alt="Sistemas Grupo Huerta" style="max-height: 72px; max-width: 76px; object-fit: contain;">
+                                </div>
+                            </div>
+
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+                                <div style="background: #002060; color: #fff; padding: 5px 12px; font-weight: 700; font-family: monospace; font-size: 13px; border-radius: 4px; display: inline-block;">
+                                    ORDEN NO. <?php echo htmlspecialchars($repOrdenNo); ?>
+                                </div>
+                                <div style="font-size: 12px; color: #64748b;">Fecha: <?php echo htmlspecialchars(date('d/m/Y', strtotime($ticketSeleccionado['creado_en']))); ?></div>
                             </div>
 
                             <table style="width: 100%; font-size: 13px; margin-bottom: 20px; border-collapse: collapse;">
