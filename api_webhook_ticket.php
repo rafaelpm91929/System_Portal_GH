@@ -196,7 +196,7 @@ try {
         ]);
     }
 
-    $filasAfectadas = $stmt->rowCount();
+    $filasAfectadas = (isset($stmt) && $stmt) ? $stmt->rowCount() : ((isset($stmtRep) && $stmtRep) ? $stmtRep->rowCount() : 0);
 
     // Si viene un mensaje en el webhook, insertarlo en tickets_mensajes
     $nuevoMensaje = trim($datos['mensaje'] ?? ($_POST['mensaje'] ?? ''));
