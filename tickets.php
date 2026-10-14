@@ -792,15 +792,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         SET reporte_firmado = 1,
                             reporte_firma_digital = :firma,
                             reporte_firmado_por = :por,
-                            reporte_firmado_en = :fec,
-                            actualizado_en = :fec
+                            reporte_firmado_en = :fec_rep,
+                            actualizado_en = :fec_act
                         WHERE id = :id
                     ");
                     $stmtFirmaLoc->execute([
-                        ':firma' => $firmaBase64,
-                        ':por'   => $firmadoPor,
-                        ':fec'   => $fechaFirma,
-                        ':id'    => $ticketId
+                        ':firma'   => $firmaBase64,
+                        ':por'     => $firmadoPor,
+                        ':fec_rep' => $fechaFirma,
+                        ':fec_act' => $fechaFirma,
+                        ':id'      => $ticketId
                     ]);
 
                     // 2. Registrar en la conversación del ticket local
@@ -813,7 +814,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             (?, ?, ?, ?, 'solicitante', ?, ?)
                         ");
                         $stmtMsgLoc->execute([$ticketId, $folioTk, $loginUsuario, $firmadoPor, $avisoFirma, $fechaFirma]);
-                    } catch (Throwable $eMsgL) {}
+                    } catch (Throwable $eMsgL) {
+                        try {
+                            $stmtMsgLoc2 = $pdo->prepare("
+                                INSERT INTO tickets_mensajes
+                                (ticket_id, autor_usuario, autor_nombre, autor_rol, mensaje, creado_en)
+                                VALUES
+                                (?, ?, ?, 'solicitante', ?, ?)
+                            ");
+                            $stmtMsgLoc2->execute([$ticketId, $loginUsuario, $firmadoPor, $avisoFirma, $fechaFirma]);
+                        } catch (Throwable $eMsgL2) {}
+                    }
 
                     // 3. Enviar la firma inmediatamente a Central TI (portal.grupohuerta.mx)
                     try {
@@ -1965,6 +1976,15 @@ if ($ticketSeleccionado) {
                                 <span class="badge rounded-pill <?php echo $tSelEstClass; ?> px-3 py-1" style="font-size: 0.85rem;">
                                     <i class="bi bi-clock-history me-1"></i> <?php echo htmlspecialchars($ticketSeleccionado['estado'] ?? 'Abierto'); ?>
                                 </span>
+                                <?php if (!empty($ticketSeleccionado['reporte_firmado'])): ?>
+                                    <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>&auto=1" target="_blank" class="badge rounded-pill bg-danger px-3 py-1.5 text-decoration-none fw-bold shadow-sm d-inline-flex align-items-center gap-1.5" style="font-size: 0.85rem;" title="Descargar Reporte Oficial en PDF">
+                                        <i class="bi bi-file-earmark-pdf-fill"></i> Descargar PDF Firmado
+                                    </a>
+                                <?php elseif (!empty($ticketSeleccionado['requiere_firma_reporte'])): ?>
+                                    <a href="#reporte_servicio" class="badge rounded-pill bg-warning text-dark px-3 py-1.5 text-decoration-none fw-bold shadow-sm d-inline-flex align-items-center gap-1" style="font-size: 0.85rem;">
+                                        <i class="bi bi-pen-fill"></i> Firma Digital Pendiente
+                                    </a>
+                                <?php endif; ?>
                             </div>
                             <h2 class="fw-bold text-white mb-1"><?php echo htmlspecialchars($ticketSeleccionado['titulo']); ?></h2>
                             <div class="text-secondary small">
@@ -2227,16 +2247,29 @@ if ($ticketSeleccionado) {
                                 </h5>
                             </div>
                             <?php if ($repFirmado): ?>
-                                <button type="button" class="btn btn-sm btn-outline-success rounded-pill px-3 py-1.5 fw-bold d-flex align-items-center gap-1.5" onclick="imprimirReporteServicioAgencia()">
-                                    <i class="bi bi-printer-fill"></i> Imprimir / Guardar PDF
-                                </button>
+                                <div class="d-flex align-items-center gap-2">
+                                    <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>&auto=1" target="_blank" class="btn btn-sm btn-danger rounded-pill px-3 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm">
+                                        <i class="bi bi-file-earmark-pdf-fill"></i> Descargar / Guardar PDF
+                                    </a>
+                                    <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>" target="_blank" class="btn btn-sm btn-outline-light rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5">
+                                        <i class="bi bi-printer"></i> Vista Imprimible
+                                    </a>
+                                </div>
                             <?php endif; ?>
                         </div>
 
                         <?php if (isset($_GET['firmado_ok'])): ?>
-                            <div class="alert alert-success d-flex align-items-center gap-2 rounded-3 mb-3 py-2 px-3">
-                                <i class="bi bi-check-circle-fill fs-5"></i>
-                                <div>¡Firma digital registrada y sincronizada correctamente con la Dirección de Sistemas!</div>
+                            <div class="alert alert-success d-flex flex-wrap align-items-center justify-content-between gap-3 rounded-3 mb-3 p-3 border border-success border-opacity-40" style="background: rgba(16, 185, 129, 0.18);">
+                                <div class="d-flex align-items-center gap-2 text-white">
+                                    <i class="bi bi-check-circle-fill text-success fs-4 flex-shrink-0"></i>
+                                    <div>
+                                        <strong class="d-block">¡Firma digital registrada con éxito!</strong>
+                                        <span class="small text-light">El reporte quedó certificado y sincronizado con la Dirección de Sistemas. Ya puedes descargarlo en formato PDF oficial.</span>
+                                    </div>
+                                </div>
+                                <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>&auto=1" target="_blank" class="btn btn-danger fw-bold rounded-pill px-3 py-2 text-white d-inline-flex align-items-center gap-1.5 shadow">
+                                    <i class="bi bi-file-earmark-pdf-fill fs-5"></i> Descargar Reporte en PDF
+                                </a>
                             </div>
                         <?php endif; ?>
 
@@ -2325,10 +2358,13 @@ if ($ticketSeleccionado) {
                                         </div>
                                     </div>
                                 </div>
-                                <div>
-                                    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1.5 fw-semibold" onclick="imprimirReporteServicioAgencia()">
-                                        <i class="bi bi-printer me-1"></i> Imprimir Reporte Oficial
-                                    </button>
+                                <div class="d-flex align-items-center gap-2">
+                                    <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>&auto=1" target="_blank" class="btn btn-danger btn-sm rounded-pill px-3.5 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm">
+                                        <i class="bi bi-file-earmark-pdf-fill"></i> Descargar Reporte en PDF
+                                    </a>
+                                    <a href="reporte_servicio_imprimir.php?id=<?php echo $ticketSeleccionado['id']; ?>" target="_blank" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5">
+                                        <i class="bi bi-printer"></i> Imprimir
+                                    </a>
                                 </div>
                             </div>
 
