@@ -711,6 +711,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
 
     // 6. Agendar Cita de Soporte Técnico
     if ($accion === 'agendar_cita') {
+        $ticketId = intval($_POST['ticket_id'] ?? 0);
+        $ticketFolio = trim($_POST['ticket_folio'] ?? '');
+        $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
+
         $agenciaCita = trim($_POST['agencia'] ?? '');
         $areaCita = trim($_POST['area_sistemas'] ?? 'INFRAESTRUCTURA');
         $tipoCita = trim($_POST['tipo_cita'] ?? 'Presencial');
@@ -723,39 +727,107 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         $horaCita = trim($_POST['hora_cita'] ?? '09:00');
         $notasCita = trim($_POST['notas_atencion'] ?? '');
 
-        if (empty($agenciaCita) || empty($asuntoCita) || empty($fechaCita)) {
+        // Validación estricta: Si no hay ticket, no se puede hacer cita
+        if ($ticketId <= 0 && empty($ticketFolio)) {
+            $error = "Por política de control de TI, no es posible agendar una cita sin un ticket de soporte asociado.";
+            if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
+        } elseif (empty($agenciaCita) || empty($asuntoCita) || empty($fechaCita)) {
             $error = "Por favor completa la Agencia, Asunto y Fecha de la cita.";
+            if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
         } else {
             try {
-                $stmtCConteo = $pdo->query("SELECT COUNT(*) FROM citas_soporte");
-                $numC = ($stmtCConteo ? (int)$stmtCConteo->fetchColumn() : 0) + 1;
-                $folioCita = 'CTA-' . date('Y') . '-' . str_pad($numC, 4, '0', STR_PAD_LEFT);
+                // Verificar que el ticket existe
+                $stmtTkCheck = $pdo->prepare("SELECT id, folio, titulo, solicitante_agencia, solicitante_nombre, solicitante_email, area_sistemas FROM tickets_soporte WHERE id = ? OR folio = ? LIMIT 1");
+                $stmtTkCheck->execute([$ticketId, $ticketFolio]);
+                $tkAsoc = $stmtTkCheck->fetch(PDO::FETCH_ASSOC);
 
-                $stmtInsC = $pdo->prepare("
-                    INSERT INTO citas_soporte 
-                    (folio, agencia, area_sistemas, tipo_cita, asunto, descripcion, solicitante_nombre, solicitante_usuario, solicitante_email, tecnico_asignado, fecha_cita, hora_cita, estado, notas_atencion)
-                    VALUES
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Programada', ?)
-                ");
-                $stmtInsC->execute([
-                    $folioCita,
-                    $agenciaCita,
-                    $areaCita,
-                    $tipoCita,
-                    $asuntoCita,
-                    $descCita,
-                    $solNomCita,
-                    $_SESSION['usuario_login'] ?? '',
-                    $solEmailCita,
-                    $tecnicoCita,
-                    $fechaCita,
-                    $horaCita,
-                    $notasCita
-                ]);
-                $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> para <strong>" . htmlspecialchars($agenciaCita) . "</strong>.";
-                $_SESSION['tab_activa'] = 'citas';
+                if (!$tkAsoc) {
+                    $error = "El ticket seleccionado no existe en el sistema o es inválido.";
+                    if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                } else {
+                    $ticketId = $tkAsoc['id'];
+                    $ticketFolio = $tkAsoc['folio'] ?: ('TK-' . $ticketId);
+
+                    $stmtCConteo = $pdo->query("SELECT COUNT(*) FROM citas_soporte");
+                    $numC = ($stmtCConteo ? (int)$stmtCConteo->fetchColumn() : 0) + 1;
+                    $folioCita = 'CTA-' . date('Y') . '-' . str_pad($numC, 4, '0', STR_PAD_LEFT);
+
+                    $stmtInsC = $pdo->prepare("
+                        INSERT INTO citas_soporte 
+                        (folio, ticket_id, ticket_folio, agencia, area_sistemas, tipo_cita, asunto, descripcion, solicitante_nombre, solicitante_usuario, solicitante_email, tecnico_asignado, fecha_cita, hora_cita, estado, notas_atencion)
+                        VALUES
+                        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Programada', ?)
+                    ");
+                    $stmtInsC->execute([
+                        $folioCita,
+                        $ticketId,
+                        $ticketFolio,
+                        $agenciaCita,
+                        $areaCita,
+                        $tipoCita,
+                        $asuntoCita,
+                        $descCita,
+                        $solNomCita,
+                        $_SESSION['usuario_login'] ?? '',
+                        $solEmailCita,
+                        $tecnicoCita,
+                        $fechaCita,
+                        $horaCita,
+                        $notasCita
+                    ]);
+
+                    // Registrar en la conversación del ticket para trazabilidad
+                    $avisoCita = "📅 Cita Técnica Programada ($folioCita):\nSe programó visita técnica para el " . date('d/m/Y', strtotime($fechaCita)) . " a las $horaCita hrs con el técnico $tecnicoCita.\nTipo: $tipoCita | Asunto: $asuntoCita" . (!empty($descCita) ? "\nDetalles: $descCita" : "");
+                    try {
+                        $stmtMsgCita = $pdo->prepare("
+                            INSERT INTO tickets_mensajes
+                            (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, creado_en)
+                            VALUES (?, ?, ?, 'agente', 'Dirección Sistemas', ?, ?)
+                        ");
+                        $stmtMsgCita->execute([$ticketId, $_SESSION['usuario_login'] ?? 'sistemas', $nombreUsuario, $avisoCita, date('Y-m-d H:i:s')]);
+                    } catch (Throwable $eMsgC) {}
+
+                    // Disparar Webhook push a la agencia para sincronización inmediata
+                    try {
+                        if (!empty($agenciaCita)) {
+                            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                            $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
+                            $postDataWh = [
+                                'token'          => $tokenWh,
+                                'folio'          => $ticketFolio,
+                                'mensaje'        => $avisoCita,
+                                'autor_nombre'   => $nombreUsuario,
+                                'autor_rol'      => 'agente',
+                                'autor_agencia'  => 'Dirección Sistemas',
+                                'actualizado_en' => date('Y-m-d H:i:s')
+                            ];
+                            $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
+                            curl_setopt_array($chWh, [
+                                CURLOPT_RETURNTRANSFER => true,
+                                CURLOPT_POST           => true,
+                                CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
+                                CURLOPT_TIMEOUT        => 4,
+                                CURLOPT_SSL_VERIFYPEER => false,
+                                CURLOPT_HTTPHEADER     => [
+                                    'Authorization: Bearer ' . $tokenWh,
+                                    'Content-Type: application/x-www-form-urlencoded'
+                                ]
+                            ]);
+                            @curl_exec($chWh);
+                            @curl_close($chWh);
+                        }
+                    } catch (Throwable $eWhC) {}
+
+                    $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> vinculada al ticket <strong>$ticketFolio</strong>.";
+                    if ($origenTicketId > 0 || $ticketId > 0) {
+                        $_SESSION['redir_ticket_ver'] = $ticketId;
+                    } else {
+                        $_SESSION['tab_activa'] = 'citas';
+                    }
+                }
             } catch (Throwable $eCita) {
                 $error = "Error al agendar cita: " . $eCita->getMessage();
+                if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
             }
         }
     }
@@ -763,24 +835,105 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
     // 7. Actualizar Cita de Soporte
     if ($accion === 'actualizar_cita') {
         $citaId = intval($_POST['cita_id'] ?? 0);
+        $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
         $estadoCita = trim($_POST['estado'] ?? 'Programada');
         $tecnicoCita = trim($_POST['tecnico_asignado'] ?? '');
         $fechaCita = trim($_POST['fecha_cita'] ?? '');
         $horaCita = trim($_POST['hora_cita'] ?? '');
         $notasCita = trim($_POST['notas_atencion'] ?? '');
+        $motivoCambio = trim($_POST['motivo_cambio'] ?? '');
 
         if ($citaId > 0) {
             try {
-                $stmtUpC = $pdo->prepare("
-                    UPDATE citas_soporte 
-                    SET estado = ?, tecnico_asignado = ?, fecha_cita = ?, hora_cita = ?, notas_atencion = ?
-                    WHERE id = ?
-                ");
-                $stmtUpC->execute([$estadoCita, $tecnicoCita, $fechaCita, $horaCita, $notasCita, $citaId]);
-                $mensaje = "Cita ID #$citaId actualizada correctamente.";
-                $_SESSION['tab_activa'] = 'citas';
+                $stmtPrev = $pdo->prepare("SELECT * FROM citas_soporte WHERE id = ?");
+                $stmtPrev->execute([$citaId]);
+                $citaPrev = $stmtPrev->fetch(PDO::FETCH_ASSOC);
+
+                if (!$citaPrev) {
+                    $error = "La cita técnica no fue encontrada.";
+                    if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                } else {
+                    $cambioFechaHora = (!empty($citaPrev['fecha_cita']) && ($fechaCita !== $citaPrev['fecha_cita'] || $horaCita !== $citaPrev['hora_cita']));
+
+                    if ($cambioFechaHora && empty($motivoCambio)) {
+                        $error = "Al cambiar la fecha u hora de la cita, es obligatorio especificar el motivo o justificación del cambio.";
+                        if ($origenTicketId > 0 || !empty($citaPrev['ticket_id'])) {
+                            $_SESSION['redir_ticket_ver'] = $origenTicketId ?: $citaPrev['ticket_id'];
+                        }
+                    } else {
+                        $historialActual = $citaPrev['historial_cambios'] ?? '';
+                        $motivoGuardar = $citaPrev['motivo_reprogramacion'] ?? '';
+
+                        if ($cambioFechaHora) {
+                            $motivoGuardar = $motivoCambio;
+                            $lineaHistorial = "[" . date('d/m/Y H:i') . " - $nombreUsuario] Reprogramación de (" . $citaPrev['fecha_cita'] . " " . $citaPrev['hora_cita'] . ") a ($fechaCita $horaCita). Motivo: $motivoCambio";
+                            $historialActual = empty($historialActual) ? $lineaHistorial : ($lineaHistorial . "\n" . $historialActual);
+                        }
+
+                        $stmtUpC = $pdo->prepare("
+                            UPDATE citas_soporte 
+                            SET estado = ?, tecnico_asignado = ?, fecha_cita = ?, hora_cita = ?, notas_atencion = ?, motivo_reprogramacion = ?, historial_cambios = ?
+                            WHERE id = ?
+                        ");
+                        $stmtUpC->execute([$estadoCita, $tecnicoCita, $fechaCita, $horaCita, $notasCita, $motivoGuardar, $historialActual, $citaId]);
+                        $mensaje = "Cita ID #$citaId actualizada correctamente.";
+
+                        // Si cambió fecha/hora y tiene ticket asociado, insertar mensaje en ticket y enviar webhook
+                        if ($cambioFechaHora && (!empty($citaPrev['ticket_id']) || !empty($citaPrev['ticket_folio']))) {
+                            $tkCId = $citaPrev['ticket_id'] ?: 0;
+                            $folioCitaTxt = $citaPrev['folio'] ?: ('CTA-' . $citaId);
+                            $avisoReprog = "📅 Reprogramación de Cita ($folioCitaTxt):\nLa visita técnica fue reprogramada de " . date('d/m/Y', strtotime($citaPrev['fecha_cita'])) . " " . $citaPrev['hora_cita'] . " hrs a " . date('d/m/Y', strtotime($fechaCita)) . " " . $horaCita . " hrs.\nMotivo del cambio: $motivoCambio\n(Registrado por $nombreUsuario)";
+
+                            try {
+                                $stmtMsgRep = $pdo->prepare("
+                                    INSERT INTO tickets_mensajes
+                                    (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, creado_en)
+                                    VALUES (?, ?, ?, 'agente', 'Dirección Sistemas', ?, ?)
+                                ");
+                                $stmtMsgRep->execute([$tkCId, $_SESSION['usuario_login'] ?? 'sistemas', $nombreUsuario, $avisoReprog, date('Y-m-d H:i:s')]);
+                            } catch (Throwable $eMsgR) {}
+
+                            try {
+                                if (!empty($citaPrev['agencia'])) {
+                                    $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                                    $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
+                                    $postDataWh = [
+                                        'token'          => $tokenWh,
+                                        'folio'          => $citaPrev['ticket_folio'],
+                                        'mensaje'        => $avisoReprog,
+                                        'autor_nombre'   => $nombreUsuario,
+                                        'autor_rol'      => 'agente',
+                                        'autor_agencia'  => 'Dirección Sistemas',
+                                        'actualizado_en' => date('Y-m-d H:i:s')
+                                    ];
+                                    $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
+                                    curl_setopt_array($chWh, [
+                                        CURLOPT_RETURNTRANSFER => true,
+                                        CURLOPT_POST           => true,
+                                        CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
+                                        CURLOPT_TIMEOUT        => 4,
+                                        CURLOPT_SSL_VERIFYPEER => false,
+                                        CURLOPT_HTTPHEADER     => [
+                                            'Authorization: Bearer ' . $tokenWh,
+                                            'Content-Type: application/x-www-form-urlencoded'
+                                        ]
+                                    ]);
+                                    @curl_exec($chWh);
+                                    @curl_close($chWh);
+                                }
+                            } catch (Throwable $eWhR) {}
+                        }
+
+                        if ($origenTicketId > 0 || !empty($citaPrev['ticket_id'])) {
+                            $_SESSION['redir_ticket_ver'] = $origenTicketId ?: $citaPrev['ticket_id'];
+                        } else {
+                            $_SESSION['tab_activa'] = 'citas';
+                        }
+                    }
+                }
             } catch (Throwable $eUpC) {
                 $error = "Error al actualizar cita: " . $eUpC->getMessage();
+                if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
             }
         }
     }
@@ -788,12 +941,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
     // 8. Eliminar Cita
     if ($accion === 'eliminar_cita' && $esAdmin) {
         $citaId = intval($_POST['cita_id'] ?? 0);
+        $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
         if ($citaId > 0) {
             try {
                 $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE id = ?");
                 $stmtDelC->execute([$citaId]);
                 $mensaje = "Cita ID #$citaId eliminada correctamente.";
-                $_SESSION['tab_activa'] = 'citas';
+                if ($origenTicketId > 0) {
+                    $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                } else {
+                    $_SESSION['tab_activa'] = 'citas';
+                }
             } catch (Throwable $eDelC) {
                 $error = "Error al eliminar cita: " . $eDelC->getMessage();
             }
@@ -803,9 +961,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
     // Patrón Post/Redirect/Get: Previene duplicados al recargar con F5
     $_SESSION['flash_mensaje'] = $mensaje;
     $_SESSION['flash_error'] = $error;
+    $redirTicketVer = $_SESSION['redir_ticket_ver'] ?? null;
+    unset($_SESSION['redir_ticket_ver']);
     $tabRedir = $_SESSION['tab_activa'] ?? '';
     unset($_SESSION['tab_activa']);
-    $urlDestino = "tickets.php" . (!empty($tabRedir) ? "?tab=" . urlencode($tabRedir) : "");
+
+    if (!empty($redirTicketVer)) {
+        $urlDestino = "tickets.php?ver=" . intval($redirTicketVer);
+    } else {
+        $urlDestino = "tickets.php" . (!empty($tabRedir) ? "?tab=" . urlencode($tabRedir) : "");
+    }
     header("Location: $urlDestino");
     exit();
 }
@@ -1075,6 +1240,7 @@ $tasaResolucion = $totalTickets > 0 ? round((($conteoPorEstado['Resuelto'] + $co
 $ticketVerParam = trim($_GET['ver'] ?? ($_GET['ticket_id'] ?? ''));
 $ticketActivo = null;
 $mensajesTicketActivo = [];
+$citaTicketActivo = null;
 
 if (!empty($ticketVerParam) && $pdo) {
     try {
@@ -1091,6 +1257,15 @@ if (!empty($ticketVerParam) && $pdo) {
             $stmtMsgTk = $pdo->prepare("SELECT * FROM tickets_mensajes WHERE ticket_id = ? ORDER BY id ASC");
             $stmtMsgTk->execute([$ticketActivo['id']]);
             $mensajesTicketActivo = $stmtMsgTk ? $stmtMsgTk->fetchAll(PDO::FETCH_ASSOC) : [];
+
+            // Cargar cita vinculada al ticket
+            try {
+                $stmtCitaTk = $pdo->prepare("SELECT * FROM citas_soporte WHERE ticket_id = ? OR ticket_folio = ? ORDER BY id DESC LIMIT 1");
+                $stmtCitaTk->execute([$ticketActivo['id'], $ticketActivo['folio'] ?? '']);
+                $citaTicketActivo = $stmtCitaTk ? $stmtCitaTk->fetch(PDO::FETCH_ASSOC) : null;
+            } catch (Throwable $eTkCita) {
+                $citaTicketActivo = null;
+            }
         }
     } catch (Throwable $eVer) {}
 }
@@ -2863,13 +3038,88 @@ if (!empty($ticketVerParam) && $pdo) {
                             </div>
                         </div>
 
+                        <!-- Tarjeta de Cita Técnica Vinculada -->
+                        <div class="ticket-card p-4 mb-4" style="border-top: 3px solid <?php echo $citaTicketActivo ? '#10b981' : '#f59e0b'; ?>;">
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <h6 class="fw-bold text-white m-0 d-flex align-items-center gap-2">
+                                    <i class="bi bi-calendar2-check-fill <?php echo $citaTicketActivo ? 'text-success' : 'text-warning'; ?>"></i> Cita / Visita Técnica
+                                </h6>
+                                <?php if ($citaTicketActivo): 
+                                    $estCita = strtolower(trim($citaTicketActivo['estado'] ?? 'programada'));
+                                    $badgeCita = 'bg-success';
+                                    if ($estCita === 'en curso') $badgeCita = 'bg-warning text-dark';
+                                    elseif ($estCita === 'realizada') $badgeCita = 'bg-primary';
+                                    elseif ($estCita === 'cancelada') $badgeCita = 'bg-danger';
+                                ?>
+                                    <span class="badge <?php echo $badgeCita; ?> rounded-pill px-2.5 py-1" style="font-size: 0.72rem;">
+                                        <i class="bi bi-clock-history me-1"></i> <?php echo htmlspecialchars($citaTicketActivo['estado']); ?>
+                                    </span>
+                                <?php else: ?>
+                                    <span class="badge bg-secondary bg-opacity-30 text-secondary rounded-pill px-2 py-0.5" style="font-size: 0.7rem;">
+                                        Sin Cita Asignada
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+
+                            <?php if ($citaTicketActivo): ?>
+                                <div class="d-flex flex-column gap-2 small">
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Folio Cita:</span>
+                                        <strong class="text-info font-monospace"><?php echo htmlspecialchars($citaTicketActivo['folio']); ?></strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Fecha y Hora:</span>
+                                        <strong class="text-white">
+                                            <i class="bi bi-calendar-event text-warning me-1"></i> <?php echo date('d/m/Y', strtotime($citaTicketActivo['fecha_cita'])); ?> a las <?php echo htmlspecialchars($citaTicketActivo['hora_cita']); ?> hrs
+                                        </strong>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Técnico Asignado:</span>
+                                        <span class="text-light fw-bold"><?php echo htmlspecialchars($citaTicketActivo['tecnico_asignado'] ?? 'Sin asignar'); ?></span>
+                                    </div>
+                                    <div class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-20">
+                                        <span class="text-secondary">Tipo de Cita:</span>
+                                        <span class="text-light"><?php echo htmlspecialchars($citaTicketActivo['tipo_cita'] ?? 'Presencial'); ?></span>
+                                    </div>
+                                    <?php if (!empty($citaTicketActivo['motivo_reprogramacion'])): ?>
+                                        <div class="p-2.5 rounded-3 border border-warning border-opacity-40 mt-1" style="background: rgba(245, 158, 11, 0.1);">
+                                            <div class="text-warning small fw-bold d-flex align-items-center gap-1">
+                                                <i class="bi bi-info-circle-fill"></i> Último Motivo de Reprogramación:
+                                            </div>
+                                            <div class="text-light small mt-1" style="font-size: 0.76rem;">
+                                                <?php echo nl2br(htmlspecialchars($citaTicketActivo['motivo_reprogramacion'])); ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+
+                                <button type="button" class="btn btn-outline-warning btn-sm w-100 fw-bold rounded-3 py-2 mt-3 d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($citaTicketActivo)); ?>, <?php echo $ticketActivo['id']; ?>)">
+                                    <i class="bi bi-pencil-square"></i> Modificar / Reprogramar Cita
+                                </button>
+                            <?php else: ?>
+                                <p class="text-secondary small mb-3">
+                                    Este ticket aún no tiene una visita o cita técnica programada en la agenda del equipo.
+                                </p>
+                                <button type="button" class="btn btn-outline-success btn-sm w-100 fw-bold rounded-3 py-2 d-flex align-items-center justify-content-center gap-1.5 shadow-sm" onclick="agendarCitaParaTicket(<?php echo htmlspecialchars(json_encode($ticketActivo)); ?>)">
+                                    <i class="bi bi-calendar-plus-fill"></i> Agendar Cita para este Ticket
+                                </button>
+                            <?php endif; ?>
+                        </div>
+
                         <!-- Acciones Rápidas -->
                         <div class="ticket-card p-3">
                             <div class="d-grid gap-2">
-                                <button type="button" class="btn btn-outline-success btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between" onclick="agendarCitaParaTicket(<?php echo htmlspecialchars(json_encode($ticketActivo)); ?>)">
-                                    <span><i class="bi bi-calendar-plus me-2"></i> Agendar Cita Técnica</span>
-                                    <i class="bi bi-chevron-right small text-secondary"></i>
-                                </button>
+                                <?php if ($citaTicketActivo): ?>
+                                    <button type="button" class="btn btn-outline-warning btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($citaTicketActivo)); ?>, <?php echo $ticketActivo['id']; ?>)">
+                                        <span><i class="bi bi-calendar-check-fill text-warning me-2"></i> Cita: <?php echo date('d/m/Y', strtotime($citaTicketActivo['fecha_cita'])); ?> (<?php echo htmlspecialchars($citaTicketActivo['hora_cita']); ?> hrs)</span>
+                                        <span class="badge bg-warning text-dark rounded-pill" style="font-size: 0.65rem;"><?php echo htmlspecialchars($citaTicketActivo['estado']); ?></span>
+                                    </button>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-outline-success btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between" onclick="agendarCitaParaTicket(<?php echo htmlspecialchars(json_encode($ticketActivo)); ?>)">
+                                        <span><i class="bi bi-calendar-plus me-2"></i> Agendar Cita Técnica</span>
+                                        <i class="bi bi-chevron-right small text-secondary"></i>
+                                    </button>
+                                <?php endif; ?>
                                 <?php if ($esInfraestructura): ?>
                                     <button type="button" class="btn <?php echo $reporteFirmado ? 'btn-outline-success' : ($reporteHabilitado ? 'btn-outline-warning' : 'btn-outline-info'); ?> btn-sm rounded-3 py-2 text-start d-flex align-items-center justify-content-between" data-bs-toggle="modal" data-bs-target="#modalReporteServicio">
                                         <span><i class="bi bi-file-earmark-check me-2"></i> Reporte de Servicio</span>
@@ -3598,8 +3848,18 @@ if (!empty($ticketVerParam) && $pdo) {
                                         data-folio="<?php echo htmlspecialchars($c['folio'] ?? ''); ?>">
                                         <td>
                                             <span class="badge-folio"><?php echo htmlspecialchars($c['folio'] ?? ('CTA-' . $c['id'])); ?></span>
+                                            <?php if (!empty($c['ticket_folio']) || !empty($c['ticket_id'])): ?>
+                                                <a href="tickets.php?ver=<?php echo urlencode($c['ticket_id'] ?: $c['ticket_folio']); ?>" class="badge bg-info bg-opacity-20 text-info border border-info border-opacity-30 text-decoration-none ms-1" style="font-size: 0.68rem;" title="Ver Ticket Asociado">
+                                                    <i class="bi bi-ticket-perforated me-1"></i><?php echo htmlspecialchars($c['ticket_folio'] ?: ('TK-' . $c['ticket_id'])); ?>
+                                                </a>
+                                            <?php endif; ?>
+                                            <?php if (!empty($c['motivo_reprogramacion'])): ?>
+                                                <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30 ms-1" style="font-size: 0.68rem;" title="<?php echo htmlspecialchars($c['motivo_reprogramacion']); ?>">
+                                                    <i class="bi bi-clock-history me-0.5"></i> Reprog.
+                                                </span>
+                                            <?php endif; ?>
                                             <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
-                                                <i class="bi bi-calendar-event me-1"></i><?php echo date('d/m/Y', strtotime($c['fecha_cita'])); ?> &bull; <?php echo htmlspecialchars($c['hora_cita']); ?>
+                                                <i class="bi bi-calendar-event me-1"></i><?php echo date('d/m/Y', strtotime($c['fecha_cita'])); ?> &bull; <?php echo htmlspecialchars($c['hora_cita']); ?> hrs
                                             </div>
                                         </td>
                                         <td>
@@ -4105,13 +4365,43 @@ if (!empty($ticketVerParam) && $pdo) {
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="tickets.php" method="POST">
+            <form action="tickets.php" method="POST" id="formNuevaCita">
                 <input type="hidden" name="accion" value="agendar_cita">
+                <input type="hidden" name="origen_ticket_id" id="citaOrigenTicketId" value="">
+                <input type="hidden" name="ticket_folio" id="citaTicketFolio" value="">
                 <div class="modal-body p-4">
                     <div class="row g-3">
+                        <!-- Selección Obligatoria de Ticket Vinculado -->
+                        <div class="col-12">
+                            <div class="p-3 rounded-3 border border-warning" style="background: rgba(245, 158, 11, 0.08);">
+                                <label class="form-label text-warning small fw-bold d-flex align-items-center justify-content-between mb-1">
+                                    <span><i class="bi bi-ticket-perforated-fill me-1"></i> Ticket de Soporte Asociado * (Requerido)</span>
+                                    <span class="badge bg-warning text-dark font-monospace" style="font-size: 0.68rem;">Control TI: Match Obligatorio</span>
+                                </label>
+                                <select name="ticket_id" id="citaTicketSelect" class="form-select bg-dark text-white border-warning border-opacity-75" required onchange="alSeleccionarTicketParaCita(this.value)">
+                                    <option value="">-- Selecciona el ticket para esta cita (Obligatorio) --</option>
+                                    <?php foreach ($tickets as $tOpc): ?>
+                                        <option value="<?php echo $tOpc['id']; ?>"
+                                            data-folio="<?php echo htmlspecialchars($tOpc['folio']); ?>"
+                                            data-titulo="<?php echo htmlspecialchars($tOpc['titulo']); ?>"
+                                            data-agencia="<?php echo htmlspecialchars($tOpc['solicitante_agencia'] ?? ''); ?>"
+                                            data-area="<?php echo htmlspecialchars($tOpc['area_sistemas'] ?? 'INFRAESTRUCTURA'); ?>"
+                                            data-solicitante="<?php echo htmlspecialchars($tOpc['solicitante_nombre'] ?? ''); ?>"
+                                            data-email="<?php echo htmlspecialchars($tOpc['solicitante_email'] ?? ''); ?>"
+                                            data-desc="<?php echo htmlspecialchars($tOpc['descripcion'] ?? ''); ?>">
+                                            <?php echo htmlspecialchars(($tOpc['folio'] ?: ('TK-' . $tOpc['id'])) . ' - ' . $tOpc['titulo'] . ' (' . ($tOpc['solicitante_agencia'] ?? 'Agencia') . ' | Estado: ' . $tOpc['estado'] . ')'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <div class="form-text text-secondary mt-1" style="font-size: 0.74rem;">
+                                    <i class="bi bi-info-circle me-1 text-info"></i> Por política operativa: Toda cita o visita debe estar vinculada a un ticket registrado.
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Agencia o Sucursal Destino *</label>
-                            <select name="agencia" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                            <select name="agencia" id="citaAgencia" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
                                 <option value="">-- Seleccionar Agencia --</option>
                                 <?php foreach ($agenciasList as $nomAg => $infoAg): ?>
                                     <option value="<?php echo htmlspecialchars($nomAg); ?>"><?php echo htmlspecialchars($nomAg); ?></option>
@@ -4121,7 +4411,7 @@ if (!empty($ticketVerParam) && $pdo) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Tipo de Cita / Visita *</label>
-                            <select name="tipo_cita" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                            <select name="tipo_cita" id="citaTipoCita" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
                                 <option value="Visita Técnica Presencial">Visita Técnica Presencial</option>
                                 <option value="Mantenimiento Preventivo">Mantenimiento Preventivo</option>
                                 <option value="Revisión de Red / Servidores">Revisión de Red / Servidores</option>
@@ -4136,11 +4426,11 @@ if (!empty($ticketVerParam) && $pdo) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Hora de la Cita</label>
-                            <input type="time" name="hora_cita" class="form-control bg-dark text-white border-secondary border-opacity-50" value="10:00">
+                            <input type="time" name="hora_cita" id="citaHora" class="form-control bg-dark text-white border-secondary border-opacity-50" value="10:00">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Área de Sistemas *</label>
-                            <select name="area_sistemas" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
+                            <select name="area_sistemas" id="citaAreaSistemas" class="form-select bg-dark text-white border-secondary border-opacity-50" required>
                                 <?php foreach ($AREAS_SISTEMAS as $kArea => $ainfo): ?>
                                     <option value="<?php echo $kArea; ?>"><?php echo htmlspecialchars($ainfo['nombre']); ?></option>
                                 <?php endforeach; ?>
@@ -4148,23 +4438,23 @@ if (!empty($ticketVerParam) && $pdo) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Técnico / Ingeniero Asignado</label>
-                            <input type="text" name="tecnico_asignado" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Ing. Daniel / Soporte Central" value="<?php echo htmlspecialchars($nombreUsuario); ?>">
+                            <input type="text" name="tecnico_asignado" id="citaTecnico" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Ing. Daniel / Soporte Central" value="<?php echo htmlspecialchars($nombreUsuario); ?>">
                         </div>
                         <div class="col-12">
                             <label class="form-label text-secondary small fw-semibold">Asunto de la Cita *</label>
-                            <input type="text" name="asunto" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Mantenimiento general a enlace y switches" required>
+                            <input type="text" name="asunto" id="citaAsunto" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Ej. Atención TK-XXXX: Mantenimiento general" required>
                         </div>
                         <div class="col-12">
                             <label class="form-label text-secondary small fw-semibold">Descripción detallada / Objetivos</label>
-                            <textarea name="descripcion" class="form-control bg-dark text-white border-secondary border-opacity-50" rows="3" placeholder="Detalles de la visita, equipos a revisar o requerimientos..."></textarea>
+                            <textarea name="descripcion" id="citaDescripcion" class="form-control bg-dark text-white border-secondary border-opacity-50" rows="3" placeholder="Detalles de la visita, equipos a revisar o requerimientos..."></textarea>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Contacto / Solicitante en Agencia</label>
-                            <input type="text" name="solicitante_nombre" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Nombre de quien recibe">
+                            <input type="text" name="solicitante_nombre" id="citaSolNombre" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Nombre de quien recibe">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Correo de Contacto</label>
-                            <input type="email" name="solicitante_email" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="correo@agencia.com">
+                            <input type="email" name="solicitante_email" id="citaSolEmail" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="correo@agencia.com">
                         </div>
                     </div>
                 </div>
@@ -4189,16 +4479,20 @@ if (!empty($ticketVerParam) && $pdo) {
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="tickets.php" method="POST">
+            <form action="tickets.php" method="POST" id="formActualizarCita" onsubmit="return validarActualizarCita(this);">
                 <input type="hidden" name="accion" value="actualizar_cita">
                 <input type="hidden" name="cita_id" id="citaActualizarId">
+                <input type="hidden" name="origen_ticket_id" id="citaActualizarOrigenTicketId" value="">
+                <input type="hidden" id="citaOriginalFecha" value="">
+                <input type="hidden" id="citaOriginalHora" value="">
+
                 <div class="modal-body p-4">
                     <div class="mb-3">
                         <div class="text-secondary small fw-bold text-uppercase">Agencia / Sucursal</div>
                         <div id="citaActualizarAgencia" class="fw-bold fs-6 text-info"></div>
                     </div>
                     <div class="mb-3">
-                        <div class="text-secondary small fw-bold text-uppercase">Asunto</div>
+                        <div class="text-secondary small fw-bold text-uppercase">Asunto / Ticket Vinculado</div>
                         <div id="citaActualizarAsunto" class="fw-semibold text-white"></div>
                     </div>
                     <div class="row g-3">
@@ -4213,12 +4507,33 @@ if (!empty($ticketVerParam) && $pdo) {
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Fecha</label>
-                            <input type="date" name="fecha_cita" id="citaActualizarFecha" class="form-control bg-dark text-white border-secondary border-opacity-50">
+                            <input type="date" name="fecha_cita" id="citaActualizarFecha" class="form-control bg-dark text-white border-secondary border-opacity-50" oninput="verificarCambioFechaHoraCita()">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label text-secondary small fw-semibold">Hora</label>
-                            <input type="time" name="hora_cita" id="citaActualizarHora" class="form-control bg-dark text-white border-secondary border-opacity-50">
+                            <input type="time" name="hora_cita" id="citaActualizarHora" class="form-control bg-dark text-white border-secondary border-opacity-50" oninput="verificarCambioFechaHoraCita()">
                         </div>
+
+                        <!-- Campo obligatorio si se cambia fecha u hora -->
+                        <div class="col-12" id="contenedorMotivoCambioCita" style="display: none;">
+                            <div class="p-3 rounded-3 border border-warning" style="background: rgba(245, 158, 11, 0.15);">
+                                <label class="form-label text-warning small fw-bold d-flex align-items-center gap-1 mb-1">
+                                    <i class="bi bi-exclamation-triangle-fill fs-6"></i> Motivo de Reprogramación (Obligatorio) *
+                                </label>
+                                <div class="text-secondary small mb-2" style="font-size: 0.76rem;">
+                                    Has modificado la fecha u hora original. Por política del departamento de TI, es obligatorio justificar el motivo del cambio:
+                                </div>
+                                <textarea name="motivo_cambio" id="citaMotivoCambio" class="form-control bg-dark text-white border-warning" rows="2" placeholder="Explica la causa del cambio (ej: Solicitud del usuario, retraso de proveedor, reprogramación técnica)..."></textarea>
+                            </div>
+                        </div>
+
+                        <div class="col-12" id="citaHistorialReprogSec" style="display: none;">
+                            <div class="p-2.5 rounded-3 border border-secondary border-opacity-30" style="background: rgba(15, 23, 42, 0.6);">
+                                <div class="text-secondary small fw-bold mb-1"><i class="bi bi-clock-history text-info me-1"></i> Historial de Cambios:</div>
+                                <div id="citaHistorialReprogTexto" class="text-secondary font-monospace small" style="font-size: 0.72rem; white-space: pre-wrap; max-height: 80px; overflow-y: auto;"></div>
+                            </div>
+                        </div>
+
                         <div class="col-12">
                             <label class="form-label text-secondary small fw-semibold">Técnico Asignado</label>
                             <input type="text" name="tecnico_asignado" id="citaActualizarTecnico" class="form-control bg-dark text-white border-secondary border-opacity-50" placeholder="Nombre del técnico">
@@ -4847,18 +5162,75 @@ function asignarmeEnFormulario(nombre) {
     }
 }
 
+function alSeleccionarTicketParaCita(ticketId) {
+    const select = document.getElementById('citaTicketSelect');
+    if (!select) return;
+    const opt = select.options[select.selectedIndex];
+    if (!opt || !opt.value) {
+        if (document.getElementById('citaTicketFolio')) document.getElementById('citaTicketFolio').value = '';
+        return;
+    }
+    const folio = opt.getAttribute('data-folio') || '';
+    const titulo = opt.getAttribute('data-titulo') || '';
+    const agencia = opt.getAttribute('data-agencia') || '';
+    const area = opt.getAttribute('data-area') || '';
+    const solicitante = opt.getAttribute('data-solicitante') || '';
+    const email = opt.getAttribute('data-email') || '';
+    const desc = opt.getAttribute('data-desc') || '';
+
+    if (document.getElementById('citaTicketFolio')) {
+        document.getElementById('citaTicketFolio').value = folio;
+    }
+    if (agencia && document.getElementById('citaAgencia')) {
+        document.getElementById('citaAgencia').value = agencia;
+    }
+    if (area && document.getElementById('citaAreaSistemas')) {
+        document.getElementById('citaAreaSistemas').value = area;
+    }
+    if (solicitante && document.getElementById('citaSolNombre')) {
+        document.getElementById('citaSolNombre').value = solicitante;
+    }
+    if (email && document.getElementById('citaSolEmail')) {
+        document.getElementById('citaSolEmail').value = email;
+    }
+    if (document.getElementById('citaAsunto')) {
+        document.getElementById('citaAsunto').value = 'Atención ' + folio + ': ' + titulo;
+    }
+    if (document.getElementById('citaDescripcion')) {
+        document.getElementById('citaDescripcion').value = 'Visita técnica de soporte para ' + (solicitante || 'usuario') + ' (' + (email || '') + ')\nMotivo del ticket: ' + desc;
+    }
+}
+
 function agendarCitaParaTicket(ticket) {
     const modalEl = document.getElementById('modalNuevaCita');
-    if (modalEl) {
-        const modal = new bootstrap.Modal(modalEl);
-        const asuntoInp = document.getElementById('citaAsunto');
-        const agSelect = document.getElementById('citaAgencia');
-        const descInp = document.getElementById('citaDescripcion');
-        if (asuntoInp) asuntoInp.value = 'Atención ' + (ticket.folio || ('TK-' + ticket.id)) + ': ' + (ticket.titulo || '');
-        if (agSelect && ticket.solicitante_agencia) agSelect.value = ticket.solicitante_agencia;
-        if (descInp) descInp.value = 'Seguimiento técnico para ' + (ticket.solicitante_nombre || 'usuario') + ' (' + (ticket.solicitante_email || '') + ')\nMotivo: ' + (ticket.descripcion || '');
-        modal.show();
+    if (!modalEl) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    // Asignar origen ticket para redirección
+    const origInput = document.getElementById('citaOrigenTicketId');
+    if (origInput) origInput.value = ticket.id;
+
+    const tkSelect = document.getElementById('citaTicketSelect');
+    const tkFolio = document.getElementById('citaTicketFolio');
+    const asuntoInp = document.getElementById('citaAsunto');
+    const agSelect = document.getElementById('citaAgencia');
+    const descInp = document.getElementById('citaDescripcion');
+    const solNom = document.getElementById('citaSolNombre');
+    const solEmail = document.getElementById('citaSolEmail');
+    const areaSelect = document.getElementById('citaAreaSistemas');
+
+    if (tkSelect) {
+        tkSelect.value = ticket.id;
     }
+    if (tkFolio) tkFolio.value = ticket.folio || ('TK-' + ticket.id);
+    if (agSelect && ticket.solicitante_agencia) agSelect.value = ticket.solicitante_agencia;
+    if (solNom && ticket.solicitante_nombre) solNom.value = ticket.solicitante_nombre;
+    if (solEmail && ticket.solicitante_email) solEmail.value = ticket.solicitante_email;
+    if (areaSelect && ticket.area_sistemas) areaSelect.value = ticket.area_sistemas;
+    if (asuntoInp) asuntoInp.value = 'Atención ' + (ticket.folio || ('TK-' + ticket.id)) + ': ' + (ticket.titulo || '');
+    if (descInp) descInp.value = 'Visita técnica para seguimiento de ticket ' + (ticket.folio || '') + ' (' + (ticket.titulo || '') + ').\nDescripción del usuario: ' + (ticket.descripcion || '');
+
+    modal.show();
 }
 
 // ----------------------------------------------------
@@ -5095,19 +5467,75 @@ function filtrarCitas() {
     renderizarCalendarioCitas(calAnio, calMes);
 }
 
-function abrirModalActualizarCita(cita) {
+function abrirModalActualizarCita(cita, origenTicketId = 0) {
     document.getElementById('citaActualizarId').value = cita.id;
-    document.getElementById('citaActualizarFolio').innerText = cita.folio || ('CIT-' + cita.id);
+    document.getElementById('citaActualizarOrigenTicketId').value = origenTicketId || cita.ticket_id || 0;
+    document.getElementById('citaActualizarFolio').innerText = cita.folio || ('CTA-' + cita.id);
     document.getElementById('citaActualizarAgencia').innerText = cita.agencia || '';
-    document.getElementById('citaActualizarAsunto').innerText = cita.asunto || '';
+    document.getElementById('citaActualizarAsunto').innerText = (cita.ticket_folio ? '[' + cita.ticket_folio + '] ' : '') + (cita.asunto || '');
     document.getElementById('citaActualizarEstado').value = cita.estado || 'Programada';
     document.getElementById('citaActualizarFecha').value = cita.fecha_cita || '';
     document.getElementById('citaActualizarHora').value = cita.hora_cita || '';
     document.getElementById('citaActualizarTecnico').value = cita.tecnico_asignado || '';
     document.getElementById('citaActualizarNotas').value = cita.notas_atencion || '';
 
-    const modal = new bootstrap.Modal(document.getElementById('modalActualizarCita'));
+    // Guardar fecha y hora originales para detectar cambios
+    document.getElementById('citaOriginalFecha').value = (cita.fecha_cita || '').trim();
+    document.getElementById('citaOriginalHora').value = (cita.hora_cita || '').trim();
+    document.getElementById('citaMotivoCambio').value = '';
+    document.getElementById('contenedorMotivoCambioCita').style.display = 'none';
+    document.getElementById('citaMotivoCambio').removeAttribute('required');
+
+    // Mostrar historial previo si existe
+    const secHist = document.getElementById('citaHistorialReprogSec');
+    const txtHist = document.getElementById('citaHistorialReprogTexto');
+    if (secHist && txtHist) {
+        if (cita.historial_cambios || cita.motivo_reprogramacion) {
+            secHist.style.display = 'block';
+            txtHist.innerText = cita.historial_cambios || cita.motivo_reprogramacion;
+        } else {
+            secHist.style.display = 'none';
+            txtHist.innerText = '';
+        }
+    }
+
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('modalActualizarCita'));
     modal.show();
+}
+
+function verificarCambioFechaHoraCita() {
+    const fOrig = (document.getElementById('citaOriginalFecha').value || '').trim();
+    const hOrig = (document.getElementById('citaOriginalHora').value || '').trim();
+    const fNueva = (document.getElementById('citaActualizarFecha').value || '').trim();
+    const hNueva = (document.getElementById('citaActualizarHora').value || '').trim();
+
+    const contenedor = document.getElementById('contenedorMotivoCambioCita');
+    const txtMotivo = document.getElementById('citaMotivoCambio');
+
+    if (fOrig !== '' && (fNueva !== fOrig || hNueva !== hOrig)) {
+        if (contenedor) contenedor.style.display = 'block';
+        if (txtMotivo) txtMotivo.setAttribute('required', 'required');
+    } else {
+        if (contenedor) contenedor.style.display = 'none';
+        if (txtMotivo) txtMotivo.removeAttribute('required');
+    }
+}
+
+function validarActualizarCita(form) {
+    const fOrig = (document.getElementById('citaOriginalFecha').value || '').trim();
+    const hOrig = (document.getElementById('citaOriginalHora').value || '').trim();
+    const fNueva = (document.getElementById('citaActualizarFecha').value || '').trim();
+    const hNueva = (document.getElementById('citaActualizarHora').value || '').trim();
+    const txtMotivo = (document.getElementById('citaMotivoCambio').value || '').trim();
+
+    if (fOrig !== '' && (fNueva !== fOrig || hNueva !== hOrig)) {
+        if (!txtMotivo) {
+            alert('⚠️ Has modificado la fecha u hora de la cita. Por política del departamento de TI, es obligatorio especificar el motivo / comentario del cambio.');
+            document.getElementById('citaMotivoCambio').focus();
+            return false;
+        }
+    }
+    return true;
 }
 
 // ----------------------------------------------------
