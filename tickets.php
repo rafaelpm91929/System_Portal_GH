@@ -730,7 +730,49 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         }
     }
 
-    // 6. Agendar Cita de Soporte Técnico
+    // Función auxiliar para enviar webhook de citas a la agencia
+    if (!function_exists('enviarWebhookCitaAgencia')) {
+        function enviarWebhookCitaAgencia($pdo, $agencia, $citaData, $accionWh = 'guardar_cita') {
+            if (empty($agencia)) return;
+            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
+            $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
+
+            if ($pdo) {
+                try {
+                    $stmtAg = $pdo->prepare("SELECT subdominio, local_api_token FROM agencias WHERE nombre LIKE ? LIMIT 1");
+                    $stmtAg->execute(['%' . trim($agencia) . '%']);
+                    $agRow = $stmtAg->fetch(PDO::FETCH_ASSOC);
+                    if ($agRow && !empty($agRow['subdominio'])) {
+                        $sub = trim($agRow['subdominio']);
+                        if (strpos($sub, 'http') !== 0) $sub = 'https://' . $sub;
+                        $targetUrl = rtrim($sub, '/') . '/api_webhook_ticket.php';
+                    }
+                } catch (Throwable $eAg) {}
+            }
+
+            $payload = array_merge([
+                'token'  => $tokenWh,
+                'accion' => $accionWh
+            ], $citaData);
+
+            $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
+            curl_setopt_array($chWh, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => http_build_query($payload),
+                CURLOPT_TIMEOUT        => 4,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_HTTPHEADER     => [
+                    'Authorization: Bearer ' . $tokenWh,
+                    'Content-Type: application/x-www-form-urlencoded'
+                ]
+            ]);
+            @curl_exec($chWh);
+            @curl_close($chWh);
+        }
+    }
+
+    // 6. Agendar Cita de Soporte Técnico (Con o Sin Ticket)
     if ($accion === 'agendar_cita') {
         $ticketId = intval($_POST['ticket_id'] ?? 0);
         $ticketFolio = trim($_POST['ticket_folio'] ?? '');
@@ -748,27 +790,32 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         $horaCita = trim($_POST['hora_cita'] ?? '09:00');
         $notasCita = trim($_POST['notas_atencion'] ?? '');
 
-        // Validación estricta: Si no hay ticket, no se puede hacer cita
-        if ($ticketId <= 0 && empty($ticketFolio)) {
-            $error = "Por política de control de TI, no es posible agendar una cita sin un ticket de soporte asociado.";
-            if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
-        } elseif (empty($agenciaCita) || empty($asuntoCita) || empty($fechaCita)) {
+        // Validación: Agencia, Asunto y Fecha son los campos obligatorios
+        if (empty($agenciaCita) || empty($asuntoCita) || empty($fechaCita)) {
             $error = "Por favor completa la Agencia, Asunto y Fecha de la cita.";
             if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
         } else {
             try {
-                // Verificar que el ticket existe
-                $stmtTkCheck = $pdo->prepare("SELECT id, folio, titulo, solicitante_agencia, solicitante_nombre, solicitante_email, area_sistemas FROM tickets_soporte WHERE id = ? OR folio = ? LIMIT 1");
-                $stmtTkCheck->execute([$ticketId, $ticketFolio]);
-                $tkAsoc = $stmtTkCheck->fetch(PDO::FETCH_ASSOC);
+                $tkAsoc = null;
+                // Si viene un ticket indicado, verificar que exista
+                if ($ticketId > 0 || !empty($ticketFolio)) {
+                    $stmtTkCheck = $pdo->prepare("SELECT id, folio, titulo, solicitante_agencia, solicitante_nombre, solicitante_email, area_sistemas FROM tickets_soporte WHERE id = ? OR folio = ? LIMIT 1");
+                    $stmtTkCheck->execute([$ticketId, $ticketFolio]);
+                    $tkAsoc = $stmtTkCheck->fetch(PDO::FETCH_ASSOC);
 
-                if (!$tkAsoc) {
-                    $error = "El ticket seleccionado no existe en el sistema o es inválido.";
-                    if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                    if (!$tkAsoc) {
+                        $error = "El ticket seleccionado no existe en el sistema o es inválido.";
+                        if ($origenTicketId > 0) $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                    } else {
+                        $ticketId = $tkAsoc['id'];
+                        $ticketFolio = $tkAsoc['folio'] ?: ('TK-' . $ticketId);
+                    }
                 } else {
-                    $ticketId = $tkAsoc['id'];
-                    $ticketFolio = $tkAsoc['folio'] ?: ('TK-' . $ticketId);
+                    $ticketId = null;
+                    $ticketFolio = null;
+                }
 
+                if (empty($error)) {
                     $stmtCConteo = $pdo->query("SELECT COUNT(*) FROM citas_soporte");
                     $numC = ($stmtCConteo ? (int)$stmtCConteo->fetchColumn() : 0) + 1;
                     $folioCita = 'CTA-' . date('Y') . '-' . str_pad($numC, 4, '0', STR_PAD_LEFT);
@@ -797,52 +844,58 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         $notasCita
                     ]);
 
-                    // Registrar en la conversación del ticket para trazabilidad
+                    // Registrar en la conversación del ticket si está vinculado
                     $avisoCita = "📅 Cita Técnica Programada ($folioCita):\nSe programó visita técnica para el " . date('d/m/Y', strtotime($fechaCita)) . " a las $horaCita hrs con el técnico $tecnicoCita.\nTipo: $tipoCita | Asunto: $asuntoCita" . (!empty($descCita) ? "\nDetalles: $descCita" : "");
-                    try {
-                        $stmtMsgCita = $pdo->prepare("
-                            INSERT INTO tickets_mensajes
-                            (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, creado_en)
-                            VALUES (?, ?, ?, 'agente', 'Dirección Sistemas', ?, ?)
-                        ");
-                        $stmtMsgCita->execute([$ticketId, $_SESSION['usuario_login'] ?? 'sistemas', $nombreUsuario, $avisoCita, date('Y-m-d H:i:s')]);
-                    } catch (Throwable $eMsgC) {}
+                    if ($ticketId > 0) {
+                        try {
+                            $stmtMsgCita = $pdo->prepare("
+                                INSERT INTO tickets_mensajes
+                                (ticket_id, autor_usuario, autor_nombre, autor_rol, autor_agencia, mensaje, creado_en)
+                                VALUES (?, ?, ?, 'agente', 'Dirección Sistemas', ?, ?)
+                            ");
+                            $stmtMsgCita->execute([$ticketId, $_SESSION['usuario_login'] ?? 'sistemas', $nombreUsuario, $avisoCita, date('Y-m-d H:i:s')]);
+                        } catch (Throwable $eMsgC) {}
+                    }
 
-                    // Disparar Webhook push a la agencia para sincronización inmediata
+                    // Disparar Webhook push completo a la agencia para sincronización inmediata
                     try {
-                        if (!empty($agenciaCita)) {
-                            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-                            $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
-                            $postDataWh = [
-                                'token'          => $tokenWh,
-                                'folio'          => $ticketFolio,
-                                'mensaje'        => $avisoCita,
-                                'autor_nombre'   => $nombreUsuario,
-                                'autor_rol'      => 'agente',
-                                'autor_agencia'  => 'Dirección Sistemas',
-                                'actualizado_en' => date('Y-m-d H:i:s')
-                            ];
-                            $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
-                            curl_setopt_array($chWh, [
-                                CURLOPT_RETURNTRANSFER => true,
-                                CURLOPT_POST           => true,
-                                CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
-                                CURLOPT_TIMEOUT        => 4,
-                                CURLOPT_SSL_VERIFYPEER => false,
-                                CURLOPT_HTTPHEADER     => [
-                                    'Authorization: Bearer ' . $tokenWh,
-                                    'Content-Type: application/x-www-form-urlencoded'
-                                ]
-                            ]);
-                            @curl_exec($chWh);
-                            @curl_close($chWh);
-                        }
+                        $citaPayloadWh = [
+                            'folio_cita'            => $folioCita,
+                            'ticket_id'             => $ticketId,
+                            'ticket_folio'          => $ticketFolio,
+                            'agencia'               => $agenciaCita,
+                            'area_sistemas'         => $areaCita,
+                            'tipo_cita'             => $tipoCita,
+                            'asunto'                => $asuntoCita,
+                            'descripcion'           => $descCita,
+                            'solicitante_nombre'    => $solNomCita,
+                            'solicitante_email'     => $solEmailCita,
+                            'solicitante_usuario'   => $_SESSION['usuario_login'] ?? '',
+                            'tecnico_asignado'      => $tecnicoCita,
+                            'fecha_cita'            => $fechaCita,
+                            'hora_cita'             => $horaCita,
+                            'estado'                => 'Programada',
+                            'notas_atencion'        => $notasCita,
+                            'motivo_reprogramacion' => '',
+                            'folio'                 => $ticketFolio ?: '',
+                            'mensaje'               => $avisoCita,
+                            'autor_nombre'          => $nombreUsuario,
+                            'autor_rol'             => 'agente',
+                            'autor_agencia'         => 'Dirección Sistemas',
+                            'actualizado_en'        => date('Y-m-d H:i:s')
+                        ];
+                        enviarWebhookCitaAgencia($pdo, $agenciaCita, $citaPayloadWh, 'guardar_cita');
                     } catch (Throwable $eWhC) {}
 
-                    $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> vinculada al ticket <strong>$ticketFolio</strong>.";
-                    if ($origenTicketId > 0 || $ticketId > 0) {
-                        $_SESSION['redir_ticket_ver'] = $ticketId;
+                    if ($ticketId > 0) {
+                        $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> vinculada al ticket <strong>$ticketFolio</strong>.";
+                        if ($origenTicketId > 0) {
+                            $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                        } else {
+                            $_SESSION['tab_activa'] = 'citas';
+                        }
                     } else {
+                        $mensaje = "Cita general programada con éxito con folio <strong>$folioCita</strong> para <strong>$agenciaCita</strong> (Sin ticket vinculado).";
                         $_SESSION['tab_activa'] = 'citas';
                     }
                 }
@@ -899,12 +952,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         $stmtUpC->execute([$estadoCita, $tecnicoCita, $fechaCita, $horaCita, $notasCita, $motivoGuardar, $historialActual, $citaId]);
                         $mensaje = "Cita ID #$citaId actualizada correctamente.";
 
-                        // Si cambió fecha/hora y tiene ticket asociado, insertar mensaje en ticket y enviar webhook
+                        $folioCitaTxt = $citaPrev['folio'] ?: ('CTA-' . $citaId);
+                        $avisoReprog = "📅 Reprogramación de Cita ($folioCitaTxt):\nLa visita técnica fue reprogramada de " . date('d/m/Y', strtotime($citaPrev['fecha_cita'])) . " " . $citaPrev['hora_cita'] . " hrs a " . date('d/m/Y', strtotime($fechaCita)) . " " . $horaCita . " hrs.\nMotivo del cambio: $motivoCambio\n(Registrado por $nombreUsuario)";
+
+                        // Si cambió fecha/hora y tiene ticket asociado, insertar mensaje en ticket
                         if ($cambioFechaHora && (!empty($citaPrev['ticket_id']) || !empty($citaPrev['ticket_folio']))) {
                             $tkCId = $citaPrev['ticket_id'] ?: 0;
-                            $folioCitaTxt = $citaPrev['folio'] ?: ('CTA-' . $citaId);
-                            $avisoReprog = "📅 Reprogramación de Cita ($folioCitaTxt):\nLa visita técnica fue reprogramada de " . date('d/m/Y', strtotime($citaPrev['fecha_cita'])) . " " . $citaPrev['hora_cita'] . " hrs a " . date('d/m/Y', strtotime($fechaCita)) . " " . $horaCita . " hrs.\nMotivo del cambio: $motivoCambio\n(Registrado por $nombreUsuario)";
-
                             try {
                                 $stmtMsgRep = $pdo->prepare("
                                     INSERT INTO tickets_mensajes
@@ -913,37 +966,40 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                                 ");
                                 $stmtMsgRep->execute([$tkCId, $_SESSION['usuario_login'] ?? 'sistemas', $nombreUsuario, $avisoReprog, date('Y-m-d H:i:s')]);
                             } catch (Throwable $eMsgR) {}
-
-                            try {
-                                if (!empty($citaPrev['agencia'])) {
-                                    $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-                                    $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
-                                    $postDataWh = [
-                                        'token'          => $tokenWh,
-                                        'folio'          => $citaPrev['ticket_folio'],
-                                        'mensaje'        => $avisoReprog,
-                                        'autor_nombre'   => $nombreUsuario,
-                                        'autor_rol'      => 'agente',
-                                        'autor_agencia'  => 'Dirección Sistemas',
-                                        'actualizado_en' => date('Y-m-d H:i:s')
-                                    ];
-                                    $chWh = curl_init($targetUrl . '?token=' . urlencode($tokenWh));
-                                    curl_setopt_array($chWh, [
-                                        CURLOPT_RETURNTRANSFER => true,
-                                        CURLOPT_POST           => true,
-                                        CURLOPT_POSTFIELDS     => http_build_query($postDataWh),
-                                        CURLOPT_TIMEOUT        => 4,
-                                        CURLOPT_SSL_VERIFYPEER => false,
-                                        CURLOPT_HTTPHEADER     => [
-                                            'Authorization: Bearer ' . $tokenWh,
-                                            'Content-Type: application/x-www-form-urlencoded'
-                                        ]
-                                    ]);
-                                    @curl_exec($chWh);
-                                    @curl_close($chWh);
-                                }
-                            } catch (Throwable $eWhR) {}
                         }
+
+                        // Sincronizar actualización completa de cita con la agencia
+                        try {
+                            if (!empty($citaPrev['agencia'])) {
+                                $citaPayloadWh = [
+                                    'folio_cita'            => $folioCitaTxt,
+                                    'ticket_id'             => $citaPrev['ticket_id'],
+                                    'ticket_folio'          => $citaPrev['ticket_folio'],
+                                    'agencia'               => $citaPrev['agencia'],
+                                    'area_sistemas'         => $citaPrev['area_sistemas'] ?? 'INFRAESTRUCTURA',
+                                    'tipo_cita'             => $citaPrev['tipo_cita'] ?? 'Presencial',
+                                    'asunto'                => $citaPrev['asunto'] ?? '',
+                                    'descripcion'           => $citaPrev['descripcion'] ?? '',
+                                    'solicitante_nombre'    => $citaPrev['solicitante_nombre'] ?? '',
+                                    'solicitante_email'     => $citaPrev['solicitante_email'] ?? '',
+                                    'solicitante_usuario'   => $citaPrev['solicitante_usuario'] ?? '',
+                                    'tecnico_asignado'      => $tecnicoCita,
+                                    'fecha_cita'            => $fechaCita,
+                                    'hora_cita'             => $horaCita,
+                                    'estado'                => $estadoCita,
+                                    'notas_atencion'        => $notasCita,
+                                    'motivo_reprogramacion' => $motivoGuardar,
+                                    'historial_cambios'     => $historialActual,
+                                    'folio'                 => $citaPrev['ticket_folio'] ?: '',
+                                    'mensaje'               => $avisoReprog,
+                                    'autor_nombre'          => $nombreUsuario,
+                                    'autor_rol'             => 'agente',
+                                    'autor_agencia'         => 'Dirección Sistemas',
+                                    'actualizado_en'        => date('Y-m-d H:i:s')
+                                ];
+                                enviarWebhookCitaAgencia($pdo, $citaPrev['agencia'], $citaPayloadWh, 'guardar_cita');
+                            }
+                        } catch (Throwable $eWhR) {}
 
                         if ($origenTicketId > 0 || !empty($citaPrev['ticket_id'])) {
                             $_SESSION['redir_ticket_ver'] = $origenTicketId ?: $citaPrev['ticket_id'];
@@ -965,9 +1021,22 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
         if ($citaId > 0) {
             try {
+                $stmtPrevDel = $pdo->prepare("SELECT * FROM citas_soporte WHERE id = ?");
+                $stmtPrevDel->execute([$citaId]);
+                $citaDel = $stmtPrevDel->fetch(PDO::FETCH_ASSOC);
+
                 $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE id = ?");
                 $stmtDelC->execute([$citaId]);
                 $mensaje = "Cita ID #$citaId eliminada correctamente.";
+
+                if ($citaDel && !empty($citaDel['agencia'])) {
+                    try {
+                        enviarWebhookCitaAgencia($pdo, $citaDel['agencia'], [
+                            'folio_cita' => $citaDel['folio'] ?: ('CTA-' . $citaId)
+                        ], 'eliminar_cita');
+                    } catch (Throwable $eWhDel) {}
+                }
+
                 if ($origenTicketId > 0) {
                     $_SESSION['redir_ticket_ver'] = $origenTicketId;
                 } else {
@@ -4761,15 +4830,15 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                 <input type="hidden" name="ticket_folio" id="citaTicketFolio" value="">
                 <div class="modal-body p-4">
                     <div class="row g-3">
-                        <!-- Selección Obligatoria de Ticket Vinculado -->
+                        <!-- Selección de Ticket Vinculado (Opcional) -->
                         <div class="col-12">
-                            <div class="p-3 rounded-3 border border-warning" style="background: rgba(245, 158, 11, 0.08);">
-                                <label class="form-label text-warning small fw-bold d-flex align-items-center justify-content-between mb-1">
-                                    <span><i class="bi bi-ticket-perforated-fill me-1"></i> Ticket de Soporte Asociado * (Requerido)</span>
-                                    <span class="badge bg-warning text-dark font-monospace" style="font-size: 0.68rem;">Control TI: Match Obligatorio</span>
+                            <div class="p-3 rounded-3 border border-secondary border-opacity-40" style="background: rgba(14, 165, 233, 0.05);">
+                                <label class="form-label text-info small fw-bold d-flex align-items-center justify-content-between mb-1">
+                                    <span><i class="bi bi-ticket-perforated-fill me-1"></i> Ticket de Soporte Asociado (Opcional)</span>
+                                    <span class="badge bg-info bg-opacity-25 text-info font-monospace" style="font-size: 0.68rem;">Con o Sin Ticket</span>
                                 </label>
-                                <select name="ticket_id" id="citaTicketSelect" class="form-select bg-dark text-white border-warning border-opacity-75" required onchange="alSeleccionarTicketParaCita(this.value)">
-                                    <option value="">-- Selecciona el ticket para esta cita (Obligatorio) --</option>
+                                <select name="ticket_id" id="citaTicketSelect" class="form-select bg-dark text-white border-secondary border-opacity-50" onchange="alSeleccionarTicketParaCita(this.value)">
+                                    <option value="">-- Cita General de Agencia (Sin ticket vinculado) --</option>
                                     <?php foreach ($tickets as $tOpc): ?>
                                         <option value="<?php echo $tOpc['id']; ?>"
                                             data-folio="<?php echo htmlspecialchars($tOpc['folio']); ?>"
@@ -4784,7 +4853,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                     <?php endforeach; ?>
                                 </select>
                                 <div class="form-text text-secondary mt-1" style="font-size: 0.74rem;">
-                                    <i class="bi bi-info-circle me-1 text-info"></i> Por política operativa: Toda cita o visita debe estar vinculada a un ticket registrado.
+                                    <i class="bi bi-info-circle me-1 text-info"></i> Puedes vincular un ticket para notificar al solicitante, o dejarlo sin ticket para una cita general que recibirá el Administrador de la agencia.
                                 </div>
                             </div>
                         </div>
