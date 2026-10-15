@@ -65,8 +65,151 @@ if (!$tokenValido) {
     exit;
 }
 
-// 2. Extraer datos del ticket actualizado por TI
-$folio = trim($datos['folio'] ?? ($_POST['folio'] ?? ''));
+// 2. Manejo de Citas Técnicas Push desde Dirección Central (Con o Sin Ticket)
+$esAccionCita = (($datos['accion'] ?? ($_POST['accion'] ?? '')) === 'guardar_cita') 
+             || !empty($datos['folio_cita']) 
+             || !empty($_POST['folio_cita'])
+             || (($datos['accion'] ?? ($_POST['accion'] ?? '')) === 'eliminar_cita');
+
+if ($esAccionCita) {
+    asegurarTablaCitas($pdo);
+    $accionCita = $datos['accion'] ?? ($_POST['accion'] ?? 'guardar_cita');
+    $folioCita = trim($datos['folio_cita'] ?? ($_POST['folio_cita'] ?? ''));
+
+    if ($accionCita === 'eliminar_cita' && !empty($folioCita)) {
+        try {
+            $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE folio = ?");
+            $stmtDelC->execute([$folioCita]);
+            echo json_encode(['status' => 'ok', 'mensaje' => "Cita $folioCita eliminada de la agencia."], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (Throwable $eDelC) {}
+    }
+
+    if ($accionCita === 'guardar_cita' && !empty($folioCita)) {
+        $tkIdC       = !empty($datos['ticket_id']) ? intval($datos['ticket_id']) : (!empty($_POST['ticket_id']) ? intval($_POST['ticket_id']) : null);
+        $tkFolioC    = trim($datos['ticket_folio'] ?? ($_POST['ticket_folio'] ?? ''));
+        $agenciaC    = trim($datos['agencia'] ?? ($_POST['agencia'] ?? ''));
+        $areaC       = trim($datos['area_sistemas'] ?? ($_POST['area_sistemas'] ?? 'INFRAESTRUCTURA'));
+        $tipoC       = trim($datos['tipo_cita'] ?? ($_POST['tipo_cita'] ?? 'Presencial'));
+        $asuntoC     = trim($datos['asunto'] ?? ($_POST['asunto'] ?? ''));
+        $descC       = trim($datos['descripcion'] ?? ($_POST['descripcion'] ?? ''));
+        $solNomC     = trim($datos['solicitante_nombre'] ?? ($_POST['solicitante_nombre'] ?? ''));
+        $solEmailC   = trim($datos['solicitante_email'] ?? ($_POST['solicitante_email'] ?? ''));
+        $solUsrC     = trim($datos['solicitante_usuario'] ?? ($_POST['solicitante_usuario'] ?? ''));
+        $tecnicoC    = trim($datos['tecnico_asignado'] ?? ($_POST['tecnico_asignado'] ?? ''));
+        $fechaC      = trim($datos['fecha_cita'] ?? ($_POST['fecha_cita'] ?? ''));
+        $horaC       = trim($datos['hora_cita'] ?? ($_POST['hora_cita'] ?? '09:00'));
+        $estadoC     = trim($datos['estado'] ?? ($_POST['estado'] ?? 'Programada'));
+        $notasC      = trim($datos['notas_atencion'] ?? ($_POST['notas_atencion'] ?? ''));
+        $motivoRep   = trim($datos['motivo_reprogramacion'] ?? ($_POST['motivo_reprogramacion'] ?? ''));
+        $historialC  = trim($datos['historial_cambios'] ?? ($_POST['historial_cambios'] ?? ''));
+
+        // Sincronizar ID de ticket local si el folio de ticket existe en la BD de la agencia
+        if (!empty($tkFolioC)) {
+            try {
+                $stmtTkLoc = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
+                $stmtTkLoc->execute([$tkFolioC]);
+                $tkIdLoc = $stmtTkLoc->fetchColumn();
+                if ($tkIdLoc) {
+                    $tkIdC = (int)$tkIdLoc;
+                }
+            } catch (Throwable $eTkLoc) {}
+        }
+
+        try {
+            // Verificar si la cita ya existe por folio en la agencia
+            $stmtCheckC = $pdo->prepare("SELECT id, historial_cambios FROM citas_soporte WHERE folio = ? LIMIT 1");
+            $stmtCheckC->execute([$folioCita]);
+            $citaExistente = $stmtCheckC->fetch(PDO::FETCH_ASSOC);
+
+            if ($citaExistente) {
+                $historialGuardar = !empty($historialC) ? $historialC : ($citaExistente['historial_cambios'] ?? '');
+                $stmtUpC = $pdo->prepare("
+                    UPDATE citas_soporte 
+                    SET ticket_id = :tk_id,
+                        ticket_folio = :tk_folio,
+                        agencia = :agencia,
+                        area_sistemas = :area,
+                        tipo_cita = :tipo,
+                        asunto = :asunto,
+                        descripcion = :desc,
+                        solicitante_nombre = :sol_nom,
+                        solicitante_email = :sol_email,
+                        solicitante_usuario = :sol_usr,
+                        tecnico_asignado = :tec,
+                        fecha_cita = :fecha,
+                        hora_cita = :hora,
+                        estado = :estado,
+                        notas_atencion = :notas,
+                        motivo_reprogramacion = COALESCE(NULLIF(:motivo, ''), motivo_reprogramacion),
+                        historial_cambios = :historial
+                    WHERE folio = :folio_cita
+                ");
+                $stmtUpC->execute([
+                    ':tk_id'      => $tkIdC,
+                    ':tk_folio'   => $tkFolioC,
+                    ':agencia'    => $agenciaC,
+                    ':area'       => $areaC,
+                    ':tipo'       => $tipoC,
+                    ':asunto'     => $asuntoC,
+                    ':desc'       => $descC,
+                    ':sol_nom'    => $solNomC,
+                    ':sol_email'  => $solEmailC,
+                    ':sol_usr'    => $solUsrC,
+                    ':tec'        => $tecnicoC,
+                    ':fecha'      => $fechaC,
+                    ':hora'       => $horaC,
+                    ':estado'     => $estadoC,
+                    ':notas'      => $notasC,
+                    ':motivo'     => $motivoRep,
+                    ':historial'  => $historialGuardar,
+                    ':folio_cita' => $folioCita
+                ]);
+            } else {
+                $stmtInsC = $pdo->prepare("
+                    INSERT INTO citas_soporte 
+                    (folio, ticket_id, ticket_folio, agencia, area_sistemas, tipo_cita, asunto, descripcion, solicitante_nombre, solicitante_usuario, solicitante_email, tecnico_asignado, fecha_cita, hora_cita, estado, notas_atencion, motivo_reprogramacion, historial_cambios)
+                    VALUES
+                    (:folio_cita, :tk_id, :tk_folio, :agencia, :area, :tipo, :asunto, :desc, :sol_nom, :sol_usr, :sol_email, :tec, :fecha, :hora, :estado, :notas, :motivo, :historial)
+                ");
+                $stmtInsC->execute([
+                    ':folio_cita' => $folioCita,
+                    ':tk_id'      => $tkIdC,
+                    ':tk_folio'   => $tkFolioC,
+                    ':agencia'    => $agenciaC,
+                    ':area'       => $areaC,
+                    ':tipo'       => $tipoC,
+                    ':asunto'     => $asuntoC,
+                    ':desc'       => $descC,
+                    ':sol_nom'    => $solNomC,
+                    ':sol_usr'    => $solUsrC,
+                    ':sol_email'  => $solEmailC,
+                    ':tec'        => $tecnicoC,
+                    ':fecha'      => $fechaC,
+                    ':hora'       => $horaC,
+                    ':estado'     => $estadoC,
+                    ':notas'      => $notasC,
+                    ':motivo'     => $motivoRep,
+                    ':historial'  => $historialC
+                ]);
+            }
+        } catch (Throwable $eCitaWh) {}
+
+        // Si es una cita general sin ticket vinculado, responder exitosamente
+        $folioTicketCheck = trim($datos['folio'] ?? ($_POST['folio'] ?? $tkFolioC));
+        if (empty($folioTicketCheck)) {
+            echo json_encode([
+                'status'     => 'ok',
+                'mensaje'    => "Cita general $folioCita sincronizada correctamente en la agencia.",
+                'folio_cita' => $folioCita
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+}
+
+// 3. Extraer datos del ticket actualizado por TI
+$folio = trim($datos['folio'] ?? ($_POST['folio'] ?? ($datos['ticket_folio'] ?? ($_POST['ticket_folio'] ?? ''))));
 $estado = trim($datos['estado'] ?? ($_POST['estado'] ?? 'En Proceso'));
 $asignadoA = trim($datos['asignado_a'] ?? ($_POST['asignado_a'] ?? ''));
 $prioridad = trim($datos['prioridad'] ?? ($_POST['prioridad'] ?? 'Media'));

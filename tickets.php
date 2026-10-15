@@ -155,6 +155,7 @@ $tokenAgencia = $identidadActual['token'];
 
 if ($pdo) {
     asegurarTablaTickets($pdo);
+    asegurarTablaCitas($pdo);
 
     // Asegurar carga de login y email si faltan en sesión
     if (empty($loginUsuario) || empty($emailUsuario)) {
@@ -1067,6 +1068,55 @@ if ($pdo) {
             elseif ($estLower === 'en proceso') $totalEnProceso++;
             elseif ($estLower === 'resuelto' || $estLower === 'cerrado') $totalResueltos++;
         }
+
+        // ====================================================
+        // CARGA Y AISLAMIENTO DE CITAS TÉCNICAS (AGENDA DE AGENCIA)
+        // Reglas de negocio del Portal de Agencia:
+        // 1. Las citas vinculadas a un ticket ÚNICAMENTE le llegan al solicitante que levantó ese ticket.
+        // 2. Las citas sin ticket vinculado (citas generales) le llegan exclusivamente al perfil de Administrador/SuperAdmin de la agencia.
+        // 3. El Administrador de la agencia cuenta con visibilidad integral de todas las citas de su sucursal.
+        // ====================================================
+        asegurarTablaCitas($pdo);
+        $citasUsuario = [];
+        if ($esAdmin) {
+            // Perfil Administrador / SuperAdmin: Recibe todas las citas de la agencia (con ticket y citas generales sin ticket)
+            $stmtCitas = $pdo->query("SELECT * FROM citas_soporte ORDER BY fecha_cita ASC, hora_cita ASC");
+            $citasUsuario = $stmtCitas ? $stmtCitas->fetchAll(PDO::FETCH_ASSOC) : [];
+        } else {
+            // Usuario regular / asesor: ÚNICAMENTE le llegan las citas de tickets creados por él.
+            // NO se muestran citas sin ticket vinculado ni citas de tickets de otros colaboradores.
+            $stmtCitas = $pdo->prepare("
+                SELECT DISTINCT c.* 
+                FROM citas_soporte c
+                INNER JOIN tickets_soporte t 
+                    ON (c.ticket_id = t.id OR (c.ticket_folio IS NOT NULL AND c.ticket_folio != '' AND c.ticket_folio = t.folio))
+                WHERE (
+                    t.solicitante_id = :uid 
+                    OR (t.solicitante_usuario IS NOT NULL AND t.solicitante_usuario != '' AND LOWER(t.solicitante_usuario) = LOWER(:ulogin))
+                    OR (t.solicitante_email IS NOT NULL AND t.solicitante_email != '' AND LOWER(t.solicitante_email) = LOWER(:uemail))
+                    OR (t.solicitante_nombre IS NOT NULL AND t.solicitante_nombre != '' AND LOWER(t.solicitante_nombre) = LOWER(:unombre))
+                )
+                ORDER BY c.fecha_cita ASC, c.hora_cita ASC
+            ");
+            $stmtCitas->execute([
+                ':uid'     => $usuarioId,
+                ':ulogin'  => $loginUsuario,
+                ':uemail'  => $emailUsuario,
+                ':unombre' => $nombreUsuario
+            ]);
+            $citasUsuario = $stmtCitas ? $stmtCitas->fetchAll(PDO::FETCH_ASSOC) : [];
+        }
+
+        $totalCitasUsuario = count($citasUsuario);
+        $totalCitasProgramadas = 0;
+        $totalCitasEnCurso = 0;
+        $totalCitasRealizadas = 0;
+        foreach ($citasUsuario as $cu) {
+            $estC = strtolower(trim($cu['estado'] ?? 'programada'));
+            if ($estC === 'programada') $totalCitasProgramadas++;
+            elseif (strpos($estC, 'curso') !== false || strpos($estC, 'atencion') !== false || strpos($estC, 'proceso') !== false) $totalCitasEnCurso++;
+            elseif (strpos($estC, 'realizada') !== false || strpos($estC, 'completada') !== false || strpos($estC, 'atendida') !== false) $totalCitasRealizadas++;
+        }
     } catch (Throwable $e) {}
 }
 
@@ -1074,6 +1124,7 @@ if ($pdo) {
 $verParam = trim($_GET['ver'] ?? ($_GET['id'] ?? ''));
 $verTicketId = 0;
 $ticketSeleccionado = null;
+$citaTicketSeleccionado = null;
 $mensajesSeleccionados = [];
 
 if (!empty($verParam) && $pdo) {
@@ -1109,6 +1160,15 @@ if (!empty($verParam) && $pdo) {
             }
 
             if ($ticketSeleccionado) {
+                // Cargar cita técnica vinculada a este ticket si existe
+                try {
+                    $stmtCitaTk = $pdo->prepare("SELECT * FROM citas_soporte WHERE ticket_id = ? OR (ticket_folio IS NOT NULL AND ticket_folio != '' AND ticket_folio = ?) ORDER BY id DESC LIMIT 1");
+                    $stmtCitaTk->execute([$verTicketId, $folioActivo]);
+                    $citaTicketSeleccionado = $stmtCitaTk ? $stmtCitaTk->fetch(PDO::FETCH_ASSOC) : null;
+                } catch (Throwable $eCitaTk) {
+                    $citaTicketSeleccionado = null;
+                }
+
                 $mensajesRemotos = [];
                 // Sincronizar en tiempo real los mensajes desde Central (portal.grupohuerta.mx)
                 if (!empty($folioActivo)) {
@@ -1143,6 +1203,8 @@ if (!empty($verParam) && $pdo) {
 $tabActiva = 'lista';
 if ($ticketSeleccionado) {
     $tabActiva = 'detalle';
+} elseif (isset($_GET['citas']) || (isset($_GET['tab']) && $_GET['tab'] === 'citas')) {
+    $tabActiva = 'citas';
 } elseif (isset($_GET['nuevo'])) {
     $tabActiva = 'nuevo';
 }
@@ -1442,6 +1504,219 @@ if ($ticketSeleccionado) {
             background: rgba(239, 68, 68, 0.35);
         }
 
+        /* ==================================================== */
+        /* VISTA CALENDARIO MENSUAL Y SELECTOR DE CITAS         */
+        /* ==================================================== */
+        .citas-view-switcher {
+            background: rgba(13, 27, 48, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            padding: 4px;
+            border-radius: 30px;
+            display: inline-flex;
+            gap: 4px;
+        }
+        .citas-view-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .citas-view-btn:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .citas-view-btn.active {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.4);
+        }
+
+        .calendar-card {
+            background: #091a32;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.45);
+        }
+        .calendar-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .calendar-nav-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .calendar-nav-btn:hover {
+            background: #0284c7;
+            border-color: #38bdf8;
+            transform: scale(1.05);
+        }
+        .calendar-month-title {
+            font-size: 1.45rem;
+            font-weight: 800;
+            color: #ffffff;
+            letter-spacing: -0.5px;
+            text-transform: capitalize;
+            min-width: 200px;
+            text-align: center;
+        }
+        .calendar-weekdays-row {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .calendar-weekday {
+            padding: 8px 4px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #94a3b8;
+        }
+        .calendar-grid-days {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 8px;
+        }
+        .calendar-cell {
+            background: rgba(13, 27, 48, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            min-height: 125px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+        .calendar-cell:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(15, 33, 60, 0.85);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+        }
+        .calendar-cell.other-month {
+            opacity: 0.32;
+            background: rgba(6, 15, 28, 0.3);
+        }
+        .calendar-cell.today {
+            border-color: rgba(56, 189, 248, 0.8);
+            background: rgba(14, 165, 233, 0.08);
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15) inset;
+        }
+        .calendar-cell-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .calendar-cell-num {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: #cbd5e1;
+            font-family: monospace;
+        }
+        .calendar-cell.today .calendar-cell-num {
+            color: #38bdf8;
+            font-weight: 800;
+        }
+        .calendar-events-list {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            overflow-y: auto;
+            max-height: 95px;
+            padding-right: 2px;
+        }
+        .calendar-event-item {
+            border-radius: 8px;
+            padding: 5px 7px;
+            font-size: 0.71rem;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            text-decoration: none;
+            display: block;
+            line-height: 1.25;
+            user-select: none;
+        }
+        .calendar-event-item:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.2);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
+        }
+        .calendar-event-item.status-programada {
+            background: rgba(14, 165, 233, 0.18);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            color: #e0f2fe;
+        }
+        .calendar-event-item.status-en-curso {
+            background: rgba(245, 158, 11, 0.18);
+            border: 1px solid rgba(245, 158, 11, 0.5);
+            color: #fef3c7;
+        }
+        .calendar-event-item.status-realizada {
+            background: rgba(16, 185, 129, 0.18);
+            border: 1px solid rgba(16, 185, 129, 0.5);
+            color: #d1fae5;
+        }
+        .calendar-event-item.status-cancelada {
+            background: rgba(239, 68, 68, 0.18);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fee2e2;
+        }
+        .cita-list-item {
+            background: rgba(13, 27, 48, 0.75);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 18px 22px;
+            transition: all 0.2s ease;
+            margin-bottom: 12px;
+        }
+        .cita-list-item:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            background: rgba(15, 33, 60, 0.95);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        @media (max-width: 768px) {
+            .calendar-cell {
+                min-height: 90px;
+                padding: 4px;
+            }
+            .calendar-weekday {
+                font-size: 0.68rem;
+            }
+            .calendar-event-item {
+                font-size: 0.65rem;
+                padding: 3px 4px;
+            }
+        }
+
         .detail-card, .form-card {
             background: linear-gradient(145deg, #0b1a30 0%, #071322 100%);
             border: 1px solid rgba(56, 189, 248, 0.22);
@@ -1558,6 +1833,13 @@ if ($ticketSeleccionado) {
                 <i class="bi bi-collection-fill"></i>
                 <span>Mis Tickets</span>
                 <span class="badge rounded-pill bg-dark border text-info ms-1"><?php echo count($tickets); ?></span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link custom-tab-btn <?php echo ($tabActiva === 'citas') ? 'active' : ''; ?> d-flex align-items-center gap-2" id="tab-btn-citas" data-bs-toggle="pill" data-bs-target="#tab-pane-citas" type="button" role="tab" onclick="actualizarUrl('citas')">
+                <i class="bi bi-calendar2-event-fill text-success"></i>
+                <span>Agenda y Calendario</span>
+                <span class="badge rounded-pill bg-dark border text-success ms-1"><?php echo $totalCitasUsuario; ?></span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -1830,6 +2112,261 @@ if ($ticketSeleccionado) {
         </div>
 
         <!-- ==========================================
+             PESTAÑA CITAS: AGENDA Y CALENDARIO DE SOPORTE TI
+             ========================================== -->
+        <div class="tab-pane fade <?php echo ($tabActiva === 'citas') ? 'show active' : ''; ?>" id="tab-pane-citas" role="tabpanel">
+            <!-- Encabezado de la Agenda y Selector de Vista -->
+            <div class="card border-0 rounded-4 shadow-sm mb-4 p-3 p-md-4" style="background: linear-gradient(145deg, #062326 0%, #071728 100%); border: 1px solid rgba(16, 185, 129, 0.3) !important;">
+                <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                    <div>
+                        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                            <?php if ($esAdmin): ?>
+                                <span class="badge rounded-pill bg-success bg-opacity-25 text-success border border-success border-opacity-30 px-3 py-1.5" style="font-size: 0.8rem;">
+                                    <i class="bi bi-shield-check me-1"></i> Perfil Administrador de Agencia: <strong class="text-white">Citas de la sucursal y citas generales sin ticket</strong>
+                                </span>
+                            <?php else: ?>
+                                <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-30 px-3 py-1.5" style="font-size: 0.8rem;">
+                                    <i class="bi bi-person-fill me-1"></i> Citas de tus tickets personales: <strong class="text-white">@<?php echo htmlspecialchars($loginUsuario ?: $nombreUsuario); ?></strong>
+                                </span>
+                            <?php endif; ?>
+                            <span class="badge rounded-pill bg-dark bg-opacity-50 text-secondary border border-secondary border-opacity-25 px-2.5 py-1.5" style="font-size: 0.78rem;">
+                                <i class="bi bi-calendar-check me-1"></i> <?php echo $totalCitasUsuario; ?> citas registradas
+                            </span>
+                        </div>
+                        <h3 class="fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                            <i class="bi bi-calendar2-event-fill text-success"></i> Agenda y Calendario de Citas Técnicas
+                        </h3>
+                        <p class="text-secondary small mb-0">Visitas presenciales y asistencias remotas de soporte agendadas por la Dirección de Sistemas TI.</p>
+                    </div>
+
+                    <div class="d-flex flex-wrap align-items-center gap-2">
+                        <!-- Selector de Vista: Calendario vs Lista -->
+                        <div class="citas-view-switcher" role="group" aria-label="Selector de vista de citas">
+                            <button type="button" id="btnVistaCitasCalendario" class="citas-view-btn active" onclick="cambiarVistaModoCitas('calendario')">
+                                <i class="bi bi-calendar3"></i> <span>Vista Calendario</span>
+                            </button>
+                            <button type="button" id="btnVistaCitasLista" class="citas-view-btn" onclick="cambiarVistaModoCitas('lista')">
+                                <i class="bi bi-list-task"></i> <span>Vista Lista</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPIs de Citas Técnicas -->
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="p-3 rounded-4 shadow-sm h-100" style="background: rgba(13, 27, 48, 0.75); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-size: 1.4rem;">
+                                <i class="bi bi-calendar-week"></i>
+                            </div>
+                            <div>
+                                <div class="fs-4 fw-bold text-white"><?php echo $totalCitasUsuario; ?></div>
+                                <div class="text-secondary small fw-semibold" style="font-size: 0.72rem;">TOTAL CITAS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-3 rounded-4 shadow-sm h-100" style="background: rgba(13, 27, 48, 0.75); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(14, 165, 233, 0.15); color: #38bdf8; font-size: 1.4rem;">
+                                <i class="bi bi-clock-history"></i>
+                            </div>
+                            <div>
+                                <div class="fs-4 fw-bold text-info"><?php echo $totalCitasProgramadas; ?></div>
+                                <div class="text-secondary small fw-semibold" style="font-size: 0.72rem;">PROGRAMADAS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-3 rounded-4 shadow-sm h-100" style="background: rgba(13, 27, 48, 0.75); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-size: 1.4rem;">
+                                <i class="bi bi-tools"></i>
+                            </div>
+                            <div>
+                                <div class="fs-4 fw-bold text-warning"><?php echo $totalCitasEnCurso; ?></div>
+                                <div class="text-secondary small fw-semibold" style="font-size: 0.72rem;">EN ATENCIÓN</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="p-3 rounded-4 shadow-sm h-100" style="background: rgba(13, 27, 48, 0.75); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="p-2.5 rounded-3" style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 1.4rem;">
+                                <i class="bi bi-check2-circle"></i>
+                            </div>
+                            <div>
+                                <div class="fs-4 fw-bold text-success"><?php echo $totalCitasRealizadas; ?></div>
+                                <div class="text-secondary small fw-semibold" style="font-size: 0.72rem;">REALIZADAS</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA 1: CALENDARIO MENSUAL DINÁMICO -->
+            <div id="vistaCitasCalendario" style="display: block;">
+                <div class="calendar-card mb-4">
+                    <!-- Barra de Navegación del Mes -->
+                    <div class="calendar-toolbar">
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="calendar-nav-btn" onclick="cambiarMesCalendarioAgencia(-1)" title="Mes Anterior" aria-label="Mes Anterior">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+                            <div id="calendarMonthTitle" class="calendar-month-title">Mes Año</div>
+                            <button type="button" class="calendar-nav-btn" onclick="cambiarMesCalendarioAgencia(1)" title="Mes Siguiente" aria-label="Mes Siguiente">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 ms-2 fw-bold" onclick="irAHoyCalendarioAgencia()">
+                                <i class="bi bi-calendar-check me-1"></i> Hoy
+                            </button>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3 small text-secondary">
+                                <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #38bdf8; display: inline-block;"></span> Programada</span>
+                                <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #f59e0b; display: inline-block;"></span> En Curso</span>
+                                <span class="d-inline-flex align-items-center gap-1.5"><span style="width: 9px; height: 9px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Realizada</span>
+                            </div>
+                            <span id="calendarCitasMonthCount" class="badge bg-dark text-info border border-info border-opacity-30 rounded-pill px-3 py-2 font-monospace">
+                                0 Citas este mes
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- Fila de Encabezados de Días de la Semana -->
+                    <div class="calendar-weekdays-row">
+                        <div class="calendar-weekday">Lunes</div>
+                        <div class="calendar-weekday">Martes</div>
+                        <div class="calendar-weekday">Miércoles</div>
+                        <div class="calendar-weekday">Jueves</div>
+                        <div class="calendar-weekday">Viernes</div>
+                        <div class="calendar-weekday">Sábado</div>
+                        <div class="calendar-weekday">Domingo</div>
+                    </div>
+
+                    <!-- Cuadrícula Dinámica de Días y Citas del Mes -->
+                    <div class="calendar-grid-days" id="calendarGridDaysAgencia">
+                        <!-- Renderizado dinámicamente con JavaScript -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- VISTA 2: LISTADO DE CITAS -->
+            <div id="vistaCitasLista" style="display: none;">
+                <div class="card border-0 rounded-4 shadow-sm p-4 mb-4" style="background: linear-gradient(145deg, #091a32 0%, #061325 100%); border: 1px solid rgba(255, 255, 255, 0.08) !important;">
+                    <!-- Buscador en tiempo real de citas -->
+                    <div class="search-box-wrapper mb-4">
+                        <i class="bi bi-search text-secondary"></i>
+                        <input type="text" id="buscadorCitas" class="search-input" placeholder="Buscar por asunto, técnico, fecha (AAAA-MM-DD), folio..." onkeyup="filtrarCitasEnVivo()">
+                        <button type="button" class="btn btn-link btn-sm text-secondary p-0" onclick="document.getElementById('buscadorCitas').value=''; filtrarCitasEnVivo();" title="Limpiar">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+
+                    <div id="listaCitasContenedor">
+                        <?php if (empty($citasUsuario)): ?>
+                            <div class="text-center py-5">
+                                <div class="p-4 rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="background: rgba(255,255,255,0.04); width: 80px; height: 80px;">
+                                    <i class="bi bi-calendar-x fs-1 text-secondary"></i>
+                                </div>
+                                <h5 class="fw-bold text-white mb-1">No hay citas registradas</h5>
+                                <p class="text-secondary small mb-0">
+                                    <?php if ($esAdmin): ?>
+                                        No se han programado visitas técnicas para la sucursal o para tickets de usuarios.
+                                    <?php else: ?>
+                                        Aún no se han agendado citas técnicas para tus tickets de soporte levantados.
+                                    <?php endif; ?>
+                                </p>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($citasUsuario as $cita): 
+                                $esCitaGeneral = empty($cita['ticket_folio']) && (empty($cita['ticket_id']) || $cita['ticket_id'] == 0);
+                                $areaC = $cita['area_sistemas'] ?? 'INFRAESTRUCTURA';
+                                $infoAreaC = $AREAS_SISTEMAS[$areaC] ?? ['nombre' => $areaC, 'icono' => 'bi-laptop', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.45)'];
+                                $estC = strtolower(trim($cita['estado'] ?? 'Programada'));
+                                $badgeClassC = 'status-abierto';
+                                if ($estC === 'programada') $badgeClassC = 'bg-info bg-opacity-25 text-info border border-info border-opacity-30';
+                                elseif (strpos($estC, 'curso') !== false || strpos($estC, 'atencion') !== false) $badgeClassC = 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30';
+                                elseif (strpos($estC, 'realizada') !== false || strpos($estC, 'completada') !== false) $badgeClassC = 'bg-success bg-opacity-25 text-success border border-success border-opacity-30';
+                                elseif (strpos($estC, 'cancelada') !== false) $badgeClassC = 'bg-danger bg-opacity-25 text-danger border border-danger border-opacity-30';
+                                
+                                $textoBusq = strtolower(($cita['folio'] ?? '') . ' ' . ($cita['asunto'] ?? '') . ' ' . ($cita['tecnico_asignado'] ?? '') . ' ' . ($cita['fecha_cita'] ?? '') . ' ' . ($cita['ticket_folio'] ?? '') . ' ' . $areaC);
+                            ?>
+                                <div class="cita-list-item cita-list-item-card" data-busqueda="<?php echo htmlspecialchars($textoBusq); ?>">
+                                    <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                                        <div class="d-flex align-items-start gap-3">
+                                            <div class="p-3 rounded-4 d-flex align-items-center justify-content-center flex-shrink-0" style="background: <?php echo $infoAreaC['bg']; ?>; border: 1px solid <?php echo $infoAreaC['border']; ?>; color: <?php echo $infoAreaC['color']; ?>; font-size: 1.5rem; width: 54px; height: 54px;">
+                                                <i class="bi <?php echo $infoAreaC['icono']; ?>"></i>
+                                            </div>
+                                            <div>
+                                                <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                                    <span class="badge rounded-pill bg-dark text-info border border-info border-opacity-30 font-monospace" style="font-size: 0.78rem;">
+                                                        <?php echo htmlspecialchars($cita['folio'] ?? ('CTA-' . $cita['id'])); ?>
+                                                    </span>
+                                                    <span class="badge rounded-pill" style="background: <?php echo $infoAreaC['bg']; ?>; color: <?php echo $infoAreaC['color']; ?>; border: 1px solid <?php echo $infoAreaC['border']; ?>; font-size: 0.75rem;">
+                                                        <?php echo $infoAreaC['nombre']; ?>
+                                                    </span>
+                                                    <span class="badge rounded-pill <?php echo $badgeClassC; ?>" style="font-size: 0.75rem;">
+                                                        <?php echo htmlspecialchars($cita['estado'] ?? 'Programada'); ?>
+                                                    </span>
+                                                    <?php if ($esCitaGeneral): ?>
+                                                        <span class="badge rounded-pill bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30" style="font-size: 0.75rem;">
+                                                            <i class="bi bi-building me-1"></i> Cita General (Sin ticket)
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="badge rounded-pill bg-primary bg-opacity-25 text-info border border-info border-opacity-30 font-monospace" style="font-size: 0.75rem;">
+                                                            <i class="bi bi-ticket-detailed me-1"></i> <?php echo htmlspecialchars($cita['ticket_folio'] ?? ('#TK-' . $cita['ticket_id'])); ?>
+                                                        </span>
+                                                    <?php endif; ?>
+                                                </div>
+
+                                                <h5 class="fw-bold text-white mb-1"><?php echo htmlspecialchars($cita['asunto'] ?: 'Cita Técnica'); ?></h5>
+
+                                                <div class="text-secondary small d-flex flex-wrap gap-3 mt-1">
+                                                    <span><i class="bi bi-calendar3 text-success me-1"></i><strong><?php echo date('d/m/Y', strtotime($cita['fecha_cita'])); ?></strong></span>
+                                                    <span><i class="bi bi-clock text-info me-1"></i><strong><?php echo htmlspecialchars(substr($cita['hora_cita'] ?? '09:00', 0, 5)); ?> hrs</strong></span>
+                                                    <span><i class="bi bi-person-badge text-warning me-1"></i>Técnico: <strong class="text-white"><?php echo htmlspecialchars($cita['tecnico_asignado'] ?: 'Por asignar'); ?></strong></span>
+                                                    <span><i class="bi bi-geo-alt text-light me-1"></i><?php echo htmlspecialchars($cita['tipo_cita'] ?: 'Presencial'); ?></span>
+                                                </div>
+
+                                                <?php if (!empty($cita['motivo_reprogramacion'])): ?>
+                                                    <div class="mt-2 p-2 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25 text-warning small">
+                                                        <i class="bi bi-info-circle-fill me-1"></i><strong>Reprogramación:</strong> <?php echo htmlspecialchars($cita['motivo_reprogramacion']); ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                                            <?php if (!$esCitaGeneral && (!empty($cita['ticket_id']) || !empty($cita['ticket_folio']))): ?>
+                                                <?php $paramTk = !empty($cita['ticket_id']) ? $cita['ticket_id'] : $cita['ticket_folio']; ?>
+                                                <a href="tickets.php?ver=<?php echo urlencode($paramTk); ?>" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5" title="Ir al ticket">
+                                                    <i class="bi bi-box-arrow-up-right"></i> Ver Ticket
+                                                </a>
+                                            <?php endif; ?>
+                                            <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 py-1.5 fw-semibold d-inline-flex align-items-center gap-1.5" onclick='abrirModalDetalleCita(<?php echo json_encode($cita, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP); ?>)'>
+                                                <i class="bi bi-eye-fill"></i> Ver Detalles
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                            <div id="sinCitasFiltro" class="text-center py-4 text-secondary small" style="display: none;">
+                                <i class="bi bi-search me-1"></i> No se encontraron citas con ese criterio de búsqueda.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==========================================
              PESTAÑA 2: LEVANTAR NUEVO TICKET
              ========================================== -->
         <div class="tab-pane fade <?php echo ($tabActiva === 'nuevo') ? 'show active' : ''; ?>" id="tab-pane-nuevo" role="tabpanel">
@@ -2041,6 +2578,51 @@ if ($ticketSeleccionado) {
                         </div>
                     </div>
                 </div>
+
+                <!-- Cita Técnica Vinculada a este Ticket (Si existe) -->
+                <?php if ($citaTicketSeleccionado): ?>
+                    <div class="card border-0 rounded-4 shadow-sm mb-4 p-3 p-md-4" style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(6, 78, 59, 0.22) 100%); border: 1px solid rgba(16, 185, 129, 0.4) !important;">
+                        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                            <div class="d-flex align-items-start gap-3">
+                                <div class="p-3 rounded-4 d-flex align-items-center justify-content-center text-success flex-shrink-0" style="background: rgba(16, 185, 129, 0.2); font-size: 1.8rem; width: 56px; height: 56px;">
+                                    <i class="bi bi-calendar-check-fill"></i>
+                                </div>
+                                <div>
+                                    <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30 rounded-pill px-2.5 py-1 fw-bold" style="font-size: 0.78rem;">
+                                            <i class="bi bi-calendar2-check-fill me-1"></i> CITA TÉCNICA AGENDADA
+                                        </span>
+                                        <span class="badge bg-dark text-info border border-info border-opacity-30 rounded-pill font-monospace" style="font-size: 0.78rem;">
+                                            <?php echo htmlspecialchars($citaTicketSeleccionado['folio'] ?? ('CTA-' . $citaTicketSeleccionado['id'])); ?>
+                                        </span>
+                                        <span class="badge rounded-pill px-2.5 py-1 <?php echo strtolower($citaTicketSeleccionado['estado'] ?? '') === 'programada' ? 'bg-info bg-opacity-25 text-info border border-info border-opacity-30' : 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30'; ?>" style="font-size: 0.78rem;">
+                                            <?php echo htmlspecialchars($citaTicketSeleccionado['estado'] ?? 'Programada'); ?>
+                                        </span>
+                                    </div>
+                                    <h5 class="fw-bold text-white mb-1">
+                                        <?php echo htmlspecialchars($citaTicketSeleccionado['asunto'] ?: 'Visita Técnica Programada'); ?>
+                                    </h5>
+                                    <div class="text-secondary small d-flex flex-wrap gap-3 mt-1">
+                                        <span><i class="bi bi-calendar3 text-success me-1"></i><strong><?php echo date('d/m/Y', strtotime($citaTicketSeleccionado['fecha_cita'])); ?></strong></span>
+                                        <span><i class="bi bi-clock text-info me-1"></i><strong><?php echo htmlspecialchars(substr($citaTicketSeleccionado['hora_cita'] ?? '09:00', 0, 5)); ?> hrs</strong></span>
+                                        <span><i class="bi bi-person-badge text-warning me-1"></i>Técnico: <strong class="text-white"><?php echo htmlspecialchars($citaTicketSeleccionado['tecnico_asignado'] ?: 'Por asignar'); ?></strong></span>
+                                        <span><i class="bi bi-geo-alt text-light me-1"></i><?php echo htmlspecialchars($citaTicketSeleccionado['tipo_cita'] ?: 'Presencial'); ?></span>
+                                    </div>
+                                    <?php if (!empty($citaTicketSeleccionado['motivo_reprogramacion'])): ?>
+                                        <div class="mt-2 p-2 rounded-3 bg-warning bg-opacity-10 border border-warning border-opacity-25 text-warning small">
+                                            <i class="bi bi-info-circle-fill me-1"></i><strong>Nota de reprogramación:</strong> <?php echo htmlspecialchars($citaTicketSeleccionado['motivo_reprogramacion']); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-success rounded-pill px-3 py-2 fw-semibold d-inline-flex align-items-center gap-1.5 shadow" onclick='abrirModalDetalleCita(<?php echo json_encode($citaTicketSeleccionado, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP); ?>)'>
+                                    <i class="bi bi-eye-fill"></i> Ver Detalles de Cita
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <!-- Detalle del Requerimiento Original -->
                 <div class="detail-card">
@@ -2837,7 +3419,96 @@ if ($ticketSeleccionado) {
     </div>
 </div>
 
+<!-- ============================================== -->
+<!-- MODAL: DETALLES DE CITA TÉCNICA (AGENCIA)     -->
+<!-- ============================================== -->
+<div class="modal fade" id="modalDetalleCitaAgencia" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content" style="background: #091a32; border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 20px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7); color: #ffffff;">
+            <div class="modal-header border-secondary border-opacity-25 pb-3">
+                <div class="d-flex align-items-center gap-2">
+                    <div class="p-2.5 rounded-3" style="background: rgba(16, 185, 129, 0.18); color: #10b981; font-size: 1.3rem;">
+                        <i class="bi bi-calendar2-check-fill"></i>
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center gap-2">
+                            <h5 class="modal-title fw-bold text-white mb-0" id="modalCitaFolio">CTA-2026-0001</h5>
+                            <span id="modalCitaEstado" class="badge rounded-pill bg-info bg-opacity-25 text-info border border-info border-opacity-30">Programada</span>
+                        </div>
+                        <span class="text-secondary small">Cita de Soporte Técnico TI &bull; Grupo Huerta</span>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+            </div>
 
+            <div class="modal-body p-4">
+                <!-- Título / Asunto -->
+                <div class="mb-3">
+                    <h4 class="fw-bold text-white mb-1" id="modalCitaAsunto">Asunto de la Cita</h4>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="badge rounded-pill bg-secondary bg-opacity-30 text-light border border-secondary border-opacity-30 px-2.5 py-1">
+                            <i class="bi bi-diagram-3 me-1"></i> Área: <strong id="modalCitaArea">INFRAESTRUCTURA</strong>
+                        </span>
+                        <span class="badge rounded-pill bg-dark text-secondary border border-secondary border-opacity-25 px-2.5 py-1">
+                            <i class="bi bi-geo-alt me-1"></i> Modalidad: <strong id="modalCitaTipo" class="text-white">Presencial</strong>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Tarjetas de Fecha, Hora y Técnico -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="text-secondary small fw-bold mb-1"><i class="bi bi-calendar3 text-success me-1"></i> FECHA DE ATENCIÓN</div>
+                            <div class="fs-6 fw-bold text-white" id="modalCitaFecha">--/--/----</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="text-secondary small fw-bold mb-1"><i class="bi bi-clock text-info me-1"></i> HORARIO PROGRAMADO</div>
+                            <div class="fs-6 fw-bold text-white" id="modalCitaHora">00:00 hrs</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="p-3 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="text-secondary small fw-bold mb-1"><i class="bi bi-person-badge text-warning me-1"></i> ESPECIALISTA ASIGNADO</div>
+                            <div class="fs-6 fw-bold text-white text-truncate" id="modalCitaTecnico">Por asignar</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ticket Vinculado Box -->
+                <div class="mb-3" id="modalCitaTicketBox">
+                    <!-- Rellenado dinámicamente con JS -->
+                </div>
+
+                <!-- Descripción y Notas -->
+                <div class="mb-3">
+                    <label class="form-label text-secondary small fw-bold text-uppercase mb-1">
+                        <i class="bi bi-card-text text-info me-1"></i> Descripción / Instrucciones de la Visita
+                    </label>
+                    <div class="p-3 rounded-3" style="background: #061325; border: 1px solid rgba(255, 255, 255, 0.1); font-size: 0.92rem; line-height: 1.5; white-space: pre-line;" id="modalCitaDescripcion">
+                        Sin descripción adicional.
+                    </div>
+                </div>
+
+                <!-- Motivo de Reprogramación (si aplica) -->
+                <div class="p-3 rounded-3 mb-2" id="modalCitaReprogramacionBox" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);">
+                    <div class="text-warning fw-bold small mb-1">
+                        <i class="bi bi-info-circle-fill me-1"></i> Motivo de Reprogramación o Ajuste:
+                    </div>
+                    <div class="text-light small" id="modalCitaReprogramacionTexto"></div>
+                </div>
+            </div>
+
+            <div class="modal-footer border-secondary border-opacity-25 pt-3">
+                <button type="button" class="btn btn-outline-secondary px-4 rounded-pill text-white" data-bs-dismiss="modal">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -2850,12 +3521,15 @@ if ($ticketSeleccionado) {
     }
 
     function cambiarPestana(tabName) {
-        const targetBtnId = (tabName === 'nuevo') ? 'tab-btn-nuevo' : ((tabName === 'detalle') ? 'tab-btn-detalle' : 'tab-btn-lista');
+        const targetBtnId = (tabName === 'nuevo') ? 'tab-btn-nuevo' : ((tabName === 'detalle') ? 'tab-btn-detalle' : ((tabName === 'citas') ? 'tab-btn-citas' : 'tab-btn-lista'));
         const triggerEl = document.getElementById(targetBtnId);
         if (triggerEl) {
             const tab = bootstrap.Tab.getOrCreateInstance(triggerEl);
             tab.show();
             actualizarUrl(tabName);
+            if (tabName === 'citas') {
+                renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+            }
         }
     }
 
@@ -2864,15 +3538,274 @@ if ($ticketSeleccionado) {
             const url = new URL(window.location.href);
             if (tabName === 'nuevo') {
                 url.searchParams.set('nuevo', '1');
+                url.searchParams.delete('citas');
+                url.searchParams.delete('tab');
+                url.searchParams.delete('ver');
+                url.searchParams.delete('id');
+            } else if (tabName === 'citas') {
+                url.searchParams.set('citas', '1');
+                url.searchParams.delete('nuevo');
+                url.searchParams.delete('tab');
                 url.searchParams.delete('ver');
                 url.searchParams.delete('id');
             } else if (tabName === 'lista') {
                 url.searchParams.delete('nuevo');
+                url.searchParams.delete('citas');
+                url.searchParams.delete('tab');
                 url.searchParams.delete('ver');
                 url.searchParams.delete('id');
             }
             window.history.replaceState({}, '', url.toString());
         }
+    }
+
+    // ==========================================
+    // AGENDA Y CALENDARIO DE CITAS DE SOPORTE TI
+    // ==========================================
+    const todasLasCitasAgencia = <?php echo json_encode($citasUsuario, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP); ?>;
+    const NOMBRES_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+    let calAnioAgencia = new Date().getFullYear();
+    let calMesAgencia = new Date().getMonth();
+    let vistaModoCitas = 'calendario';
+
+    function cambiarVistaModoCitas(modo) {
+        vistaModoCitas = modo;
+        const vistaCal = document.getElementById('vistaCitasCalendario');
+        const vistaList = document.getElementById('vistaCitasLista');
+        const btnCal = document.getElementById('btnVistaCitasCalendario');
+        const btnList = document.getElementById('btnVistaCitasLista');
+
+        if (modo === 'calendario') {
+            if (vistaCal) vistaCal.style.display = 'block';
+            if (vistaList) vistaList.style.display = 'none';
+            if (btnCal) btnCal.classList.add('active');
+            if (btnList) btnList.classList.remove('active');
+            renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+        } else {
+            if (vistaCal) vistaCal.style.display = 'none';
+            if (vistaList) vistaList.style.display = 'block';
+            if (btnCal) btnCal.classList.remove('active');
+            if (btnList) btnList.classList.add('active');
+        }
+    }
+
+    function cambiarMesCalendarioAgencia(delta) {
+        calMesAgencia += delta;
+        if (calMesAgencia < 0) {
+            calMesAgencia = 11;
+            calAnioAgencia--;
+        } else if (calMesAgencia > 11) {
+            calMesAgencia = 0;
+            calAnioAgencia++;
+        }
+        renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+    }
+
+    function irAHoyCalendarioAgencia() {
+        const hoy = new Date();
+        calAnioAgencia = hoy.getFullYear();
+        calMesAgencia = hoy.getMonth();
+        renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+    }
+
+    function renderizarCalendarioCitasAgencia(anio, mes) {
+        const grid = document.getElementById('calendarGridDaysAgencia');
+        const titleEl = document.getElementById('calendarMonthTitle');
+        const countEl = document.getElementById('calendarCitasMonthCount');
+        if (!grid) return;
+
+        if (titleEl) {
+            titleEl.innerText = `${NOMBRES_MESES[mes]} ${anio}`;
+        }
+
+        grid.innerHTML = '';
+
+        const hoy = new Date();
+        const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+
+        const primerDia = new Date(anio, mes, 1);
+        let diaSemanaInicio = primerDia.getDay() - 1; // Lunes = 0, Domingo = 6
+        if (diaSemanaInicio === -1) diaSemanaInicio = 6;
+
+        const diasEnMes = new Date(anio, mes + 1, 0).getDate();
+        const diasEnMesAnterior = new Date(anio, mes, 0).getDate();
+
+        let citasEnEsteMes = 0;
+
+        // Relleno mes anterior
+        for (let p = diaSemanaInicio - 1; p >= 0; p--) {
+            const diaNum = diasEnMesAnterior - p;
+            const cell = document.createElement('div');
+            cell.className = 'calendar-cell other-month';
+            cell.innerHTML = `
+                <div class="calendar-cell-header">
+                    <span class="calendar-cell-num">${diaNum}</span>
+                </div>
+            `;
+            grid.appendChild(cell);
+        }
+
+        // Días del mes actual
+        for (let d = 1; d <= diasEnMes; d++) {
+            const fechaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+            const esHoy = (fechaStr === hoyStr);
+
+            const citasDelDia = todasLasCitasAgencia.filter(c => {
+                if (!c.fecha_cita) return false;
+                return c.fecha_cita.substring(0, 10) === fechaStr;
+            });
+
+            citasEnEsteMes += citasDelDia.length;
+
+            const cell = document.createElement('div');
+            cell.className = `calendar-cell ${esHoy ? 'today' : ''}`;
+
+            let eventsHtml = '';
+            citasDelDia.forEach(cita => {
+                const est = (cita.estado || 'Programada').toLowerCase();
+                let statusClass = 'status-programada';
+                if (est.includes('curso') || est.includes('atencion') || est.includes('proceso')) statusClass = 'status-en-curso';
+                else if (est.includes('realizada') || est.includes('completada') || est.includes('atendida')) statusClass = 'status-realizada';
+                else if (est.includes('cancelada')) statusClass = 'status-cancelada';
+
+                const horaDisplay = (cita.hora_cita || '09:00').substring(0, 5);
+                const esGeneral = (!cita.ticket_folio && (!cita.ticket_id || cita.ticket_id == 0));
+                const jsonCita = JSON.stringify(cita).replace(/"/g, '&quot;');
+
+                eventsHtml += `
+                    <div class="calendar-event-item ${statusClass}" onclick="event.stopPropagation(); abrirModalDetalleCita(${jsonCita})" title="Folio: ${cita.folio || ('CTA-'+cita.id)} | Asunto: ${cita.asunto || ''}">
+                        <div class="d-flex align-items-center justify-content-between gap-1 mb-1">
+                            <span class="fw-bold" style="font-size: 0.68rem;"><i class="bi bi-clock me-1"></i>${horaDisplay}</span>
+                            ${esGeneral ? '<span class="badge bg-warning text-dark" style="font-size:0.58rem; padding: 2px 4px;">Sin ticket</span>' : (cita.ticket_folio ? `<span class="badge bg-dark bg-opacity-70 text-info font-monospace" style="font-size:0.58rem; padding: 2px 4px;">${cita.ticket_folio}</span>` : '')}
+                        </div>
+                        <div class="fw-semibold text-truncate" style="font-size: 0.72rem;">${cita.asunto || 'Cita Técnica'}</div>
+                        ${cita.tecnico_asignado ? `<div class="text-secondary text-truncate" style="font-size: 0.65rem;"><i class="bi bi-person me-0.5"></i>${cita.tecnico_asignado}</div>` : ''}
+                    </div>
+                `;
+            });
+
+            cell.innerHTML = `
+                <div class="calendar-cell-header">
+                    <span class="calendar-cell-num">${d}</span>
+                    ${citasDelDia.length > 0 ? `<span class="badge rounded-pill bg-primary bg-opacity-25 text-info" style="font-size: 0.65rem;">${citasDelDia.length}</span>` : ''}
+                </div>
+                <div class="calendar-events-list">
+                    ${eventsHtml}
+                </div>
+            `;
+
+            grid.appendChild(cell);
+        }
+
+        // Relleno mes siguiente
+        const totalCeldas = diaSemanaInicio + diasEnMes;
+        const celdasRestantes = (totalCeldas % 7 === 0) ? 0 : (7 - (totalCeldas % 7));
+        for (let s = 1; s <= celdasRestantes; s++) {
+            const cell = document.createElement('div');
+            cell.className = 'calendar-cell other-month';
+            cell.innerHTML = `
+                <div class="calendar-cell-header">
+                    <span class="calendar-cell-num">${s}</span>
+                </div>
+            `;
+            grid.appendChild(cell);
+        }
+
+        if (countEl) {
+            countEl.innerText = `${citasEnEsteMes} Cita${citasEnEsteMes === 1 ? '' : 's'} este mes`;
+        }
+    }
+
+    function abrirModalDetalleCita(cita) {
+        if (!cita) return;
+        document.getElementById('modalCitaFolio').innerText = cita.folio || ('CTA-' + cita.id);
+        document.getElementById('modalCitaAsunto').innerText = cita.asunto || 'Visita Técnica Programada';
+        document.getElementById('modalCitaArea').innerText = cita.area_sistemas || 'INFRAESTRUCTURA';
+        document.getElementById('modalCitaTipo').innerText = cita.tipo_cita || 'Presencial';
+        document.getElementById('modalCitaTecnico').innerText = cita.tecnico_asignado || 'Por asignar por Sistemas Central';
+        
+        let fStr = cita.fecha_cita || '';
+        if (fStr.length >= 10) {
+            const partesF = fStr.substring(0, 10).split('-');
+            if (partesF.length === 3) {
+                fStr = `${partesF[2]}/${partesF[1]}/${partesF[0]}`;
+            }
+        }
+        document.getElementById('modalCitaFecha').innerText = fStr;
+        document.getElementById('modalCitaHora').innerText = (cita.hora_cita || '09:00').substring(0, 5) + ' hrs';
+        
+        const estEl = document.getElementById('modalCitaEstado');
+        estEl.innerText = cita.estado || 'Programada';
+        estEl.className = 'badge rounded-pill px-3 py-1.5 ' + (
+            (cita.estado || '').toLowerCase() === 'programada' ? 'bg-info bg-opacity-25 text-info border border-info border-opacity-30' :
+            ((cita.estado || '').toLowerCase().includes('realizada') ? 'bg-success bg-opacity-25 text-success border border-success border-opacity-30' : 'bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30')
+        );
+
+        const tkBox = document.getElementById('modalCitaTicketBox');
+        const esGeneral = (!cita.ticket_folio && (!cita.ticket_id || cita.ticket_id == 0));
+        if (esGeneral) {
+            tkBox.innerHTML = `
+                <div class="p-3 rounded-3" style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3);">
+                    <div class="d-flex align-items-center gap-2 text-warning fw-bold mb-1">
+                        <i class="bi bi-building"></i> Cita General de Sucursal (Sin Ticket Vinculado)
+                    </div>
+                    <div class="text-secondary small">
+                        Esta cita técnica fue programada directamente para la agencia y asignada a la cuenta de Administrador de la sucursal.
+                    </div>
+                </div>
+            `;
+        } else {
+            const tkFolio = cita.ticket_folio || ('#TK-' + cita.ticket_id);
+            const tkIdParam = cita.ticket_id ? cita.ticket_id : (cita.ticket_folio || '');
+            tkBox.innerHTML = `
+                <div class="p-3 rounded-3" style="background: rgba(14, 165, 233, 0.12); border: 1px solid rgba(56, 189, 248, 0.3);">
+                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                        <div>
+                            <div class="text-secondary small fw-bold">TICKET VINCULADO</div>
+                            <div class="fs-6 font-monospace fw-bold text-info"><i class="bi bi-ticket-detailed me-1"></i>${tkFolio}</div>
+                        </div>
+                        <a href="tickets.php?ver=${encodeURIComponent(tkIdParam)}" class="btn btn-sm btn-primary rounded-pill px-3 py-1 fw-bold">
+                            <i class="bi bi-box-arrow-up-right me-1"></i> Ver Ticket
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+
+        const descEl = document.getElementById('modalCitaDescripcion');
+        descEl.innerText = cita.descripcion || 'Sin notas o instrucciones adicionales.';
+
+        const repBox = document.getElementById('modalCitaReprogramacionBox');
+        if (cita.motivo_reprogramacion) {
+            repBox.style.display = 'block';
+            document.getElementById('modalCitaReprogramacionTexto').innerText = cita.motivo_reprogramacion;
+        } else {
+            repBox.style.display = 'none';
+        }
+
+        const modalEl = document.getElementById('modalDetalleCitaAgencia');
+        if (modalEl) {
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
+        }
+    }
+
+    function filtrarCitasEnVivo() {
+        const query = (document.getElementById('buscadorCitas').value || '').trim().toLowerCase();
+        const items = document.querySelectorAll('#listaCitasContenedor .cita-list-item');
+        let visibles = 0;
+        items.forEach(it => {
+            const txt = (it.getAttribute('data-busqueda') || '').toLowerCase();
+            if (query === '' || txt.includes(query)) {
+                it.style.display = '';
+                visibles++;
+            } else {
+                it.style.display = 'none';
+            }
+        });
+        const sinEl = document.getElementById('sinCitasFiltro');
+        if (sinEl) sinEl.style.display = (visibles === 0) ? '' : 'none';
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -2889,6 +3822,16 @@ if ($ticketSeleccionado) {
             if (conv) {
                 setTimeout(() => conv.scrollIntoView({ behavior: 'smooth' }), 200);
             }
+        }
+        // Inicializar calendario mensual
+        renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+
+        // Si la pestaña de citas es activada mediante Bootstrap pill
+        const tabBtnCitas = document.getElementById('tab-btn-citas');
+        if (tabBtnCitas) {
+            tabBtnCitas.addEventListener('shown.bs.tab', function() {
+                renderizarCalendarioCitasAgencia(calAnioAgencia, calMesAgencia);
+            });
         }
     });
 
