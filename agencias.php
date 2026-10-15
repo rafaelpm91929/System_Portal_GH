@@ -111,30 +111,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
     if (empty($nombre) || empty($subdominio) || empty($token)) {
         $error = "Por favor completa los campos obligatorios: Nombre, Subdominio/URL y Token Secreto.";
     } else {
-        // Generar slug/identificador único y normalizar
+        // Generar slug/identificador único limpio y normalizado
         $idLimpio = preg_replace('/[^a-z0-9]/', '', strtolower($nombre));
         if (empty($idLimpio)) {
             $idLimpio = 'agencia_' . time();
         }
-        if (strpos($idLimpio, 'divol') !== false || strpos(strtolower($subdominio), 'divol') !== false) {
-            $idLimpio = 'divolavilla';
-            $nombre = 'Divol La Villa';
-        }
 
         $endpoint = 'https://' . $subdominio . '/sistemas/api_obtener_datos.php';
 
+        // 1. Guardar en Base de Datos MySQL (tabla agencias)
+        if ($pdo) {
+            try {
+                $stmtAg = $pdo->prepare("
+                    INSERT INTO agencias (clave, nombre, subdominio, cpanel, endpoint, token, local_api_token, icono, color, descripcion, estatus)
+                    VALUES (:clave, :nombre, :subdominio, :cpanel, :endpoint, :token, :token, :icono, :color, :descripcion, 1)
+                    ON DUPLICATE KEY UPDATE
+                        clave = VALUES(clave),
+                        subdominio = VALUES(subdominio),
+                        cpanel = VALUES(cpanel),
+                        endpoint = VALUES(endpoint),
+                        token = VALUES(token),
+                        local_api_token = VALUES(token),
+                        icono = VALUES(icono),
+                        color = VALUES(color),
+                        descripcion = VALUES(descripcion),
+                        estatus = 1
+                ");
+                $stmtAg->execute([
+                    ':clave'       => $idLimpio,
+                    ':nombre'      => $nombre,
+                    ':subdominio'  => $subdominio,
+                    ':cpanel'      => $subdominio,
+                    ':endpoint'    => $endpoint,
+                    ':token'       => $token,
+                    ':icono'       => $icono,
+                    ':color'       => $color,
+                    ':descripcion' => $descripcion ?: "Agencia {$nombre} - Sistemas e Infraestructura IT"
+                ]);
+            } catch (Throwable $eDb) {}
+        }
+
+        // 2. Guardar en archivo JSON de respaldo agencias_custom.json
         $custom = [];
         if (file_exists($archivoAgenciasCustom)) {
             $custom = json_decode(file_get_contents($archivoAgenciasCustom), true) ?: [];
-        }
-
-        // Si es Divol, limpiar variantes previas (ej. divollavilla) para mantener solo una
-        if ($idLimpio === 'divolavilla') {
-            foreach (array_keys($custom) as $k) {
-                if (strpos(strtolower($k), 'divol') !== false) {
-                    unset($custom[$k]);
-                }
-            }
         }
 
         $custom[$idLimpio] = [
@@ -149,7 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             'es_personalizada' => true
         ];
 
-        file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        @file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         $mensaje = "¡Agencia <strong>" . htmlspecialchars($nombre) . "</strong> registrada exitosamente en el catálogo!";
     }
 }
@@ -159,49 +179,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 // ====================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['accion'] === 'eliminar_agencia') {
     $eliminarId = trim($_POST['agencia_id'] ?? '');
+
+    // 1. Eliminar de Base de Datos
+    if ($pdo) {
+        try {
+            $stmtDel = $pdo->prepare("DELETE FROM agencias WHERE clave = ? OR LOWER(nombre) = LOWER(?)");
+            $stmtDel->execute([$eliminarId, $eliminarId]);
+        } catch (Throwable $e) {}
+    }
+
+    // 2. Eliminar del archivo JSON
     if (file_exists($archivoAgenciasCustom)) {
         $custom = json_decode(file_get_contents($archivoAgenciasCustom), true) ?: [];
         if (isset($custom[$eliminarId])) {
             unset($custom[$eliminarId]);
         }
-        // Si era variante de divol, remover también cualquier clave similar
-        if (strpos(strtolower($eliminarId), 'divol') !== false) {
-            foreach (array_keys($custom) as $k) {
-                if (strpos(strtolower($k), 'divol') !== false) {
-                    unset($custom[$k]);
-                }
-            }
-        }
-        file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        $mensaje = "La agencia personalizada ha sido eliminada del catálogo.";
+        @file_put_contents($archivoAgenciasCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
     }
-}
-
-// Limpieza automática preventiva de duplicados si existe el archivo custom
-if (file_exists($archivoAgenciasCustom)) {
-    $rawCustom = json_decode(file_get_contents($archivoAgenciasCustom), true);
-    if (is_array($rawCustom)) {
-        $hayDuplicadosDivol = false;
-        $divolCount = 0;
-        foreach ($rawCustom as $k => $v) {
-            if (strpos(strtolower($k), 'divol') !== false) {
-                $divolCount++;
-            }
-        }
-        if ($divolCount > 1 || isset($rawCustom['divollavilla'])) {
-            $nuevoCustom = [];
-            foreach ($rawCustom as $k => $v) {
-                if (strpos(strtolower($k), 'divol') !== false) {
-                    $nuevoCustom['divolavilla'] = $v;
-                    $nuevoCustom['divolavilla']['id'] = 'divolavilla';
-                    $nuevoCustom['divolavilla']['nombre'] = 'Divol La Villa';
-                } else {
-                    $nuevoCustom[$k] = $v;
-                }
-            }
-            file_put_contents($archivoAgenciasCustom, json_encode($nuevoCustom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-        }
-    }
+    $mensaje = "La agencia ha sido eliminada del catálogo.";
 }
 
 // Cargar catálogo actualizado
