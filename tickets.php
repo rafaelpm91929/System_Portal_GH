@@ -70,9 +70,61 @@ if (!function_exists('normalizarAgencia')) {
     function normalizarAgencia($nombre) {
         $nombre = trim($nombre ?? '');
         if (empty($nombre)) return 'Oficina Central Grupo Huerta';
-        if (stripos($nombre, 'divol') !== false) return 'Divol La Villa';
-        if (stripos($nombre, 'central') !== false) return 'Oficina Central Grupo Huerta';
-        return $nombre;
+        if (strcasecmp($nombre, 'central') === 0 || stripos($nombre, 'oficina central') !== false) {
+            return 'Oficina Central Grupo Huerta';
+        }
+    }
+}
+
+// Resuelve la URL y token de webhook para cualquier agencia dinámica
+if (!function_exists('resolverUrlWebhookAgencia')) {
+    function resolverUrlWebhookAgencia($pdo, $agencia) {
+        global $CATALOGO_AGENCIAS;
+        $targetUrl = '';
+        $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
+        if (empty($agencia)) return ['url' => '', 'token' => $tokenWh];
+
+        // 1. Buscar en tabla agencias de la BD
+        if ($pdo) {
+            try {
+                $stmtAg = $pdo->prepare("SELECT subdominio, cpanel, endpoint, token, local_api_token FROM agencias WHERE LOWER(nombre) = LOWER(?) OR LOWER(clave) = LOWER(?) OR nombre LIKE ? LIMIT 1");
+                $stmtAg->execute([trim($agencia), trim($agencia), '%' . trim($agencia) . '%']);
+                $agRow = $stmtAg->fetch(PDO::FETCH_ASSOC);
+                if ($agRow) {
+                    $sub = !empty($agRow['subdominio']) ? $agRow['subdominio'] : (!empty($agRow['cpanel']) ? $agRow['cpanel'] : '');
+                    if (!empty($sub)) {
+                        $sub = preg_replace('#^https?://#', '', rtrim($sub, '/'));
+                        $targetUrl = 'https://' . $sub . '/api_webhook_ticket.php';
+                    } elseif (!empty($agRow['endpoint'])) {
+                        $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $agRow['endpoint']);
+                    }
+                    $tokenWh = !empty($agRow['local_api_token']) ? $agRow['local_api_token'] : (!empty($agRow['token']) ? $agRow['token'] : 'GH_SISTEMAS_TICKETS_2026!');
+                    if (!empty($targetUrl)) {
+                        return ['url' => $targetUrl, 'token' => $tokenWh];
+                    }
+                }
+            } catch (Throwable $e) {}
+        }
+
+        // 2. Buscar en CATALOGO_AGENCIAS
+        if (!empty($CATALOGO_AGENCIAS)) {
+            $agNorm = strtolower(trim($agencia));
+            foreach ($CATALOGO_AGENCIAS as $k => $ag) {
+                $nomAg = strtolower(trim($ag['nombre'] ?? ''));
+                if ($k === $agNorm || $nomAg === $agNorm || strpos($agNorm, $nomAg) !== false || strpos($nomAg, $agNorm) !== false) {
+                    if (!empty($ag['subdominio'])) {
+                        $sub = preg_replace('#^https?://#', '', rtrim($ag['subdominio'], '/'));
+                        $targetUrl = 'https://' . $sub . '/api_webhook_ticket.php';
+                    } elseif (!empty($ag['endpoint'])) {
+                        $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $ag['endpoint']);
+                    }
+                    $tokenWh = !empty($ag['token']) ? $ag['token'] : 'GH_SISTEMAS_TICKETS_2026!';
+                    return ['url' => $targetUrl, 'token' => $tokenWh];
+                }
+            }
+        }
+
+        return ['url' => $targetUrl, 'token' => $tokenWh];
     }
 }
 
@@ -364,13 +416,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         $tInfo = $stmtTInfo->fetch(PDO::FETCH_ASSOC);
 
                         if ($tInfo && !empty($tInfo['solicitante_agencia'])) {
-                            $agKey = strpos(strtolower($tInfo['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
-                            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-                            if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
-                                $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
-                            }
-
-                            $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
+                            $whInfo = resolverUrlWebhookAgencia($pdo, $tInfo['solicitante_agencia']);
+                            $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                            $tokenWh = $whInfo['token'];
                             $postDataWh = [
                                 'token'               => $tokenWh,
                                 'folio'               => $tInfo['folio'],
@@ -485,12 +533,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                     // Disparar Webhook a la agencia sucursal para sincronización en tiempo real
                     try {
                         if (!empty($tkData['solicitante_agencia'])) {
-                            $agKey = strpos(strtolower($tkData['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
-                            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-                            if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
-                                $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
-                            }
-                            $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
+                            $whInfo = resolverUrlWebhookAgencia($pdo, $tkData['solicitante_agencia']);
+                            $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                            $tokenWh = $whInfo['token'];
                             $postDataWh = [
                                 'token'                       => $tokenWh,
                                 'folio'                       => $folioTk,
@@ -619,12 +664,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         // Notificar a la agencia sucursal en tiempo real la contestación vía webhook
                         if (!empty($tActual['solicitante_agencia']) && !$esNotaInterna) {
                             try {
-                                $agKey = strpos(strtolower($tActual['solicitante_agencia']), 'divol') !== false ? 'divolavilla' : '';
-                                $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-                                if (!empty($CATALOGO_AGENCIAS[$agKey]['endpoint'])) {
-                                    $targetUrl = str_replace(['/sistemas/api_obtener_datos.php', 'api_obtener_datos.php'], '/api_webhook_ticket.php', $CATALOGO_AGENCIAS[$agKey]['endpoint']);
-                                }
-                                $tokenWh = !empty($CATALOGO_AGENCIAS[$agKey]['token']) ? $CATALOGO_AGENCIAS[$agKey]['token'] : 'GH_SISTEMAS_TICKETS_2026!';
+                                $whInfo = resolverUrlWebhookAgencia($pdo, $tActual['solicitante_agencia']);
+                                $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/api_webhook_ticket.php';
+                                $tokenWh = $whInfo['token'];
                                 $postMsgWh = [
                                     'token'         => $tokenWh,
                                     'accion'        => 'nuevo_mensaje',
@@ -736,21 +778,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
     if (!function_exists('enviarWebhookCitaAgencia')) {
         function enviarWebhookCitaAgencia($pdo, $agencia, $citaData, $accionWh = 'guardar_cita') {
             if (empty($agencia)) return;
-            $targetUrl = 'https://portal.divolavilla.com/api_webhook_ticket.php';
-            $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
-
-            if ($pdo) {
-                try {
-                    $stmtAg = $pdo->prepare("SELECT subdominio, local_api_token FROM agencias WHERE nombre LIKE ? LIMIT 1");
-                    $stmtAg->execute(['%' . trim($agencia) . '%']);
-                    $agRow = $stmtAg->fetch(PDO::FETCH_ASSOC);
-                    if ($agRow && !empty($agRow['subdominio'])) {
-                        $sub = trim($agRow['subdominio']);
-                        if (strpos($sub, 'http') !== 0) $sub = 'https://' . $sub;
-                        $targetUrl = rtrim($sub, '/') . '/api_webhook_ticket.php';
-                    }
-                } catch (Throwable $eAg) {}
-            }
+            $whInfo = resolverUrlWebhookAgencia($pdo, $agencia);
+            $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/api_webhook_ticket.php';
+            $tokenWh = $whInfo['token'];
 
             $payload = array_merge([
                 'token'  => $tokenWh,
