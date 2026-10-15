@@ -179,13 +179,15 @@ if ($pdo) {
 
 // Catálogo Oficial de Áreas de Sistemas
 $AREAS_SISTEMAS = [
-    'DESARROLLO'      => ['nombre' => 'DESARROLLO', 'icono' => 'bi-code-slash', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.45)'],
-    'CYBERSEGURIDAD'  => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'bg' => 'rgba(244, 63, 94, 0.18)', 'border' => 'rgba(244, 63, 94, 0.45)'],
-    'INFRAESTRUCTURA' => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'bg' => 'rgba(16, 185, 129, 0.18)', 'border' => 'rgba(16, 185, 129, 0.45)'],
-    'REDES SOCIALES'  => ['nombre' => 'REDES SOCIALES', 'icono' => 'bi-share-fill', 'color' => '#a855f7', 'bg' => 'rgba(168, 85, 247, 0.18)', 'border' => 'rgba(168, 85, 247, 0.45)'],
-    'AUDITORIA'       => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
-    'CORPORATIVO'     => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)']
+    'DESARROLLO'         => ['nombre' => 'DESARROLLO', 'icono' => 'bi-code-slash', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.45)'],
+    'CYBERSEGURIDAD'     => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'bg' => 'rgba(244, 63, 94, 0.18)', 'border' => 'rgba(244, 63, 94, 0.45)'],
+    'INFRAESTRUCTURA'    => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'bg' => 'rgba(16, 185, 129, 0.18)', 'border' => 'rgba(16, 185, 129, 0.45)'],
+    'REDES SOCIALES'     => ['nombre' => 'REDES SOCIALES', 'icono' => 'bi-share-fill', 'color' => '#a855f7', 'bg' => 'rgba(168, 85, 247, 0.18)', 'border' => 'rgba(168, 85, 247, 0.45)'],
+    'AUDITORIA'          => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
+    'CORPORATIVO'        => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)'],
+    'DIRECCION SISTEMAS' => ['nombre' => 'DIRECCION SISTEMAS', 'icono' => 'bi-diagram-3-fill', 'color' => '#06b6d4', 'bg' => 'rgba(6, 182, 212, 0.18)', 'border' => 'rgba(6, 182, 212, 0.45)']
 ];
+$AREAS_SISTEMAS['DIRECCIÓN SISTEMAS'] = $AREAS_SISTEMAS['DIRECCION SISTEMAS'];
 
 $mensaje = $_SESSION['flash_mensaje'] ?? '';
 $error = $_SESSION['flash_error'] ?? '';
@@ -2403,6 +2405,7 @@ if ($ticketSeleccionado) {
                                 <option value="REDES SOCIALES">📱 REDES SOCIALES (Marketing Digital, Publicaciones, Medios)</option>
                                 <option value="AUDITORIA">📋 AUDITORIA (Procesos, Revisiones TI, Cumplimiento)</option>
                                 <option value="CORPORATIVO">🏢 CORPORATIVO (Dirección General y Enlace Central)</option>
+                                <option value="DIRECCION SISTEMAS">💼 DIRECCION SISTEMAS (Jefatura, Coordinación y Proyectos TI)</option>
                             </select>
                         </div>
 
@@ -3347,6 +3350,7 @@ if ($ticketSeleccionado) {
                                                 <option value="REDES SOCIALES" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'REDES SOCIALES' ? 'selected' : ''; ?>>📱 REDES SOCIALES (Marketing, Publicaciones)</option>
                                                 <option value="AUDITORIA" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'AUDITORIA' ? 'selected' : ''; ?>>📋 AUDITORIA (Procesos, Revisiones TI)</option>
                                                 <option value="CORPORATIVO" <?php echo ($ticketSeleccionado['area_sistemas'] ?? '') === 'CORPORATIVO' ? 'selected' : ''; ?>>🏢 CORPORATIVO (Dirección General)</option>
+                                                <option value="DIRECCION SISTEMAS" <?php echo in_array($ticketSeleccionado['area_sistemas'] ?? '', ['DIRECCION SISTEMAS', 'DIRECCIÓN SISTEMAS']) ? 'selected' : ''; ?>>💼 DIRECCION SISTEMAS (Jefatura, Coordinación y Proyectos TI)</option>
                                             </select>
                                         </div>
 
