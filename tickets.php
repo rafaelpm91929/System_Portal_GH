@@ -68,10 +68,21 @@ if (!function_exists('formatearFechaHoraMensaje')) {
 // Normalizador unificado de nombres de agencia
 if (!function_exists('normalizarAgencia')) {
     function normalizarAgencia($nombre) {
-        $nombre = trim($nombre ?? '');
+        global $CATALOGO_AGENCIAS;
+        $nombre = trim(preg_replace('/\s+/', ' ', $nombre ?? ''));
         if (empty($nombre)) return 'Oficina Central Grupo Huerta';
         if (strcasecmp($nombre, 'central') === 0 || stripos($nombre, 'oficina central') !== false) {
             return 'Oficina Central Grupo Huerta';
+        }
+        if (strcasecmp($nombre, 'divol la villa') === 0 || strcasecmp($nombre, 'divolavilla') === 0 || strcasecmp($nombre, 'divol villa') === 0) {
+            return 'Divol La Villa';
+        }
+        if (!empty($CATALOGO_AGENCIAS)) {
+            foreach ($CATALOGO_AGENCIAS as $ag) {
+                if (!empty($ag['nombre']) && strcasecmp($nombre, $ag['nombre']) === 0) {
+                    return $ag['nombre'];
+                }
+            }
         }
         return $nombre;
     }
@@ -1298,6 +1309,20 @@ $ticketsSinVer = [];
 if (!empty($CATALOGO_AGENCIAS)) {
     foreach ($CATALOGO_AGENCIAS as $k => $ag) {
         $nomNorm = normalizarAgencia($ag['nombre'] ?? '');
+        if (empty($nomNorm)) continue;
+
+        // Evitar duplicados si ya fue agregada por variación de nombre
+        $agKeyMatch = null;
+        foreach (array_keys($agenciasList) as $kAg) {
+            if (strcasecmp($kAg, $nomNorm) === 0) {
+                $agKeyMatch = $kAg;
+                break;
+            }
+        }
+        if ($agKeyMatch !== null) {
+            continue;
+        }
+
         $conteoPorAgencia[$nomNorm] = 0;
         $agenciasList[$nomNorm] = [
             'id'          => $ag['id'] ?? $k,
@@ -1368,6 +1393,19 @@ if ($pdo) {
             }
 
             $agNom = normalizarAgencia($t['solicitante_agencia'] ?? 'Oficina Central Grupo Huerta');
+            
+            // Buscar si ya existe la agencia en $agenciasList ignorando diferencias de mayúsculas/minúsculas
+            $agKeyMatch = null;
+            foreach (array_keys($agenciasList) as $kAg) {
+                if (strcasecmp($kAg, $agNom) === 0) {
+                    $agKeyMatch = $kAg;
+                    break;
+                }
+            }
+            if ($agKeyMatch !== null) {
+                $agNom = $agKeyMatch;
+            }
+
             if (!isset($agenciasList[$agNom])) {
                 $conteoPorAgencia[$agNom] = 0;
                 $agenciasList[$agNom] = [

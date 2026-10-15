@@ -64,19 +64,23 @@ if (isset($pdo) && $pdo !== null) {
         $stmtAgs = $pdo->query("SELECT * FROM agencias WHERE estatus = 1 ORDER BY id ASC");
         $dbRows = $stmtAgs ? $stmtAgs->fetchAll(PDO::FETCH_ASSOC) : [];
         foreach ($dbRows as $r) {
-            $k = !empty($r['clave']) ? $r['clave'] : preg_replace('/[^a-z0-9]/', '', strtolower($r['nombre']));
+            $nomAg = trim($r['nombre']);
+            $k = !empty($r['clave']) ? $r['clave'] : preg_replace('/[^a-z0-9]/', '', strtolower($nomAg));
             if (empty($k)) $k = 'agencia_' . $r['id'];
+            if (strcasecmp($nomAg, 'Divol La Villa') === 0 || $k === 'divolavilla' || $k === 'divollavilla') {
+                $k = 'divolavilla';
+            }
             $CATALOGO_AGENCIAS[$k] = [
                 'id'          => $k,
                 'db_id'       => $r['id'],
-                'nombre'      => $r['nombre'],
+                'nombre'      => (strcasecmp($nomAg, 'Divol La Villa') === 0) ? 'Divol La Villa' : $nomAg,
                 'cpanel'      => $r['cpanel'] ?: $r['subdominio'],
                 'subdominio'  => $r['subdominio'],
                 'endpoint'    => $r['endpoint'] ?: ('https://' . $r['subdominio'] . '/api_webhook_ticket.php'),
                 'token'       => $r['token'] ?: ($r['local_api_token'] ?: 'GH_SISTEMAS_TICKETS_2026!'),
                 'icono'       => $r['icono'] ?: 'bi-building-fill-check',
                 'color'       => $r['color'] ?: '#2563eb',
-                'descripcion' => $r['descripcion'] ?: ("Agencia " . $r['nombre'] . " - Sistemas e Infraestructura IT"),
+                'descripcion' => $r['descripcion'] ?: ("Agencia " . $nomAg . " - Sistemas e Infraestructura IT"),
                 'es_personalizada' => ($k !== 'divolavilla')
             ];
         }
@@ -90,7 +94,11 @@ if (file_exists($archivoAgenciasCustom)) {
     if (is_array($custom)) {
         foreach ($custom as $k => $ag) {
             if (!empty($ag['nombre'])) {
-                $CATALOGO_AGENCIAS[$k] = $ag;
+                $targetKey = $k;
+                if (strcasecmp(trim($ag['nombre']), 'Divol La Villa') === 0) {
+                    $targetKey = 'divolavilla';
+                }
+                $CATALOGO_AGENCIAS[$targetKey] = $ag;
             }
         }
     }
