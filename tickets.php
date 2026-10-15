@@ -136,9 +136,11 @@ $AREAS_SISTEMAS_CATALOGO = [
     'CYBERSEGURIDAD'  => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'bg' => 'rgba(244, 63, 94, 0.18)', 'border' => 'rgba(244, 63, 94, 0.45)'],
     'INFRAESTRUCTURA' => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'bg' => 'rgba(16, 185, 129, 0.18)', 'border' => 'rgba(16, 185, 129, 0.45)'],
     'REDES SOCIALES'  => ['nombre' => 'REDES SOCIALES', 'icono' => 'bi-share-fill', 'color' => '#a855f7', 'bg' => 'rgba(168, 85, 247, 0.18)', 'border' => 'rgba(168, 85, 247, 0.45)'],
-    'AUDITORIA'       => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
-    'CORPORATIVO'     => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)']
+    'AUDITORIA'          => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
+    'CORPORATIVO'        => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)'],
+    'DIRECCION SISTEMAS' => ['nombre' => 'DIRECCION SISTEMAS', 'icono' => 'bi-diagram-3-fill', 'color' => '#06b6d4', 'bg' => 'rgba(6, 182, 212, 0.18)', 'border' => 'rgba(6, 182, 212, 0.45)']
 ];
+$AREAS_SISTEMAS_CATALOGO['DIRECCIÓN SISTEMAS'] = $AREAS_SISTEMAS_CATALOGO['DIRECCION SISTEMAS'];
 
 // Obtener áreas de tickets autorizadas para este usuario (desde sesión o recargar de BD)
 $areasRaw = trim($_SESSION['areas_tickets'] ?? '');

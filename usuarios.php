@@ -726,16 +726,17 @@ if (empty($modulosCat)) {
                                 </div>
                             </div>
 
-                            <!-- Grid de 6 áreas oficiales -->
+                            <!-- Grid de áreas oficiales -->
                             <div class="row g-2">
                                 <?php 
                                 $areasCatalogoSistemas = [
-                                    'DESARROLLO'      => ['icono' => 'bi-code-slash', 'color' => '#38bdf8', 'desc' => 'Desarrollo de software y portales'],
-                                    'CYBERSEGURIDAD'  => ['icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'desc' => 'Seguridad perimetral y accesos'],
-                                    'INFRAESTRUCTURA' => ['icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'desc' => 'Servidores, enlaces y site'],
-                                    'REDES SOCIALES'  => ['icono' => 'bi-share-fill', 'color' => '#a855f7', 'desc' => 'Gestión de redes y perfiles'],
-                                    'AUDITORIA'       => ['icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'desc' => 'Revisiones, normas e inventarios'],
-                                    'CORPORATIVO'     => ['icono' => 'bi-building-fill', 'color' => '#6366f1', 'desc' => 'Mesa de ayuda corporativa']
+                                    'DESARROLLO'         => ['icono' => 'bi-code-slash', 'color' => '#38bdf8', 'desc' => 'Desarrollo de software y portales'],
+                                    'CYBERSEGURIDAD'     => ['icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'desc' => 'Seguridad perimetral y accesos'],
+                                    'INFRAESTRUCTURA'    => ['icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'desc' => 'Servidores, enlaces y site'],
+                                    'REDES SOCIALES'     => ['icono' => 'bi-share-fill', 'color' => '#a855f7', 'desc' => 'Gestión de redes y perfiles'],
+                                    'AUDITORIA'          => ['icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'desc' => 'Revisiones, normas e inventarios'],
+                                    'CORPORATIVO'        => ['icono' => 'bi-building-fill', 'color' => '#6366f1', 'desc' => 'Mesa de ayuda corporativa'],
+                                    'DIRECCION SISTEMAS' => ['icono' => 'bi-diagram-3-fill', 'color' => '#06b6d4', 'desc' => 'Gestión, proyectos y dirección técnica TI']
                                 ];
                                 foreach ($areasCatalogoSistemas as $ak => $ainfo):
                                     $idChk = 'area_check_' . preg_replace('/[^a-zA-Z0-9]/', '_', $ak);
