@@ -73,6 +73,7 @@ if (!function_exists('normalizarAgencia')) {
         if (strcasecmp($nombre, 'central') === 0 || stripos($nombre, 'oficina central') !== false) {
             return 'Oficina Central Grupo Huerta';
         }
+        return $nombre;
     }
 }
 
