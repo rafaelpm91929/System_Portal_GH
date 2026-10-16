@@ -14,7 +14,17 @@ $CATALOGO_AGENCIAS = [
         'token'       => 'GedasDivolavilla2026!',
         'icono'       => 'bi-building-fill-check',
         'color'       => '#2563eb',
-        'descripcion' => 'Agencia Divol La Villa - Sistemas e Infraestructura IT'
+        'descripcion' => 'Agencia Divol La Villa - Sistemas e Infraestructura IT',
+        'direccion'   => 'Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, 07000 CDMX, México',
+        'maps_url'    => 'https://www.google.com/maps/search/?api=1&query=' . urlencode('Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, CDMX'),
+        'latitud'     => '19.4774',
+        'longitud'    => '-99.1121',
+        'encargado_sistemas' => 'Heriberto Rojo',
+        'telefono_sistemas'  => '5555866655',
+        'correo_sistemas'    => 'sistemas@divolavilla.com',
+        'logo_url'    => 'uploads/agencias/logo_2_1789832448.png',
+        'foto_url'    => 'uploads/agencias/foto_2_1789832448.jpg',
+        'es_personalizada'   => false
     ]
 ];
 
@@ -28,6 +38,8 @@ if (isset($pdo) && $pdo !== null) {
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     clave VARCHAR(50) UNIQUE,
                     nombre VARCHAR(100) UNIQUE,
+                    razon_social VARCHAR(200),
+                    rfc VARCHAR(20),
                     subdominio VARCHAR(255),
                     cpanel VARCHAR(255),
                     endpoint TEXT,
@@ -36,7 +48,17 @@ if (isset($pdo) && $pdo !== null) {
                     icono VARCHAR(50) DEFAULT 'bi-building-fill-check',
                     color VARCHAR(20) DEFAULT '#2563eb',
                     descripcion TEXT,
+                    direccion TEXT,
+                    maps_url TEXT,
+                    latitud VARCHAR(50),
+                    longitud VARCHAR(50),
+                    encargado_sistemas VARCHAR(150),
+                    telefono_sistemas VARCHAR(100),
+                    correo_sistemas VARCHAR(150),
+                    logo_url TEXT,
+                    foto_url TEXT,
                     estatus INTEGER DEFAULT 1,
+                    ultima_sincronizacion_ubicacion DATETIME,
                     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
             ");
@@ -46,6 +68,8 @@ if (isset($pdo) && $pdo !== null) {
                     `id` INT(11) NOT NULL AUTO_INCREMENT,
                     `clave` VARCHAR(50) UNIQUE,
                     `nombre` VARCHAR(100) NOT NULL UNIQUE,
+                    `razon_social` VARCHAR(200) DEFAULT '',
+                    `rfc` VARCHAR(20) DEFAULT '',
                     `subdominio` VARCHAR(255) DEFAULT '',
                     `cpanel` VARCHAR(255) DEFAULT '',
                     `endpoint` TEXT,
@@ -54,14 +78,51 @@ if (isset($pdo) && $pdo !== null) {
                     `icono` VARCHAR(50) DEFAULT 'bi-building-fill-check',
                     `color` VARCHAR(20) DEFAULT '#2563eb',
                     `descripcion` TEXT,
+                    `direccion` TEXT,
+                    `maps_url` TEXT,
+                    `latitud` VARCHAR(50) DEFAULT '',
+                    `longitud` VARCHAR(50) DEFAULT '',
+                    `encargado_sistemas` VARCHAR(150) DEFAULT '',
+                    `telefono_sistemas` VARCHAR(100) DEFAULT '',
+                    `correo_sistemas` VARCHAR(150) DEFAULT '',
+                    `logo_url` TEXT,
+                    `foto_url` TEXT,
                     `estatus` TINYINT(1) DEFAULT 1,
+                    `ultima_sincronizacion_ubicacion` DATETIME DEFAULT NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (`id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
 
-        $stmtAgs = $pdo->query("SELECT * FROM agencias WHERE estatus = 1 ORDER BY id ASC");
+        // Auto-asegurar columnas para esquemas previos si ya existía la tabla
+        $cols = [
+            'clave'               => 'VARCHAR(50)',
+            'subdominio'          => 'VARCHAR(255)',
+            'cpanel'              => 'VARCHAR(255)',
+            'endpoint'            => 'TEXT',
+            'token'               => 'VARCHAR(255)',
+            'local_api_token'     => 'VARCHAR(255)',
+            'icono'               => 'VARCHAR(50)',
+            'color'               => 'VARCHAR(20)',
+            'descripcion'         => 'TEXT',
+            'direccion'           => 'TEXT',
+            'maps_url'            => 'TEXT',
+            'latitud'             => 'VARCHAR(50)',
+            'longitud'            => 'VARCHAR(50)',
+            'encargado_sistemas'  => 'VARCHAR(150)',
+            'telefono_sistemas'   => 'VARCHAR(100)',
+            'correo_sistemas'     => 'VARCHAR(150)',
+            'logo_url'            => 'TEXT',
+            'foto_url'            => 'TEXT',
+            'estatus'             => 'INTEGER DEFAULT 1',
+            'ultima_sincronizacion_ubicacion' => 'DATETIME'
+        ];
+        foreach ($cols as $cName => $cType) {
+            try { $pdo->exec("ALTER TABLE agencias ADD COLUMN $cName $cType"); } catch (Throwable $e) {}
+        }
+
+        $stmtAgs = $pdo->query("SELECT * FROM agencias WHERE (estatus = 1 OR estatus IS NULL) ORDER BY id ASC");
         $dbRows = $stmtAgs ? $stmtAgs->fetchAll(PDO::FETCH_ASSOC) : [];
         foreach ($dbRows as $r) {
             $nomAg = trim($r['nombre']);
@@ -70,17 +131,48 @@ if (isset($pdo) && $pdo !== null) {
             if (strcasecmp($nomAg, 'Divol La Villa') === 0 || $k === 'divolavilla' || $k === 'divollavilla') {
                 $k = 'divolavilla';
             }
+
+            $sub = $r['subdominio'] ?? '';
+            if (empty($sub) && $k === 'divolavilla') $sub = 'portal.divolavilla.com';
+
+            $cp = $r['cpanel'] ?? '';
+            if (empty($cp) && $k === 'divolavilla') $cp = 'divolavilla.com';
+
+            $endp = $r['endpoint'] ?? '';
+            if (empty($endp) && $k === 'divolavilla') $endp = 'https://portal.divolavilla.com/sistemas/api_obtener_datos.php';
+
+            $tok = $r['token'] ?? '';
+            if (empty($tok) && $k === 'divolavilla') $tok = 'GedasDivolavilla2026!';
+
+            $dir = !empty($r['direccion']) ? $r['direccion'] : ($k === 'divolavilla' ? 'Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, 07000 CDMX, México' : '');
+            $lat = !empty($r['latitud']) ? $r['latitud'] : ($k === 'divolavilla' ? '19.4774' : '');
+            $lng = !empty($r['longitud']) ? $r['longitud'] : ($k === 'divolavilla' ? '-99.1121' : '');
+
+            $maps = !empty($r['maps_url']) ? $r['maps_url'] : ($dir ? ('https://www.google.com/maps/search/?api=1&query=' . urlencode($dir)) : '');
+
             $CATALOGO_AGENCIAS[$k] = [
                 'id'          => $k,
                 'db_id'       => $r['id'],
                 'nombre'      => (strcasecmp($nomAg, 'Divol La Villa') === 0) ? 'Divol La Villa' : $nomAg,
-                'cpanel'      => $r['cpanel'] ?: $r['subdominio'],
-                'subdominio'  => $r['subdominio'],
-                'endpoint'    => $r['endpoint'] ?: ('https://' . $r['subdominio'] . '/api_webhook_ticket.php'),
-                'token'       => $r['token'] ?: ($r['local_api_token'] ?: 'GH_SISTEMAS_TICKETS_2026!'),
+                'razon_social'=> $r['razon_social'] ?? '',
+                'rfc'         => $r['rfc'] ?? '',
+                'cpanel'      => $cp ?: $sub,
+                'subdominio'  => $sub,
+                'endpoint'    => $endp ?: ('https://' . $sub . '/api_webhook_ticket.php'),
+                'token'       => $tok ?: ($r['local_api_token'] ?: 'GH_SISTEMAS_TICKETS_2026!'),
                 'icono'       => $r['icono'] ?: 'bi-building-fill-check',
                 'color'       => $r['color'] ?: '#2563eb',
                 'descripcion' => $r['descripcion'] ?: ("Agencia " . $nomAg . " - Sistemas e Infraestructura IT"),
+                'direccion'   => $dir,
+                'maps_url'    => $maps,
+                'latitud'     => $lat,
+                'longitud'    => $lng,
+                'encargado_sistemas' => $r['encargado_sistemas'] ?? '',
+                'telefono_sistemas'  => $r['telefono_sistemas'] ?? '',
+                'correo_sistemas'    => $r['correo_sistemas'] ?? '',
+                'logo_url'    => $r['logo_url'] ?? '',
+                'foto_url'    => $r['foto_url'] ?? '',
+                'ultima_sincronizacion_ubicacion' => $r['ultima_sincronizacion_ubicacion'] ?? '',
                 'es_personalizada' => ($k !== 'divolavilla')
             ];
         }
@@ -98,7 +190,7 @@ if (file_exists($archivoAgenciasCustom)) {
                 if (strcasecmp(trim($ag['nombre']), 'Divol La Villa') === 0) {
                     $targetKey = 'divolavilla';
                 }
-                $CATALOGO_AGENCIAS[$targetKey] = $ag;
+                $CATALOGO_AGENCIAS[$targetKey] = array_merge($CATALOGO_AGENCIAS[$targetKey] ?? [], $ag);
             }
         }
     }

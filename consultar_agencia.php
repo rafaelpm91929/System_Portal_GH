@@ -96,6 +96,48 @@ if ($response === false || $http_code !== 200) {
 
 // Retornar la respuesta en vivo de la agencia
 $data_decoded = json_decode($response, true);
+
+// Auto-sincronizar ubicación y perfil si vienen en la respuesta del cPanel
+$perfilAgencia = $data_decoded['perfil'] ?? ($data_decoded['agencia_info'] ?? ($data_decoded['datos']['perfil'] ?? null));
+if ($perfilAgencia && is_array($perfilAgencia) && isset($pdo) && $pdo !== null) {
+    $dirRemota       = trim($perfilAgencia['direccion'] ?? '');
+    $mapsRemoto      = trim($perfilAgencia['maps_url'] ?? '');
+    $latRemota       = trim($perfilAgencia['latitud'] ?? '');
+    $lngRemota       = trim($perfilAgencia['longitud'] ?? '');
+    $encargadoRemoto = trim($perfilAgencia['encargado_sistemas'] ?? '');
+    $telRemoto       = trim($perfilAgencia['telefono_sistemas'] ?? '');
+    $correoRemoto    = trim($perfilAgencia['correo_sistemas'] ?? '');
+
+    if ((empty($latRemota) || empty($lngRemota)) && !empty($mapsRemoto)) {
+        if (preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $mapsRemoto, $mCoords)) {
+            $latRemota = $mCoords[1];
+            $lngRemota = $mCoords[2];
+        }
+    }
+
+    if (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota)) {
+        try {
+            $stmtUpd = $pdo->prepare("
+                UPDATE agencias 
+                SET direccion = COALESCE(NULLIF(?, ''), direccion),
+                    maps_url = COALESCE(NULLIF(?, ''), maps_url),
+                    latitud = COALESCE(NULLIF(?, ''), latitud),
+                    longitud = COALESCE(NULLIF(?, ''), longitud),
+                    encargado_sistemas = COALESCE(NULLIF(?, ''), encargado_sistemas),
+                    telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
+                    correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
+                    ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
+                WHERE clave = ? OR LOWER(nombre) = LOWER(?)
+            ");
+            $stmtUpd->execute([
+                $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
+                $encargadoRemoto, $telRemoto, $correoRemoto,
+                $agencia_id, $info_agencia['nombre']
+            ]);
+        } catch (Throwable $e) {}
+    }
+}
+
 echo json_encode([
     'status' => 'ok',
     'origen' => 'cpanel_remoto_en_vivo',
