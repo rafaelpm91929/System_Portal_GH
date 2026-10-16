@@ -292,6 +292,16 @@ if ($pdo) {
 if (empty($modulosCat)) {
     $modulosCat = obtenerCatalogoModulos($pdo);
 }
+
+$areasCatalogoSistemas = [
+    'DESARROLLO'         => ['icono' => 'bi-code-slash', 'color' => '#38bdf8', 'desc' => 'Desarrollo de software y portales'],
+    'CYBERSEGURIDAD'     => ['icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'desc' => 'Seguridad perimetral y accesos'],
+    'INFRAESTRUCTURA'    => ['icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'desc' => 'Servidores, enlaces y site'],
+    'REDES SOCIALES'     => ['icono' => 'bi-share-fill', 'color' => '#a855f7', 'desc' => 'Gestión de redes y perfiles'],
+    'AUDITORIA'          => ['icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'desc' => 'Revisiones, normas e inventarios'],
+    'CORPORATIVO'        => ['icono' => 'bi-building-fill', 'color' => '#6366f1', 'desc' => 'Mesa de ayuda corporativa'],
+    'DIRECCION SISTEMAS' => ['icono' => 'bi-diagram-3-fill', 'color' => '#06b6d4', 'desc' => 'Gestión, proyectos y dirección técnica TI']
+];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -309,6 +319,20 @@ if (empty($modulosCat)) {
             min-height: 100vh;
             padding-bottom: 50px;
         }
+        /* Corrección de contraste global */
+        .text-secondary, .text-muted {
+            color: #94a3b8 !important;
+        }
+        .form-label {
+            color: #cbd5e1 !important;
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+        .form-control::placeholder {
+            color: #64748b;
+        }
+
         .top-navbar {
             background: rgba(10, 25, 46, 0.95);
             border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -321,20 +345,143 @@ if (empty($modulosCat)) {
             padding: 24px;
         }
         .table-custom {
-            color: #e2e8f0;
+            color: #f1f5f9;
         }
         .table-custom th {
-            background-color: #0f223d;
-            color: #94a3b8;
-            font-size: 0.82rem;
+            background-color: #0b1f38 !important;
+            color: #38bdf8 !important;
+            font-size: 0.8rem;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            letter-spacing: 0.6px;
+            border-bottom: 2px solid rgba(56, 189, 248, 0.3) !important;
+            padding: 13px 14px;
         }
         .table-custom td {
             vertical-align: middle;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            padding: 13px 14px;
+            color: #e2e8f0;
         }
+
+        /* Fila de usuario interactiva y con contraste */
+        .usuario-row {
+            cursor: pointer;
+            transition: all 0.15s ease-in-out;
+        }
+        .usuario-row:hover td {
+            background-color: rgba(56, 189, 248, 0.09) !important;
+            color: #ffffff !important;
+        }
+        .usuario-row:hover .badge-user-tag {
+            border-color: #38bdf8;
+            background: rgba(14, 165, 233, 0.22);
+            color: #ffffff;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+        }
+
+        /* Badges de alto contraste */
+        .badge-user-tag {
+            background: rgba(14, 165, 233, 0.14);
+            color: #38bdf8;
+            border: 1px solid rgba(56, 189, 248, 0.38);
+            font-family: monospace;
+            font-size: 0.86rem;
+            padding: 4px 9px;
+            border-radius: 6px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+        }
+        .badge-role-superadmin {
+            background: rgba(239, 68, 68, 0.18) !important;
+            color: #fda4af !important;
+            border: 1px solid rgba(239, 68, 68, 0.5) !important;
+            font-weight: 700;
+        }
+        .badge-role-admin {
+            background: rgba(14, 165, 233, 0.18) !important;
+            color: #7dd3fc !important;
+            border: 1px solid rgba(56, 189, 248, 0.5) !important;
+            font-weight: 700;
+        }
+        .badge-role-usuario {
+            background: rgba(148, 163, 184, 0.15) !important;
+            color: #e2e8f0 !important;
+            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+            font-weight: 600;
+        }
+        .badge-status-active {
+            background: rgba(16, 185, 129, 0.18) !important;
+            color: #6ee7b7 !important;
+            border: 1px solid rgba(16, 185, 129, 0.45) !important;
+            font-weight: 600;
+        }
+        .badge-status-inactive {
+            background: rgba(239, 68, 68, 0.18) !important;
+            color: #fca5a5 !important;
+            border: 1px solid rgba(239, 68, 68, 0.4) !important;
+            font-weight: 600;
+        }
+        .badge-mod-tag {
+            font-size: 0.74rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin: 2px 2px;
+            background: rgba(30, 58, 138, 0.35);
+            color: #93c5fd;
+            border: 1px solid rgba(96, 165, 250, 0.35);
+        }
+
+        /* Ficha Flotante del Usuario */
+        .ficha-avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #0284c7 0%, #3b82f6 50%, #6366f1 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #ffffff;
+            box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            flex-shrink: 0;
+        }
+        .ficha-info-box {
+            background: rgba(15, 34, 61, 0.65);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 12px 14px;
+            transition: all 0.2s ease;
+            height: 100%;
+        }
+        .ficha-info-box:hover {
+            border-color: rgba(56, 189, 248, 0.35);
+            background: rgba(15, 34, 61, 0.9);
+        }
+        .ficha-label {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #94a3b8;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .ficha-val {
+            font-size: 0.92rem;
+            font-weight: 600;
+            color: #ffffff;
+            word-break: break-word;
+        }
+
         .modal-content {
             background-color: #0a192e;
             border: 1px solid rgba(255, 255, 255, 0.15);
@@ -393,16 +540,6 @@ if (empty($modulosCat)) {
             font-size: 1.2rem;
             flex-shrink: 0;
         }
-        .badge-mod-tag {
-            font-size: 0.72rem;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            margin: 2px 2px;
-        }
     </style>
 </head>
 <body>
@@ -437,33 +574,49 @@ if (empty($modulosCat)) {
         </div>
     <?php endif; ?>
 
-    <!-- Encabezado de Acción -->
+    <!-- Encabezado de Acción y Búsqueda -->
     <div class="card-custom mb-4">
-        <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div>
                 <h4 class="fw-bold mb-1"><i class="bi bi-people-fill text-primary me-2"></i> Usuarios del Sistema</h4>
-                <p class="text-secondary small mb-0">Crea nuevos usuarios y asigna permisos dinámicos por módulo y tipo de acción (Ver, Crear, Editar, Eliminar, Exportar).</p>
+                <p class="text-secondary small mb-0">Haz clic en cualquier usuario para ver su <strong>ficha flotante completa</strong> con detalles de contacto, módulos y permisos.</p>
             </div>
-            <button type="button" class="btn btn-primary rounded-3 px-4 fw-semibold" onclick="abrirModalNuevoUsuario()">
-                <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
-            </button>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary rounded-3 px-4 fw-semibold shadow-sm" onclick="abrirModalNuevoUsuario()">
+                    <i class="bi bi-person-plus-fill me-2"></i> Nuevo Usuario
+                </button>
+            </div>
+        </div>
+
+        <div class="row g-2 mt-3 pt-3 border-top border-secondary border-opacity-25 align-items-center">
+            <div class="col-md-6 col-lg-5">
+                <div class="input-group">
+                    <span class="input-group-text bg-transparent border-secondary text-info"><i class="bi bi-search"></i></span>
+                    <input type="text" id="filtroUsuarioInput" class="form-control" placeholder="Buscar por nombre, usuario, correo o agencia..." onkeyup="filtrarTablaUsuarios()">
+                </div>
+            </div>
+            <div class="col-md-6 col-lg-7 d-flex justify-content-md-end align-items-center gap-2">
+                <span class="badge bg-info bg-opacity-10 text-info border border-info border-opacity-25 py-2 px-3 small">
+                    <i class="bi bi-cursor-fill me-1"></i> Tip: Haz clic en cualquier fila para abrir la <strong>Ficha del Usuario</strong>
+                </span>
+            </div>
         </div>
     </div>
 
     <!-- Tabla de Usuarios -->
     <div class="card-custom">
         <div class="table-responsive">
-            <table class="table table-custom table-hover mb-0">
+            <table class="table table-custom table-hover mb-0" id="tablaUsuarios">
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th style="width: 70px;">ID</th>
                         <th>Usuario</th>
                         <th>Nombre Completo</th>
                         <th>Correo Electrónico</th>
                         <th>Rol</th>
                         <th>Módulos Autorizados</th>
                         <th>Estatus</th>
-                        <th class="text-end">Acciones / Permisos</th>
+                        <th class="text-end" style="min-width: 170px;">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -475,23 +628,38 @@ if (empty($modulosCat)) {
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usuarios as $u): ?>
-                            <tr>
-                                <td class="fw-bold text-secondary">#<?php echo $u['id']; ?></td>
-                                <td><span class="badge bg-dark border text-light font-monospace fs-6"><?php echo htmlspecialchars($u['usuario']); ?></span></td>
-                                <td class="fw-semibold"><?php echo htmlspecialchars($u['nombre']); ?></td>
-                                <td class="text-secondary"><?php echo htmlspecialchars($u['email']); ?></td>
+                            <tr class="usuario-row" onclick='abrirFichaUsuario(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' title="Haz clic para ver la ficha flotante de este usuario">
+                                <td class="fw-bold text-info">#<?php echo $u['id']; ?></td>
+                                <td>
+                                    <span class="badge-user-tag">
+                                        <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($u['usuario']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="fw-bold text-white"><?php echo htmlspecialchars($u['nombre']); ?></div>
+                                    <?php if (!empty($u['agencia'])): ?>
+                                        <div class="small text-secondary" style="font-size: 0.73rem;">
+                                            <i class="bi bi-geo-alt me-1 text-info"></i> <?php echo htmlspecialchars($u['agencia']); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <span class="text-info-subtle">
+                                        <i class="bi bi-envelope me-1 text-secondary"></i> <?php echo htmlspecialchars($u['email']); ?>
+                                    </span>
+                                </td>
                                 <td>
                                     <?php if ($u['rol'] === 'SuperAdmin'): ?>
-                                        <span class="badge bg-danger rounded-pill px-3">SuperAdmin</span>
+                                        <span class="badge badge-role-superadmin rounded-pill px-3 py-1"><i class="bi bi-shield-fill-check me-1"></i> SuperAdmin</span>
                                     <?php elseif ($u['rol'] === 'Admin'): ?>
-                                        <span class="badge bg-primary rounded-pill px-3">Admin</span>
+                                        <span class="badge badge-role-admin rounded-pill px-3 py-1"><i class="bi bi-shield-check me-1"></i> Admin</span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary rounded-pill px-3">Usuario</span>
+                                        <span class="badge badge-role-usuario rounded-pill px-3 py-1"><i class="bi bi-person me-1"></i> Usuario</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($u['rol'] === 'SuperAdmin'): ?>
-                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger rounded-pill px-3 py-1">
+                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 rounded-pill px-3 py-1">
                                             <i class="bi bi-shield-check me-1"></i> Todos los módulos
                                         </span>
                                     <?php else: 
@@ -506,8 +674,8 @@ if (empty($modulosCat)) {
                                         <?php if (!empty($modsActivos)): ?>
                                             <div class="d-flex flex-wrap gap-1" style="max-width: 320px;">
                                                 <?php foreach ($modsActivos as $ma): ?>
-                                                    <span class="badge-mod-tag bg-primary bg-opacity-20 text-info border border-info border-opacity-25" title="<?php echo htmlspecialchars($ma['descripcion']); ?>">
-                                                        <i class="bi <?php echo $ma['icono']; ?>"></i> <?php echo htmlspecialchars($ma['nombre']); ?>
+                                                    <span class="badge-mod-tag" title="<?php echo htmlspecialchars($ma['descripcion']); ?>">
+                                                        <i class="bi <?php echo $ma['icono']; ?> text-info"></i> <?php echo htmlspecialchars($ma['nombre']); ?>
                                                     </span>
                                                 <?php endforeach; ?>
                                             </div>
@@ -522,15 +690,15 @@ if (empty($modulosCat)) {
                                             ?>
                                                 <div class="mt-1">
                                                     <?php if (strtoupper($uAreas) === 'TODOS' || $uAreas === '*'): ?>
-                                                        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-30" style="font-size:0.68rem;" title="Acceso total a todas las áreas de tickets">
+                                                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-40" style="font-size:0.69rem;" title="Acceso total a todas las áreas de tickets">
                                                             <i class="bi bi-check-all"></i> Áreas TI: TODAS
                                                         </span>
                                                     <?php elseif (empty($uAreas) || strtoupper($uAreas) === 'NINGUNA'): ?>
-                                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30" style="font-size:0.68rem;">
+                                                        <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-40" style="font-size:0.69rem;">
                                                             <i class="bi bi-slash-circle"></i> Áreas TI: Ninguna
                                                         </span>
                                                     <?php else: ?>
-                                                        <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30" style="font-size:0.68rem;" title="Áreas autorizadas: <?php echo htmlspecialchars($uAreas); ?>">
+                                                        <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-40" style="font-size:0.69rem;" title="Áreas autorizadas: <?php echo htmlspecialchars($uAreas); ?>">
                                                             <i class="bi bi-diagram-3"></i> Áreas TI: <?php echo htmlspecialchars($uAreas); ?>
                                                         </span>
                                                     <?php endif; ?>
@@ -545,25 +713,30 @@ if (empty($modulosCat)) {
                                 </td>
                                 <td>
                                     <?php if ($u['activo']): ?>
-                                        <span class="badge bg-success bg-opacity-25 text-success border border-success rounded-pill px-3"><i class="bi bi-circle-fill me-1" style="font-size: 0.5rem;"></i> Activo</span>
+                                        <span class="badge badge-status-active rounded-pill px-3 py-1"><i class="bi bi-check-circle-fill me-1"></i> Activo</span>
                                     <?php else: ?>
-                                        <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary rounded-pill px-3"><i class="bi bi-x-circle me-1"></i> Inactivo</span>
+                                        <span class="badge badge-status-inactive rounded-pill px-3 py-1"><i class="bi bi-x-circle me-1"></i> Inactivo</span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="text-end">
+                                <td class="text-end" onclick="event.stopPropagation();">
                                     <div class="btn-group">
+                                        <!-- Ver Ficha Flotante -->
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-2 me-1" onclick='event.stopPropagation(); abrirFichaUsuario(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' title="Ver Ficha Técnica Flotante">
+                                            <i class="bi bi-eye-fill"></i>
+                                        </button>
+
                                         <!-- Editar Datos y Módulos -->
-                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2 me-1" onclick='abrirModalEditarUsuario(<?php echo json_encode($u); ?>)' title="Editar datos y módulos permitidos">
+                                        <button type="button" class="btn btn-sm btn-outline-warning rounded-2 me-1" onclick='event.stopPropagation(); abrirModalEditarUsuario(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' title="Editar datos y módulos permitidos">
                                             <i class="bi bi-pencil-square me-1"></i> Editar
                                         </button>
 
                                         <!-- Configurar Permisos Granulares Detallados -->
-                                        <button type="button" class="btn btn-sm btn-outline-info rounded-2 me-1" onclick='abrirModalPermisos(<?php echo json_encode($u); ?>)' title="Configurar Acciones Granulares (Crear, Editar, Borrar)">
+                                        <button type="button" class="btn btn-sm btn-outline-info rounded-2 me-1" onclick='event.stopPropagation(); abrirModalPermisos(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' title="Configurar Acciones Granulares (Crear, Editar, Borrar)">
                                             <i class="bi bi-shield-lock-fill"></i>
                                         </button>
 
                                         <!-- Alternar Estatus -->
-                                        <form method="POST" class="d-inline" onsubmit="return confirm('¿Deseas cambiar el estatus de este usuario?');">
+                                        <form method="POST" class="d-inline" onsubmit="event.stopPropagation(); return confirm('¿Deseas cambiar el estatus de este usuario?');">
                                             <input type="hidden" name="accion" value="toggle_status">
                                             <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                             <input type="hidden" name="nuevo_estatus" value="<?php echo $u['activo'] ? 0 : 1; ?>">
@@ -574,7 +747,7 @@ if (empty($modulosCat)) {
 
                                         <!-- Eliminar Usuario -->
                                         <?php if ($u['id'] != ($_SESSION['usuario_id'] ?? 0) && ($esSuperAdmin || strtolower($u['rol'] ?? '') !== 'superadmin')): ?>
-                                        <form method="POST" class="d-inline ms-1" onsubmit="return confirm('¿Estás seguro de que deseas eliminar permanentemente al usuario \'<?php echo addslashes(htmlspecialchars($u['nombre'] ?? $u['usuario'])); ?>\'? Esta acción no se puede deshacer.');">
+                                        <form method="POST" class="d-inline ms-1" onsubmit="event.stopPropagation(); return confirm('¿Estás seguro de que deseas eliminar permanentemente al usuario \'<?php echo addslashes(htmlspecialchars($u['nombre'] ?? $u['usuario'])); ?>\'? Esta acción no se puede deshacer.');">
                                             <input type="hidden" name="accion" value="eliminar_usuario">
                                             <input type="hidden" name="user_id" value="<?php echo $u['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-danger rounded-2" title="Eliminar Usuario">
@@ -592,6 +765,153 @@ if (empty($modulosCat)) {
         </div>
     </div>
 </div>
+
+<!-- =================================================== -->
+<!-- MODAL: FICHA TÉCNICA FLOTANTE DEL USUARIO           -->
+<!-- =================================================== -->
+<div class="modal fade" id="modalFichaUsuario" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content border-info border-opacity-25" style="box-shadow: 0 10px 40px rgba(0,0,0,0.85);">
+            <div class="modal-header border-secondary border-opacity-25 pb-3">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="ficha-avatar" id="ficha_avatar">
+                        U
+                    </div>
+                    <div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <h4 class="fw-bold mb-0 text-white" id="ficha_nombre">Nombre del Usuario</h4>
+                            <span id="ficha_badge_rol" class="badge badge-role-admin rounded-pill px-3 py-1">Admin</span>
+                            <span id="ficha_badge_status" class="badge badge-status-active rounded-pill px-3 py-1">Activo</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="badge-user-tag" id="ficha_usuario_tag"><i class="bi bi-person-badge"></i> @usuario</span>
+                            <span class="text-secondary small" id="ficha_agencia_text"><i class="bi bi-geo-alt me-1 text-info"></i> Sucursal</span>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <!-- Sección 1: Información General -->
+                <h6 class="text-info fw-bold text-uppercase small mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-person-lines-fill text-warning"></i> Datos Generales de la Cuenta
+                </h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-person text-info me-1"></i> Usuario / Login</div>
+                            <div class="ficha-val text-info font-monospace" id="ficha_val_usuario">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-envelope text-info me-1"></i> Correo Electrónico</div>
+                            <div class="ficha-val text-truncate" id="ficha_val_email">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-building text-warning me-1"></i> Sucursal / Agencia</div>
+                            <div class="ficha-val" id="ficha_val_agencia">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-diagram-2 text-success me-1"></i> Área / Departamento</div>
+                            <div class="ficha-val" id="ficha_val_area">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-briefcase text-secondary me-1"></i> Puesto / Cargo</div>
+                            <div class="ficha-val" id="ficha_val_puesto">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-telephone text-info me-1"></i> Teléfono / Ext</div>
+                            <div class="ficha-val" id="ficha_val_telefono">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-calendar3 text-warning me-1"></i> Fecha de Registro</div>
+                            <div class="ficha-val text-secondary small" id="ficha_val_creado">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-key text-primary me-1"></i> ID Registro</div>
+                            <div class="ficha-val text-secondary font-monospace" id="ficha_val_id">---</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="ficha-info-box">
+                            <div class="ficha-label"><i class="bi bi-shield-check text-success me-1"></i> Nivel de Acceso</div>
+                            <div class="ficha-val text-light small" id="ficha_val_rol_nivel">---</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sección 2: Módulos Autorizados -->
+                <h6 class="text-info fw-bold text-uppercase small mb-2 d-flex align-items-center gap-2">
+                    <i class="bi bi-grid-fill text-info"></i> Módulos Autorizados en el Portal
+                </h6>
+                <div id="ficha_modulos_container" class="mb-4">
+                    <!-- Dinámico -->
+                </div>
+
+                <!-- Sección 3: Áreas de Tickets Asignadas -->
+                <div id="ficha_areas_tickets_section" class="mb-4">
+                    <h6 class="text-warning fw-bold text-uppercase small mb-2 d-flex align-items-center gap-2">
+                        <i class="bi bi-diagram-3-fill"></i> Áreas TI Autorizadas (Módulo Tickets)
+                    </h6>
+                    <div id="ficha_areas_tickets_container" class="p-3 rounded-3" style="background: rgba(14, 36, 68, 0.65); border: 1px solid rgba(56, 189, 248, 0.25);">
+                        <!-- Dinámico -->
+                    </div>
+                </div>
+
+                <!-- Sección 4: Resumen de Permisos Granulares -->
+                <h6 class="text-info fw-bold text-uppercase small mb-2 d-flex align-items-center gap-2">
+                    <i class="bi bi-shield-lock-fill text-warning"></i> Privilegios Granulares por Módulo
+                </h6>
+                <div class="table-responsive rounded-3 border border-secondary border-opacity-25">
+                    <table class="table table-custom table-sm mb-0 align-middle">
+                        <thead>
+                            <tr class="text-center">
+                                <th class="text-start">Módulo Corporativo</th>
+                                <th style="width: 80px;">Ver</th>
+                                <th style="width: 80px;">Crear</th>
+                                <th style="width: 80px;">Editar</th>
+                                <th style="width: 80px;">Eliminar</th>
+                                <th style="width: 80px;">Exportar</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ficha_tabla_permisos_body">
+                            <!-- Dinámico -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer border-secondary border-opacity-25 justify-content-between">
+                <div>
+                    <button type="button" class="btn btn-outline-secondary rounded-3 text-light" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i> Cerrar
+                    </button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-info rounded-3 text-info fw-semibold" id="ficha_btn_permisos">
+                        <i class="bi bi-shield-lock me-1"></i> Configurar Permisos
+                    </button>
+                    <button type="button" class="btn btn-warning rounded-3 fw-bold shadow-sm" id="ficha_btn_editar">
+                        <i class="bi bi-pencil-square me-1"></i> Editar este Usuario
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- =================================================== -->
 <!-- MODAL: CREAR / EDITAR USUARIO Y CONFIGURAR MÓDULOS -->
@@ -834,6 +1154,236 @@ if (empty($modulosCat)) {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     const permisosMapGlobal = <?php echo json_encode($permisosMap); ?>;
+    const modulosCatGlobal = <?php echo json_encode($modulosCat); ?>;
+    const areasCatalogoSistemas = <?php echo json_encode($areasCatalogoSistemas ?? []); ?>;
+    let usuarioSeleccionadoActual = null;
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // Filtro en tiempo real para la tabla de usuarios
+    function filtrarTablaUsuarios() {
+        const query = (document.getElementById('filtroUsuarioInput')?.value || '').toLowerCase().trim();
+        const filas = document.querySelectorAll('#tablaUsuarios tbody tr.usuario-row');
+        filas.forEach(f => {
+            const texto = f.innerText.toLowerCase();
+            f.style.display = texto.includes(query) ? '' : 'none';
+        });
+    }
+
+    // =========================================================
+    // MODAL FLOTANTE: VER FICHA COMPLETA DEL USUARIO
+    // =========================================================
+    function abrirFichaUsuario(u) {
+        usuarioSeleccionadoActual = u;
+
+        // Iniciales para avatar visual
+        const partes = (u.nombre || u.usuario || 'U').trim().split(/\s+/);
+        let initials = partes[0] ? partes[0][0].toUpperCase() : 'U';
+        if (partes.length > 1 && partes[1]) {
+            initials += partes[1][0].toUpperCase();
+        }
+        document.getElementById('ficha_avatar').textContent = initials;
+
+        // Nombre y etiquetas
+        document.getElementById('ficha_nombre').textContent = u.nombre || u.usuario;
+        document.getElementById('ficha_usuario_tag').innerHTML = '<i class="bi bi-person-badge me-1"></i> @' + escapeHtml(u.usuario);
+        document.getElementById('ficha_agencia_text').innerHTML = '<i class="bi bi-geo-alt me-1 text-info"></i> ' + escapeHtml(u.agencia || 'Divol La Villa');
+
+        // Badge Rol
+        const badgeRol = document.getElementById('ficha_badge_rol');
+        const rolLower = (u.rol || '').toLowerCase();
+        if (rolLower === 'superadmin') {
+            badgeRol.className = 'badge badge-role-superadmin rounded-pill px-3 py-1';
+            badgeRol.innerHTML = '<i class="bi bi-shield-fill-check me-1"></i> SuperAdmin';
+        } else if (rolLower === 'admin') {
+            badgeRol.className = 'badge badge-role-admin rounded-pill px-3 py-1';
+            badgeRol.innerHTML = '<i class="bi bi-shield-check me-1"></i> Admin';
+        } else {
+            badgeRol.className = 'badge badge-role-usuario rounded-pill px-3 py-1';
+            badgeRol.innerHTML = '<i class="bi bi-person me-1"></i> Usuario';
+        }
+
+        // Badge Estatus
+        const badgeStatus = document.getElementById('ficha_badge_status');
+        const esActivo = parseInt(u.activo) === 1;
+        if (esActivo) {
+            badgeStatus.className = 'badge badge-status-active rounded-pill px-3 py-1';
+            badgeStatus.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Activo';
+        } else {
+            badgeStatus.className = 'badge badge-status-inactive rounded-pill px-3 py-1';
+            badgeStatus.innerHTML = '<i class="bi bi-x-circle me-1"></i> Inactivo';
+        }
+
+        // Valores Generales
+        document.getElementById('ficha_val_usuario').textContent = u.usuario;
+        document.getElementById('ficha_val_email').innerHTML = u.email ? `<a href="mailto:${escapeHtml(u.email)}" class="text-info text-decoration-none" title="Enviar correo"><i class="bi bi-box-arrow-up-right me-1 small"></i>${escapeHtml(u.email)}</a>` : '<span class="text-secondary">Sin correo</span>';
+        document.getElementById('ficha_val_agencia').textContent = u.agencia || 'Divol La Villa';
+        document.getElementById('ficha_val_area').textContent = u.area || 'Sistemas / TI';
+        document.getElementById('ficha_val_puesto').textContent = u.puesto || u.cargo || 'Colaborador';
+        let telStr = u.telefono || 'Sin registrar';
+        if (u.extension) telStr += ` (Ext: ${u.extension})`;
+        document.getElementById('ficha_val_telefono').textContent = telStr;
+        document.getElementById('ficha_val_creado').textContent = u.creado_en || 'Previamente registrado';
+        document.getElementById('ficha_val_id').textContent = '#' + u.id;
+        document.getElementById('ficha_val_rol_nivel').textContent = rolLower === 'superadmin' ? 'Acceso Maestro Ilimitado' : (rolLower === 'admin' ? 'Administrador Corporativo' : 'Usuario con Módulos Específicos');
+
+        // Contenedor de Módulos Autorizados
+        const modContainer = document.getElementById('ficha_modulos_container');
+        const uPerms = permisosMapGlobal[u.id] || {};
+        let modsHtml = '';
+        if (rolLower === 'superadmin') {
+            modsHtml = `
+                <div class="alert alert-danger bg-opacity-10 border border-danger border-opacity-30 rounded-3 py-2 px-3 small d-flex align-items-center gap-2 mb-0">
+                    <i class="bi bi-shield-lock-fill fs-5 text-danger"></i>
+                    <div>
+                        <strong class="text-white">Acceso Total Maestro (SuperAdmin):</strong>
+                        <div class="text-secondary">Este perfil dispone de acceso irrestricto y privilegios automáticos a todos los módulos y funciones del portal.</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            let modsActivos = [];
+            modulosCatGlobal.forEach(m => {
+                if (uPerms[m.clave] && parseInt(uPerms[m.clave].puede_ver) === 1) {
+                    modsActivos.push(m);
+                }
+            });
+
+            if (modsActivos.length > 0) {
+                modsHtml = '<div class="row g-2">';
+                modsActivos.forEach(m => {
+                    modsHtml += `
+                        <div class="col-md-4">
+                            <div class="p-2 rounded-3 border border-info border-opacity-25 d-flex align-items-center gap-2" style="background: rgba(14, 165, 233, 0.08);">
+                                <div class="rounded-2 p-2 bg-info bg-opacity-20 text-info d-flex align-items-center justify-content-center" style="width:36px; height:36px;">
+                                    <i class="bi ${m.icono} fs-5"></i>
+                                </div>
+                                <div class="overflow-hidden">
+                                    <div class="fw-bold text-white small text-truncate">${escapeHtml(m.nombre)}</div>
+                                    <div class="text-secondary text-truncate" style="font-size: 0.7rem;">${escapeHtml(m.descripcion)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                modsHtml += '</div>';
+            } else {
+                modsHtml = `
+                    <div class="alert alert-warning bg-opacity-10 border border-warning border-opacity-30 rounded-3 py-2 px-3 small text-warning mb-0">
+                        <i class="bi bi-slash-circle me-1"></i> Este usuario actualmente no tiene ningún módulo asignado.
+                    </div>
+                `;
+            }
+        }
+        modContainer.innerHTML = modsHtml;
+
+        // Áreas de Tickets Asignadas
+        const sectionAreas = document.getElementById('ficha_areas_tickets_section');
+        const containerAreas = document.getElementById('ficha_areas_tickets_container');
+        const tieneAccesoTickets = (rolLower === 'superadmin') || (uPerms['tickets'] && parseInt(uPerms['tickets'].puede_ver) === 1);
+
+        if (tieneAccesoTickets) {
+            sectionAreas.style.display = 'block';
+            const areasStr = (u.areas_tickets || 'TODOS').trim().toUpperCase();
+            let areasHtml = '';
+
+            if (areasStr === 'TODOS' || areasStr === '*' || rolLower === 'superadmin') {
+                areasHtml = `
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 rounded-pill px-3 py-2 fs-6">
+                            <i class="bi bi-check-all me-1"></i> TODAS LAS ÁREAS DE SISTEMAS
+                        </span>
+                        <span class="text-secondary small">Puede visualizar, atender y filtrar tickets de cualquier área técnica de Sistemas.</span>
+                    </div>
+                `;
+            } else if (areasStr === 'NINGUNA' || areasStr === '') {
+                areasHtml = `
+                    <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 rounded-pill px-3 py-2">
+                        <i class="bi bi-slash-circle me-1"></i> NINGUNA ÁREA ASIGNADA (Acceso restringido)
+                    </span>
+                `;
+            } else {
+                const userAreasList = areasStr.split(',').map(s => s.trim().toUpperCase());
+                areasHtml = '<div class="d-flex flex-wrap gap-2">';
+                userAreasList.forEach(areaName => {
+                    const areaInfo = areasCatalogoSistemas[areaName] || { icono: 'bi-diagram-3-fill', color: '#f59e0b', desc: '' };
+                    areasHtml += `
+                        <span class="badge rounded-pill px-3 py-2 border d-inline-flex align-items-center gap-2" style="background: rgba(15, 34, 61, 0.9); border-color: ${areaInfo.color} !important; color: #ffffff; font-size: 0.82rem;">
+                            <i class="bi ${areaInfo.icono}" style="color: ${areaInfo.color};"></i>
+                            <strong style="color: ${areaInfo.color};">${escapeHtml(areaName)}</strong>
+                        </span>
+                    `;
+                });
+                areasHtml += '</div>';
+            }
+            containerAreas.innerHTML = areasHtml;
+        } else {
+            sectionAreas.style.display = 'none';
+        }
+
+        // Resumen de Permisos Granulares
+        const tbodyPerms = document.getElementById('ficha_tabla_permisos_body');
+        let rowsPermsHtml = '';
+        modulosCatGlobal.forEach(m => {
+            const p = uPerms[m.clave] || {};
+            const isSA = (rolLower === 'superadmin');
+            const checkIcon = '<i class="bi bi-check-circle-fill text-success fs-5"></i>';
+            const crossIcon = '<i class="bi bi-dash-circle text-secondary opacity-25 fs-5"></i>';
+
+            const canVer = isSA || (parseInt(p.puede_ver) === 1);
+            const canCrear = isSA || (parseInt(p.puede_crear) === 1);
+            const canEditar = isSA || (parseInt(p.puede_editar) === 1);
+            const canEliminar = isSA || (parseInt(p.puede_eliminar) === 1);
+            const canExportar = isSA || (parseInt(p.puede_exportar) === 1);
+
+            rowsPermsHtml += `
+                <tr>
+                    <td>
+                        <div class="d-flex align-items-center gap-2">
+                            <i class="bi ${m.icono} text-info fs-5"></i>
+                            <div>
+                                <div class="fw-bold text-white small">${escapeHtml(m.nombre)}</div>
+                                <div class="text-secondary" style="font-size: 0.7rem;">${escapeHtml(m.descripcion)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-center">${canVer ? checkIcon : crossIcon}</td>
+                    <td class="text-center">${canCrear ? checkIcon : crossIcon}</td>
+                    <td class="text-center">${canEditar ? checkIcon : crossIcon}</td>
+                    <td class="text-center">${canEliminar ? checkIcon : crossIcon}</td>
+                    <td class="text-center">${canExportar ? checkIcon : crossIcon}</td>
+                </tr>
+            `;
+        });
+        tbodyPerms.innerHTML = rowsPermsHtml;
+
+        // Botones de acción en pie de ficha
+        document.getElementById('ficha_btn_editar').onclick = function() {
+            const modalEl = document.getElementById('modalFichaUsuario');
+            const modalInst = bootstrap.Modal.getInstance(modalEl);
+            if (modalInst) modalInst.hide();
+            setTimeout(() => abrirModalEditarUsuario(u), 350);
+        };
+
+        document.getElementById('ficha_btn_permisos').onclick = function() {
+            const modalEl = document.getElementById('modalFichaUsuario');
+            const modalInst = bootstrap.Modal.getInstance(modalEl);
+            if (modalInst) modalInst.hide();
+            setTimeout(() => abrirModalPermisos(u), 350);
+        };
+
+        // Desplegar modal flotante
+        const modalFicha = new bootstrap.Modal(document.getElementById('modalFichaUsuario'));
+        modalFicha.show();
+    }
 
     function actualizarCardStyle(modClave) {
         const cb = document.getElementById('mod_check_' + modClave);
