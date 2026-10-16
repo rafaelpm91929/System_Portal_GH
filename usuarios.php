@@ -304,7 +304,7 @@ $areasCatalogoSistemas = [
 ];
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -312,14 +312,16 @@ $areasCatalogoSistemas = [
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
+        html[data-bs-theme="dark"],
         body {
-            background-color: #040d1a;
-            color: #ffffff;
+            background-color: #040d1a !important;
+            color: #f1f5f9 !important;
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
             padding-bottom: 50px;
         }
-        /* Corrección de contraste global */
+
+        /* Corrección de contraste global para textos oscuros */
         .text-secondary, .text-muted {
             color: #94a3b8 !important;
         }
@@ -339,33 +341,56 @@ $areasCatalogoSistemas = [
             padding: 15px 35px;
         }
         .card-custom {
-            background: #0a192e;
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background-color: #0a192e !important;
+            border: 1px solid rgba(255, 255, 255, 0.08) !important;
             border-radius: 16px;
             padding: 24px;
         }
-        .table-custom {
-            color: #f1f5f9;
+
+        /* ELIMINAR COMPLETAMENTE CUALQUIER FONDO BLANCO DE BOOTSTRAP EN TABLAS */
+        table.table,
+        table.table-custom,
+        .table-custom > :not(caption) > *,
+        .table-custom > :not(caption) > * > *,
+        .table > :not(caption) > * > * {
+            background-color: transparent !important;
+            --bs-table-bg: transparent !important;
+            --bs-table-accent-bg: transparent !important;
+            --bs-table-striped-bg: transparent !important;
+            --bs-table-hover-bg: rgba(56, 189, 248, 0.08) !important;
+            --bs-table-color: #f1f5f9 !important;
+            --bs-table-hover-color: #ffffff !important;
+            color: #f1f5f9 !important;
+            box-shadow: none !important;
+            border-color: rgba(255, 255, 255, 0.07) !important;
         }
+
         .table-custom th {
-            background-color: #0b1f38 !important;
+            background-color: #0c213d !important;
             color: #38bdf8 !important;
-            font-size: 0.8rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.6px;
-            border-bottom: 2px solid rgba(56, 189, 248, 0.3) !important;
-            padding: 13px 14px;
+            font-size: 0.8rem !important;
+            font-weight: 700 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.6px !important;
+            border-bottom: 2px solid rgba(56, 189, 248, 0.35) !important;
+            padding: 14px 14px !important;
         }
+
         .table-custom td {
-            vertical-align: middle;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-            padding: 13px 14px;
-            color: #e2e8f0;
+            vertical-align: middle !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
+            padding: 13px 14px !important;
+            color: #cbd5e1 !important;
+            background-color: transparent !important;
+        }
+
+        .table-custom tbody tr {
+            background-color: transparent !important;
         }
 
         /* Fila de usuario interactiva y con contraste */
         .usuario-row {
+            background-color: transparent !important;
             cursor: pointer;
             transition: all 0.15s ease-in-out;
         }
@@ -374,69 +399,74 @@ $areasCatalogoSistemas = [
             color: #ffffff !important;
         }
         .usuario-row:hover .badge-user-tag {
-            border-color: #38bdf8;
-            background: rgba(14, 165, 233, 0.22);
-            color: #ffffff;
-            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
+            border-color: #38bdf8 !important;
+            background: rgba(14, 165, 233, 0.25) !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.35);
         }
 
         /* Badges de alto contraste */
         .badge-user-tag {
-            background: rgba(14, 165, 233, 0.14);
-            color: #38bdf8;
-            border: 1px solid rgba(56, 189, 248, 0.38);
+            background: rgba(14, 165, 233, 0.16) !important;
+            color: #38bdf8 !important;
+            border: 1px solid rgba(56, 189, 248, 0.45) !important;
             font-family: monospace;
             font-size: 0.86rem;
-            padding: 4px 9px;
+            padding: 4px 10px;
             border-radius: 6px;
-            font-weight: 600;
+            font-weight: 700;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
             transition: all 0.2s ease;
         }
         .badge-role-superadmin {
-            background: rgba(239, 68, 68, 0.18) !important;
-            color: #fda4af !important;
-            border: 1px solid rgba(239, 68, 68, 0.5) !important;
+            background: rgba(220, 38, 38, 0.25) !important;
+            color: #fca5a5 !important;
+            border: 1px solid rgba(248, 113, 113, 0.55) !important;
             font-weight: 700;
+            font-size: 0.78rem;
         }
         .badge-role-admin {
-            background: rgba(14, 165, 233, 0.18) !important;
+            background: rgba(2, 132, 199, 0.25) !important;
             color: #7dd3fc !important;
-            border: 1px solid rgba(56, 189, 248, 0.5) !important;
+            border: 1px solid rgba(56, 189, 248, 0.55) !important;
             font-weight: 700;
+            font-size: 0.78rem;
         }
         .badge-role-usuario {
-            background: rgba(148, 163, 184, 0.15) !important;
+            background: rgba(100, 116, 139, 0.25) !important;
             color: #e2e8f0 !important;
-            border: 1px solid rgba(148, 163, 184, 0.35) !important;
+            border: 1px solid rgba(148, 163, 184, 0.45) !important;
             font-weight: 600;
+            font-size: 0.78rem;
         }
         .badge-status-active {
-            background: rgba(16, 185, 129, 0.18) !important;
+            background: rgba(16, 185, 129, 0.2) !important;
             color: #6ee7b7 !important;
-            border: 1px solid rgba(16, 185, 129, 0.45) !important;
-            font-weight: 600;
+            border: 1px solid rgba(16, 185, 129, 0.5) !important;
+            font-weight: 700;
+            font-size: 0.78rem;
         }
         .badge-status-inactive {
-            background: rgba(239, 68, 68, 0.18) !important;
+            background: rgba(239, 68, 68, 0.2) !important;
             color: #fca5a5 !important;
-            border: 1px solid rgba(239, 68, 68, 0.4) !important;
-            font-weight: 600;
+            border: 1px solid rgba(239, 68, 68, 0.5) !important;
+            font-weight: 700;
+            font-size: 0.78rem;
         }
         .badge-mod-tag {
             font-size: 0.74rem;
             font-weight: 600;
-            padding: 4px 8px;
+            padding: 4px 9px;
             border-radius: 6px;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
             margin: 2px 2px;
-            background: rgba(30, 58, 138, 0.35);
-            color: #93c5fd;
-            border: 1px solid rgba(96, 165, 250, 0.35);
+            background: rgba(14, 165, 233, 0.16) !important;
+            color: #7dd3fc !important;
+            border: 1px solid rgba(56, 189, 248, 0.35) !important;
         }
 
         /* Ficha Flotante del Usuario */
@@ -636,30 +666,30 @@ $areasCatalogoSistemas = [
                                     </span>
                                 </td>
                                 <td>
-                                    <div class="fw-bold text-white"><?php echo htmlspecialchars($u['nombre']); ?></div>
+                                    <div class="fw-bold fs-6" style="color: #ffffff !important;"><?php echo htmlspecialchars($u['nombre']); ?></div>
                                     <?php if (!empty($u['agencia'])): ?>
-                                        <div class="small text-secondary" style="font-size: 0.73rem;">
+                                        <div class="small" style="color: #94a3b8 !important; font-size: 0.74rem;">
                                             <i class="bi bi-geo-alt me-1 text-info"></i> <?php echo htmlspecialchars($u['agencia']); ?>
                                         </div>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="text-info-subtle">
-                                        <i class="bi bi-envelope me-1 text-secondary"></i> <?php echo htmlspecialchars($u['email']); ?>
+                                    <span style="color: #cbd5e1 !important;">
+                                        <i class="bi bi-envelope me-1 text-info"></i> <?php echo htmlspecialchars($u['email']); ?>
                                     </span>
                                 </td>
                                 <td>
-                                    <?php if ($u['rol'] === 'SuperAdmin'): ?>
+                                    <?php if (strtolower($u['rol']) === 'superadmin'): ?>
                                         <span class="badge badge-role-superadmin rounded-pill px-3 py-1"><i class="bi bi-shield-fill-check me-1"></i> SuperAdmin</span>
-                                    <?php elseif ($u['rol'] === 'Admin'): ?>
+                                    <?php elseif (strtolower($u['rol']) === 'admin'): ?>
                                         <span class="badge badge-role-admin rounded-pill px-3 py-1"><i class="bi bi-shield-check me-1"></i> Admin</span>
                                     <?php else: ?>
                                         <span class="badge badge-role-usuario rounded-pill px-3 py-1"><i class="bi bi-person me-1"></i> Usuario</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php if ($u['rol'] === 'SuperAdmin'): ?>
-                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 rounded-pill px-3 py-1">
+                                    <?php if (strtolower($u['rol']) === 'superadmin'): ?>
+                                        <span class="badge rounded-pill px-3 py-1" style="background: rgba(220, 38, 38, 0.22) !important; color: #fca5a5 !important; border: 1px solid rgba(248, 113, 113, 0.5) !important; font-size: 0.76rem; font-weight: 600;">
                                             <i class="bi bi-shield-check me-1"></i> Todos los módulos
                                         </span>
                                     <?php else: 
