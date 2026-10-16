@@ -127,15 +127,26 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'obtener_ubicaciones_mapa') {
 
     $lista = [];
     foreach ($CATALOGO_AGENCIAS as $k => $ag) {
+        $lat = trim($ag['latitud'] ?? '');
+        $lng = trim($ag['longitud'] ?? '');
+        $mapsUrl = trim($ag['maps_url'] ?? '');
+
+        if ((empty($lat) || empty($lng)) && !empty($mapsUrl)) {
+            if (preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $mapsUrl, $mCoords)) {
+                $lat = $mCoords[1];
+                $lng = $mCoords[2];
+            }
+        }
+
         $lista[] = [
             'id'          => $k,
             'nombre'      => $ag['nombre'],
             'subdominio'  => $ag['subdominio'],
             'cpanel'      => $ag['cpanel'],
             'direccion'   => $ag['direccion'] ?? '',
-            'maps_url'    => $ag['maps_url'] ?? '',
-            'latitud'     => $ag['latitud'] ?? '',
-            'longitud'    => $ag['longitud'] ?? '',
+            'maps_url'    => $mapsUrl,
+            'latitud'     => $lat,
+            'longitud'    => $lng,
             'icono'       => $ag['icono'] ?? 'bi-building-fill-check',
             'color'       => $ag['color'] ?? '#2563eb',
             'descripcion' => $ag['descripcion'] ?? '',
@@ -231,6 +242,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                     $latRemota = $mCoords[1];
                     $lngRemota = $mCoords[2];
                 }
+            }
+
+            // Auto-geocodificar en servidor si la agencia mandó dirección pero no coordenadas
+            if ((empty($latRemota) || empty($lngRemota)) && !empty($dirRemota)) {
+                $geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' . urlencode($dirRemota);
+                $chGeo = curl_init();
+                curl_setopt_array($chGeo, [
+                    CURLOPT_URL => $geoUrl,
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => 4,
+                    CURLOPT_USERAGENT => 'SystemPortalGH/2.0 (sistemas@grupohuerta.mx)'
+                ]);
+                $geoRes = curl_exec($chGeo);
+                curl_close($chGeo);
+                if ($geoRes) {
+                    $geoData = json_decode($geoRes, true);
+                    if (!empty($geoData[0]['lat']) && !empty($geoData[0]['lon'])) {
+                        $latRemota = (string)$geoData[0]['lat'];
+                        $lngRemota = (string)$geoData[0]['lon'];
+                        if (empty($mapsRemoto)) {
+                            $mapsRemoto = 'https://www.google.com/maps/search/?api=1&query=' . urlencode($dirRemota);
+                        }
+                    }
+                }
+            }
+
+            // Verificar si el cPanel remoto está vacío de dirección y coordenadas
+            $remotoTieneUbicacion = (!empty($latRemota) && !empty($lngRemota)) || !empty($dirRemota);
+            $localTieneUbicacion = (!empty($infoAg['latitud']) && !empty($infoAg['longitud'])) || !empty($infoAg['direccion']);
+
+            if (!$remotoTieneUbicacion && !$localTieneUbicacion) {
+                echo json_encode([
+                    'status'     => 'sin_ubicacion',
+                    'mensaje'    => "El cPanel de {$infoAg['nombre']} está CONECTADO y activo, pero la sucursal aún no ha capturado su dirección física ni coordenadas en su portal de agencia.",
+                    'agencia'    => $infoAg['nombre'],
+                    'agencia_id' => $agId
+                ], JSON_UNESCAPED_UNICODE);
+                exit();
             }
 
             if ($pdo && (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota))) {
@@ -381,6 +430,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
         $longitud = $mCoords[2];
     }
 
+    // Auto-geocodificar en servidor si se ingresó dirección física pero no coordenadas
+    if ((empty($latitud) || empty($longitud)) && !empty($direccion)) {
+        $geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' . urlencode($direccion);
+        $chGeo = curl_init();
+        curl_setopt_array($chGeo, [
+            CURLOPT_URL => $geoUrl,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 4,
+            CURLOPT_USERAGENT => 'SystemPortalGH/2.0 (sistemas@grupohuerta.mx)'
+        ]);
+        $geoRes = curl_exec($chGeo);
+        curl_close($chGeo);
+        if ($geoRes) {
+            $geoData = json_decode($geoRes, true);
+            if (!empty($geoData[0]['lat']) && !empty($geoData[0]['lon'])) {
+                $latitud = (string)$geoData[0]['lat'];
+                $longitud = (string)$geoData[0]['lon'];
+            }
+        }
+    }
+
     if (empty($nombre) || empty($subdominio) || empty($token)) {
         $error = "Por favor completa los campos obligatorios: Nombre, Subdominio/URL y Token Secreto.";
     } else {
@@ -496,6 +566,7 @@ include 'config_agencias.php';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         body {
             background-color: #040d1a;
@@ -723,7 +794,24 @@ include 'config_agencias.php';
         #mapaAgencias {
             height: 600px;
             width: 100%;
-            background: #030a14;
+            background: #06152b;
+            transition: filter 0.25s ease;
+        }
+        /* Modo Oscuro Libre para Leaflet (Sin marcas de agua ni API keys) */
+        #mapaAgencias.map-dark-theme .leaflet-tile-pane {
+            filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(92%);
+        }
+        #mapaAgencias.map-dark-theme {
+            background: #06152b !important;
+        }
+        .leaflet-bar a {
+            background-color: #09192e !important;
+            border-color: rgba(56, 189, 248, 0.3) !important;
+            color: #38bdf8 !important;
+        }
+        .leaflet-bar a:hover {
+            background-color: #0f2d52 !important;
+            color: #ffffff !important;
         }
         .leaflet-container {
             font-family: 'Segoe UI', system-ui, -apple-system, sans-serif !important;
@@ -1148,6 +1236,7 @@ include 'config_agencias.php';
                             <div class="btn-group btn-group-sm rounded-pill shadow-lg overflow-hidden border border-secondary border-opacity-30" role="group">
                                 <button type="button" class="btn btn-dark active" id="btnTileDark" onclick="cambiarCapaMapa('dark')">🌙 Oscuro</button>
                                 <button type="button" class="btn btn-dark" id="btnTileOsm" onclick="cambiarCapaMapa('osm')">☀️ Calles</button>
+                                <button type="button" class="btn btn-dark" id="btnTileSat" onclick="cambiarCapaMapa('sat')">🛰️ Satélite</button>
                             </div>
                         </div>
 
@@ -1270,13 +1359,38 @@ function probarConexion(agenciaKey, agenciaNombre) {
                     badge.innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> cPanel Activo (' + res.tiempoMs + 'ms)';
                     badge.className = 'online-badge bg-success bg-opacity-25 text-success border-success';
                 }
-                alert('✅ ¡Conexión Exitosa con ' + agenciaNombre + '!\n\nTiempo de respuesta: ' + res.tiempoMs + ' ms\nOrigen: ' + (res.data.origen || 'En vivo') + '\nTotal Equipos: ' + (res.data.datos ? (res.data.datos.total_equipos || 0) : 0));
+                Swal.fire({
+                    icon: 'success',
+                    title: '¡Conexión Exitosa!',
+                    html: `<div class="text-start">
+                        <p class="mb-2 text-light"><strong>${escapeHtml(agenciaNombre)}</strong> responde correctamente.</p>
+                        <ul class="list-unstyled small text-secondary mb-0">
+                            <li>⚡ <b>Latencia:</b> ${res.tiempoMs} ms</li>
+                            <li>📡 <b>Origen:</b> ${escapeHtml(res.data.origen || 'En vivo')}</li>
+                            <li>💻 <b>Equipos en inventario:</b> ${res.data.datos ? (res.data.datos.total_equipos || 0) : 0}</li>
+                        </ul>
+                    </div>`,
+                    background: '#09192e',
+                    color: '#ffffff',
+                    confirmButtonColor: '#2563eb'
+                });
             } else {
                 if (badge) {
                     badge.innerHTML = '<i class="bi bi-exclamation-triangle-fill text-danger"></i> Sin Respuesta';
                     badge.className = 'online-badge bg-danger bg-opacity-25 text-danger border-danger';
                 }
-                alert('⚠️ No se pudo conectar con el cPanel de ' + agenciaNombre + ':\n\n' + (res.data.mensaje || 'Error HTTP ' + res.status) + '\n\nVerifica que el archivo api_obtener_datos.php esté subido en ese cPanel y que el dominio responda.');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Sin Respuesta del cPanel',
+                    html: `<div class="text-start">
+                        <p class="text-danger mb-2">No se pudo conectar con <b>${escapeHtml(agenciaNombre)}</b>.</p>
+                        <p class="small text-secondary mb-2">${escapeHtml(res.data.mensaje || 'Error HTTP ' + res.status)}</p>
+                        <p class="small text-light">Verifica que el archivo <code>api_obtener_datos.php</code> esté subido en <code>public_html/sistemas/</code> en ese cPanel y que el dominio responda.</p>
+                    </div>`,
+                    background: '#09192e',
+                    color: '#ffffff',
+                    confirmButtonColor: '#ef4444'
+                });
             }
         })
         .catch(err => {
@@ -1284,7 +1398,14 @@ function probarConexion(agenciaKey, agenciaNombre) {
                 badge.innerHTML = '<i class="bi bi-x-circle-fill text-danger"></i> Error Red';
                 badge.className = 'online-badge bg-danger bg-opacity-25 text-danger border-danger';
             }
-            alert('❌ Error de red al probar conexión con ' + agenciaNombre + ':\n' + err.message);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error de Red',
+                text: 'Error al probar conexión con ' + agenciaNombre + ': ' + err.message,
+                background: '#09192e',
+                color: '#ffffff',
+                confirmButtonColor: '#ef4444'
+            });
         });
 }
 
@@ -1296,10 +1417,13 @@ let capaTilesActual = null;
 let markersGroup = null;
 let agenciasDataGlobal = [];
 
+// Capas libres de marcas de agua y de alta velocidad (OpenStreetMap & ESRI World Imagery)
 const TILE_LAYERS = {
-    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    osm:  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+    osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    sat: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 };
+
+let capaTipoActual = 'dark'; // 'dark', 'osm', 'sat'
 
 function abrirModalMapaAgencias() {
     const modalEl = document.getElementById('modalMapaAgencias');
@@ -1326,14 +1450,19 @@ function initMapaAgencias() {
         return;
     }
 
+    const mapDiv = document.getElementById('mapaAgencias');
+    if (mapDiv) {
+        mapDiv.classList.add('map-dark-theme');
+    }
+
     mapaInstancia = L.map('mapaAgencias', {
         zoomControl: true,
         attributionControl: false
     }).setView([19.4326, -99.1332], 11);
 
-    capaTilesActual = L.tileLayer(TILE_LAYERS.dark, {
+    capaTilesActual = L.tileLayer(TILE_LAYERS.osm, {
         maxZoom: 19,
-        subdomains: 'abcd'
+        subdomains: 'abc'
     }).addTo(mapaInstancia);
 
     markersGroup = L.layerGroup().addTo(mapaInstancia);
@@ -1341,13 +1470,29 @@ function initMapaAgencias() {
 
 function cambiarCapaMapa(capa) {
     if (!mapaInstancia) return;
-    if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
+    capaTipoActual = capa;
+    const mapDiv = document.getElementById('mapaAgencias');
 
-    const url = TILE_LAYERS[capa] || TILE_LAYERS.dark;
-    capaTilesActual = L.tileLayer(url, { maxZoom: 19, subdomains: 'abcd' }).addTo(mapaInstancia);
+    if (capa === 'dark') {
+        if (mapDiv) mapDiv.classList.add('map-dark-theme');
+        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
+        capaTilesActual = L.tileLayer(TILE_LAYERS.osm, { maxZoom: 19, subdomains: 'abc' }).addTo(mapaInstancia);
+    } else if (capa === 'osm') {
+        if (mapDiv) mapDiv.classList.remove('map-dark-theme');
+        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
+        capaTilesActual = L.tileLayer(TILE_LAYERS.osm, { maxZoom: 19, subdomains: 'abc' }).addTo(mapaInstancia);
+    } else if (capa === 'sat') {
+        if (mapDiv) mapDiv.classList.remove('map-dark-theme');
+        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
+        capaTilesActual = L.tileLayer(TILE_LAYERS.sat, { maxZoom: 18 }).addTo(mapaInstancia);
+    }
 
-    document.getElementById('btnTileDark').classList.toggle('active', capa === 'dark');
-    document.getElementById('btnTileOsm').classList.toggle('active', capa === 'osm');
+    const btnDark = document.getElementById('btnTileDark');
+    const btnOsm  = document.getElementById('btnTileOsm');
+    const btnSat  = document.getElementById('btnTileSat');
+    if (btnDark) btnDark.classList.toggle('active', capa === 'dark');
+    if (btnOsm)  btnOsm.classList.toggle('active', capa === 'osm');
+    if (btnSat)  btnSat.classList.toggle('active', capa === 'sat');
 }
 
 function cargarUbicacionesAgencias(centrarEnId = null) {
@@ -1518,11 +1663,35 @@ function enfocarAgencia(agId) {
     } else {
         const ag = agenciasDataGlobal.find(a => a.id === agId);
         if (ag && ag.direccion) {
-            if (confirm(`La agencia "${ag.nombre}" tiene dirección registrada pero aún no cuenta con coordenadas GPS exactas.\n\n¿Deseas asignar o auto-detectar sus coordenadas GPS ahora?`)) {
-                abrirModalEditarCoordenadas(agId);
-            }
+            Swal.fire({
+                icon: 'question',
+                title: 'Faltan Coordenadas GPS',
+                html: `<p class="text-light">La agencia <b>${escapeHtml(ag.nombre)}</b> tiene registrada su dirección pero aún no cuenta con coordenadas GPS exactas en el mapa.</p><p class="small text-secondary mb-0">¿Deseas auto-detectar o asignar sus coordenadas ahora?</p>`,
+                background: '#09192e',
+                color: '#ffffff',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#475569',
+                confirmButtonText: '<i class="bi bi-geo-alt-fill me-1"></i> Asignar GPS Ahora',
+                cancelButtonText: 'Cancelar'
+            }).then(r => {
+                if (r.isConfirmed) abrirModalEditarCoordenadas(agId);
+            });
         } else {
-            alert(`La agencia seleccionada aún no ha registrado su ubicación física.\nPuedes hacer clic en "Sincronizar" o "Editar GPS" para asignarla.`);
+            Swal.fire({
+                icon: 'info',
+                title: 'Sin Ubicación Registrada',
+                html: `<p class="text-light">La sucursal <b>${ag ? escapeHtml(ag.nombre) : ''}</b> aún no cuenta con dirección física registrada.</p><p class="small text-secondary mb-0">Puedes asignarla manualmente con 'Editar GPS' o sincronizarla si la agencia ya la capturó en su portal.</p>`,
+                background: '#09192e',
+                color: '#ffffff',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#475569',
+                confirmButtonText: '<i class="bi bi-pencil-square me-1"></i> Asignar Dirección / GPS',
+                cancelButtonText: 'Cerrar'
+            }).then(r => {
+                if (r.isConfirmed) abrirModalEditarCoordenadas(agId);
+            });
         }
     }
 }
@@ -1564,15 +1733,63 @@ function sincronizarUbicacionAgencia(agId) {
     .then(data => {
         ocultarBannerStatus();
         if (data.status === 'ok') {
-            alert('✅ ' + data.mensaje);
+            Swal.fire({
+                icon: 'success',
+                title: '¡Ubicación Sincronizada!',
+                html: `<div class="text-start">
+                    <p class="mb-1 text-light"><strong>${escapeHtml(data.agencia)}</strong></p>
+                    <p class="small text-secondary mb-2">${escapeHtml(data.direccion || 'Coordenadas GPS recibidas correctamente.')}</p>
+                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30">Lat: ${escapeHtml(data.latitud)} | Lng: ${escapeHtml(data.longitud)}</span>
+                </div>`,
+                background: '#09192e',
+                color: '#ffffff',
+                confirmButtonColor: '#2563eb'
+            });
+            cargarUbicacionesAgencias(agId);
+        } else if (data.status === 'sin_ubicacion') {
+            Swal.fire({
+                icon: 'warning',
+                title: 'cPanel Conectado (Sin Dirección)',
+                html: `<div class="text-start">
+                    <p class="mb-2 text-light">${escapeHtml(data.mensaje)}</p>
+                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-30 small text-secondary">
+                        <i class="bi bi-info-circle text-info me-1"></i> El enlace técnico con su cPanel está 100% activo, pero en la base de datos de esa agencia aún no han ingresado su domicilio en su portal.
+                    </div>
+                </div>`,
+                background: '#09192e',
+                color: '#ffffff',
+                showCancelButton: true,
+                confirmButtonColor: '#2563eb',
+                cancelButtonColor: '#475569',
+                confirmButtonText: '<i class="bi bi-geo-alt-fill me-1"></i> Asignar GPS Aquí Ahora',
+                cancelButtonText: 'Entendido'
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    abrirModalEditarCoordenadas(data.agencia_id || agId);
+                }
+            });
             cargarUbicacionesAgencias(agId);
         } else {
-            alert('⚠️ ' + (data.mensaje || 'No se pudo sincronizar la ubicación con el cPanel.'));
+            Swal.fire({
+                icon: 'error',
+                title: 'No se pudo sincronizar',
+                text: data.mensaje || 'Error desconocido al contactar el cPanel.',
+                background: '#09192e',
+                color: '#ffffff',
+                confirmButtonColor: '#ef4444'
+            });
         }
     })
     .catch(err => {
         ocultarBannerStatus();
-        alert('❌ Error al sincronizar con cPanel: ' + err.message);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error de Red',
+            text: 'Error al contactar con el cPanel: ' + err.message,
+            background: '#09192e',
+            color: '#ffffff',
+            confirmButtonColor: '#ef4444'
+        });
     });
 }
 
@@ -1598,6 +1815,15 @@ function sincronizarTodasUbicaciones(abrirMapaDespues = false) {
         ocultarBannerStatus();
         if (btn) btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> <span>Sincronizar cPanels</span>';
         cargarUbicacionesAgencias();
+        Swal.fire({
+            icon: 'info',
+            title: 'Sincronización Terminada',
+            text: 'Se consultaron las ubicaciones de todos los cPanels registrados.',
+            timer: 2000,
+            showConfirmButton: false,
+            background: '#09192e',
+            color: '#ffffff'
+        });
     });
 }
 
@@ -1623,6 +1849,18 @@ function guardarCoordenadasManuales() {
     const lng = document.getElementById('edit_coord_lng').value.trim();
     const maps = document.getElementById('edit_coord_maps').value.trim();
 
+    if (!lat || !lng) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Faltan Coordenadas',
+            text: 'Por favor ingresa Latitud y Longitud, o escribe la dirección y haz clic en "Auto-detectar Coordenadas".',
+            background: '#09192e',
+            color: '#ffffff',
+            confirmButtonColor: '#2563eb'
+        });
+        return;
+    }
+
     const fd = new FormData();
     fd.append('accion', 'guardar_ubicacion_manual');
     fd.append('agencia_id', agId);
@@ -1638,21 +1876,61 @@ function guardarCoordenadasManuales() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'ok') {
-            bootstrap.Modal.getInstance(document.getElementById('modalEditarCoordenadas')).hide();
+            const modalEl = document.getElementById('modalEditarCoordenadas');
+            const modalInst = bootstrap.Modal.getInstance(modalEl);
+            if (modalInst) modalInst.hide();
+
+            Swal.fire({
+                icon: 'success',
+                title: '¡Ubicación Guardada!',
+                text: 'La ubicación y coordenadas de ' + (data.agencia || 'la agencia') + ' fueron actualizadas correctamente.',
+                timer: 2200,
+                showConfirmButton: false,
+                background: '#09192e',
+                color: '#ffffff'
+            });
             cargarUbicacionesAgencias(agId);
         } else {
-            alert('Error: ' + (data.mensaje || 'No se pudo guardar la ubicación.'));
+            Swal.fire({
+                icon: 'error',
+                title: 'Error al Guardar',
+                text: data.mensaje || 'No se pudo guardar la ubicación.',
+                background: '#09192e',
+                color: '#ffffff',
+                confirmButtonColor: '#ef4444'
+            });
         }
     })
     .catch(err => {
-        alert('Error de red: ' + err.message);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error de Red',
+            text: 'Error al guardar coordenadas: ' + err.message,
+            background: '#09192e',
+            color: '#ffffff',
+            confirmButtonColor: '#ef4444'
+        });
     });
 }
 
 function geocodificarDireccionModal() {
-    const dir = document.getElementById('edit_coord_direccion').value.trim();
+    let dir = document.getElementById('edit_coord_direccion').value.trim();
+    const agNombre = document.getElementById('edit_coord_agencia_nombre').value.trim();
+
+    if (!dir && agNombre) {
+        dir = agNombre + ', México';
+        document.getElementById('edit_coord_direccion').value = dir;
+    }
+
     if (!dir) {
-        alert('Por favor escribe primero una dirección en el campo correspondiente.');
+        Swal.fire({
+            icon: 'warning',
+            title: 'Ingresa una Dirección',
+            text: 'Escribe una dirección o nombre de sucursal para buscar sus coordenadas satelitales.',
+            background: '#09192e',
+            color: '#ffffff',
+            confirmButtonColor: '#2563eb'
+        });
         return;
     }
 
@@ -1670,14 +1948,39 @@ function geocodificarDireccionModal() {
                 if (!document.getElementById('edit_coord_maps').value) {
                     document.getElementById('edit_coord_maps').value = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dir)}`;
                 }
-                alert(`✅ Coordenadas detectadas:\nLat: ${primer.lat}\nLng: ${primer.lon}`);
+                Swal.fire({
+                    icon: 'success',
+                    title: '¡Coordenadas Detectadas!',
+                    html: `<div class="text-start small">
+                        <p class="mb-1 text-light"><b>Lugar detectado:</b></p>
+                        <p class="text-secondary mb-2">${escapeHtml(primer.display_name)}</p>
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30">Lat: ${primer.lat} | Lng: ${primer.lon}</span>
+                    </div>`,
+                    background: '#09192e',
+                    color: '#ffffff',
+                    confirmButtonColor: '#2563eb'
+                });
             } else {
-                alert('No se encontraron coordenadas automáticas para esa dirección. Puedes escribirlas manualmente.');
+                Swal.fire({
+                    icon: 'info',
+                    title: 'No se encontraron coordenadas exactas',
+                    text: 'Prueba escribiendo una dirección más específica (ej. "Av. Montevideo, Gustavo A. Madero, CDMX") o ingresa las coordenadas manualmente.',
+                    background: '#09192e',
+                    color: '#ffffff',
+                    confirmButtonColor: '#2563eb'
+                });
             }
         })
         .catch(err => {
             ocultarBannerStatus();
-            alert('Error al consultar geocodificador: ' + err.message);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error de Búsqueda',
+                text: 'Error al consultar geocodificador: ' + err.message,
+                background: '#09192e',
+                color: '#ffffff',
+                confirmButtonColor: '#ef4444'
+            });
         });
 }
 
