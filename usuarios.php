@@ -27,6 +27,81 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
     $accion = $_POST['accion'] ?? '';
 
+    // ACCIÓN AJAX: SUBIR FOTO DE PERFIL DESDE LA FICHA
+    if ($accion === 'subir_foto_usuario') {
+        header('Content-Type: application/json; charset=utf-8');
+        $targetUserId = intval($_POST['user_id'] ?? 0);
+
+        if ($targetUserId <= 0) {
+            echo json_encode(['status' => 'error', 'mensaje' => 'ID de usuario inválido.']);
+            exit();
+        }
+
+        if (empty($_FILES['foto']) || $_FILES['foto']['error'] !== UPLOAD_ERR_OK) {
+            echo json_encode(['status' => 'error', 'mensaje' => 'No se recibió ninguna imagen o ocurrió un error al cargar el archivo.']);
+            exit();
+        }
+
+        $fileTmp = $_FILES['foto']['tmp_name'];
+        $fileName = $_FILES['foto']['name'];
+        $fileSize = $_FILES['foto']['size'];
+        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+        $extPermitidas = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+        if (!in_array($fileExt, $extPermitidas)) {
+            echo json_encode(['status' => 'error', 'mensaje' => 'Formato no admitido. Solo se admiten archivos JPG, PNG, WEBP o GIF.']);
+            exit();
+        }
+
+        if ($fileSize > 8 * 1024 * 1024) {
+            echo json_encode(['status' => 'error', 'mensaje' => 'El tamaño máximo de imagen permitido es de 8 MB.']);
+            exit();
+        }
+
+        $dirUpload = __DIR__ . '/uploads/usuarios/';
+        if (!is_dir($dirUpload)) {
+            @mkdir($dirUpload, 0777, true);
+        }
+
+        $nuevoNombre = 'usr_' . $targetUserId . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $fileExt;
+        $destino = $dirUpload . $nuevoNombre;
+
+        if (move_uploaded_file($fileTmp, $destino)) {
+            $fotoUrl = 'uploads/usuarios/' . $nuevoNombre;
+
+            try {
+                $stmt = $pdo->prepare("UPDATE usuarios SET foto_url = ?, foto = ? WHERE id = ?");
+                $stmt->execute([$fotoUrl, $fotoUrl, $targetUserId]);
+            } catch (Throwable $e) {
+                try {
+                    $stmt = $pdo->prepare("UPDATE usuarios SET foto_url = ? WHERE id = ?");
+                    $stmt->execute([$fotoUrl, $targetUserId]);
+                } catch (Throwable $e2) {
+                    try {
+                        $stmt = $pdo->prepare("UPDATE usuarios SET foto = ? WHERE id = ?");
+                        $stmt->execute([$fotoUrl, $targetUserId]);
+                    } catch (Throwable $e3) {}
+                }
+            }
+
+            if (isset($_SESSION['usuario_id']) && $_SESSION['usuario_id'] == $targetUserId) {
+                $_SESSION['foto_url'] = $fotoUrl;
+                $_SESSION['foto'] = $fotoUrl;
+            }
+
+            echo json_encode([
+                'status' => 'success',
+                'mensaje' => 'Foto de perfil actualizada correctamente.',
+                'foto_url' => $fotoUrl,
+                'user_id' => $targetUserId
+            ]);
+            exit();
+        } else {
+            echo json_encode(['status' => 'error', 'mensaje' => 'No se pudo guardar la imagen en el servidor. Verifica permisos en uploads/usuarios.']);
+            exit();
+        }
+    }
+
     // 1. GUARDAR / CREAR / EDITAR USUARIO CON MÓDULOS DE ACCESO
     if ($accion === 'guardar_usuario') {
         $id = intval($_POST['user_id'] ?? 0);
@@ -138,6 +213,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $pExportar = $tieneAcceso ? 1 : 0;
                         }
                         $stmtSave->execute([$targetUserId, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                    }
+
+                    // Procesar foto de perfil si se subió en el formulario modal
+                    if (!empty($_FILES['foto_usuario']['name']) && $_FILES['foto_usuario']['error'] === UPLOAD_ERR_OK) {
+                        $fTmp = $_FILES['foto_usuario']['tmp_name'];
+                        $fExt = strtolower(pathinfo($_FILES['foto_usuario']['name'], PATHINFO_EXTENSION));
+                        if (in_array($fExt, ['jpg', 'jpeg', 'png', 'webp', 'gif'])) {
+                            $dirUp = __DIR__ . '/uploads/usuarios/';
+                            if (!is_dir($dirUp)) @mkdir($dirUp, 0777, true);
+                            $nomFoto = 'usr_' . $targetUserId . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(3)) . '.' . $fExt;
+                            if (move_uploaded_file($fTmp, $dirUp . $nomFoto)) {
+                                $fUrl = 'uploads/usuarios/' . $nomFoto;
+                                try {
+                                    $pdo->prepare("UPDATE usuarios SET foto_url = ?, foto = ? WHERE id = ?")->execute([$fUrl, $fUrl, $targetUserId]);
+                                } catch (Throwable $eF) {
+                                    try {
+                                        $pdo->prepare("UPDATE usuarios SET foto_url = ? WHERE id = ?")->execute([$fUrl, $targetUserId]);
+                                    } catch (Throwable $eF2) {}
+                                }
+                            }
+                        }
                     }
 
                     // Refrescar permisos si se modificó a sí mismo
@@ -469,20 +565,74 @@ $areasCatalogoSistemas = [
             border: 1px solid rgba(56, 189, 248, 0.35) !important;
         }
 
-        /* Ficha Flotante del Usuario */
+        /* Ficha Flotante del Usuario y Avatar con Foto */
+        .ficha-avatar-wrapper {
+            position: relative;
+            width: 68px;
+            height: 68px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
         .ficha-avatar {
-            width: 60px;
-            height: 60px;
-            border-radius: 14px;
+            width: 68px;
+            height: 68px;
+            border-radius: 16px;
             background: linear-gradient(135deg, #0284c7 0%, #3b82f6 50%, #6366f1 100%);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            font-size: 1.6rem;
             font-weight: 800;
             color: #ffffff;
-            box-shadow: 0 8px 20px rgba(2, 132, 199, 0.35);
-            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 22px rgba(2, 132, 199, 0.4);
+            border: 2px solid rgba(56, 189, 248, 0.4);
+            overflow: hidden;
+            transition: all 0.25s ease;
+            position: relative;
+        }
+        .ficha-avatar:hover {
+            border-color: #38bdf8;
+            transform: scale(1.03);
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+        }
+        .ficha-avatar-img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 14px;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .ficha-avatar-img:hover {
+            transform: scale(1.06);
+        }
+        .ficha-avatar-btn {
+            position: absolute;
+            bottom: -4px;
+            right: -4px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            border: 2px solid #0a192e;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+            background: #0284c7;
+            color: #ffffff;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+        .ficha-avatar-btn:hover {
+            background: #38bdf8;
+            color: #040d1a;
+            transform: scale(1.15);
+        }
+        .user-table-avatar {
+            width: 32px;
+            height: 32px;
             flex-shrink: 0;
         }
         .ficha-info-box {
@@ -657,12 +807,29 @@ $areasCatalogoSistemas = [
                         </tr>
                     <?php else: ?>
                         <?php foreach ($usuarios as $u): ?>
-                            <tr class="usuario-row" onclick='abrirFichaUsuario(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' title="Haz clic para ver la ficha flotante de este usuario">
+                            <tr class="usuario-row" onclick='abrirFichaUsuario(<?php echo htmlspecialchars(json_encode($u), ENT_QUOTES, "UTF-8"); ?>)' id="user_row_<?php echo $u['id']; ?>" title="Haz clic para ver la ficha flotante de este usuario">
                                 <td class="fw-bold text-info">#<?php echo $u['id']; ?></td>
                                 <td>
-                                    <span class="badge-user-tag">
-                                        <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($u['usuario']); ?>
-                                    </span>
+                                    <?php $uFoto = !empty($u['foto_url']) ? $u['foto_url'] : (!empty($u['foto']) ? $u['foto'] : ''); ?>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <div class="user-table-avatar" id="table_avatar_<?php echo $u['id']; ?>">
+                                            <?php if (!empty($uFoto)): ?>
+                                                <img src="<?php echo htmlspecialchars($uFoto); ?>" alt="<?php echo htmlspecialchars($u['usuario']); ?>" class="rounded-circle border border-info border-opacity-50" style="width: 32px; height: 32px; object-fit: cover;">
+                                            <?php else: ?>
+                                                <div class="rounded-circle bg-info bg-opacity-15 text-info border border-info border-opacity-30 d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 0.75rem;">
+                                                    <?php 
+                                                        $partesN = explode(' ', trim($u['nombre'] ?: $u['usuario']));
+                                                        $ini = strtoupper(substr($partesN[0], 0, 1));
+                                                        if (count($partesN) > 1 && !empty($partesN[1])) $ini .= strtoupper(substr($partesN[1], 0, 1));
+                                                        echo htmlspecialchars($ini);
+                                                    ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                        <span class="badge-user-tag">
+                                            <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($u['usuario']); ?>
+                                        </span>
+                                    </div>
                                 </td>
                                 <td>
                                     <div class="fw-bold fs-6" style="color: #ffffff !important;"><?php echo htmlspecialchars($u['nombre']); ?></div>
@@ -749,18 +916,30 @@ $areasCatalogoSistemas = [
         <div class="modal-content border-info border-opacity-25" style="box-shadow: 0 10px 40px rgba(0,0,0,0.85);">
             <div class="modal-header border-secondary border-opacity-25 pb-3">
                 <div class="d-flex align-items-center gap-3">
-                    <div class="ficha-avatar" id="ficha_avatar">
-                        U
+                    <div class="ficha-avatar-wrapper" title="Haz clic para subir o cambiar foto de perfil">
+                        <div class="ficha-avatar" id="ficha_avatar" onclick="abrirSelectorFotoFicha()">
+                            U
+                        </div>
+                        <button type="button" class="ficha-avatar-btn" onclick="abrirSelectorFotoFicha()" title="Subir / Cambiar foto de perfil">
+                            <i class="bi bi-camera-fill"></i>
+                        </button>
                     </div>
+                    <input type="file" id="ficha_avatar_input" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none;" onchange="procesarSubidaFotoFicha(this)">
                     <div>
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <h4 class="fw-bold mb-0 text-white" id="ficha_nombre">Nombre del Usuario</h4>
                             <span id="ficha_badge_rol" class="badge badge-role-admin rounded-pill px-3 py-1">Admin</span>
                             <span id="ficha_badge_status" class="badge badge-status-active rounded-pill px-3 py-1">Activo</span>
+                            <button type="button" class="btn btn-sm btn-outline-info rounded-pill py-0 px-2 d-none" id="ficha_btn_ver_foto_grande" onclick="verFotoGrande()" title="Ver foto en tamaño completo">
+                                <i class="bi bi-zoom-in me-1"></i> Ver foto
+                            </button>
                         </div>
                         <div class="d-flex align-items-center gap-2 mt-1">
                             <span class="badge-user-tag" id="ficha_usuario_tag"><i class="bi bi-person-badge"></i> @usuario</span>
                             <span class="text-secondary small" id="ficha_agencia_text"><i class="bi bi-geo-alt me-1 text-info"></i> Sucursal</span>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-info text-decoration-none small ms-2" onclick="abrirSelectorFotoFicha()" title="Subir nueva foto de perfil">
+                                <i class="bi bi-camera me-1"></i> Cambiar foto
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -887,6 +1066,25 @@ $areasCatalogoSistemas = [
     </div>
 </div>
 
+<!-- =================================================== -->
+<!-- MODAL: VISOR DE FOTO DE PERFIL EN ALTA RESOLUCIÓN  -->
+<!-- =================================================== -->
+<div class="modal fade" id="modalFotoZoom" tabindex="-1" aria-hidden="true" style="z-index: 1060;">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-transparent border-0 text-center shadow-none">
+            <div class="modal-body p-0 position-relative d-inline-block mx-auto">
+                <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3 shadow" data-bs-dismiss="modal" aria-label="Close" style="z-index: 1065; background-color: rgba(0,0,0,0.7); border-radius: 50%; padding: 10px;"></button>
+                <img id="zoom_foto_img" src="" alt="Foto de perfil" class="img-fluid rounded-4 shadow-lg border border-info border-opacity-50" style="max-height: 80vh; max-width: 90vw; object-fit: contain; background: #040d1a;">
+                <div class="mt-3">
+                    <h5 class="text-white fw-bold mb-1" id="zoom_foto_nombre"></h5>
+                    <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1 mt-1 shadow-sm" onclick="bootstrap.Modal.getInstance(document.getElementById('modalFotoZoom')).hide(); abrirSelectorFotoFicha();">
+                        <i class="bi bi-camera me-1"></i> Cambiar esta foto
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- =================================================== -->
 <!-- MODAL: CREAR / EDITAR USUARIO Y CONFIGURAR MÓDULOS -->
@@ -894,7 +1092,7 @@ $areasCatalogoSistemas = [
 <div class="modal fade" id="modalUsuario" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-xl">
         <div class="modal-content">
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <input type="hidden" name="accion" value="guardar_usuario">
                 <input type="hidden" name="user_id" id="form_user_id" value="0">
 
@@ -940,6 +1138,12 @@ $areasCatalogoSistemas = [
                         <div class="col-md-4">
                             <label class="form-label small fw-bold text-secondary">Sucursal / Agencia</label>
                             <input type="text" name="agencia" id="form_agencia" class="form-control" value="Divol La Villa">
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold text-secondary">Foto de Perfil (Avatar)</label>
+                            <input type="file" name="foto_usuario" id="form_foto_usuario" class="form-control" accept="image/png,image/jpeg,image/webp,image/gif">
+                            <small class="text-secondary" style="font-size: 0.72rem;">Formatos: JPG, PNG, WEBP o GIF (máx. 8MB).</small>
                         </div>
                     </div>
 
@@ -1156,16 +1360,109 @@ $areasCatalogoSistemas = [
     // =========================================================
     // MODAL FLOTANTE: VER FICHA COMPLETA DEL USUARIO
     // =========================================================
+    function abrirSelectorFotoFicha() {
+        const input = document.getElementById('ficha_avatar_input');
+        if (input) input.click();
+    }
+
+    function verFotoGrande() {
+        if (!usuarioSeleccionadoActual) return;
+        const fotoUrl = (usuarioSeleccionadoActual.foto_url || usuarioSeleccionadoActual.foto || '').trim();
+        if (!fotoUrl) return;
+        const imgZoom = document.getElementById('zoom_foto_img');
+        imgZoom.src = fotoUrl;
+        document.getElementById('zoom_foto_nombre').textContent = usuarioSeleccionadoActual.nombre || usuarioSeleccionadoActual.usuario;
+        const modalZoom = new bootstrap.Modal(document.getElementById('modalFotoZoom'));
+        modalZoom.show();
+    }
+
+    function procesarSubidaFotoFicha(inputEl) {
+        if (!inputEl.files || !inputEl.files[0] || !usuarioSeleccionadoActual) return;
+        const file = inputEl.files[0];
+
+        if (file.size > 8 * 1024 * 1024) {
+            alert('La imagen seleccionada supera los 8MB permitidos.');
+            inputEl.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('accion', 'subir_foto_usuario');
+        formData.append('user_id', usuarioSeleccionadoActual.id);
+        formData.append('foto', file);
+
+        const avatarEl = document.getElementById('ficha_avatar');
+        avatarEl.innerHTML = '<div class="spinner-border text-light spinner-border-sm" role="status"></div>';
+
+        fetch('usuarios.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                usuarioSeleccionadoActual.foto_url = data.foto_url;
+                usuarioSeleccionadoActual.foto = data.foto_url;
+
+                // Actualizar avatar en la ficha
+                avatarEl.innerHTML = `<img src="${escapeHtml(data.foto_url)}?t=${Date.now()}" alt="Foto" class="ficha-avatar-img" onclick="event.stopPropagation(); verFotoGrande();" title="Haz clic para ver la foto en tamaño completo">`;
+                const btnVerFoto = document.getElementById('ficha_btn_ver_foto_grande');
+                if (btnVerFoto) btnVerFoto.classList.remove('d-none');
+
+                // Actualizar avatar en la tabla principal
+                const tableAvatar = document.getElementById('table_avatar_' + usuarioSeleccionadoActual.id);
+                if (tableAvatar) {
+                    tableAvatar.innerHTML = `<img src="${escapeHtml(data.foto_url)}?t=${Date.now()}" class="rounded-circle border border-info border-opacity-50" style="width: 32px; height: 32px; object-fit: cover;">`;
+                }
+
+                // Notificación toast flotante
+                mostrarToastNotificacion('Foto de perfil actualizada con éxito', 'success');
+            } else {
+                alert(data.mensaje || 'Error al actualizar la foto de perfil.');
+                abrirFichaUsuario(usuarioSeleccionadoActual);
+            }
+        })
+        .catch(err => {
+            console.error('Error al subir foto:', err);
+            alert('Ocurrió un error al enviar la imagen al servidor.');
+            abrirFichaUsuario(usuarioSeleccionadoActual);
+        })
+        .finally(() => {
+            inputEl.value = '';
+        });
+    }
+
+    function mostrarToastNotificacion(msg, tipo = 'success') {
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${tipo} position-fixed bottom-0 end-0 m-4 shadow-lg border-0 rounded-3 py-2 px-3 fw-semibold`;
+        toast.style.zIndex = '9999';
+        toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i> ${msg}`;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
     function abrirFichaUsuario(u) {
         usuarioSeleccionadoActual = u;
 
-        // Iniciales para avatar visual
-        const partes = (u.nombre || u.usuario || 'U').trim().split(/\s+/);
-        let initials = partes[0] ? partes[0][0].toUpperCase() : 'U';
-        if (partes.length > 1 && partes[1]) {
-            initials += partes[1][0].toUpperCase();
+        // Renderizar avatar (Foto o Iniciales)
+        const avatarContainer = document.getElementById('ficha_avatar');
+        const btnVerFoto = document.getElementById('ficha_btn_ver_foto_grande');
+        const fotoUrl = (u.foto_url || u.foto || '').trim();
+
+        if (fotoUrl) {
+            avatarContainer.innerHTML = `<img src="${escapeHtml(fotoUrl)}" alt="${escapeHtml(u.nombre)}" class="ficha-avatar-img" onclick="event.stopPropagation(); verFotoGrande();" title="Haz clic para ver la foto en tamaño completo">`;
+            if (btnVerFoto) btnVerFoto.classList.remove('d-none');
+        } else {
+            const partes = (u.nombre || u.usuario || 'U').trim().split(/\s+/);
+            let initials = partes[0] ? partes[0][0].toUpperCase() : 'U';
+            if (partes.length > 1 && partes[1]) {
+                initials += partes[1][0].toUpperCase();
+            }
+            avatarContainer.textContent = initials;
+            if (btnVerFoto) btnVerFoto.classList.add('d-none');
         }
-        document.getElementById('ficha_avatar').textContent = initials;
 
         // Nombre y etiquetas
         document.getElementById('ficha_nombre').textContent = u.nombre || u.usuario;
@@ -1476,6 +1773,8 @@ $areasCatalogoSistemas = [
         document.getElementById('form_agencia').value = 'Divol La Villa';
         document.getElementById('form_activo').checked = true;
         document.getElementById('pass_help').textContent = 'Obligatoria al crear un nuevo usuario.';
+        const fFotoNew = document.getElementById('form_foto_usuario');
+        if (fFotoNew) fFotoNew.value = '';
 
         // Preset inicial por defecto: Tickets de soporte habilitado y todas sus áreas autorizadas
         aplicarPresetModulos('tickets');
@@ -1498,6 +1797,8 @@ $areasCatalogoSistemas = [
         document.getElementById('form_agencia').value = u.agencia || 'Divol La Villa';
         document.getElementById('form_activo').checked = (parseInt(u.activo) === 1);
         document.getElementById('pass_help').textContent = 'Dejar en blanco si deseas mantener la clave actual.';
+        const fFotoEdit = document.getElementById('form_foto_usuario');
+        if (fFotoEdit) fFotoEdit.value = '';
 
         // Cargar módulos autorizados para este usuario
         const checkboxes = document.querySelectorAll('.mod-perm-check');
