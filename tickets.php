@@ -200,9 +200,8 @@ unset($_SESSION['flash_mensaje'], $_SESSION['flash_error']);
  */
 function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     global $pdo, $agenciaUsuario, $tokenAgencia;
-    $identidad = obtenerIdentidadAgenciaActual($pdo);
-    $token = !empty($datosTicket['token']) ? $datosTicket['token'] : ($tokenAgencia ?: $identidad['token']);
-    $agencia = !empty($datosTicket['agencia']) ? $datosTicket['agencia'] : ($agenciaUsuario ?: $identidad['nombre']);
+    $token = 'GH_SISTEMAS_TICKETS_2026!';
+    $agencia = !empty($datosTicket['agencia']) ? $datosTicket['agencia'] : ($agenciaUsuario ?: ($identidad['nombre'] ?: 'Divol La Villa'));
     $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($token);
 
     $payload = [
