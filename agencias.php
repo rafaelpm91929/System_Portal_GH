@@ -282,8 +282,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                 exit();
             }
 
+            // 1. Guardar en Base de Datos MySQL
             if ($pdo && (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota))) {
                 try {
+                    $dbId = $infoAg['db_id'] ?? 0;
                     $stmtUpd = $pdo->prepare("
                         UPDATE agencias 
                         SET direccion = COALESCE(NULLIF(?, ''), direccion),
@@ -294,14 +296,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                             telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
                             correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
                             ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
-                        WHERE clave = ? OR LOWER(nombre) = LOWER(?)
+                        WHERE id = ? OR clave = ? OR LOWER(nombre) = LOWER(?)
                     ");
                     $stmtUpd->execute([
                         $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
                         $encargado, $tel, $correo,
-                        $agId, $infoAg['nombre']
+                        $dbId, $agId, $infoAg['nombre']
                     ]);
                 } catch (Throwable $e) {}
+            }
+
+            // 2. Guardar en agencias_custom.json para persistencia
+            $archivoCustom = __DIR__ . '/agencias_custom.json';
+            if (file_exists($archivoCustom)) {
+                $customData = json_decode(file_get_contents($archivoCustom), true) ?: [];
+                $targetKey = $agId;
+                if (!isset($customData[$targetKey])) {
+                    foreach ($customData as $ck => $cv) {
+                        if (strcasecmp($cv['nombre'] ?? '', $infoAg['nombre']) === 0) {
+                            $targetKey = $ck;
+                            break;
+                        }
+                    }
+                }
+                if (isset($customData[$targetKey])) {
+                    if (!empty($dirRemota))  $customData[$targetKey]['direccion'] = $dirRemota;
+                    if (!empty($mapsRemoto)) $customData[$targetKey]['maps_url']  = $mapsRemoto;
+                    if (!empty($latRemota))  $customData[$targetKey]['latitud']   = $latRemota;
+                    if (!empty($lngRemota))  $customData[$targetKey]['longitud']  = $lngRemota;
+                    @file_put_contents($archivoCustom, json_encode($customData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                }
             }
 
             echo json_encode([
@@ -370,23 +394,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
     if ($pdo) {
         try {
+            $dbId = $CATALOGO_AGENCIAS[$agId]['db_id'] ?? 0;
             $stmt = $pdo->prepare("
                 UPDATE agencias 
                 SET direccion = ?, maps_url = ?, latitud = ?, longitud = ?, ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
-                WHERE clave = ? OR LOWER(nombre) = LOWER(?)
+                WHERE id = ? OR clave = ? OR LOWER(nombre) = LOWER(?)
             ");
-            $stmt->execute([$direccion, $maps_url, $latitud, $longitud, $agId, $nom]);
+            $stmt->execute([$direccion, $maps_url, $latitud, $longitud, $dbId, $agId, $nom]);
         } catch (Throwable $e) {}
     }
 
     $archivoCustom = __DIR__ . '/agencias_custom.json';
     if (file_exists($archivoCustom)) {
         $custom = json_decode(file_get_contents($archivoCustom), true) ?: [];
-        if (isset($custom[$agId])) {
-            $custom[$agId]['direccion'] = $direccion;
-            $custom[$agId]['maps_url']  = $maps_url;
-            $custom[$agId]['latitud']   = $latitud;
-            $custom[$agId]['longitud']  = $longitud;
+        $tKey = $agId;
+        if (!isset($custom[$tKey])) {
+            foreach ($custom as $ck => $cv) {
+                if (strcasecmp($cv['nombre'] ?? '', $nom) === 0) {
+                    $tKey = $ck;
+                    break;
+                }
+            }
+        }
+        if (isset($custom[$tKey])) {
+            $custom[$tKey]['direccion'] = $direccion;
+            $custom[$tKey]['maps_url']  = $maps_url;
+            $custom[$tKey]['latitud']   = $latitud;
+            $custom[$tKey]['longitud']  = $longitud;
             @file_put_contents($archivoCustom, json_encode($custom, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         }
     }
@@ -1733,6 +1767,16 @@ function sincronizarUbicacionAgencia(agId) {
     .then(data => {
         ocultarBannerStatus();
         if (data.status === 'ok') {
+            // Actualizar inmediatamente en memoria para reflejar marcador y lista al instante
+            const agLocal = agenciasDataGlobal.find(a => a.id === agId);
+            if (agLocal) {
+                if (data.direccion) agLocal.direccion = data.direccion;
+                if (data.latitud)   agLocal.latitud   = data.latitud;
+                if (data.longitud)  agLocal.longitud  = data.longitud;
+                if (data.maps_url)  agLocal.maps_url  = data.maps_url;
+            }
+            renderizarMarcadoresYLista(agId);
+
             Swal.fire({
                 icon: 'success',
                 title: '¡Ubicación Sincronizada!',
@@ -1744,6 +1788,8 @@ function sincronizarUbicacionAgencia(agId) {
                 background: '#09192e',
                 color: '#ffffff',
                 confirmButtonColor: '#2563eb'
+            }).then(() => {
+                enfocarAgencia(agId);
             });
             cargarUbicacionesAgencias(agId);
         } else if (data.status === 'sin_ubicacion') {
@@ -1879,6 +1925,17 @@ function guardarCoordenadasManuales() {
             const modalEl = document.getElementById('modalEditarCoordenadas');
             const modalInst = bootstrap.Modal.getInstance(modalEl);
             if (modalInst) modalInst.hide();
+
+            // Actualizar inmediatamente en memoria para reflejar marcador y lista al instante
+            const agLocal = agenciasDataGlobal.find(a => a.id === agId);
+            if (agLocal) {
+                if (data.direccion) agLocal.direccion = data.direccion;
+                if (data.latitud)   agLocal.latitud   = data.latitud;
+                if (data.longitud)  agLocal.longitud  = data.longitud;
+                if (data.maps_url)  agLocal.maps_url  = data.maps_url;
+            }
+            renderizarMarcadoresYLista(agId);
+            enfocarAgencia(agId);
 
             Swal.fire({
                 icon: 'success',

@@ -190,7 +190,16 @@ if (file_exists($archivoAgenciasCustom)) {
                 if (strcasecmp(trim($ag['nombre']), 'Divol La Villa') === 0) {
                     $targetKey = 'divolavilla';
                 }
-                $CATALOGO_AGENCIAS[$targetKey] = array_merge($CATALOGO_AGENCIAS[$targetKey] ?? [], $ag);
+                if (!isset($CATALOGO_AGENCIAS[$targetKey])) {
+                    $CATALOGO_AGENCIAS[$targetKey] = $ag;
+                } else {
+                    foreach ($ag as $f => $v) {
+                        // NO sobreescribir con valores vacíos si la BD o catálogo ya tiene datos
+                        if ($v !== '' && $v !== null) {
+                            $CATALOGO_AGENCIAS[$targetKey][$f] = $v;
+                        }
+                    }
+                }
             }
         }
     }
