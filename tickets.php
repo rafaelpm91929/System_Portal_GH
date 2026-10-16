@@ -196,13 +196,13 @@ if ($pdo) {
 
 // Catálogo Oficial Maestro de Áreas de Sistemas
 $AREAS_SISTEMAS_CATALOGO = [
-    'DESARROLLO'      => ['nombre' => 'DESARROLLO', 'icono' => 'bi-code-slash', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.45)'],
-    'CYBERSEGURIDAD'  => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#f43f5e', 'bg' => 'rgba(244, 63, 94, 0.18)', 'border' => 'rgba(244, 63, 94, 0.45)'],
-    'INFRAESTRUCTURA' => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#10b981', 'bg' => 'rgba(16, 185, 129, 0.18)', 'border' => 'rgba(16, 185, 129, 0.45)'],
-    'REDES SOCIALES'  => ['nombre' => 'REDES SOCIALES', 'icono' => 'bi-share-fill', 'color' => '#a855f7', 'bg' => 'rgba(168, 85, 247, 0.18)', 'border' => 'rgba(168, 85, 247, 0.45)'],
-    'AUDITORIA'          => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#f59e0b', 'bg' => 'rgba(245, 158, 11, 0.18)', 'border' => 'rgba(245, 158, 11, 0.45)'],
-    'CORPORATIVO'        => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#6366f1', 'bg' => 'rgba(99, 102, 241, 0.18)', 'border' => 'rgba(99, 102, 241, 0.45)'],
-    'DIRECCION SISTEMAS' => ['nombre' => 'DIRECCION SISTEMAS', 'icono' => 'bi-diagram-3-fill', 'color' => '#06b6d4', 'bg' => 'rgba(6, 182, 212, 0.18)', 'border' => 'rgba(6, 182, 212, 0.45)']
+    'DESARROLLO'         => ['nombre' => 'DESARROLLO', 'icono' => 'bi-code-slash', 'color' => '#38bdf8', 'bg' => 'rgba(56, 189, 248, 0.18)', 'border' => 'rgba(56, 189, 248, 0.5)'],
+    'CYBERSEGURIDAD'     => ['nombre' => 'CYBERSEGURIDAD', 'icono' => 'bi-shield-lock-fill', 'color' => '#fda4af', 'bg' => 'rgba(244, 63, 94, 0.22)', 'border' => 'rgba(251, 113, 133, 0.55)'],
+    'INFRAESTRUCTURA'    => ['nombre' => 'INFRAESTRUCTURA', 'icono' => 'bi-hdd-rack-fill', 'color' => '#6ee7b7', 'bg' => 'rgba(16, 185, 129, 0.22)', 'border' => 'rgba(110, 231, 183, 0.55)'],
+    'REDES SOCIALES'     => ['nombre' => 'REDES SOCIALES', 'icono' => 'bi-share-fill', 'color' => '#d8b4fe', 'bg' => 'rgba(168, 85, 247, 0.22)', 'border' => 'rgba(216, 180, 254, 0.55)'],
+    'AUDITORIA'          => ['nombre' => 'AUDITORIA', 'icono' => 'bi-clipboard-check-fill', 'color' => '#fde047', 'bg' => 'rgba(245, 158, 11, 0.22)', 'border' => 'rgba(253, 224, 71, 0.55)'],
+    'CORPORATIVO'        => ['nombre' => 'CORPORATIVO', 'icono' => 'bi-building-fill', 'color' => '#a5b4fc', 'bg' => 'rgba(99, 102, 241, 0.22)', 'border' => 'rgba(165, 180, 252, 0.55)'],
+    'DIRECCION SISTEMAS' => ['nombre' => 'DIRECCION SISTEMAS', 'icono' => 'bi-diagram-3-fill', 'color' => '#67e8f9', 'bg' => 'rgba(6, 182, 212, 0.22)', 'border' => 'rgba(103, 232, 249, 0.55)']
 ];
 $AREAS_SISTEMAS_CATALOGO['DIRECCIÓN SISTEMAS'] = $AREAS_SISTEMAS_CATALOGO['DIRECCION SISTEMAS'];
 
@@ -2206,24 +2206,51 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
             border-top: none;
         }
 
+        .text-secondary {
+            color: #94a3b8 !important;
+        }
+        .table thead th {
+            color: #94a3b8 !important;
+            font-weight: 700 !important;
+            font-size: 0.72rem !important;
+            letter-spacing: 0.8px !important;
+            text-transform: uppercase !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+            padding: 12px 14px !important;
+        }
+
         .badge-folio {
             font-family: monospace;
             font-weight: 700;
             font-size: 0.85rem;
             color: #38bdf8;
             background: rgba(56, 189, 248, 0.12);
-            border: 1px solid rgba(56, 189, 248, 0.3);
+            border: 1px solid rgba(56, 189, 248, 0.35);
             padding: 3px 8px;
             border-radius: 6px;
+        }
+        .badge-folio-pendiente {
+            font-family: monospace;
+            font-weight: 800;
+            font-size: 0.85rem;
+            color: #ffffff !important;
+            background: rgba(220, 38, 38, 0.28) !important;
+            border: 1px solid rgba(248, 113, 113, 0.75) !important;
+            padding: 4px 10px;
+            border-radius: 8px;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
+            display: inline-flex;
+            align-items: center;
+            letter-spacing: 0.5px;
         }
         .badge-agencia {
             font-size: 0.8rem;
             font-weight: 700;
             padding: 4px 10px;
             border-radius: 12px;
-            background: rgba(16, 185, 129, 0.15);
-            color: #34d399;
-            border: 1px solid rgba(16, 185, 129, 0.35);
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid rgba(110, 231, 183, 0.45);
             display: inline-flex;
             align-items: center;
             gap: 5px;
@@ -3553,8 +3580,8 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                             ?>
                                                 <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
                                                     <td>
-                                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 px-2 py-1 font-monospace fw-bold">
-                                                            <i class="bi bi-circle-fill me-1" style="font-size: 0.5rem; vertical-align: middle;"></i><?php echo htmlspecialchars($folioTsv); ?>
+                                                        <span class="badge-folio-pendiente">
+                                                            <i class="bi bi-circle-fill me-1" style="font-size: 0.55rem; color: #f87171; vertical-align: middle;"></i><?php echo htmlspecialchars($folioTsv); ?>
                                                         </span>
                                                     </td>
                                                     <td>
@@ -3563,7 +3590,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                                         </span>
                                                     </td>
                                                     <td>
-                                                        <span style="font-size: 0.75rem; font-weight: 700; padding: 3px 8px; border-radius: 10px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 4px;">
+                                                        <span style="font-size: 0.75rem; font-weight: 700; padding: 4px 9px; border-radius: 10px; background: <?php echo $ainf['bg']; ?>; color: <?php echo $ainf['color']; ?>; border: 1px solid <?php echo $ainf['border']; ?>; display: inline-flex; align-items: center; gap: 5px;">
                                                             <i class="bi <?php echo $ainf['icono']; ?>"></i> <?php echo $ainf['nombre']; ?>
                                                         </span>
                                                     </td>
@@ -3571,18 +3598,18 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                                         <div class="fw-bold text-white text-truncate" style="max-width: 280px;" title="<?php echo htmlspecialchars($tsv['titulo'] ?? ''); ?>">
                                                             <a href="tickets.php?ver=<?php echo $tsv['id']; ?>" class="ticket-link-row"><?php echo htmlspecialchars($tsv['titulo'] ?? 'Sin título'); ?></a>
                                                         </div>
-                                                        <div class="text-secondary small text-truncate" style="max-width: 280px;">
+                                                        <div class="small text-truncate" style="color: #94a3b8; max-width: 280px; font-size: 0.8rem;">
                                                             <?php echo htmlspecialchars(mb_substr($tsv['descripcion'] ?? '', 0, 60)) . '...'; ?>
                                                         </div>
                                                     </td>
                                                     <td>
                                                         <div class="text-white small fw-semibold"><?php echo htmlspecialchars($tsv['solicitante_nombre'] ?? 'Usuario'); ?></div>
                                                         <?php if (!empty($tsv['solicitante_usuario'])): ?>
-                                                            <span class="text-secondary font-monospace" style="font-size: 0.75rem;">@<?php echo htmlspecialchars($tsv['solicitante_usuario']); ?></span>
+                                                            <span class="font-monospace fw-semibold" style="color: #38bdf8; font-size: 0.75rem;">@<?php echo htmlspecialchars($tsv['solicitante_usuario']); ?></span>
                                                         <?php endif; ?>
                                                     </td>
                                                     <td>
-                                                        <span class="text-secondary small font-monospace"><?php echo formatearFechaHoraMensaje($tsv['creado_en'] ?? 'now'); ?></span>
+                                                        <span class="small font-monospace" style="color: #cbd5e1; font-size: 0.82rem; font-weight: 500;"><?php echo formatearFechaHoraMensaje($tsv['creado_en'] ?? 'now'); ?></span>
                                                     </td>
                                                     <td class="text-end">
                                                         <a href="tickets.php?ver=<?php echo $tsv['id']; ?>" class="btn btn-warning btn-sm fw-bold rounded-pill px-3 shadow-sm text-dark d-inline-flex align-items-center gap-1">
