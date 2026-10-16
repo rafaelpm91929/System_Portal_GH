@@ -846,15 +846,7 @@ include 'config_agencias.php';
         #mapaAgencias {
             height: 600px;
             width: 100%;
-            background: #06152b;
-            transition: filter 0.25s ease;
-        }
-        /* Modo Oscuro Libre para Leaflet (Sin marcas de agua ni API keys) */
-        #mapaAgencias.map-dark-theme .leaflet-tile-pane {
-            filter: invert(100%) hue-rotate(180deg) brightness(88%) contrast(92%);
-        }
-        #mapaAgencias.map-dark-theme {
-            background: #06152b !important;
+            background: #e5e3df;
         }
         .leaflet-bar a {
             background-color: #09192e !important;
@@ -1286,9 +1278,9 @@ include 'config_agencias.php';
                         <!-- Barra de Estilos de Mapa Flotante -->
                         <div class="position-absolute top-0 end-0 m-3 d-flex flex-column gap-2" style="z-index: 1000;">
                             <div class="btn-group btn-group-sm rounded-pill shadow-lg overflow-hidden border border-secondary border-opacity-30" role="group">
-                                <button type="button" class="btn btn-dark active" id="btnTileDark" onclick="cambiarCapaMapa('dark')">🌙 Oscuro</button>
-                                <button type="button" class="btn btn-dark" id="btnTileOsm" onclick="cambiarCapaMapa('osm')">☀️ Calles</button>
-                                <button type="button" class="btn btn-dark" id="btnTileSat" onclick="cambiarCapaMapa('sat')">🛰️ Satélite</button>
+                                <button type="button" class="btn btn-dark active" id="btnTileGoogle" onclick="cambiarCapaMapa('google')">🗺️ Google Calles</button>
+                                <button type="button" class="btn btn-dark" id="btnTileSat" onclick="cambiarCapaMapa('sat')">🛰️ Satélite Real</button>
+                                <button type="button" class="btn btn-dark" id="btnTileOsm" onclick="cambiarCapaMapa('osm')">🌐 OpenStreetMap</button>
                             </div>
                         </div>
 
@@ -1470,12 +1462,14 @@ let markersGroup = null;
 let agenciasDataGlobal = [];
 
 // Capas libres de marcas de agua y de alta velocidad (OpenStreetMap & ESRI World Imagery)
+// Capas de mapa real de alta definición (Google Calles, Google Satélite Híbrido y OpenStreetMap)
 const TILE_LAYERS = {
-    osm: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    sat: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+    google: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    sat:    'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    osm:    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 };
 
-let capaTipoActual = 'dark'; // 'dark', 'osm', 'sat'
+let capaTipoActual = 'google';
 
 function abrirModalMapaAgencias() {
     const modalEl = document.getElementById('modalMapaAgencias');
@@ -1502,19 +1496,14 @@ function initMapaAgencias() {
         return;
     }
 
-    const mapDiv = document.getElementById('mapaAgencias');
-    if (mapDiv) {
-        mapDiv.classList.add('map-dark-theme');
-    }
-
     mapaInstancia = L.map('mapaAgencias', {
         zoomControl: true,
         attributionControl: false
     }).setView([19.4326, -99.1332], 11);
 
-    capaTilesActual = L.tileLayer(TILE_LAYERS.osm, {
-        maxZoom: 19,
-        subdomains: 'abc'
+    capaTilesActual = L.tileLayer(TILE_LAYERS.google, {
+        maxZoom: 20,
+        subdomains: ['0', '1', '2', '3']
     }).addTo(mapaInstancia);
 
     markersGroup = L.layerGroup().addTo(mapaInstancia);
@@ -1523,28 +1512,32 @@ function initMapaAgencias() {
 function cambiarCapaMapa(capa) {
     if (!mapaInstancia) return;
     capaTipoActual = capa;
-    const mapDiv = document.getElementById('mapaAgencias');
 
-    if (capa === 'dark') {
-        if (mapDiv) mapDiv.classList.add('map-dark-theme');
-        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
-        capaTilesActual = L.tileLayer(TILE_LAYERS.osm, { maxZoom: 19, subdomains: 'abc' }).addTo(mapaInstancia);
+    if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
+
+    if (capa === 'sat') {
+        capaTilesActual = L.tileLayer(TILE_LAYERS.sat, {
+            maxZoom: 20,
+            subdomains: ['0', '1', '2', '3']
+        }).addTo(mapaInstancia);
     } else if (capa === 'osm') {
-        if (mapDiv) mapDiv.classList.remove('map-dark-theme');
-        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
-        capaTilesActual = L.tileLayer(TILE_LAYERS.osm, { maxZoom: 19, subdomains: 'abc' }).addTo(mapaInstancia);
-    } else if (capa === 'sat') {
-        if (mapDiv) mapDiv.classList.remove('map-dark-theme');
-        if (capaTilesActual) mapaInstancia.removeLayer(capaTilesActual);
-        capaTilesActual = L.tileLayer(TILE_LAYERS.sat, { maxZoom: 18 }).addTo(mapaInstancia);
+        capaTilesActual = L.tileLayer(TILE_LAYERS.osm, {
+            maxZoom: 19,
+            subdomains: 'abc'
+        }).addTo(mapaInstancia);
+    } else {
+        capaTilesActual = L.tileLayer(TILE_LAYERS.google, {
+            maxZoom: 20,
+            subdomains: ['0', '1', '2', '3']
+        }).addTo(mapaInstancia);
     }
 
-    const btnDark = document.getElementById('btnTileDark');
-    const btnOsm  = document.getElementById('btnTileOsm');
-    const btnSat  = document.getElementById('btnTileSat');
-    if (btnDark) btnDark.classList.toggle('active', capa === 'dark');
-    if (btnOsm)  btnOsm.classList.toggle('active', capa === 'osm');
-    if (btnSat)  btnSat.classList.toggle('active', capa === 'sat');
+    const btnGoogle = document.getElementById('btnTileGoogle');
+    const btnSat    = document.getElementById('btnTileSat');
+    const btnOsm    = document.getElementById('btnTileOsm');
+    if (btnGoogle) btnGoogle.classList.toggle('active', capa === 'google');
+    if (btnSat)    btnSat.classList.toggle('active', capa === 'sat');
+    if (btnOsm)    btnOsm.classList.toggle('active', capa === 'osm');
 }
 
 function cargarUbicacionesAgencias(centrarEnId = null) {
