@@ -236,6 +236,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             $encargado  = trim($perfil['encargado_sistemas'] ?? '');
             $tel        = trim($perfil['telefono_sistemas'] ?? '');
             $correo     = trim($perfil['correo_sistemas'] ?? '');
+            $logoRemoto = trim($perfil['logo_url'] ?? '');
+            $fotoRemota = trim($perfil['foto_url'] ?? '');
+
+            if (!empty($logoRemoto) && !preg_match('#^https?://#i', $logoRemoto)) {
+                $subLimpio = preg_replace('#^https?://#i', '', rtrim($subdominio, '/'));
+                $logoRemoto = 'https://' . $subLimpio . '/' . ltrim($logoRemoto, '/');
+            }
 
             if ((empty($latRemota) || empty($lngRemota)) && !empty($mapsRemoto)) {
                 if (preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $mapsRemoto, $mCoords)) {
@@ -283,7 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             }
 
             // 1. Guardar en Base de Datos MySQL
-            if ($pdo && (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota))) {
+            if ($pdo && (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota) || !empty($logoRemoto) || !empty($encargado))) {
                 try {
                     $dbId = $infoAg['db_id'] ?? 0;
                     $stmtUpd = $pdo->prepare("
@@ -295,12 +302,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                             encargado_sistemas = COALESCE(NULLIF(?, ''), encargado_sistemas),
                             telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
                             correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
+                            logo_url = COALESCE(NULLIF(?, ''), logo_url),
+                            foto_url = COALESCE(NULLIF(?, ''), foto_url),
                             ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
                         WHERE id = ? OR clave = ? OR LOWER(nombre) = LOWER(?)
                     ");
                     $stmtUpd->execute([
                         $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
                         $encargado, $tel, $correo,
+                        $logoRemoto, $fotoRemota,
                         $dbId, $agId, $infoAg['nombre']
                     ]);
                 } catch (Throwable $e) {}
@@ -324,6 +334,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                     if (!empty($mapsRemoto)) $customData[$targetKey]['maps_url']  = $mapsRemoto;
                     if (!empty($latRemota))  $customData[$targetKey]['latitud']   = $latRemota;
                     if (!empty($lngRemota))  $customData[$targetKey]['longitud']  = $lngRemota;
+                    if (!empty($encargado))  $customData[$targetKey]['encargado_sistemas'] = $encargado;
+                    if (!empty($tel))        $customData[$targetKey]['telefono_sistemas']  = $tel;
+                    if (!empty($correo))     $customData[$targetKey]['correo_sistemas']    = $correo;
+                    if (!empty($logoRemoto)) $customData[$targetKey]['logo_url']           = $logoRemoto;
+                    if (!empty($fotoRemota)) $customData[$targetKey]['foto_url']           = $fotoRemota;
                     @file_put_contents($archivoCustom, json_encode($customData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
                 }
             }
@@ -335,7 +350,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
                 'direccion' => $dirRemota ?: ($infoAg['direccion'] ?? ''),
                 'maps_url'  => $mapsRemoto ?: ($infoAg['maps_url'] ?? ''),
                 'latitud'   => $latRemota ?: ($infoAg['latitud'] ?? ''),
-                'longitud'  => $lngRemota ?: ($infoAg['longitud'] ?? '')
+                'longitud'  => $lngRemota ?: ($infoAg['longitud'] ?? ''),
+                'encargado_sistemas' => $encargado ?: ($infoAg['encargado_sistemas'] ?? ''),
+                'telefono_sistemas'  => $tel ?: ($infoAg['telefono_sistemas'] ?? ''),
+                'logo_url'           => $logoRemoto ?: ($infoAg['logo_url'] ?? '')
             ], JSON_UNESCAPED_UNICODE);
             exit();
         }
@@ -1620,45 +1638,85 @@ function renderizarMarcadoresYLista(centrarEnId = null) {
 
             const marker = L.marker([lat, lng], { icon: icon }).addTo(markersGroup);
 
+            // Determinar la URL para entrar al portal de la agencia
+            let portalUrl = ag.subdominio || ag.cpanel || '';
+            if (portalUrl && !portalUrl.startsWith('http://') && !portalUrl.startsWith('https://')) {
+                portalUrl = 'https://' + portalUrl;
+            }
+
+            // Logo que configuró la agencia (o icono estilizado si no tiene imagen)
+            let logoHtml = '';
+            if (ag.logo_url) {
+                let srcLogo = ag.logo_url;
+                if (!srcLogo.startsWith('http://') && !srcLogo.startsWith('https://')) {
+                    const domLimpio = (ag.subdominio || ag.cpanel || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+                    srcLogo = 'https://' + domLimpio + '/' + srcLogo.replace(/^\//, '');
+                }
+                logoHtml = `
+                    <div class="rounded-3 d-flex align-items-center justify-content-center p-1 bg-white shadow-sm flex-shrink-0" style="width: 48px; height: 48px; border: 1px solid rgba(255,255,255,0.25); overflow: hidden;">
+                        <img src="${escapeHtml(srcLogo)}" alt="${escapeHtml(ag.nombre)}" style="max-width: 100%; max-height: 100%; object-fit: contain;" onerror="this.parentElement.style.display='none'; if(this.parentElement.nextElementSibling) this.parentElement.nextElementSibling.style.display='flex';">
+                    </div>
+                    <div class="rounded-circle align-items-center justify-content-center text-white flex-shrink-0 shadow-sm" style="display: none; width: 44px; height: 44px; background: ${ag.color || '#2563eb'}; border: 2px solid rgba(255,255,255,0.4);">
+                        <i class="bi ${ag.icono || 'bi-building-fill'} fs-5"></i>
+                    </div>
+                `;
+            } else {
+                logoHtml = `
+                    <div class="rounded-circle d-flex align-items-center justify-content-center text-white flex-shrink-0 shadow-sm" style="width: 44px; height: 44px; background: ${ag.color || '#2563eb'}; border: 2px solid rgba(255,255,255,0.4);">
+                        <i class="bi ${ag.icono || 'bi-building-fill'} fs-5"></i>
+                    </div>
+                `;
+            }
+
             const popupHtml = `
-                <div style="min-width: 250px; max-width: 310px;">
-                    <div class="d-flex align-items-center gap-2 mb-2 pb-2 border-bottom border-secondary border-opacity-25">
-                        <div class="rounded-circle d-flex align-items-center justify-content-center text-white" style="width: 32px; height: 32px; background: ${ag.color || '#2563eb'};">
-                            <i class="bi ${ag.icono || 'bi-building-fill'}"></i>
-                        </div>
-                        <div>
-                            <div class="fw-bold text-white fs-6 mb-0">${escapeHtml(ag.nombre)}</div>
-                            <small class="text-secondary font-monospace">${escapeHtml(ag.subdominio || ag.cpanel)}</small>
-                        </div>
-                    </div>
-
-                    <div class="mb-2">
-                        <strong class="text-light small d-block mb-1"><i class="bi bi-geo-alt-fill text-danger me-1"></i> Dirección Registrada:</strong>
-                        <div class="text-secondary small" style="font-size: 0.78rem; line-height: 1.4;">
-                            ${escapeHtml(ag.direccion || 'Dirección registrada en portal de agencia')}
+                <div style="min-width: 270px; max-width: 320px; font-family: inherit;">
+                    
+                    <!-- Encabezado con Logo y Nombre -->
+                    <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom border-secondary border-opacity-25">
+                        ${logoHtml}
+                        <div class="flex-grow-1 overflow-hidden">
+                            <div class="fw-bold text-white fs-6 mb-0 text-truncate" title="${escapeHtml(ag.nombre)}">${escapeHtml(ag.nombre)}</div>
+                            <small class="text-secondary font-monospace text-truncate d-block" style="font-size: 0.74rem;">${escapeHtml(ag.subdominio || ag.cpanel)}</small>
                         </div>
                     </div>
 
-                    ${ag.encargado_sistemas || ag.telefono_sistemas ? `
-                        <div class="mb-3 p-2 rounded-2" style="background: rgba(255,255,255,0.04); font-size: 0.74rem;">
-                            ${ag.encargado_sistemas ? `<div class="text-light"><i class="bi bi-person me-1 text-info"></i> ${escapeHtml(ag.encargado_sistemas)}</div>` : ''}
-                            ${ag.telefono_sistemas ? `<div class="text-secondary"><i class="bi bi-telephone me-1 text-success"></i> ${escapeHtml(ag.telefono_sistemas)}</div>` : ''}
+                    <!-- Dirección Registrada -->
+                    <div class="mb-3">
+                        <div class="small fw-bold text-light mb-1 d-flex align-items-center gap-1" style="font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                            <i class="bi bi-geo-alt-fill text-danger"></i> Dirección:
                         </div>
+                        <div class="text-secondary small ps-1" style="font-size: 0.8rem; line-height: 1.45;">
+                            ${escapeHtml(ag.direccion || 'Pendiente de registrar en portal de agencia')}
+                        </div>
+                    </div>
+
+                    <!-- Encargado de Sistemas y Número -->
+                    <div class="mb-3 p-2 rounded-3" style="background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);">
+                        <div class="d-flex align-items-center gap-2 mb-1">
+                            <i class="bi bi-person-fill text-info"></i>
+                            <span class="text-light fw-bold small" style="font-size: 0.82rem;">
+                                ${escapeHtml(ag.encargado_sistemas || 'Encargado no asignado')}
+                            </span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 ps-3">
+                            <i class="bi bi-telephone-fill text-success" style="font-size: 0.76rem;"></i>
+                            ${ag.telefono_sistemas ? `
+                                <a href="tel:${escapeHtml(ag.telefono_sistemas)}" class="text-success text-decoration-none fw-semibold small" style="font-size: 0.8rem;" title="Llamar">
+                                    ${escapeHtml(ag.telefono_sistemas)}
+                                </a>
+                            ` : `
+                                <span class="text-secondary small" style="font-size: 0.76rem;">Sin teléfono registrado</span>
+                            `}
+                        </div>
+                    </div>
+
+                    <!-- Vínculo para entrar a la URL de su página -->
+                    ${portalUrl ? `
+                        <a href="${escapeHtml(portalUrl)}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-sm w-100 rounded-pill py-2 fw-bold text-white d-flex align-items-center justify-content-center gap-2 shadow" style="font-size: 0.82rem; background: #2563eb; border: none;">
+                            <i class="bi bi-box-arrow-up-right"></i> Entrar al Portal de la Agencia
+                        </a>
                     ` : ''}
 
-                    <div class="d-flex gap-2 pt-1 border-top border-secondary border-opacity-25">
-                        <a href="modulos.php?agencia=${encodeURIComponent(ag.id)}" class="btn btn-primary btn-sm rounded-pill w-100 py-1" style="font-size: 0.76rem;">
-                            <i class="bi bi-door-open me-1"></i> Sucursal
-                        </a>
-                        ${ag.maps_url ? `
-                            <a href="${escapeHtml(ag.maps_url)}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-success btn-sm rounded-pill py-1 px-3" style="font-size: 0.76rem;" title="Abrir en Google Maps">
-                                <i class="bi bi-map"></i>
-                            </a>
-                        ` : ''}
-                        <button type="button" class="btn btn-outline-info btn-sm rounded-pill py-1 px-3" onclick="sincronizarUbicacionAgencia('${ag.id}')" title="Sincronizar datos desde su cPanel">
-                            <i class="bi bi-arrow-repeat"></i>
-                        </button>
-                    </div>
                 </div>
             `;
 
@@ -1774,6 +1832,9 @@ function sincronizarUbicacionAgencia(agId) {
                 if (data.latitud)   agLocal.latitud   = data.latitud;
                 if (data.longitud)  agLocal.longitud  = data.longitud;
                 if (data.maps_url)  agLocal.maps_url  = data.maps_url;
+                if (data.encargado_sistemas) agLocal.encargado_sistemas = data.encargado_sistemas;
+                if (data.telefono_sistemas)  agLocal.telefono_sistemas  = data.telefono_sistemas;
+                if (data.logo_url)           agLocal.logo_url           = data.logo_url;
             }
             renderizarMarcadoresYLista(agId);
 
