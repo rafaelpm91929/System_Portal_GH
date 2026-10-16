@@ -22,10 +22,10 @@ if (file_exists(__DIR__ . '/.env')) {
             putenv("$name=$value");
             $_ENV[$name] = $value;
             $_SERVER[$name] = $value;
-            if ($name === 'MYSQL_HOST' || $name === 'DB_HOST') $env_db_host = $value;
-            if ($name === 'MYSQL_DB'   || $name === 'DB_NAME') $env_db_name = $value;
-            if ($name === 'MYSQL_USER' || $name === 'DB_USER') $env_db_user = $value;
-            if ($name === 'MYSQL_PASS' || $name === 'DB_PASS') $env_db_pass = $value;
+            if ($name === 'MYSQL_HOST') $env_db_host = $value;
+            if ($name === 'MYSQL_DB')   $env_db_name = $value;
+            if ($name === 'MYSQL_USER') $env_db_user = $value;
+            if ($name === 'MYSQL_PASS') $env_db_pass = $value;
         }
     }
 }
@@ -39,6 +39,13 @@ $db_host = $env_db_host ?: ($DB_HOST ?? ($_ENV['MYSQL_HOST'] ?? ($_SERVER['MYSQL
 $db_name = $env_db_name ?: ($DB_NAME ?? ($_ENV['MYSQL_DB']   ?? ($_SERVER['MYSQL_DB']   ?? (getenv('MYSQL_DB') ?: 'divolavi_sistemas'))));
 $db_user = $env_db_user ?: ($DB_USER ?? ($_ENV['MYSQL_USER'] ?? ($_SERVER['MYSQL_USER'] ?? (getenv('MYSQL_USER') ?: 'divolavi_user'))));
 $db_pass = $env_db_pass ?: ($DB_PASS ?? ($_ENV['MYSQL_PASS'] ?? ($_SERVER['MYSQL_PASS'] ?? (getenv('MYSQL_PASS') ?: 'SecuredPass2026!'))));
+
+// Protección estricta: gedas y sa pertenecen al SQL Server local, nunca a MySQL
+if ($db_user === 'sa' || $db_name === 'gedas') {
+    $db_name = 'divolavi_sistemas';
+    $db_user = 'divolavi_user';
+    $db_pass = 'SecuredPass2026!';
+}
 
 $candidates_hosts = [$db_host, 'localhost', '127.0.0.1'];
 $candidates_hosts = array_unique(array_filter($candidates_hosts));
