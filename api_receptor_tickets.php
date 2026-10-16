@@ -70,11 +70,24 @@ if (!function_exists('resolverUrlWebhookAgencia')) {
     }
 }
 
-// 1. Obtener Token de la petición
-$headers = function_exists('getallheaders') ? getallheaders() : [];
-$authHeader = $headers['Authorization'] ?? ($headers['authorization'] ?? '');
-$tokenEnviado = str_replace('Bearer ', '', trim($authHeader));
+// 1. Obtener Token de la petición de forma ultra-compatible
+$tokenEnviado = '';
 
+// A. Parámetro GET explícito (?token=...)
+if (!empty($_GET['token'])) {
+    $tokenEnviado = trim($_GET['token']);
+}
+
+// B. Encabezado Authorization (Apache, Nginx, FastCGI y PHP-FPM)
+if (empty($tokenEnviado)) {
+    $headers = function_exists('getallheaders') ? getallheaders() : [];
+    $authHeader = $headers['Authorization'] ?? ($headers['authorization'] ?? ($_SERVER['HTTP_AUTHORIZATION'] ?? ($_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '')));
+    if (!empty($authHeader)) {
+        $tokenEnviado = trim(preg_replace('/^Bearer\s+/i', '', trim($authHeader)));
+    }
+}
+
+// C. Cuerpo JSON o POST
 $inputJson = file_get_contents('php://input');
 $datos = json_decode($inputJson, true);
 
@@ -100,7 +113,7 @@ if (!$tokenValido && !empty($CATALOGO_AGENCIAS)) {
 
 if (!$tokenValido) {
     http_response_code(401);
-    echo json_encode(['status' => 'error', 'mensaje' => 'No autorizado: Token de agencia inválido.'], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status' => 'error', 'mensaje' => 'No autorizado: Token de agencia inválido.', 'debug_recibido' => substr($tokenEnviado, 0, 5) . '...'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
