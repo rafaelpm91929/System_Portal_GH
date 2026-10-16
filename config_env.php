@@ -1,21 +1,12 @@
 <?php
 // ====================================================================
 // Archivo de Configuración de Credenciales MySQL para cPanel
-// Puedes editar las variables $DB_* directamente aquí
+// Si existe un archivo .env en el servidor, .env tiene MÁXIMA prioridad.
+// Estas variables solo se usan como respaldo si no existe .env.
 // ====================================================================
 
-$DB_HOST = 'localhost';
-$DB_NAME = 'divolavi_sistemas'; // IMPORTANTE: En cPanel incluye el prefijo (ej: cpaneluser_sistemas)
-$DB_USER = 'divolavi_user';     // IMPORTANTE: En cPanel incluye el prefijo (ej: cpaneluser_dbuser)
-$DB_PASS = 'SecuredPass2026!';
-
-// Compatibilidad con getenv() y variables de entorno
-putenv("MYSQL_HOST=$DB_HOST");
-putenv("MYSQL_DB=$DB_NAME");
-putenv("MYSQL_USER=$DB_USER");
-putenv("MYSQL_PASS=$DB_PASS");
-$_ENV['MYSQL_HOST'] = $DB_HOST;
-$_ENV['MYSQL_DB']   = $DB_NAME;
-$_ENV['MYSQL_USER'] = $DB_USER;
-$_ENV['MYSQL_PASS'] = $DB_PASS;
+if (empty($DB_HOST)) $DB_HOST = getenv('MYSQL_HOST') ?: 'localhost';
+if (empty($DB_NAME)) $DB_NAME = getenv('MYSQL_DB')   ?: 'divolavi_sistemas';
+if (empty($DB_USER)) $DB_USER = getenv('MYSQL_USER') ?: 'divolavi_user';
+if (empty($DB_PASS)) $DB_PASS = getenv('MYSQL_PASS') ?: 'SecuredPass2026!';
 

@@ -4,41 +4,41 @@ date_default_timezone_set('America/Mexico_City');
 $pdo = null;
 $conexion_error = null;
 
-// Cargar archivo de configuración PHP si existe
-if (file_exists(__DIR__ . '/config_env.php')) {
-    include_once __DIR__ . '/config_env.php';
-}
+// 1. Cargar variables de entorno de .env con máxima prioridad si existe
+$env_db_host = null;
+$env_db_name = null;
+$env_db_user = null;
+$env_db_pass = null;
 
-// Cargar variables de entorno de .env si existe
 if (file_exists(__DIR__ . '/.env')) {
     $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($lines as $line) {
-        if (strpos(trim($line), '#') === 0) continue;
+        $line = trim($line);
+        if (empty($line) || strpos($line, '#') === 0) continue;
         if (strpos($line, '=') !== false) {
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
             $value = trim($value);
-            if (!getenv($name)) {
-                putenv("$name=$value");
-            }
+            putenv("$name=$value");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+            if ($name === 'MYSQL_HOST' || $name === 'DB_HOST') $env_db_host = $value;
+            if ($name === 'MYSQL_DB'   || $name === 'DB_NAME') $env_db_name = $value;
+            if ($name === 'MYSQL_USER' || $name === 'DB_USER') $env_db_user = $value;
+            if ($name === 'MYSQL_PASS' || $name === 'DB_PASS') $env_db_pass = $value;
         }
     }
 }
 
-$db_host = $DB_HOST ?? ($MYSQL_HOST ?? ($_ENV['MYSQL_HOST'] ?? ($_SERVER['MYSQL_HOST'] ?? (getenv('MYSQL_HOST') ?: (getenv('DB_HOST') ?: 'localhost')))));
-$db_name = $DB_NAME ?? ($MYSQL_DB ?? ($_ENV['MYSQL_DB'] ?? ($_SERVER['MYSQL_DB'] ?? (getenv('MYSQL_DB') ?: (getenv('DB_NAME') ?: '')))));
-$db_user = $DB_USER ?? ($MYSQL_USER ?? ($_ENV['MYSQL_USER'] ?? ($_SERVER['MYSQL_USER'] ?? (getenv('MYSQL_USER') ?: (getenv('DB_USER') ?: '')))));
-$db_pass = $DB_PASS ?? ($MYSQL_PASS ?? ($_ENV['MYSQL_PASS'] ?? ($_SERVER['MYSQL_PASS'] ?? (getenv('MYSQL_PASS') ?: (getenv('DB_PASS') ?: '')))));
+// 2. Cargar archivo de configuración PHP si existe (como respaldo)
+if (file_exists(__DIR__ . '/config_env.php')) {
+    include_once __DIR__ . '/config_env.php';
+}
 
-if (empty($db_name)) {
-    $db_name = 'divolavi_sistemas';
-}
-if (empty($db_user)) {
-    $db_user = 'divolavi_user';
-}
-if (empty($db_pass)) {
-    $db_pass = 'SecuredPass2026!';
-}
+$db_host = $env_db_host ?: ($DB_HOST ?? ($_ENV['MYSQL_HOST'] ?? ($_SERVER['MYSQL_HOST'] ?? (getenv('MYSQL_HOST') ?: 'localhost'))));
+$db_name = $env_db_name ?: ($DB_NAME ?? ($_ENV['MYSQL_DB']   ?? ($_SERVER['MYSQL_DB']   ?? (getenv('MYSQL_DB') ?: 'divolavi_sistemas'))));
+$db_user = $env_db_user ?: ($DB_USER ?? ($_ENV['MYSQL_USER'] ?? ($_SERVER['MYSQL_USER'] ?? (getenv('MYSQL_USER') ?: 'divolavi_user'))));
+$db_pass = $env_db_pass ?: ($DB_PASS ?? ($_ENV['MYSQL_PASS'] ?? ($_SERVER['MYSQL_PASS'] ?? (getenv('MYSQL_PASS') ?: 'SecuredPass2026!'))));
 
 $candidates_hosts = [$db_host, 'localhost', '127.0.0.1'];
 $candidates_hosts = array_unique(array_filter($candidates_hosts));
