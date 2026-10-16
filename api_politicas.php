@@ -69,18 +69,42 @@ if ($action === 'stream_pdf') {
 
     // B. Si NO está en el servidor local (portal de agencia), solicitar stream seguro desde Portal Central GH
     $urlCentralPdf = 'https://portal.grupohuerta.mx/api_politicas.php?action=stream_pdf&id=' . $id . '&token=GH_POLITICAS_SEGURA_2026_CORP';
-    $ctx = stream_context_create([
-        'http' => [
-            'timeout' => 20,
-            'header'  => "User-Agent: PortalAgenciaStream/1.0\r\n"
-        ],
-        'ssl' => [
-            'verify_peer' => false,
-            'verify_peer_name' => false
-        ]
-    ]);
+    $pdfBytes = false;
 
-    $pdfBytes = @file_get_contents($urlCentralPdf, false, $ctx);
+    // 1. Intentar con cURL (funciona en cualquier cPanel aun con allow_url_fopen deshabilitado)
+    if (function_exists('curl_init')) {
+        $ch = curl_init($urlCentralPdf);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT      => 'PortalAgenciaStream/1.0'
+        ]);
+        $pdfBytes = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($httpCode !== 200 || strlen($pdfBytes) < 100) {
+            $pdfBytes = false;
+        }
+    }
+
+    // 2. Fallback a file_get_contents si cURL no estuvo disponible
+    if ($pdfBytes === false) {
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 20,
+                'header'  => "User-Agent: PortalAgenciaStream/1.0\r\n"
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ]);
+        $pdfBytes = @file_get_contents($urlCentralPdf, false, $ctx);
+    }
+
     if ($pdfBytes !== false && strlen($pdfBytes) > 100) {
         header('Content-Type: application/pdf');
         header('Content-Length: ' . strlen($pdfBytes));

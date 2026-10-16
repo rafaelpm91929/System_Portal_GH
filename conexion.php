@@ -25,13 +25,23 @@ if (file_exists(__DIR__ . '/.env')) {
     }
 }
 
-$db_host = getenv('MYSQL_HOST') ?: (getenv('DB_HOST') ?: 'localhost');
-$db_name = getenv('MYSQL_DB')   ?: (getenv('DB_NAME') ?: 'divolavi_sistemas');
-$db_user = getenv('MYSQL_USER') ?: (getenv('DB_USER') ?: 'divolavi_user');
-$db_pass = getenv('MYSQL_PASS') ?: (getenv('DB_PASS') ?: 'SecuredPass2026!');
+$db_host = $DB_HOST ?? ($MYSQL_HOST ?? ($_ENV['MYSQL_HOST'] ?? ($_SERVER['MYSQL_HOST'] ?? (getenv('MYSQL_HOST') ?: (getenv('DB_HOST') ?: 'localhost')))));
+$db_name = $DB_NAME ?? ($MYSQL_DB ?? ($_ENV['MYSQL_DB'] ?? ($_SERVER['MYSQL_DB'] ?? (getenv('MYSQL_DB') ?: (getenv('DB_NAME') ?: '')))));
+$db_user = $DB_USER ?? ($MYSQL_USER ?? ($_ENV['MYSQL_USER'] ?? ($_SERVER['MYSQL_USER'] ?? (getenv('MYSQL_USER') ?: (getenv('DB_USER') ?: '')))));
+$db_pass = $DB_PASS ?? ($MYSQL_PASS ?? ($_ENV['MYSQL_PASS'] ?? ($_SERVER['MYSQL_PASS'] ?? (getenv('MYSQL_PASS') ?: (getenv('DB_PASS') ?: '')))));
+
+if (empty($db_name)) {
+    $db_name = 'divolavi_sistemas';
+}
+if (empty($db_user)) {
+    $db_user = 'divolavi_user';
+}
+if (empty($db_pass)) {
+    $db_pass = 'SecuredPass2026!';
+}
 
 $candidates_hosts = [$db_host, 'localhost', '127.0.0.1'];
-$candidates_hosts = array_unique($candidates_hosts);
+$candidates_hosts = array_unique(array_filter($candidates_hosts));
 
 // 1. Intentar conexión a MySQL (cPanel o XAMPP local si estuviera corriendo)
 foreach ($candidates_hosts as $h) {

@@ -9,6 +9,16 @@ SET FOREIGN_KEY_CHECKS = 0;
 SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 
 -- Eliminar tablas existentes si ya existieran
+DROP TABLE IF EXISTS `notificaciones_lecturas`;
+DROP TABLE IF EXISTS `notificaciones`;
+DROP TABLE IF EXISTS `compliance_lecturas`;
+DROP TABLE IF EXISTS `compliance_documentos`;
+DROP TABLE IF EXISTS `politicas_lecturas`;
+DROP TABLE IF EXISTS `politicas_corporativas`;
+DROP TABLE IF EXISTS `citas_soporte`;
+DROP TABLE IF EXISTS `tickets_mensajes`;
+DROP TABLE IF EXISTS `tickets_soporte`;
+DROP TABLE IF EXISTS `directorio_telefonico`;
 DROP TABLE IF EXISTS `usuario_permisos`;
 DROP TABLE IF EXISTS `modulos`;
 DROP TABLE IF EXISTS `usuarios`;
@@ -32,7 +42,6 @@ DROP TABLE IF EXISTS `inv_monitores`;
 DROP TABLE IF EXISTS `inv_nobreak_baja`;
 DROP TABLE IF EXISTS `inv_site_vw`;
 DROP TABLE IF EXISTS `inv_telefonos_poe`;
-DROP TABLE IF EXISTS `tickets_soporte`;
 
 -- --------------------------------------------------------
 -- Tabla: `usuario_permisos` (Estructura vacía)
@@ -83,6 +92,7 @@ CREATE TABLE `usuarios` (
   `puesto` VARCHAR(100) NULL,
   `telefono` VARCHAR(50) NULL,
   `foto_url` VARCHAR(255) NULL,
+  `areas_tickets` VARCHAR(255) DEFAULT 'TODOS',
   UNIQUE KEY `uq_usuarios_usuario` (`usuario`)
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -112,6 +122,10 @@ CREATE TABLE `agencias` (
   `correo_sistemas` VARCHAR(100) NULL,
   `logo_url` VARCHAR(255) NULL,
   `foto_url` VARCHAR(255) NULL,
+  `cpanel` VARCHAR(150) NULL,
+  `subdominio` VARCHAR(150) NULL,
+  `local_api_token` VARCHAR(255) NULL,
+  `token` VARCHAR(255) NULL,
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `maps_url` TEXT NULL
 ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1570,26 +1584,92 @@ CREATE TABLE `inv_telefonos_poe` (
 -- --------------------------------------------------------
 CREATE TABLE `tickets_soporte` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
-  `folio` VARCHAR(50),
-  `area_sistemas` VARCHAR(100) NOT NULL,
+  `folio` VARCHAR(50) NULL,
+  `area_sistemas` VARCHAR(100) NOT NULL DEFAULT 'INFRAESTRUCTURA',
   `titulo` VARCHAR(255) NOT NULL,
   `descripcion` TEXT NOT NULL,
   `prioridad` VARCHAR(50) DEFAULT 'Media',
   `estado` VARCHAR(50) DEFAULT 'Abierto',
   `solicitante_id` INT NULL,
   `solicitante_usuario` VARCHAR(100) NULL,
-  `solicitante_nombre` VARCHAR(150),
-  `solicitante_email` VARCHAR(150),
-  `solicitante_agencia` VARCHAR(100),
-  `asignado_a` VARCHAR(150),
-  `archivo_adjunto` VARCHAR(255),
-  `notas_resolucion` TEXT,
+  `solicitante_nombre` VARCHAR(150) NULL,
+  `solicitante_email` VARCHAR(150) NULL,
+  `solicitante_agencia` VARCHAR(100) NULL,
+  `asignado_a` VARCHAR(150) NULL,
+  `archivo_adjunto` VARCHAR(255) NULL,
+  `notas_resolucion` TEXT NULL,
+  `evidencia_resolucion` VARCHAR(255) NULL,
+  `requiere_firma_reporte` TINYINT(1) DEFAULT 0,
+  `reporte_orden_no` VARCHAR(50) NULL,
+  `reporte_problema` TEXT NULL,
+  `reporte_trabajo_solicitado` TEXT NULL,
+  `reporte_observaciones` TEXT NULL,
+  `reporte_trabajos_realizados` TEXT NULL,
+  `reporte_tecnico_nombre` VARCHAR(150) NULL,
+  `reporte_firmado` TINYINT(1) DEFAULT 0,
+  `reporte_firma_digital` MEDIUMTEXT NULL,
+  `reporte_firmado_por` VARCHAR(150) NULL,
+  `reporte_firmado_en` DATETIME NULL,
   `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_folio` (`folio`),
+  INDEX `idx_estado` (`estado`),
+  INDEX `idx_solicitante_usr` (`solicitante_usuario`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
--- 25. Tabla: politicas_corporativas (Módulo de Políticas Protegidas GH)
+-- Tabla: `tickets_mensajes` (Mensajes / Chat de Tickets)
+-- --------------------------------------------------------
+CREATE TABLE `tickets_mensajes` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `ticket_id` INT NOT NULL,
+  `folio` VARCHAR(50) NULL,
+  `autor_id` INT NULL,
+  `autor_usuario` VARCHAR(100) NULL,
+  `autor_nombre` VARCHAR(150) NOT NULL,
+  `autor_email` VARCHAR(150) NULL,
+  `autor_rol` VARCHAR(50) DEFAULT 'usuario',
+  `autor_agencia` VARCHAR(100) NULL,
+  `mensaje` TEXT NOT NULL,
+  `archivo_adjunto` VARCHAR(255) NULL,
+  `es_nota_interna` TINYINT(1) DEFAULT 0,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_tk_id` (`ticket_id`),
+  INDEX `idx_folio` (`folio`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `citas_soporte` (Agenda y Calendario de Citas Técnicas)
+-- --------------------------------------------------------
+CREATE TABLE `citas_soporte` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `folio` VARCHAR(50) NULL,
+  `ticket_id` INT NULL,
+  `ticket_folio` VARCHAR(50) NULL,
+  `agencia` VARCHAR(100) NOT NULL,
+  `area_sistemas` VARCHAR(100) DEFAULT 'INFRAESTRUCTURA',
+  `tipo_cita` VARCHAR(50) DEFAULT 'Presencial',
+  `asunto` VARCHAR(255) NOT NULL,
+  `descripcion` TEXT NULL,
+  `solicitante_nombre` VARCHAR(150) NULL,
+  `solicitante_usuario` VARCHAR(100) NULL,
+  `solicitante_email` VARCHAR(150) NULL,
+  `tecnico_asignado` VARCHAR(150) NULL,
+  `fecha_cita` DATE NOT NULL,
+  `hora_cita` VARCHAR(20) NOT NULL DEFAULT '09:00',
+  `estado` VARCHAR(50) DEFAULT 'Programada',
+  `notas_atencion` TEXT NULL,
+  `motivo_reprogramacion` TEXT NULL,
+  `historial_cambios` TEXT NULL,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX `idx_folio_cita` (`folio`),
+  INDEX `idx_tk_id_cita` (`ticket_id`),
+  INDEX `idx_fecha_cita` (`fecha_cita`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `politicas_corporativas` (Políticas Protegidas GH)
 -- --------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,
@@ -1606,34 +1686,147 @@ CREATE TABLE IF NOT EXISTS `politicas_corporativas` (
   `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+-- Tabla: `politicas_lecturas` (Constancias de Lectura de Políticas)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `politicas_lecturas` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `politica_id` INT NOT NULL,
+  `usuario_id` INT NOT NULL,
+  `usuario_login` VARCHAR(100) NULL,
+  `usuario_nombre` VARCHAR(150) NULL,
+  `agencia` VARCHAR(100) NULL,
+  `ip_acceso` VARCHAR(50) NULL,
+  `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_pol_usr` (`politica_id`, `usuario_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `compliance_documentos` (Circulares y Avisos Oficiales)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `compliance_documentos` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `codigo` VARCHAR(50) NULL,
+  `titulo` VARCHAR(255) NOT NULL,
+  `descripcion` TEXT NULL,
+  `categoria` VARCHAR(100) DEFAULT 'General',
+  `archivo_pdf` VARCHAR(255) NOT NULL,
+  `version` VARCHAR(20) DEFAULT '1.0',
+  `fecha_vigencia` DATE NULL,
+  `obligatorio_lectura` TINYINT(1) DEFAULT 0,
+  `estatus` TINYINT(1) DEFAULT 1,
+  `creado_por` VARCHAR(100) NULL,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `compliance_lecturas` (Constancias de Lectura de Compliance)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `compliance_lecturas` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `documento_id` INT NOT NULL,
+  `usuario_id` INT NOT NULL,
+  `usuario_login` VARCHAR(100) NULL,
+  `usuario_nombre` VARCHAR(150) NULL,
+  `agencia` VARCHAR(100) NULL,
+  `ip_acceso` VARCHAR(50) NULL,
+  `fecha_lectura` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_doc_usr` (`documento_id`, `usuario_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `notificaciones` (Avisos del Sistema)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `notificaciones` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `tipo` VARCHAR(50) DEFAULT 'informativa',
+  `titulo` VARCHAR(255) NOT NULL,
+  `mensaje` TEXT NOT NULL,
+  `url_destino` VARCHAR(255) NULL,
+  `agencia_destino` VARCHAR(100) DEFAULT 'TODAS',
+  `usuario_destino_id` INT NULL,
+  `creado_por` VARCHAR(100) NULL,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `notificaciones_lecturas` (Lecturas de Notificaciones)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `notificaciones_lecturas` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `notificacion_id` INT NOT NULL,
+  `usuario_id` INT NOT NULL,
+  `leido_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY `uq_notif_usr` (`notificacion_id`, `usuario_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+-- Tabla: `directorio_telefonico` (Directorio Institucional)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `directorio_telefonico` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `agencia_id` INT DEFAULT 1,
+  `nombre` VARCHAR(150) NOT NULL,
+  `departamento` VARCHAR(100) NULL,
+  `puesto` VARCHAR(100) NULL,
+  `extension` VARCHAR(20) NULL,
+  `telefono_directo` VARCHAR(50) NULL,
+  `celular` VARCHAR(50) NULL,
+  `correo` VARCHAR(150) NULL,
+  `ubicacion` VARCHAR(100) NULL,
+  `orden` INT DEFAULT 0,
+  `estatus` INT DEFAULT 1,
+  `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ==========================================================
 -- REGISTROS BASE MÍNIMOS INDISPENSABLES
--- (Solo catálogo de módulos y 1 usuario administrador inicial)
+-- (Catálogo de módulos, roles y usuario administrador inicial)
 -- ==========================================================
 
--- 1. Catálogo oficial de Módulos del Sistema
+-- 1. Catálogo oficial de Módulos del Sistema (12 Módulos Oficiales)
 INSERT INTO `modulos` (`id`, `clave`, `nombre`, `descripcion`, `icono`, `orden`, `estatus`, `creado_en`) VALUES
-(1, 'agencia', 'Datos de la Agencia', 'Ficha oficial de la sucursal: Nombre, Razón Social, RFC, Dirección, Foto y Encargado de Sistemas', 'bi-building-fill', 0, 1, NOW()),
-(2, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos', 'bi-people-fill', 1, 1, NOW()),
-(3, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes abiertas, cerradas y montos', 'bi-file-earmark-bar-graph', 2, 1, NOW()),
-(4, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 3, 1, NOW()),
-(5, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas', 'bi-phone-fill', 4, 1, NOW()),
-(6, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo', 'bi-key-fill', 5, 1, NOW()),
-(7, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks y cableado', 'bi-hdd-rack-fill', 6, 1, NOW()),
-(8, 'directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 7, 1, NOW()),
-(9, 'tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 8, 1, NOW()),
-(10, 'politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas de seguridad en visor blindado', 'bi-shield-shaded', 9, 1, NOW());
+(1, 'agencia', 'Datos de la Agencia', 'Ficha oficial de la sucursal: Nombre, Razón Social, RFC, Dirección, Foto y Encargado de Sistemas', 'bi-building-fill', 1, 1, NOW()),
+(2, 'usuarios', 'Gestión de Usuarios', 'Administración de usuarios, roles y permisos de acceso', 'bi-people-fill', 2, 1, NOW()),
+(3, 'tickets', 'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas', 'bi-ticket-detailed-fill', 3, 1, NOW()),
+(4, 'equipos', 'Inventario de Equipos', 'Control de PCs, laptops, servidores e impresoras', 'bi-display-fill', 4, 1, NOW()),
+(5, 'celulares', 'Inventario de Celulares', 'Control de equipos móviles y líneas celulares', 'bi-phone-fill', 5, 1, NOW()),
+(6, 'licencias', 'Licencias de Software', 'Matriz de licenciamiento corporativo y vencimientos', 'bi-key-fill', 6, 1, NOW()),
+(7, 'infraestructura', 'Infraestructura (SITE / IDF)', 'Control de racks, cableado estructurado, IDF y planos', 'bi-hdd-rack-fill', 7, 1, NOW()),
+(8, 'directorio', 'Directorio de Personal', 'Directorio telefónico y correos institucionales de la agencia', 'bi-person-lines-fill', 8, 1, NOW()),
+(9, 'ordenes_servicio', 'Órdenes de Servicio', 'Resumen de órdenes de servicio automotriz y reportes', 'bi-file-earmark-bar-graph', 9, 1, NOW()),
+(10, 'politicas', 'Políticas Corporativas', 'Políticas institucionales, reglamentos y normativas en visor blindado', 'bi-shield-shaded', 10, 1, NOW()),
+(11, 'compliance', 'Cumplimiento y Avisos', 'Avisos oficiales y circulares institucionales de compliance', 'bi-award-fill', 11, 1, NOW()),
+(12, 'reportes_agencia', 'Reportes Ejecutivos', 'Métricas consolidadas de inventarios y sistemas de la agencia', 'bi-graph-up-arrow', 12, 1, NOW());
 
--- 2. Usuario Administrador Inicial para Primer Acceso
--- Usuario: admin | Contraseña inicial: Admin123!
-INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `acceso_portal`) VALUES
-(1, 'admin', 'Administrador de Sistemas', 'admin@agencia.com', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'Nueva Agencia', 'SuperAdmin', 1, 1);
+-- 2. Usuarios Administradores Iniciales para Primer Acceso
+-- Contraseña por defecto para ambos: Admin123!
+INSERT INTO `usuarios` (`id`, `usuario`, `nombre`, `email`, `password`, `agencia`, `rol`, `activo`, `acceso_portal`, `areas_tickets`) VALUES
+(1, 'admin', 'Administrador de Sucursal', 'admin@agencia.com', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'Nueva Agencia', 'admin', 1, 1, 'TODOS'),
+(2, 'superadmin', 'Super Administrador', 'superadmin@grupohuerta.mx', '$2y$10$e7mEXpv7UHRZMZDStyia1ud3XDidSdBSt8J1ynnGu9ZBWSH0bA0le', 'Nueva Agencia', 'superadmin', 1, 1, 'TODOS');
 
--- 3. Plantilla de Ficha de la Nueva Agencia (en blanco lista para configurar)
-INSERT INTO `agencias` (`id`, `nombre`, `razon_social`, `rfc`, `direccion`, `encargado_sistemas`, `telefono_sistemas`, `correo_sistemas`, `logo_url`, `foto_url`, `maps_url`) VALUES
-(1, 'Nueva Agencia', 'Razón Social de la Agencia S.A. de C.V.', 'XAXX010101000', 'Dirección de la nueva agencia...', 'Encargado de Sistemas', '55 0000 0000', 'sistemas@agencia.com', '', '', '');
+-- 3. Permisos Totales Iniciales para el Administrador (Usuario ID 1)
+INSERT INTO `usuario_permisos` (`usuario_id`, `modulo_clave`, `puede_ver`, `puede_crear`, `puede_editar`, `puede_eliminar`, `puede_exportar`) VALUES
+(1, 'agencia', 1, 1, 1, 1, 1),
+(1, 'usuarios', 1, 1, 1, 1, 1),
+(1, 'tickets', 1, 1, 1, 1, 1),
+(1, 'equipos', 1, 1, 1, 1, 1),
+(1, 'celulares', 1, 1, 1, 1, 1),
+(1, 'licencias', 1, 1, 1, 1, 1),
+(1, 'infraestructura', 1, 1, 1, 1, 1),
+(1, 'directorio', 1, 1, 1, 1, 1),
+(1, 'ordenes_servicio', 1, 1, 1, 1, 1),
+(1, 'politicas', 1, 1, 1, 1, 1),
+(1, 'compliance', 1, 1, 1, 1, 1),
+(1, 'reportes_agencia', 1, 1, 1, 1, 1);
 
--- 4. Áreas departamentales estándar de agencia
+-- 4. Plantilla de Ficha de la Nueva Agencia (con Token oficial de Central TI)
+INSERT INTO `agencias` (`id`, `nombre`, `razon_social`, `rfc`, `direccion`, `encargado_sistemas`, `telefono_sistemas`, `correo_sistemas`, `logo_url`, `foto_url`, `cpanel`, `subdominio`, `local_api_token`, `token`, `maps_url`) VALUES
+(1, 'Nueva Agencia', 'Razón Social de la Agencia S.A. de C.V.', 'XAXX010101000', 'Dirección de la nueva sucursal...', 'Encargado de Sistemas', '55 0000 0000', 'sistemas@agencia.com', '', '', 'cpanel.nuevaagencia.com', 'https://portal.nuevaagencia.com', 'GH_SISTEMAS_TICKETS_2026!', 'GH_SISTEMAS_TICKETS_2026!', '');
+
+-- 5. Áreas departamentales estándar de agencia
 INSERT INTO `agencia_areas` (`id`, `agencia_id`, `nombre`, `estatus`) VALUES
 (1, 1, 'Administración', 1),
 (2, 1, 'Sistemas', 1),

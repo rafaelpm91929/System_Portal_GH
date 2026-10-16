@@ -82,13 +82,9 @@ function obtenerIdentidadAgenciaActual($pdo = null) {
     }
 
     $nombre = '';
-    // Token maestro para comunicarse con la Dirección Central de Sistemas (portal.grupohuerta.mx)
-    // El servidor central siempre valida GH_SISTEMAS_TICKETS_2026! para todas las agencias
+    // Token maestro oficial para comunicarse con la Dirección Central de Sistemas (portal.grupohuerta.mx)
+    // Central TI siempre valida 'GH_SISTEMAS_TICKETS_2026!'
     $token = 'GH_SISTEMAS_TICKETS_2026!';
-    $envTok = getenv('TOKEN_SECRETO');
-    if (!empty($envTok) && $envTok !== 'TK_LOCAL_DEFAULT_2026' && strpos($envTok, 'TK_LOCAL_') !== 0) {
-        $token = $envTok;
-    }
 
     $cpanel = '';
     $subdominio = '';
@@ -105,6 +101,12 @@ function obtenerIdentidadAgenciaActual($pdo = null) {
                 }
                 if (!empty($row['cpanel'])) $cpanel = trim($row['cpanel']);
                 if (!empty($row['subdominio'])) $subdominio = trim($row['subdominio']);
+                // Token configurado explícitamente en la base de datos para esta agencia
+                if (!empty($row['token']) && trim($row['token']) !== 'TK_LOCAL_DEFAULT_2026') {
+                    $token = trim($row['token']);
+                } elseif (!empty($row['local_api_token']) && trim($row['local_api_token']) !== 'TK_LOCAL_DEFAULT_2026') {
+                    $token = trim($row['local_api_token']);
+                }
             }
         } catch (Throwable $e) {}
     }
@@ -199,9 +201,9 @@ unset($_SESSION['flash_mensaje'], $_SESSION['flash_error']);
 function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     global $pdo, $agenciaUsuario, $tokenAgencia;
     $identidad = obtenerIdentidadAgenciaActual($pdo);
-    $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php';
     $token = !empty($datosTicket['token']) ? $datosTicket['token'] : ($tokenAgencia ?: $identidad['token']);
     $agencia = !empty($datosTicket['agencia']) ? $datosTicket['agencia'] : ($agenciaUsuario ?: $identidad['nombre']);
+    $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($token);
 
     $payload = [
         'token'               => $token,
@@ -224,11 +226,13 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($payload),
-        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_TIMEOUT        => 15,
         CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false,
         CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
+            'Content-Type: application/json; charset=utf-8',
             'Authorization: Bearer ' . $token,
             'User-Agent: PortalAgencia/2.0'
         ]
@@ -244,8 +248,9 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
         if ($dec && ($dec['status'] ?? '') === 'ok') {
             return ['ok' => true, 'folio' => $dec['folio'] ?? null, 'datos' => $dec];
         }
+        return ['ok' => false, 'error' => $dec['mensaje'] ?? 'Respuesta no válida del servidor central'];
     }
-    return ['ok' => false, 'error' => $err ?: "HTTP $httpCode"];
+    return ['ok' => false, 'error' => $err ?: "HTTP $httpCode: " . substr(strip_tags((string)$res), 0, 180)];
 }
 
 /**
@@ -261,8 +266,8 @@ function sincronizarTicketsConCentral($pdo) {
     $urlCentral = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?token=' . urlencode($token);
 
     try {
-        // Obtener folios locales registrados
-        $stmtFolios = $pdo->query("SELECT folio FROM tickets_soporte WHERE folio IS NOT NULL AND folio != '' ORDER BY id DESC LIMIT 50");
+        // Obtener folios oficiales locales registrados (excluyendo folios temporales locales)
+        $stmtFolios = $pdo->query("SELECT folio FROM tickets_soporte WHERE folio IS NOT NULL AND folio != '' AND folio NOT LIKE 'TK-LOCAL-%' ORDER BY id DESC LIMIT 50");
         $folios = $stmtFolios ? $stmtFolios->fetchAll(PDO::FETCH_COLUMN) : [];
 
         $payload = [
@@ -277,11 +282,13 @@ function sincronizarTicketsConCentral($pdo) {
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload),
-            CURLOPT_TIMEOUT        => 6,
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE),
+            CURLOPT_CONNECTTIMEOUT => 6,
+            CURLOPT_TIMEOUT        => 15,
             CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
+                'Content-Type: application/json; charset=utf-8',
                 'Authorization: Bearer ' . $token,
                 'User-Agent: PortalAgencia/2.0'
             ]
@@ -326,6 +333,16 @@ function sincronizarTicketsConCentral($pdo) {
 
                 foreach ($dec['tickets'] as $tc) {
                     if (empty($tc['folio'])) continue;
+
+                    // AISLAMIENTO ESTRICTO DE AGENCIA: Nunca sincronizar tickets pertenecientes a otras sucursales
+                    $agRemota = trim($tc['solicitante_agencia'] ?? '');
+                    if (!empty($agRemota) && !empty($agencia) && strtolower($agencia) !== 'todas') {
+                        $agLocalNorm = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', $agencia)));
+                        $agRemNorm   = strtolower(trim(preg_replace('/[^a-zA-Z0-9]/', '', $agRemota)));
+                        if ($agLocalNorm !== '' && $agRemNorm !== '' && strpos($agRemNorm, $agLocalNorm) === false && strpos($agLocalNorm, $agRemNorm) === false) {
+                            continue; // Ignorar ticket de otra agencia
+                        }
+                    }
 
                     $stmtChk = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
                     $stmtChk->execute([$tc['folio']]);
@@ -517,12 +534,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 $folio = null;
                 if ($resCentral['ok'] && !empty($resCentral['folio'])) {
                     $folio = $resCentral['folio'];
-                    $mensaje = "✅ ¡Ticket con Folio oficial <strong>$folio</strong> enviado con éxito a la Dirección Central de Sistemas (portal.grupohuerta.mx)! Un agente de TI atenderá tu solicitud a la brevedad.";
+                    $_SESSION['flash_mensaje'] = "✅ ¡Ticket con Folio oficial <strong>$folio</strong> enviado con éxito a la Dirección Central de Sistemas (portal.grupohuerta.mx)! Un agente de TI atenderá tu solicitud a la brevedad.";
                 } else {
+                    $errDetalle = $resCentral['error'] ?? 'Sin respuesta de Central TI';
                     $stmtCount = $pdo->query("SELECT COUNT(*) FROM tickets_soporte");
                     $conteo = $stmtCount ? (int)$stmtCount->fetchColumn() : 0;
-                    $folio = 'TK-' . date('Y') . '-' . str_pad($conteo + 1, 4, '0', STR_PAD_LEFT);
-                    $mensaje = "ℹ️ Ticket registrado en el portal de la agencia con Folio <strong>$folio</strong>.";
+                    $folio = 'TK-LOCAL-' . date('Y') . '-' . str_pad($conteo + 1, 4, '0', STR_PAD_LEFT);
+                    $_SESSION['flash_mensaje'] = "ℹ️ Ticket registrado en el portal local con Folio <strong>$folio</strong>.";
+                    $_SESSION['flash_error'] = "⚠️ <strong>Atención:</strong> El ticket no pudo enviarse a la Central de TI (portal.grupohuerta.mx). <br><small><strong>Motivo técnico:</strong> " . htmlspecialchars($errDetalle) . "</small>";
                 }
 
                 $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) ?? '');

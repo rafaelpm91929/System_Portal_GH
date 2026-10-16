@@ -85,18 +85,42 @@ if ($action === 'stream_archivo') {
 
     // B. Proxy a Portal Central GH si no existe en local
     $urlCentral = 'https://portal.grupohuerta.mx/api_compliance.php?action=stream_archivo&id=' . $id . '&campo=' . urlencode($campo) . '&token=GH_COMPLIANCE_SEGURA_2026';
-    $ctx = stream_context_create([
-        'http' => [
-            'timeout' => 15,
-            'header'  => "User-Agent: PortalAgenciaComplianceStream/1.0\r\n"
-        ],
-        'ssl' => [
-            'verify_peer' => false,
-            'verify_peer_name' => false
-        ]
-    ]);
+    $fileBytes = false;
 
-    $fileBytes = @file_get_contents($urlCentral, false, $ctx);
+    // 1. Intentar con cURL (compatible con cualquier cPanel sin depender de allow_url_fopen)
+    if (function_exists('curl_init')) {
+        $ch = curl_init($urlCentral);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT      => 'PortalAgenciaComplianceStream/1.0'
+        ]);
+        $fileBytes = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($httpCode !== 200 || strlen($fileBytes) < 10) {
+            $fileBytes = false;
+        }
+    }
+
+    // 2. Fallback a file_get_contents
+    if ($fileBytes === false) {
+        $ctx = stream_context_create([
+            'http' => [
+                'timeout' => 15,
+                'header'  => "User-Agent: PortalAgenciaComplianceStream/1.0\r\n"
+            ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false
+            ]
+        ]);
+        $fileBytes = @file_get_contents($urlCentral, false, $ctx);
+    }
+
     if ($fileBytes !== false && strlen($fileBytes) > 10) {
         $ext = ($campo === 'imagen') ? 'svg' : 'pdf';
         $mimes = [
