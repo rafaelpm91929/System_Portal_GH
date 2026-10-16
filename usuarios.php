@@ -644,7 +644,6 @@ $areasCatalogoSistemas = [
                         <th>Nombre Completo</th>
                         <th>Correo Electrónico</th>
                         <th>Rol</th>
-                        <th>Módulos Autorizados</th>
                         <th>Estatus</th>
                         <th class="text-end" style="min-width: 170px;">Acciones</th>
                     </tr>
@@ -652,7 +651,7 @@ $areasCatalogoSistemas = [
                 <tbody>
                     <?php if (empty($usuarios)): ?>
                         <tr>
-                            <td colspan="8" class="text-center py-4 text-secondary">
+                            <td colspan="7" class="text-center py-4 text-secondary">
                                 <i class="bi bi-info-circle fs-4 d-block mb-2"></i> No se encontraron usuarios en la base de datos. Usa el botón 'Nuevo Usuario' para registrar el primero.
                             </td>
                         </tr>
@@ -685,60 +684,6 @@ $areasCatalogoSistemas = [
                                         <span class="badge badge-role-admin rounded-pill px-3 py-1"><i class="bi bi-shield-check me-1"></i> Admin</span>
                                     <?php else: ?>
                                         <span class="badge badge-role-usuario rounded-pill px-3 py-1"><i class="bi bi-person me-1"></i> Usuario</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php if (strtolower($u['rol']) === 'superadmin'): ?>
-                                        <span class="badge rounded-pill px-3 py-1" style="background: rgba(220, 38, 38, 0.22) !important; color: #fca5a5 !important; border: 1px solid rgba(248, 113, 113, 0.5) !important; font-size: 0.76rem; font-weight: 600;">
-                                            <i class="bi bi-shield-check me-1"></i> Todos los módulos
-                                        </span>
-                                    <?php else: 
-                                        $uPerms = $permisosMap[$u['id']] ?? [];
-                                        $modsActivos = [];
-                                        foreach ($modulosCat as $mc) {
-                                            if (!empty($uPerms[$mc['clave']]['puede_ver'])) {
-                                                $modsActivos[] = $mc;
-                                            }
-                                        }
-                                    ?>
-                                        <?php if (!empty($modsActivos)): ?>
-                                            <div class="d-flex flex-wrap gap-1" style="max-width: 320px;">
-                                                <?php foreach ($modsActivos as $ma): ?>
-                                                    <span class="badge-mod-tag" title="<?php echo htmlspecialchars($ma['descripcion']); ?>">
-                                                        <i class="bi <?php echo $ma['icono']; ?> text-info"></i> <?php echo htmlspecialchars($ma['nombre']); ?>
-                                                    </span>
-                                                <?php endforeach; ?>
-                                            </div>
-                                            <?php 
-                                            // Si tiene módulo tickets, mostrar resumen de áreas autorizadas
-                                            $tieneTickets = false;
-                                            foreach ($modsActivos as $ma) {
-                                                if ($ma['clave'] === 'tickets') { $tieneTickets = true; break; }
-                                            }
-                                            if ($tieneTickets): 
-                                                $uAreas = trim($u['areas_tickets'] ?? 'TODOS');
-                                            ?>
-                                                <div class="mt-1">
-                                                    <?php if (strtoupper($uAreas) === 'TODOS' || $uAreas === '*'): ?>
-                                                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-40" style="font-size:0.69rem;" title="Acceso total a todas las áreas de tickets">
-                                                            <i class="bi bi-check-all"></i> Áreas TI: TODAS
-                                                        </span>
-                                                    <?php elseif (empty($uAreas) || strtoupper($uAreas) === 'NINGUNA'): ?>
-                                                        <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-40" style="font-size:0.69rem;">
-                                                            <i class="bi bi-slash-circle"></i> Áreas TI: Ninguna
-                                                        </span>
-                                                    <?php else: ?>
-                                                        <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-40" style="font-size:0.69rem;" title="Áreas autorizadas: <?php echo htmlspecialchars($uAreas); ?>">
-                                                            <i class="bi bi-diagram-3"></i> Áreas TI: <?php echo htmlspecialchars($uAreas); ?>
-                                                        </span>
-                                                    <?php endif; ?>
-                                                </div>
-                                            <?php endif; ?>
-                                        <?php else: ?>
-                                            <span class="badge bg-secondary bg-opacity-25 text-warning border border-warning border-opacity-25 rounded-pill px-2 py-1">
-                                                <i class="bi bi-slash-circle me-1"></i> Sin acceso a módulos
-                                            </span>
-                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </td>
                                 <td>
