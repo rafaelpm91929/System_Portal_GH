@@ -108,7 +108,7 @@ try {
             logo_url = COALESCE(NULLIF(?, ''), logo_url),
             foto_url = COALESCE(NULLIF(?, ''), foto_url),
             ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
-        WHERE clave = ? OR LOWER(nombre) = LOWER(?) OR LOWER(nombre) LIKE LOWER(?)
+        WHERE clave = ? OR LOWER(nombre) = LOWER(?)
     ");
     $stmt->execute([
         $direccion,
@@ -121,8 +121,7 @@ try {
         $logo_url,
         $foto_url,
         $targetClave,
-        $targetName,
-        '%' . $targetName . '%'
+        $targetName
     ]);
 
     // Respaldo en JSON

@@ -292,27 +292,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             // 1. Guardar en Base de Datos MySQL
             if ($pdo && (!empty($dirRemota) || !empty($mapsRemoto) || !empty($latRemota) || !empty($logoRemoto) || !empty($encargado))) {
                 try {
-                    $dbId = $infoAg['db_id'] ?? 0;
-                    $stmtUpd = $pdo->prepare("
-                        UPDATE agencias 
-                        SET direccion = COALESCE(NULLIF(?, ''), direccion),
-                            maps_url = COALESCE(NULLIF(?, ''), maps_url),
-                            latitud = COALESCE(NULLIF(?, ''), latitud),
-                            longitud = COALESCE(NULLIF(?, ''), longitud),
-                            encargado_sistemas = COALESCE(NULLIF(?, ''), encargado_sistemas),
-                            telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
-                            correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
-                            logo_url = COALESCE(NULLIF(?, ''), logo_url),
-                            foto_url = COALESCE(NULLIF(?, ''), foto_url),
-                            ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
-                        WHERE id = ? OR clave = ? OR LOWER(nombre) = LOWER(?)
-                    ");
-                    $stmtUpd->execute([
-                        $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
-                        $encargado, $tel, $correo,
-                        $logoRemoto, $fotoRemota,
-                        $dbId, $agId, $infoAg['nombre']
-                    ]);
+                    $dbId = intval($infoAg['db_id'] ?? 0);
+                    if ($dbId > 0) {
+                        $stmtUpd = $pdo->prepare("
+                            UPDATE agencias 
+                            SET direccion = COALESCE(NULLIF(?, ''), direccion),
+                                maps_url = COALESCE(NULLIF(?, ''), maps_url),
+                                latitud = COALESCE(NULLIF(?, ''), latitud),
+                                longitud = COALESCE(NULLIF(?, ''), longitud),
+                                encargado_sistemas = COALESCE(NULLIF(?, ''), encargado_sistemas),
+                                telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
+                                correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
+                                logo_url = COALESCE(NULLIF(?, ''), logo_url),
+                                foto_url = COALESCE(NULLIF(?, ''), foto_url),
+                                ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ");
+                        $stmtUpd->execute([
+                            $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
+                            $encargado, $tel, $correo,
+                            $logoRemoto, $fotoRemota,
+                            $dbId
+                        ]);
+                    } else {
+                        $stmtUpd = $pdo->prepare("
+                            UPDATE agencias 
+                            SET direccion = COALESCE(NULLIF(?, ''), direccion),
+                                maps_url = COALESCE(NULLIF(?, ''), maps_url),
+                                latitud = COALESCE(NULLIF(?, ''), latitud),
+                                longitud = COALESCE(NULLIF(?, ''), longitud),
+                                encargado_sistemas = COALESCE(NULLIF(?, ''), encargado_sistemas),
+                                telefono_sistemas = COALESCE(NULLIF(?, ''), telefono_sistemas),
+                                correo_sistemas = COALESCE(NULLIF(?, ''), correo_sistemas),
+                                logo_url = COALESCE(NULLIF(?, ''), logo_url),
+                                foto_url = COALESCE(NULLIF(?, ''), foto_url),
+                                ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
+                            WHERE clave = ? OR LOWER(nombre) = LOWER(?)
+                        ");
+                        $stmtUpd->execute([
+                            $dirRemota, $mapsRemoto, $latRemota, $lngRemota,
+                            $encargado, $tel, $correo,
+                            $logoRemoto, $fotoRemota,
+                            $agId, $infoAg['nombre']
+                        ]);
+                    }
                 } catch (Throwable $e) {}
             }
 
@@ -412,13 +435,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
     if ($pdo) {
         try {
-            $dbId = $CATALOGO_AGENCIAS[$agId]['db_id'] ?? 0;
-            $stmt = $pdo->prepare("
-                UPDATE agencias 
-                SET direccion = ?, maps_url = ?, latitud = ?, longitud = ?, ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
-                WHERE id = ? OR clave = ? OR LOWER(nombre) = LOWER(?)
-            ");
-            $stmt->execute([$direccion, $maps_url, $latitud, $longitud, $dbId, $agId, $nom]);
+            $dbId = intval($CATALOGO_AGENCIAS[$agId]['db_id'] ?? 0);
+            if ($dbId > 0) {
+                $stmt = $pdo->prepare("
+                    UPDATE agencias 
+                    SET direccion = ?, maps_url = ?, latitud = ?, longitud = ?, ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ");
+                $stmt->execute([$direccion, $maps_url, $latitud, $longitud, $dbId]);
+            } else {
+                $stmt = $pdo->prepare("
+                    UPDATE agencias 
+                    SET direccion = ?, maps_url = ?, latitud = ?, longitud = ?, ultima_sincronizacion_ubicacion = CURRENT_TIMESTAMP
+                    WHERE clave = ? OR LOWER(nombre) = LOWER(?)
+                ");
+                $stmt->execute([$direccion, $maps_url, $latitud, $longitud, $agId, $nom]);
+            }
         } catch (Throwable $e) {}
     }
 
@@ -1342,25 +1374,39 @@ include 'config_agencias.php';
                 </div>
                 <div class="mb-3">
                     <label class="form-label small text-secondary fw-semibold">Dirección Física</label>
-                    <textarea id="edit_coord_direccion" class="form-control" rows="2" placeholder="Calle, número, colonia, código postal, estado"></textarea>
+                    <textarea id="edit_coord_direccion" class="form-control" rows="2" placeholder="Calle, número, colonia, código postal, estado" oninput="autoExtraerCoordenadasDeInput()"></textarea>
                 </div>
                 <div class="row g-2 mb-3">
                     <div class="col-6">
                         <label class="form-label small text-secondary fw-semibold">Latitud</label>
-                        <input type="text" id="edit_coord_lat" class="form-control font-monospace" placeholder="19.4774">
+                        <input type="text" id="edit_coord_lat" class="form-control font-monospace" placeholder="19.4774" onchange="actualizarPinDesdeInputs()">
                     </div>
                     <div class="col-6">
                         <label class="form-label small text-secondary fw-semibold">Longitud</label>
-                        <input type="text" id="edit_coord_lng" class="form-control font-monospace" placeholder="-99.1121">
+                        <input type="text" id="edit_coord_lng" class="form-control font-monospace" placeholder="-99.1121" onchange="actualizarPinDesdeInputs()">
                     </div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label small text-secondary fw-semibold">Enlace de Google Maps (maps_url)</label>
-                    <input type="text" id="edit_coord_maps" class="form-control" placeholder="https://maps.google.com/...">
+                    <input type="text" id="edit_coord_maps" class="form-control" placeholder="https://maps.google.com/..." oninput="autoExtraerCoordenadasDeInput()">
                 </div>
-                <button type="button" class="btn btn-outline-info btn-sm w-100 rounded-pill mb-2" onclick="geocodificarDireccionModal()">
+                <button type="button" class="btn btn-outline-info btn-sm w-100 rounded-pill mb-3" onclick="geocodificarDireccionModal()">
                     <i class="bi bi-search me-1"></i> Auto-detectar Coordenadas desde la Dirección
                 </button>
+
+                <!-- Mini mapa interactivo para afinar la posición exacta de la agencia -->
+                <div class="mb-2">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <label class="form-label small text-secondary fw-semibold mb-0">
+                            <i class="bi bi-geo-alt-fill text-danger me-1"></i> Ajuste Fino en Mapa (Haz clic o arrastra el pin)
+                        </label>
+                        <span class="small text-info" style="font-size: 0.72rem;"><i class="bi bi-hand-index-thumb"></i> Arrastrable</span>
+                    </div>
+                    <div id="miniMapaPicker" style="height: 200px; width: 100%; border-radius: 10px; border: 1px solid rgba(56, 189, 248, 0.35); overflow: hidden; background: #0b1b32;"></div>
+                    <div class="small text-secondary mt-1" style="font-size: 0.72rem;">
+                        <i class="bi bi-info-circle text-info"></i> Haz clic en el mapa o arrastra el marcador rojo para colocarlo con precisión milimétrica sobre la agencia.
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm rounded-pill" data-bs-dismiss="modal">Cancelar</button>
@@ -1471,22 +1517,28 @@ const TILE_LAYERS = {
 
 let capaTipoActual = 'google';
 
-function abrirModalMapaAgencias() {
+let timerEnfoquePopup = null;
+
+function abrirModalMapaAgencias(centrarEnId = null) {
     const modalEl = document.getElementById('modalMapaAgencias');
     const modalInst = bootstrap.Modal.getOrCreateInstance(modalEl);
     modalInst.show();
 
-    modalEl.addEventListener('shown.bs.modal', function onShown() {
+    window._agenciaAEnfocar = centrarEnId;
+
+    const handlerShown = function onShown() {
         initMapaAgencias();
-        cargarUbicacionesAgencias();
-        modalEl.removeEventListener('shown.bs.modal', onShown);
-    });
+        mapaInstancia.invalidateSize();
+        cargarUbicacionesAgencias(window._agenciaAEnfocar);
+        modalEl.removeEventListener('shown.bs.modal', handlerShown);
+    };
+    modalEl.addEventListener('shown.bs.modal', handlerShown);
 
     if (mapaInstancia) {
         setTimeout(() => {
             mapaInstancia.invalidateSize();
-            cargarUbicacionesAgencias();
-        }, 250);
+            cargarUbicacionesAgencias(window._agenciaAEnfocar);
+        }, 200);
     }
 }
 
@@ -1570,6 +1622,7 @@ function renderizarMarcadoresYLista(centrarEnId = null) {
     const bounds = L.latLngBounds();
     let conteoGps = 0;
     const marcadoresMap = {};
+    const coordsRegistradas = {};
 
     document.getElementById('mapa_badge_conteo').textContent = agenciasDataGlobal.length + ' Agencias';
 
@@ -1608,8 +1661,21 @@ function renderizarMarcadoresYLista(centrarEnId = null) {
         listaContainer.appendChild(item);
 
         if (hasGps) {
-            const lat = parseFloat(ag.latitud);
-            const lng = parseFloat(ag.longitud);
+            let lat = parseFloat(ag.latitud);
+            let lng = parseFloat(ag.longitud);
+
+            // Evitar que dos marcadores en exactamente las mismas coordenadas se traslapen y bloqueen el clic
+            const coordKey = lat.toFixed(5) + '_' + lng.toFixed(5);
+            if (coordsRegistradas[coordKey]) {
+                const count = coordsRegistradas[coordKey];
+                coordsRegistradas[coordKey]++;
+                const offset = 0.00030 * count;
+                lat += offset * Math.sin(count * 1.05);
+                lng += offset * Math.cos(count * 1.05);
+            } else {
+                coordsRegistradas[coordKey] = 1;
+            }
+
             bounds.extend([lat, lng]);
 
             const customHtml = `
@@ -1630,6 +1696,14 @@ function renderizarMarcadoresYLista(centrarEnId = null) {
             });
 
             const marker = L.marker([lat, lng], { icon: icon }).addTo(markersGroup);
+
+            // Sincronizar marcador con la barra lateral al hacer click o abrir popup
+            marker.on('click', () => {
+                enfocarAgencia(ag.id, false);
+            });
+            marker.on('popupopen', () => {
+                enfocarAgencia(ag.id, false);
+            });
 
             // Determinar la URL para entrar al portal de la agencia
             let portalUrl = ag.subdominio || ag.cpanel || '';
@@ -1722,14 +1796,19 @@ function renderizarMarcadoresYLista(centrarEnId = null) {
     mapaInstancia._marcadoresMap = marcadoresMap;
 
     if (centrarEnId && marcadoresMap[centrarEnId]) {
-        enfocarAgencia(centrarEnId);
+        enfocarAgencia(centrarEnId, true);
     } else if (bounds.isValid()) {
         mapaInstancia.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
     }
 }
 
-function enfocarAgencia(agId) {
+function enfocarAgencia(agId, volar = true) {
     if (!mapaInstancia) return;
+
+    if (timerEnfoquePopup) {
+        clearTimeout(timerEnfoquePopup);
+        timerEnfoquePopup = null;
+    }
 
     document.querySelectorAll('.map-sidebar-item').forEach(el => el.classList.remove('active'));
     const sidebarItem = document.getElementById('sidebar_item_' + agId);
@@ -1743,8 +1822,22 @@ function enfocarAgencia(agId) {
 
     if (marker) {
         const latLng = marker.getLatLng();
-        mapaInstancia.flyTo(latLng, 15, { duration: 1.2 });
-        setTimeout(() => marker.openPopup(), 1300);
+        if (volar) {
+            const dist = mapaInstancia.getCenter().distanceTo(latLng);
+            if (dist < 40 && mapaInstancia.getZoom() >= 15) {
+                marker.openPopup();
+            } else {
+                mapaInstancia.flyTo(latLng, 16, { duration: 0.8 });
+                mapaInstancia.once('moveend', () => {
+                    marker.openPopup();
+                });
+                timerEnfoquePopup = setTimeout(() => {
+                    marker.openPopup();
+                }, 850);
+            }
+        } else {
+            marker.openPopup();
+        }
     } else {
         const ag = agenciasDataGlobal.find(a => a.id === agId);
         if (ag && ag.direccion) {
@@ -1782,10 +1875,7 @@ function enfocarAgencia(agId) {
 }
 
 function verAgenciaEnMapa(agId) {
-    abrirModalMapaAgencias();
-    setTimeout(() => {
-        cargarUbicacionesAgencias(agId);
-    }, 350);
+    abrirModalMapaAgencias(agId);
 }
 
 function centrarMapaEnTodas() {
@@ -1927,6 +2017,85 @@ function sincronizarTodasUbicaciones(abrirMapaDespues = false) {
     });
 }
 
+let miniMapaModal = null;
+let miniMarkerModal = null;
+
+function inicializarMiniMapaModal(lat, lng) {
+    const latNum = (!isNaN(parseFloat(lat)) && parseFloat(lat) !== 0) ? parseFloat(lat) : 19.4326;
+    const lngNum = (!isNaN(parseFloat(lng)) && parseFloat(lng) !== 0) ? parseFloat(lng) : -99.1332;
+
+    const miniMapEl = document.getElementById('miniMapaPicker');
+    if (!miniMapEl) return;
+
+    if (miniMapaModal) {
+        miniMapaModal.invalidateSize();
+        miniMapaModal.setView([latNum, lngNum], 16);
+        if (miniMarkerModal) {
+            miniMarkerModal.setLatLng([latNum, lngNum]);
+        }
+        return;
+    }
+
+    miniMapaModal = L.map('miniMapaPicker', {
+        zoomControl: true,
+        attributionControl: false
+    }).setView([latNum, lngNum], 16);
+
+    L.tileLayer(TILE_LAYERS.google, {
+        maxZoom: 20,
+        subdomains: ['0', '1', '2', '3']
+    }).addTo(miniMapaModal);
+
+    const redIcon = L.divIcon({
+        className: '',
+        html: `
+            <div style="width: 32px; height: 32px; background: #ef4444; border: 2.5px solid #ffffff; border-radius: 50%; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; color: #fff; cursor: grab;">
+                <i class="bi bi-geo-alt-fill" style="font-size: 1rem;"></i>
+            </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    });
+
+    miniMarkerModal = L.marker([latNum, lngNum], {
+        icon: redIcon,
+        draggable: true
+    }).addTo(miniMapaModal);
+
+    miniMarkerModal.on('dragend', function() {
+        const pos = miniMarkerModal.getLatLng();
+        document.getElementById('edit_coord_lat').value = pos.lat.toFixed(6);
+        document.getElementById('edit_coord_lng').value = pos.lng.toFixed(6);
+    });
+
+    miniMapaModal.on('click', function(e) {
+        miniMarkerModal.setLatLng(e.latlng);
+        document.getElementById('edit_coord_lat').value = e.latlng.lat.toFixed(6);
+        document.getElementById('edit_coord_lng').value = e.latlng.lng.toFixed(6);
+    });
+}
+
+function actualizarPinDesdeInputs() {
+    const lat = parseFloat(document.getElementById('edit_coord_lat').value);
+    const lng = parseFloat(document.getElementById('edit_coord_lng').value);
+    if (!isNaN(lat) && !isNaN(lng) && miniMapaModal && miniMarkerModal) {
+        miniMarkerModal.setLatLng([lat, lng]);
+        miniMapaModal.setView([lat, lng], 16);
+    }
+}
+
+function autoExtraerCoordenadasDeInput() {
+    const valMaps = document.getElementById('edit_coord_maps').value.trim();
+    const valDir = document.getElementById('edit_coord_direccion').value.trim();
+    const texto = valMaps + ' ' + valDir;
+    const match = texto.match(/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if (match) {
+        document.getElementById('edit_coord_lat').value = parseFloat(match[1]).toFixed(6);
+        document.getElementById('edit_coord_lng').value = parseFloat(match[2]).toFixed(6);
+        actualizarPinDesdeInputs();
+    }
+}
+
 function abrirModalEditarCoordenadas(agId) {
     const ag = agenciasDataGlobal.find(a => a.id === agId);
     if (!ag) return;
@@ -1938,8 +2107,25 @@ function abrirModalEditarCoordenadas(agId) {
     document.getElementById('edit_coord_lng').value = ag.longitud || '';
     document.getElementById('edit_coord_maps').value = ag.maps_url || '';
 
-    const modal = new bootstrap.Modal(document.getElementById('modalEditarCoordenadas'));
+    const modalEl = document.getElementById('modalEditarCoordenadas');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
+
+    const onModalShown = function() {
+        inicializarMiniMapaModal(ag.latitud, ag.longitud);
+        setTimeout(() => {
+            if (miniMapaModal) miniMapaModal.invalidateSize();
+        }, 150);
+        modalEl.removeEventListener('shown.bs.modal', onModalShown);
+    };
+    modalEl.addEventListener('shown.bs.modal', onModalShown);
+
+    if (miniMapaModal) {
+        setTimeout(() => {
+            inicializarMiniMapaModal(ag.latitud, ag.longitud);
+            miniMapaModal.invalidateSize();
+        }, 200);
+    }
 }
 
 function guardarCoordenadasManuales() {
@@ -2045,7 +2231,7 @@ function geocodificarDireccionModal() {
         return;
     }
 
-    const url = 'https://nominatim.openstreetmap.org/search?format=json&q=' + encodeURIComponent(dir);
+    const url = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=mx&limit=1&q=' + encodeURIComponent(dir);
     mostrarBannerStatus('Buscando coordenadas satelitales...');
 
     fetch(url)
@@ -2059,6 +2245,7 @@ function geocodificarDireccionModal() {
                 if (!document.getElementById('edit_coord_maps').value) {
                     document.getElementById('edit_coord_maps').value = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dir)}`;
                 }
+                actualizarPinDesdeInputs();
                 Swal.fire({
                     icon: 'success',
                     title: '¡Coordenadas Detectadas!',
