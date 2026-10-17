@@ -17,8 +17,8 @@ $CATALOGO_AGENCIAS = [
         'descripcion' => 'Agencia Divol La Villa - Sistemas e Infraestructura IT',
         'direccion'   => 'Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, 07000 CDMX, México',
         'maps_url'    => 'https://www.google.com/maps/search/?api=1&query=' . urlencode('Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, CDMX'),
-        'latitud'     => '19.4774',
-        'longitud'    => '-99.1121',
+        'latitud'     => '19.47822',
+        'longitud'    => '-99.11115',
         'encargado_sistemas' => 'Heriberto Rojo',
         'telefono_sistemas'  => '5555866655',
         'correo_sistemas'    => 'sistemas@divolavilla.com',
@@ -145,8 +145,8 @@ if (isset($pdo) && $pdo !== null) {
             if (empty($tok) && $k === 'divolavilla') $tok = 'GedasDivolavilla2026!';
 
             $dir = !empty($r['direccion']) ? $r['direccion'] : ($k === 'divolavilla' ? 'Ferrocarril Hidalgo, Cam. San Juan de Aragón 890, Gustavo A. Madero, 07000 CDMX, México' : '');
-            $lat = !empty($r['latitud']) ? $r['latitud'] : ($k === 'divolavilla' ? '19.4774' : '');
-            $lng = !empty($r['longitud']) ? $r['longitud'] : ($k === 'divolavilla' ? '-99.1121' : '');
+            $lat = !empty($r['latitud']) ? $r['latitud'] : ($k === 'divolavilla' ? '19.47822' : '');
+            $lng = !empty($r['longitud']) ? $r['longitud'] : ($k === 'divolavilla' ? '-99.11115' : '');
 
             $maps = !empty($r['maps_url']) ? $r['maps_url'] : ($dir ? ('https://www.google.com/maps/search/?api=1&query=' . urlencode($dir)) : '');
 

@@ -119,6 +119,64 @@ echo json_encode([
 }
 
 // ====================================================
+// FUNCIÓN AUXILIAR: GEOCODIFICACIÓN DE ALTA PRECISIÓN (ESRI + NOMINATIM)
+// ====================================================
+function geocodificarDireccionServidor($direccion) {
+    $dirLimpia = trim($direccion);
+    if (empty($dirLimpia)) return null;
+
+    // 1. Probar ESRI ArcGIS World Geocoder (máxima precisión en México con números de casa)
+    $urlEsri = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=1&singleLine=' . urlencode($dirLimpia);
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $urlEsri,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT      => 'SystemPortalGH/2.0'
+    ]);
+    $res = curl_exec($ch);
+    curl_close($ch);
+
+    if ($res) {
+        $data = json_decode($res, true);
+        if (!empty($data['candidates'][0]['location']['y']) && !empty($data['candidates'][0]['location']['x'])) {
+            return [
+                'lat'    => sprintf("%.6f", (float)$data['candidates'][0]['location']['y']),
+                'lng'    => sprintf("%.6f", (float)$data['candidates'][0]['location']['x']),
+                'nombre' => $data['candidates'][0]['address'] ?? $dirLimpia
+            ];
+        }
+    }
+
+    // 2. Fallback a Nominatim OpenStreetMap
+    $urlNom = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=mx&limit=1&q=' . urlencode($dirLimpia);
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $urlNom,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_USERAGENT      => 'SystemPortalGH/2.0 (sistemas@grupohuerta.mx)'
+    ]);
+    $resNom = curl_exec($ch);
+    curl_close($ch);
+
+    if ($resNom) {
+        $dataNom = json_decode($resNom, true);
+        if (!empty($dataNom[0]['lat']) && !empty($dataNom[0]['lon'])) {
+            return [
+                'lat'    => sprintf("%.6f", (float)$dataNom[0]['lat']),
+                'lng'    => sprintf("%.6f", (float)$dataNom[0]['lon']),
+                'nombre' => $dataNom[0]['display_name'] ?? $dirLimpia
+            ];
+        }
+    }
+
+    return null;
+}
+
+// ====================================================
 // 2. AJAX: OBTENER UBICACIONES DE AGENCIAS PARA EL MAPA
 // ====================================================
 if (isset($_GET['accion']) && $_GET['accion'] === 'obtener_ubicaciones_mapa') {
@@ -131,10 +189,39 @@ if (isset($_GET['accion']) && $_GET['accion'] === 'obtener_ubicaciones_mapa') {
         $lng = trim($ag['longitud'] ?? '');
         $mapsUrl = trim($ag['maps_url'] ?? '');
 
+        // Extraer coordenadas de maps_url si no están definidas
         if ((empty($lat) || empty($lng)) && !empty($mapsUrl)) {
-            if (preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $mapsUrl, $mCoords)) {
+            if (preg_match('/(?:@|[?&](?:q|query|ll)=)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/', $mapsUrl, $mCoords)) {
                 $lat = $mCoords[1];
                 $lng = $mCoords[2];
+            } elseif (preg_match('/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/', $mapsUrl, $mCoords)) {
+                $lat = $mCoords[1];
+                $lng = $mCoords[2];
+            }
+        }
+
+        // Si aún no tiene coordenadas pero sí dirección registrada, auto-geocodificar con ESRI
+        if ((empty($lat) || empty($lng)) && !empty($ag['direccion'])) {
+            $geo = geocodificarDireccionServidor($ag['direccion']);
+            if ($geo) {
+                $lat = $geo['lat'];
+                $lng = $geo['lng'];
+                if (empty($mapsUrl)) {
+                    $mapsUrl = "https://www.google.com/maps/search/?api=1&query={$lat},{$lng}";
+                }
+                // Persistir en base de datos si está conectada
+                if (isset($pdo) && $pdo) {
+                    try {
+                        $dbId = intval($ag['db_id'] ?? 0);
+                        if ($dbId > 0) {
+                            $stmtG = $pdo->prepare("UPDATE agencias SET latitud = ?, longitud = ?, maps_url = COALESCE(NULLIF(maps_url, ''), ?) WHERE id = ?");
+                            $stmtG->execute([$lat, $lng, $mapsUrl, $dbId]);
+                        } else {
+                            $stmtG = $pdo->prepare("UPDATE agencias SET latitud = ?, longitud = ?, maps_url = COALESCE(NULLIF(maps_url, ''), ?) WHERE clave = ? OR LOWER(nombre) = LOWER(?)");
+                            $stmtG->execute([$lat, $lng, $mapsUrl, $k, $ag['nombre']]);
+                        }
+                    } catch (Throwable $e) {}
+                }
             }
         }
 
@@ -245,7 +332,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
             }
 
             if ((empty($latRemota) || empty($lngRemota)) && !empty($mapsRemoto)) {
-                if (preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $mapsRemoto, $mCoords)) {
+                if (preg_match('/(?:@|[?&](?:q|query|ll)=)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/', $mapsRemoto, $mCoords)) {
+                    $latRemota = $mCoords[1];
+                    $lngRemota = $mCoords[2];
+                } elseif (preg_match('/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/', $mapsRemoto, $mCoords)) {
                     $latRemota = $mCoords[1];
                     $lngRemota = $mCoords[2];
                 }
@@ -253,24 +343,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
             // Auto-geocodificar en servidor si la agencia mandó dirección pero no coordenadas
             if ((empty($latRemota) || empty($lngRemota)) && !empty($dirRemota)) {
-                $geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' . urlencode($dirRemota);
-                $chGeo = curl_init();
-                curl_setopt_array($chGeo, [
-                    CURLOPT_URL => $geoUrl,
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT => 4,
-                    CURLOPT_USERAGENT => 'SystemPortalGH/2.0 (sistemas@grupohuerta.mx)'
-                ]);
-                $geoRes = curl_exec($chGeo);
-                curl_close($chGeo);
-                if ($geoRes) {
-                    $geoData = json_decode($geoRes, true);
-                    if (!empty($geoData[0]['lat']) && !empty($geoData[0]['lon'])) {
-                        $latRemota = (string)$geoData[0]['lat'];
-                        $lngRemota = (string)$geoData[0]['lon'];
-                        if (empty($mapsRemoto)) {
-                            $mapsRemoto = 'https://www.google.com/maps/search/?api=1&query=' . urlencode($dirRemota);
-                        }
+                $geo = geocodificarDireccionServidor($dirRemota);
+                if ($geo) {
+                    $latRemota = $geo['lat'];
+                    $lngRemota = $geo['lng'];
+                    if (empty($mapsRemoto)) {
+                        $mapsRemoto = "https://www.google.com/maps/search/?api=1&query={$latRemota},{$lngRemota}";
                     }
                 }
             }
@@ -509,28 +587,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accion']) && $_POST['
 
     $latitud = '';
     $longitud = '';
-    if (!empty($maps_url) && preg_match('/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/', $maps_url, $mCoords)) {
-        $latitud = $mCoords[1];
-        $longitud = $mCoords[2];
+    if (!empty($maps_url)) {
+        if (preg_match('/(?:@|[?&](?:q|query|ll)=)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/', $maps_url, $mCoords)) {
+            $latitud = $mCoords[1];
+            $longitud = $mCoords[2];
+        } elseif (preg_match('/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/', $maps_url, $mCoords)) {
+            $latitud = $mCoords[1];
+            $longitud = $mCoords[2];
+        }
     }
 
     // Auto-geocodificar en servidor si se ingresó dirección física pero no coordenadas
     if ((empty($latitud) || empty($longitud)) && !empty($direccion)) {
-        $geoUrl = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' . urlencode($direccion);
-        $chGeo = curl_init();
-        curl_setopt_array($chGeo, [
-            CURLOPT_URL => $geoUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 4,
-            CURLOPT_USERAGENT => 'SystemPortalGH/2.0 (sistemas@grupohuerta.mx)'
-        ]);
-        $geoRes = curl_exec($chGeo);
-        curl_close($chGeo);
-        if ($geoRes) {
-            $geoData = json_decode($geoRes, true);
-            if (!empty($geoData[0]['lat']) && !empty($geoData[0]['lon'])) {
-                $latitud = (string)$geoData[0]['lat'];
-                $longitud = (string)$geoData[0]['lon'];
+        $geo = geocodificarDireccionServidor($direccion);
+        if ($geo) {
+            $latitud = $geo['lat'];
+            $longitud = $geo['lng'];
+            if (empty($maps_url)) {
+                $maps_url = "https://www.google.com/maps/search/?api=1&query={$latitud},{$longitud}";
             }
         }
     }
@@ -2088,7 +2162,14 @@ function autoExtraerCoordenadasDeInput() {
     const valMaps = document.getElementById('edit_coord_maps').value.trim();
     const valDir = document.getElementById('edit_coord_direccion').value.trim();
     const texto = valMaps + ' ' + valDir;
-    const match = texto.match(/@?(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+
+    // 1. Extraer formato estándar @lat,lng o q=lat,lng o lat, lng copiado
+    let match = texto.match(/(?:@|[?&](?:q|query|ll)=)?(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+    if (!match) {
+        // 2. Extraer formato interno de Google Maps !3dlat!4dlng
+        match = texto.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/);
+    }
+
     if (match) {
         document.getElementById('edit_coord_lat').value = parseFloat(match[1]).toFixed(6);
         document.getElementById('edit_coord_lng').value = parseFloat(match[2]).toFixed(6);
@@ -2223,7 +2304,7 @@ function geocodificarDireccionModal() {
         Swal.fire({
             icon: 'warning',
             title: 'Ingresa una Dirección',
-            text: 'Escribe una dirección o nombre de sucursal para buscar sus coordenadas satelitales.',
+            text: 'Escribe una dirección o nombre de sucursal para buscar sus coordenadas exactas.',
             background: '#09192e',
             color: '#ffffff',
             confirmButtonColor: '#2563eb'
@@ -2231,38 +2312,44 @@ function geocodificarDireccionModal() {
         return;
     }
 
-    const url = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=mx&limit=1&q=' + encodeURIComponent(dir);
-    mostrarBannerStatus('Buscando coordenadas satelitales...');
+    mostrarBannerStatus('Buscando ubicación exacta con satélite...');
 
-    fetch(url)
+    // 1. Probar ESRI ArcGIS World Geocoder (máxima precisión para números de calle en México)
+    const urlEsri = 'https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=1&singleLine=' + encodeURIComponent(dir);
+
+    fetch(urlEsri)
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.candidates && data.candidates.length > 0 && data.candidates[0].location) {
+                const c = data.candidates[0];
+                const lat = parseFloat(c.location.y).toFixed(6);
+                const lng = parseFloat(c.location.x).toFixed(6);
+                aplicarCoordenadasModal(lat, lng, c.address || dir);
+            } else {
+                fallbackNominatimModal(dir);
+            }
+        })
+        .catch(() => {
+            fallbackNominatimModal(dir);
+        });
+}
+
+function fallbackNominatimModal(dir) {
+    const urlNom = 'https://nominatim.openstreetmap.org/search?format=json&countrycodes=mx&limit=1&q=' + encodeURIComponent(dir);
+    fetch(urlNom)
         .then(r => r.json())
         .then(results => {
             ocultarBannerStatus();
             if (results && results.length > 0) {
                 const primer = results[0];
-                document.getElementById('edit_coord_lat').value = parseFloat(primer.lat).toFixed(6);
-                document.getElementById('edit_coord_lng').value = parseFloat(primer.lon).toFixed(6);
-                if (!document.getElementById('edit_coord_maps').value) {
-                    document.getElementById('edit_coord_maps').value = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dir)}`;
-                }
-                actualizarPinDesdeInputs();
-                Swal.fire({
-                    icon: 'success',
-                    title: '¡Coordenadas Detectadas!',
-                    html: `<div class="text-start small">
-                        <p class="mb-1 text-light"><b>Lugar detectado:</b></p>
-                        <p class="text-secondary mb-2">${escapeHtml(primer.display_name)}</p>
-                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30">Lat: ${primer.lat} | Lng: ${primer.lon}</span>
-                    </div>`,
-                    background: '#09192e',
-                    color: '#ffffff',
-                    confirmButtonColor: '#2563eb'
-                });
+                const lat = parseFloat(primer.lat).toFixed(6);
+                const lng = parseFloat(primer.lon).toFixed(6);
+                aplicarCoordenadasModal(lat, lng, primer.display_name);
             } else {
                 Swal.fire({
                     icon: 'info',
-                    title: 'No se encontraron coordenadas exactas',
-                    text: 'Prueba escribiendo una dirección más específica (ej. "Av. Montevideo, Gustavo A. Madero, CDMX") o ingresa las coordenadas manualmente.',
+                    title: 'No se encontraron coordenadas automáticas',
+                    text: 'Puedes arrastrar el pin rojo directamente en el mapa hacia la ubicación de la agencia o ingresar latitud y longitud manualmente.',
                     background: '#09192e',
                     color: '#ffffff',
                     confirmButtonColor: '#2563eb'
@@ -2280,6 +2367,28 @@ function geocodificarDireccionModal() {
                 confirmButtonColor: '#ef4444'
             });
         });
+}
+
+function aplicarCoordenadasModal(lat, lng, lugar) {
+    ocultarBannerStatus();
+    document.getElementById('edit_coord_lat').value = lat;
+    document.getElementById('edit_coord_lng').value = lng;
+    if (!document.getElementById('edit_coord_maps').value) {
+        document.getElementById('edit_coord_maps').value = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    }
+    actualizarPinDesdeInputs();
+    Swal.fire({
+        icon: 'success',
+        title: '¡Coordenadas Detectadas!',
+        html: `<div class="text-start small">
+            <p class="mb-1 text-light"><b>Lugar detectado:</b></p>
+            <p class="text-secondary mb-2">${escapeHtml(lugar)}</p>
+            <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-30">Lat: ${lat} | Lng: ${lng}</span>
+        </div>`,
+        background: '#09192e',
+        color: '#ffffff',
+        confirmButtonColor: '#2563eb'
+    });
 }
 
 function filtrarListaMapa(texto) {
