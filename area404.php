@@ -731,19 +731,28 @@ if ($pdo) {
 
         <!-- Contenedor del Lienzo Three.js -->
         <div id="contenedorJuego3D">
-            <!-- HUD: Cronómetro y Vueltas -->
+            <!-- HUD: Banner Central Animado de Vueltas y Victoria -->
+            <div id="hud_banner_overlay" class="game-hud text-center" style="top: 38%; left: 50%; transform: translate(-50%, -50%) scale(0); transition: transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s; opacity: 0; pointer-events: none; z-index: 200;">
+                <h1 id="hud_banner_text" style="font-size: 3.2rem; font-weight: 900; font-style: italic; letter-spacing: 2px; text-shadow: 0 0 30px rgba(0,0,0,0.9), 0 0 25px currentColor; margin: 0; text-transform: uppercase;">¡VUELTA 2!</h1>
+            </div>
+
+            <!-- HUD: Cronómetro, Posición y Vueltas -->
             <div class="game-hud hud-timer">
                 <div class="d-flex align-items-center gap-3">
                     <div>
-                        <div class="text-secondary" style="font-size: 0.68rem;">TIEMPO DE VUELTA</div>
+                        <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">POSICIÓN</div>
+                        <div class="fs-5 fw-bold" style="color: #ffe600;"><i class="bi bi-trophy-fill me-1"></i>1° / 8</div>
+                    </div>
+                    <div class="border-start border-secondary ps-3">
+                        <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">TIEMPO DE VUELTA</div>
                         <div class="fs-5 fw-bold text-warning" id="hud_lap_time">00:00.00</div>
                     </div>
                     <div class="border-start border-secondary ps-3">
-                        <div class="text-secondary" style="font-size: 0.68rem;">MEJOR VUELTA</div>
+                        <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">MEJOR VUELTA</div>
                         <div class="fs-5 fw-bold text-success" id="hud_best_lap">--:--.--</div>
                     </div>
                     <div class="border-start border-secondary ps-3">
-                        <div class="text-secondary" style="font-size: 0.68rem;">VUELTA</div>
+                        <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">VUELTA</div>
                         <div class="fs-5 fw-bold text-info" id="hud_lap_count">1 / 3</div>
                     </div>
                 </div>
@@ -767,21 +776,36 @@ if ($pdo) {
                 ⚡ MINI-TURBO!
             </div>
 
-            <!-- HUD: Velocímetro Digital y Marchas -->
+            <!-- HUD: Velocímetro Digital, Marchas y Tacómetro LED -->
             <div class="game-hud hud-speedometer">
-                <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 1.5px;">VELOCIDAD</div>
+                <div class="d-flex align-items-center justify-content-between mb-1">
+                    <span class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 1.5px;">VELOCIDAD</span>
+                    <span class="badge bg-primary bg-opacity-25 text-info fw-bold" id="hud_gear">D</span>
+                </div>
                 <div class="display-6 fw-bold text-white font-monospace lh-1" id="hud_speed">0</div>
-                <div class="text-info small fw-bold mt-1" style="font-size: 0.75rem;">KM / H</div>
+                <div class="text-info small fw-bold mt-1" style="font-size: 0.72rem;">KM / H</div>
+
+                <!-- Tacómetro LED de 8 segmentos -->
+                <div class="d-flex gap-1 mt-2 justify-content-center" id="hud_rpm_leds">
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                    <span class="rpm-led" style="width: 7px; height: 10px; border-radius: 2px; background: #1e293b; display: inline-block;"></span>
+                </div>
             </div>
 
             <!-- HUD: Teclas de Control -->
             <div class="game-hud hud-controls-hint text-secondary">
                 <i class="bi bi-controller text-info me-1"></i>
                 <kbd class="bg-dark text-white">W / ↑</kbd> Acelerar &bull; 
-                <kbd class="bg-dark text-white">S / ↓</kbd> Freno &bull; 
+                <kbd class="bg-dark text-white">S / ↓</kbd> Freno / Reversa &bull; 
                 <kbd class="bg-dark text-white">A / D</kbd> Dirección &bull; 
-                <kbd class="bg-dark text-white">ESPACIO</kbd> Derrape (Chispas) &bull; 
-                <kbd class="bg-dark text-white">E</kbd> Item
+                <kbd class="bg-dark text-white">ESPACIO</kbd> Derrape &bull; 
+                <kbd class="bg-dark text-white">E</kbd> Poder
             </div>
         </div>
     </div>
@@ -1240,13 +1264,13 @@ let radarCanvas3D, radarCtx3D;
 // Estado Físico y Arcade del Vehículo 3D (Estilo Mario Kart)
 let carState = {
     x: 0,
-    z: 0,
+    z: -80,
     speed: 0,
-    maxSpeed: 175, // km/h
-    accel: 0.72,
-    brake: 0.90,
+    maxSpeed: 95, // km/h velocidad base real de karting
+    accel: 0.42,
+    brake: 1.15,
     friction: 0.985,
-    angle: 0,
+    angle: -Math.PI / 2, // Apuntando al inicio de la recta hacia +X
     angularVelocity: 0,
     steerAngle: 0,
     
@@ -1265,7 +1289,9 @@ let carState = {
     maxLaps: 3,
     lapStartTime: 0,
     bestLapTime: null,
-    checkpointPassed: false
+    raceFinished: false,
+    checkpoints: [false, false, false],
+    lastTrackIdx: 0
 };
 
 // Controles Teclado
@@ -1338,10 +1364,20 @@ function initCarrera3D() {
     // 5. Construir Vehículo / Kart 3D
     construirVehiculo3D();
 
-    // 6. Iniciar Bucle
+    // 6. Configurar salida en parrilla y bucle
+    carState.x = 0;
+    carState.z = -80;
+    carState.speed = 0;
+    carState.angle = -Math.PI / 2;
+    carState.steerAngle = 0;
+    carState.lap = 1;
+    carState.raceFinished = false;
+    carState.checkpoints = [false, false, false];
     carState.lapStartTime = performance.now();
+
     window.addEventListener('resize', onWindowResize3D);
     animar3D();
+    mostrarBannerHUD('¡A CORRER!', '#00d2ff');
 }
 
 function onWindowResize3D() {
@@ -1365,11 +1401,25 @@ function construirPista3DMarioKart() {
     const esRancho = (avatarConfig.mundoSeleccionado === 'rancho');
     const esCorp = (avatarConfig.mundoSeleccionado === 'corporativo');
 
-    // 1. Suelo Base de Césped / Entorno
-    const groundGeo = new THREE.PlaneGeometry(800, 800);
-    const groundMat = new THREE.MeshLambertMaterial({
-        color: esRancho ? 0x556b2f : (esCorp ? 0x050d1a : 0x166534)
-    });
+    // 1. Suelo Base de Césped / Entorno con Textura a Cuadros Mario Kart
+    const groundCanvas = document.createElement('canvas');
+    groundCanvas.width = 256; groundCanvas.height = 256;
+    const gCtx = groundCanvas.getContext('2d');
+    gCtx.fillStyle = esRancho ? '#8d6e63' : (esCorp ? '#050d1a' : '#15803d');
+    gCtx.fillRect(0, 0, 256, 256);
+    gCtx.fillStyle = esRancho ? '#a1887f' : (esCorp ? '#0a192f' : '#16a34a');
+    for (let gx = 0; gx < 256; gx += 32) {
+        for (let gy = 0; gy < 256; gy += 32) {
+            if ((gx / 32 + gy / 32) % 2 === 0) gCtx.fillRect(gx, gy, 32, 32);
+        }
+    }
+    const groundTex = new THREE.CanvasTexture(groundCanvas);
+    groundTex.wrapS = THREE.RepeatWrapping;
+    groundTex.wrapT = THREE.RepeatWrapping;
+    groundTex.repeat.set(50, 50);
+
+    const groundGeo = new THREE.PlaneGeometry(900, 900);
+    const groundMat = new THREE.MeshStandardMaterial({ map: groundTex, roughness: 0.9, metalness: 0.1 });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -1391,30 +1441,40 @@ function construirPista3DMarioKart() {
     ];
     const catmull = new THREE.CatmullRomCurve3(curvePoints, true, 'centripetal');
     trackPoints3D = catmull.getPoints(180);
+    trackPoints3D.pop(); // Eliminar punto 181 duplicado para prevenir len=0 y división por cero
 
-    const trackWidth = 20; // Ancho perfecto de pista (20 unidades)
+    const trackWidth = 20; // Ancho de pista (20 unidades)
     const halfWidth = trackWidth / 2;
 
     const roadPositions = [];
+    const roadUVs = [];
     const kerbLeftPositions = [];
+    const kerbLeftUVs = [];
     const kerbRightPositions = [];
+    const kerbRightUVs = [];
     const roadIndices = [];
     const kerbIndices = [];
 
     // Muros / Paredes 3D a lo largo de toda la pista
-    const wallHeight = 2.2;
+    const wallHeight = 2.4;
     const wallLeftPos = [];
+    const wallLeftUVs = [];
     const wallRightPos = [];
+    const wallRightUVs = [];
     const wallIndices = [];
 
-    for (let i = 0; i < trackPoints3D.length; i++) {
+    const numPts = trackPoints3D.length;
+    for (let i = 0; i < numPts; i++) {
         const p1 = trackPoints3D[i];
-        const p2 = trackPoints3D[(i + 1) % trackPoints3D.length];
+        const p2 = trackPoints3D[(i + 1) % numPts];
         const dx = p2.x - p1.x;
         const dz = p2.z - p1.z;
-        const len = Math.hypot(dx, dz);
+        let len = Math.hypot(dx, dz);
+        if (len < 0.0001) len = 0.0001; // Evita división por cero
         const nx = (-dz / len);
         const nz = (dx / len);
+
+        const uvY = (i / numPts) * 45;
 
         // Bordes de la pista
         const leftEdge = new THREE.Vector3(p1.x + nx * halfWidth, 0.08, p1.z + nz * halfWidth);
@@ -1422,34 +1482,41 @@ function construirPista3DMarioKart() {
 
         roadPositions.push(leftEdge.x, leftEdge.y, leftEdge.z);
         roadPositions.push(rightEdge.x, rightEdge.y, rightEdge.z);
+        roadUVs.push(0, uvY);
+        roadUVs.push(1, uvY);
 
         // Pianos exteriores (Kerbs) con relieve
-        const kerbWidth = 2.0;
+        const kerbWidth = 1.8;
         const klOuter = new THREE.Vector3(p1.x + nx * (halfWidth + kerbWidth), 0.22, p1.z + nz * (halfWidth + kerbWidth));
         const krOuter = new THREE.Vector3(p1.x - nx * (halfWidth + kerbWidth), 0.22, p1.z - nz * (halfWidth + kerbWidth));
 
         kerbLeftPositions.push(leftEdge.x, 0.12, leftEdge.z);
         kerbLeftPositions.push(klOuter.x, 0.22, klOuter.z);
+        kerbLeftUVs.push(0, uvY); kerbLeftUVs.push(1, uvY);
 
         kerbRightPositions.push(rightEdge.x, 0.12, rightEdge.z);
         kerbRightPositions.push(krOuter.x, 0.22, krOuter.z);
+        kerbRightUVs.push(0, uvY); kerbRightUVs.push(1, uvY);
 
-        // Muros de Contención / Guardrails Elevados (Paredes de Pista)
-        const wlBase = new THREE.Vector3(p1.x + nx * (halfWidth + kerbWidth + 0.3), 0, p1.z + nz * (halfWidth + kerbWidth + 0.3));
-        const wlTop  = new THREE.Vector3(p1.x + nx * (halfWidth + kerbWidth + 0.3), wallHeight, p1.z + nz * (halfWidth + kerbWidth + 0.3));
+        // Muros de Contención / Guardrails Elevados
+        const wallMargin = halfWidth + kerbWidth + 0.2;
+        const wlBase = new THREE.Vector3(p1.x + nx * wallMargin, 0, p1.z + nz * wallMargin);
+        const wlTop  = new THREE.Vector3(p1.x + nx * wallMargin, wallHeight, p1.z + nz * wallMargin);
         wallLeftPos.push(wlBase.x, wlBase.y, wlBase.z);
         wallLeftPos.push(wlTop.x, wlTop.y, wlTop.z);
+        wallLeftUVs.push(0, uvY); wallLeftUVs.push(1, uvY);
 
-        const wrBase = new THREE.Vector3(p1.x - nx * (halfWidth + kerbWidth + 0.3), 0, p1.z - nx * (halfWidth + kerbWidth + 0.3));
-        const wrTop  = new THREE.Vector3(p1.x - nx * (halfWidth + kerbWidth + 0.3), wallHeight, p1.z - nx * (halfWidth + kerbWidth + 0.3));
+        const wrBase = new THREE.Vector3(p1.x - nx * wallMargin, 0, p1.z - nz * wallMargin);
+        const wrTop  = new THREE.Vector3(p1.x - nx * wallMargin, wallHeight, p1.z - nz * wallMargin);
         wallRightPos.push(wrBase.x, wrBase.y, wrBase.z);
         wallRightPos.push(wrTop.x, wrTop.y, wrTop.z);
+        wallRightUVs.push(0, uvY); wallRightUVs.push(1, uvY);
     }
 
-    for (let i = 0; i < trackPoints3D.length; i++) {
+    for (let i = 0; i < numPts; i++) {
         const i0 = i * 2;
         const i1 = i0 + 1;
-        const i2 = ((i + 1) % trackPoints3D.length) * 2;
+        const i2 = ((i + 1) % numPts) * 2;
         const i3 = i2 + 1;
 
         roadIndices.push(i0, i1, i2);
@@ -1469,7 +1536,6 @@ function construirPista3DMarioKart() {
     aCtx.fillStyle = '#1e293b'; // Asfalto gris oscuro
     aCtx.fillRect(0, 0, 512, 512);
 
-    // Textura de granulado de asfalto
     for (let i = 0; i < 2500; i++) {
         aCtx.fillStyle = (Math.random() > 0.5 ? '#15202e' : '#2d3748');
         aCtx.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
@@ -1477,13 +1543,13 @@ function construirPista3DMarioKart() {
 
     // Líneas blancas en los bordes de la pista
     aCtx.fillStyle = '#ffffff';
-    aCtx.fillRect(16, 0, 12, 512); // Borde lateral izquierdo
-    aCtx.fillRect(484, 0, 12, 512); // Borde lateral derecho
+    aCtx.fillRect(16, 0, 14, 512);
+    aCtx.fillRect(482, 0, 14, 512);
 
-    // Línea discontinua amarilla/blanca en el centro de la pista
+    // Línea discontinua amarilla en el centro
     aCtx.fillStyle = '#fde047';
     for (let y = 0; y < 512; y += 48) {
-        aCtx.fillRect(250, y, 12, 26);
+        aCtx.fillRect(248, y, 16, 28);
     }
 
     const texAsphalt = new THREE.CanvasTexture(asphaltCanvas);
@@ -1493,14 +1559,11 @@ function construirPista3DMarioKart() {
 
     const roadGeo = new THREE.BufferGeometry();
     roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPositions, 3));
+    roadGeo.setAttribute('uv', new THREE.Float32BufferAttribute(roadUVs, 2));
     roadGeo.setIndex(roadIndices);
     roadGeo.computeVertexNormals();
 
-    const roadMat = new THREE.MeshStandardMaterial({ 
-        map: texAsphalt, 
-        roughness: 0.85, 
-        metalness: 0.15 
-    });
+    const roadMat = new THREE.MeshStandardMaterial({ map: texAsphalt, roughness: 0.82, metalness: 0.15 });
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
     roadMesh.receiveShadow = true;
     scene3D.add(roadMesh);
@@ -1516,45 +1579,49 @@ function construirPista3DMarioKart() {
     texKerb.wrapT = THREE.RepeatWrapping;
     texKerb.repeat.set(45, 1);
 
-    const kerbMat = new THREE.MeshLambertMaterial({ map: texKerb });
+    const kerbMat = new THREE.MeshStandardMaterial({ map: texKerb, roughness: 0.6 });
 
     const kerbGeoL = new THREE.BufferGeometry();
     kerbGeoL.setAttribute('position', new THREE.Float32BufferAttribute(kerbLeftPositions, 3));
+    kerbGeoL.setAttribute('uv', new THREE.Float32BufferAttribute(kerbLeftUVs, 2));
     kerbGeoL.setIndex(kerbIndices);
     kerbGeoL.computeVertexNormals();
     scene3D.add(new THREE.Mesh(kerbGeoL, kerbMat));
 
     const kerbGeoR = new THREE.BufferGeometry();
     kerbGeoR.setAttribute('position', new THREE.Float32BufferAttribute(kerbRightPositions, 3));
+    kerbGeoR.setAttribute('uv', new THREE.Float32BufferAttribute(kerbRightUVs, 2));
     kerbGeoR.setIndex(kerbIndices);
     kerbGeoR.computeVertexNormals();
     scene3D.add(new THREE.Mesh(kerbGeoR, kerbMat));
 
-    // ==============================================================
     // PAREDES / BARRERAS DE SEGURIDAD 3D (GUARDRAILS & MUROS)
-    // ==============================================================
     const wallCanvas = document.createElement('canvas');
-    wallCanvas.width = 256; wallCanvas.height = 64;
+    wallCanvas.width = 512; wallCanvas.height = 64;
     const wCtx = wallCanvas.getContext('2d');
-    wCtx.fillStyle = '#0f172a'; wCtx.fillRect(0, 0, 256, 64);
-    // Franjas de seguridad reflectantes azul y blanco
-    wCtx.fillStyle = '#0284c7'; wCtx.fillRect(0, 8, 256, 18);
-    wCtx.fillStyle = '#ffffff'; wCtx.font = 'bold 16px sans-serif'; wCtx.textAlign = 'center';
-    wCtx.fillText('★ GRUPO HUERTA ★ SUZUKI ★ KAWASAKI ★', 128, 44);
+    wCtx.fillStyle = '#0f172a'; wCtx.fillRect(0, 0, 512, 64);
+    // Franja reflectante superior
+    wCtx.fillStyle = '#0284c7'; wCtx.fillRect(0, 6, 512, 14);
+    // Chevrons amarillos y negros en extremos
+    for (let cx = 0; cx < 512; cx += 64) {
+        wCtx.fillStyle = '#facc15';
+        wCtx.beginPath();
+        wCtx.moveTo(cx, 22); wCtx.lineTo(cx + 20, 22); wCtx.lineTo(cx + 34, 46); wCtx.lineTo(cx + 14, 46);
+        wCtx.fill();
+    }
+    wCtx.fillStyle = '#ffffff'; wCtx.font = 'bold 20px sans-serif'; wCtx.textAlign = 'center';
+    wCtx.fillText('★ GRUPO HUERTA ★ SUZUKI ★ KAWASAKI ★', 256, 42);
+
     const texWall = new THREE.CanvasTexture(wallCanvas);
     texWall.wrapS = THREE.RepeatWrapping;
     texWall.wrapT = THREE.RepeatWrapping;
     texWall.repeat.set(30, 1);
 
-    const wallMat = new THREE.MeshStandardMaterial({ 
-        map: texWall, 
-        side: THREE.DoubleSide, 
-        metalness: 0.6, 
-        roughness: 0.4 
-    });
+    const wallMat = new THREE.MeshStandardMaterial({ map: texWall, side: THREE.DoubleSide, metalness: 0.7, roughness: 0.35 });
 
     const wallGeoL = new THREE.BufferGeometry();
     wallGeoL.setAttribute('position', new THREE.Float32BufferAttribute(wallLeftPos, 3));
+    wallGeoL.setAttribute('uv', new THREE.Float32BufferAttribute(wallLeftUVs, 2));
     wallGeoL.setIndex(wallIndices);
     wallGeoL.computeVertexNormals();
     const meshWallL = new THREE.Mesh(wallGeoL, wallMat);
@@ -1563,6 +1630,7 @@ function construirPista3DMarioKart() {
 
     const wallGeoR = new THREE.BufferGeometry();
     wallGeoR.setAttribute('position', new THREE.Float32BufferAttribute(wallRightPos, 3));
+    wallGeoR.setAttribute('uv', new THREE.Float32BufferAttribute(wallRightUVs, 2));
     wallGeoR.setIndex(wallIndices);
     wallGeoR.computeVertexNormals();
     const meshWallR = new THREE.Mesh(wallGeoR, wallMat);
@@ -1572,19 +1640,37 @@ function construirPista3DMarioKart() {
     // Pilas de Neumáticos 3D en las Curvas Peligrosas
     const indicesCurvas = [20, 55, 85, 120, 155];
     indicesCurvas.forEach(idx => {
-        const pt = trackPoints3D[idx];
+        const pt = trackPoints3D[idx % trackPoints3D.length];
         for (let t = -3; t <= 3; t += 3) {
             construirPilaNeumaticos(pt.x * 1.15 + t, pt.z * 1.15);
         }
     });
 
+    // Marcas de Derrape sobre el Asfalto (Skid marks) en curvas
+    construirMarcasDerrape(55, -80, 0.4);
+    construirMarcasDerrape(95, -45, 0.8);
+    construirMarcasDerrape(105, 10, 1.2);
+    construirMarcasDerrape(-85, 70, -0.6);
+
     // Arco Monumental de Meta
     construirArcoMeta(new THREE.Vector3(0, 0, -80));
+
+    // Grada Principal con Público (Tribuna)
+    construirGradaPrincipal(18, -98, 0);
+
+    // Boxes de Taller & Concesionaria en la Recta Principal
+    construirBoxesTaller(-20, -98, 0);
+
+    // 4 Torres de Iluminación de Circuito (Stadium Lights)
+    construirTorreIluminacion(65, -92);
+    construirTorreIluminacion(118, 15);
+    construirTorreIluminacion(-92, 85);
+    construirTorreIluminacion(-115, -45);
 
     // Paneles Aceleradores Neón (Boost Pads)
     const boostIndices = [22, 75, 130];
     boostIndices.forEach(idx => {
-        const pt = trackPoints3D[idx];
+        const pt = trackPoints3D[idx % trackPoints3D.length];
         const nextPt = trackPoints3D[(idx + 1) % trackPoints3D.length];
         const padGroup = new THREE.Group();
 
@@ -1615,7 +1701,7 @@ function construirPista3DMarioKart() {
     // Cajas de Objetos Misteriosos Flotantes
     const itemIndices = [12, 45, 95, 145];
     itemIndices.forEach(idx => {
-        const pt = trackPoints3D[idx];
+        const pt = trackPoints3D[idx % trackPoints3D.length];
         for (let lane = -5; lane <= 5; lane += 5) {
             const boxGroup = new THREE.Group();
             const cube = new THREE.Mesh(
@@ -1651,10 +1737,10 @@ function construirPista3DMarioKart() {
         }
     });
 
-    // Decoraciones de Mundo
+    // Decoraciones de Mundo y Vegetación
     for (let i = 0; i < trackPoints3D.length; i += 8) {
         const pt = trackPoints3D[i];
-        const bannerPos = { x: pt.x * 1.32, z: pt.z * 1.32 };
+        const bannerPos = { x: pt.x * 1.35, z: pt.z * 1.35 };
 
         if (esCorp) {
             const h = 45 + Math.random() * 80;
@@ -1673,6 +1759,7 @@ function construirPista3DMarioKart() {
             else construirArbolCartoon(bannerPos.x, bannerPos.z);
         } else {
             if (i % 16 === 0) construirFarolaNeón(bannerPos.x, bannerPos.z);
+            else construirArbolCartoon(bannerPos.x, bannerPos.z);
         }
     }
 }
@@ -1691,6 +1778,123 @@ function construirPilaNeumaticos(x, z) {
     }
     stack.position.set(x, 0, z);
     scene3D.add(stack);
+}
+
+// Grada Principal con Público y Banderas
+function construirGradaPrincipal(x, z, rotY) {
+    const grandstand = new THREE.Group();
+    for (let step = 0; step < 4; step++) {
+        const stepGeo = new THREE.BoxGeometry(28, 1.4, 3.5);
+        const stepMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+        const stepMesh = new THREE.Mesh(stepGeo, stepMat);
+        stepMesh.position.set(0, 0.7 + (step * 1.4), -step * 3.2);
+        grandstand.add(stepMesh);
+
+        const fanColors = [0xef4444, 0x3b82f6, 0x10b981, 0xf59e0b, 0x8b5cf6, 0xffffff];
+        for (let fan = -12; fan <= 12; fan += 2.4) {
+            const fanGeo = new THREE.SphereGeometry(0.48, 6, 6);
+            const fanMat = new THREE.MeshLambertMaterial({ color: fanColors[Math.floor(Math.random() * fanColors.length)] });
+            const fanMesh = new THREE.Mesh(fanGeo, fanMat);
+            fanMesh.position.set(fan + (Math.random() * 0.4), 1.9 + (step * 1.4), -step * 3.2);
+            grandstand.add(fanMesh);
+        }
+    }
+
+    const roofGeo = new THREE.BoxGeometry(30, 0.4, 16);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.6, roughness: 0.3 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.set(0, 8.5, -5.5);
+    roof.rotation.x = 0.15;
+    grandstand.add(roof);
+
+    const bannerCanvas = document.createElement('canvas');
+    bannerCanvas.width = 512; bannerCanvas.height = 64;
+    const bCtx = bannerCanvas.getContext('2d');
+    bCtx.fillStyle = '#0f172a'; bCtx.fillRect(0, 0, 512, 64);
+    bCtx.fillStyle = '#00d2ff'; bCtx.font = 'bold 24px sans-serif'; bCtx.textAlign = 'center';
+    bCtx.fillText('★ TRIBUNA PRINCIPAL GRUPO HUERTA ★', 256, 42);
+    const bTex = new THREE.CanvasTexture(bannerCanvas);
+    const bMesh = new THREE.Mesh(new THREE.PlaneGeometry(28, 2.2), new THREE.MeshBasicMaterial({ map: bTex, side: THREE.DoubleSide }));
+    bMesh.position.set(0, 7.2, 1.8);
+    grandstand.add(bMesh);
+
+    grandstand.position.set(x, 0, z);
+    grandstand.rotation.y = rotY;
+    scene3D.add(grandstand);
+}
+
+// Boxes de Taller Mecánico & Concesionarias
+function construirBoxesTaller(x, z, rotY) {
+    const pit = new THREE.Group();
+    const buildingGeo = new THREE.BoxGeometry(32, 7, 10);
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.4, roughness: 0.6 });
+    const building = new THREE.Mesh(buildingGeo, buildingMat);
+    building.position.set(0, 3.5, 0);
+    pit.add(building);
+
+    for (let p = -10; p <= 10; p += 10) {
+        const doorGeo = new THREE.BoxGeometry(7, 5, 0.4);
+        const doorMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.7, roughness: 0.3 });
+        const door = new THREE.Mesh(doorGeo, doorMat);
+        door.position.set(p, 2.5, 5.1);
+        pit.add(door);
+    }
+
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 512; signCanvas.height = 64;
+    const sCtx = signCanvas.getContext('2d');
+    sCtx.fillStyle = '#0284c7'; sCtx.fillRect(0, 0, 512, 64);
+    sCtx.fillStyle = '#ffffff'; sCtx.font = 'bold 24px sans-serif'; sCtx.textAlign = 'center';
+    sCtx.fillText('🔧 TALLER DE SERVICIO & RACING HUERTA 🔧', 256, 42);
+    const sTex = new THREE.CanvasTexture(signCanvas);
+    const sMesh = new THREE.Mesh(new THREE.PlaneGeometry(30, 2), new THREE.MeshBasicMaterial({ map: sTex }));
+    sMesh.position.set(0, 6.0, 5.2);
+    pit.add(sMesh);
+
+    pit.position.set(x, 0, z);
+    pit.rotation.y = rotY;
+    scene3D.add(pit);
+}
+
+// Torres de Iluminación de Circuito (Stadium Floodlights)
+function construirTorreIluminacion(x, z) {
+    const tower = new THREE.Group();
+    const poleGeo = new THREE.CylinderGeometry(0.5, 0.8, 22, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.y = 11;
+    tower.add(pole);
+
+    const headGeo = new THREE.BoxGeometry(6, 2.5, 1.2);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.set(0, 22, 0);
+    tower.add(head);
+
+    for (let f = -2; f <= 2; f += 1.3) {
+        const spot = new THREE.Mesh(new THREE.CircleGeometry(0.5, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        spot.position.set(f, 22, 0.65);
+        tower.add(spot);
+    }
+
+    tower.position.set(x, 0, z);
+    tower.lookAt(0, 0, 0);
+    scene3D.add(tower);
+}
+
+// Marcas de Derrape sobre el Asfalto (Skid Marks)
+function construirMarcasDerrape(x, z, angle) {
+    const markGeo = new THREE.PlaneGeometry(1.6, 6);
+    const markMat = new THREE.MeshBasicMaterial({ color: 0x090d16, transparent: true, opacity: 0.65, polygonOffset: true, polygonOffsetFactor: -2 });
+    const markL = new THREE.Mesh(markGeo, markMat);
+    markL.rotation.x = -Math.PI / 2;
+    markL.rotation.z = angle;
+    markL.position.set(x - 1.2, 0.09, z);
+    scene3D.add(markL);
+
+    const markR = markL.clone();
+    markR.position.set(x + 1.2, 0.09, z);
+    scene3D.add(markR);
 }
 
 // Arco Monumental de Meta con Línea de Salida a Cuadros
@@ -1715,7 +1919,6 @@ function construirArcoMeta(pos) {
     signCanvas.width = 512; signCanvas.height = 128;
     const ctxS = signCanvas.getContext('2d');
     ctxS.fillStyle = '#030a16'; ctxS.fillRect(0, 0, 512, 128);
-    // Borde de cuadros blanco y negro
     for (let bx = 0; bx < 512; bx += 16) {
         ctxS.fillStyle = (bx % 32 === 0) ? '#ffffff' : '#000000';
         ctxS.fillRect(bx, 0, 16, 10);
@@ -2064,23 +2267,23 @@ function animar3D() {
         carState.speed *= 0.982; // Fricción suave
     }
 
-    const maxKmh = (carState.turboTimer > 0) ? 130 : 95;
+    const maxKmh = (carState.turboTimer > 0) ? 128 : 95;
     if (carState.speed > maxKmh) carState.speed = maxKmh;
-    if (carState.speed < -25) carState.speed = -25;
+    if (carState.speed < -22) carState.speed = -22;
 
     // 3. Sistema de Derrape y Carga de Mini-Turbo
-    if (barraEspacio && Math.abs(carState.speed) > 35 && (izquierda || derecha)) {
+    if (barraEspacio && Math.abs(carState.speed) > 30 && (izquierda || derecha)) {
         carState.isDrifting = true;
         carState.driftTimer++;
 
         const indicator = document.getElementById('hud_drift_indicator');
         if (indicator) {
             indicator.style.display = 'block';
-            if (carState.driftTimer > 75) {
+            if (carState.driftTimer > 70) {
                 carState.currentTurboLevel = 2; // Super Mini-Turbo (Naranja)
                 indicator.style.color = '#ff6b00';
                 indicator.innerHTML = '🔥 SUPER MINI-TURBO!';
-            } else if (carState.driftTimer > 35) {
+            } else if (carState.driftTimer > 30) {
                 carState.currentTurboLevel = 1; // Mini-Turbo (Azul)
                 indicator.style.color = '#00d2ff';
                 indicator.innerHTML = '⚡ MINI-TURBO!';
@@ -2089,33 +2292,34 @@ function animar3D() {
         sfxDerrape();
     }
 
-    // 4. Maniobrabilidad y Dirección (Giro Natural)
-    const factorGiro = Math.min(Math.abs(carState.speed) / 50, 1.0);
-    const anguloGiro = (carState.isDrifting ? 0.048 : 0.035) * (carState.speed >= 0 ? 1 : -1);
+    // 4. Maniobrabilidad y Dirección (Giro Natural & Progresivo)
+    const factorGiro = Math.min(Math.abs(carState.speed) / 38, 1.0);
+    const anguloGiro = (carState.isDrifting ? 0.052 : 0.038) * (carState.speed >= 0 ? 1 : -1);
 
     if (izquierda) {
         carState.angle += anguloGiro * factorGiro;
-        carState.steerAngle = -0.32;
+        carState.steerAngle = -0.34;
     } else if (derecha) {
         carState.angle -= anguloGiro * factorGiro;
-        carState.steerAngle = 0.32;
+        carState.steerAngle = 0.34;
     } else {
         carState.steerAngle = 0;
     }
 
-    // 5. Desplazamiento Calibrado (Unidades Suaves por Segundo)
-    const velUnits = (carState.speed / 3.6) * 0.016 * 1.55;
-    let nextX = carState.x - Math.sin(carState.angle) * velUnits * 40;
-    let nextZ = carState.z - Math.cos(carState.angle) * velUnits * 40;
+    // 5. Desplazamiento Físico Calibrado (Escala 1 unidad = 1 metro)
+    // A 90 km/h (25 m/s): en 1 frame (0.016s) = 0.40 unidades/frame
+    const velUnits = (carState.speed / 3.6) * 0.016;
+    let nextX = carState.x - Math.sin(carState.angle) * velUnits;
+    let nextZ = carState.z - Math.cos(carState.angle) * velUnits;
 
     // ==============================================================
-    // 6. DETECCIÓN DE COLISIÓN CON PAREDES DE PISTA Y REBOTE
+    // 6. DETECCIÓN DE COLISIÓN CON PAREDES DE PISTA Y REBOTE EXACTO
     // ==============================================================
+    let closestIdx = 0;
     if (trackPoints3D.length > 0) {
         let minDistSq = Infinity;
-        let closestIdx = 0;
 
-        for (let i = 0; i < trackPoints3D.length; i += 2) {
+        for (let i = 0; i < trackPoints3D.length; i++) {
             const pt = trackPoints3D[i];
             const dSq = (nextX - pt.x) ** 2 + (nextZ - pt.z) ** 2;
             if (dSq < minDistSq) {
@@ -2124,35 +2328,40 @@ function animar3D() {
             }
         }
 
-        const centerPt = trackPoints3D[closestIdx];
-        const nextPt = trackPoints3D[(closestIdx + 1) % trackPoints3D.length];
+        const pA = trackPoints3D[closestIdx];
+        const pB = trackPoints3D[(closestIdx + 1) % trackPoints3D.length];
 
-        const segDx = nextPt.x - centerPt.x;
-        const segDz = nextPt.z - centerPt.z;
-        const segLen = Math.hypot(segDx, segDz);
-        const normX = -segDz / segLen;
-        const normZ = segDx / segLen;
+        let segDx = pB.x - pA.x;
+        let segDz = pB.z - pA.z;
+        let segLen = Math.hypot(segDx, segDz);
+        if (segLen < 0.001) segLen = 1;
 
-        // Distancia lateral relativa al eje central de la pista
-        const relX = nextX - centerPt.x;
-        const relZ = nextZ - centerPt.z;
-        const latDist = relX * normX + relZ * normZ;
+        const dirX = segDx / segLen;
+        const dirZ = segDz / segLen;
+        const normX = -dirZ;
+        const normZ = dirX;
 
-        const maxAllowedDist = (20 / 2) - 0.6; // Mitad del ancho de pista (pared en 9.4)
+        const relX = nextX - pA.x;
+        const relZ = nextZ - pA.z;
+
+        const longDist = relX * dirX + relZ * dirZ;
+        const latDist  = relX * normX + relZ * normZ;
+
+        const maxAllowedDist = 9.2; // Ancho de pista = 20 (mitad = 10, margen pared = 9.2)
 
         if (Math.abs(latDist) > maxAllowedDist) {
-            // ¡CHOQUE CONTRA LA PARED DE SEGURIDAD!
+            // ¡ROCE O IMPACTO CONTRA EL MURO DE SEGURIDAD!
             const sign = Math.sign(latDist);
-            const clampedLatDist = sign * maxAllowedDist;
+            const clampedLat = sign * maxAllowedDist;
 
-            // Proyectar el kart de vuelta dentro de la pista
-            nextX = centerPt.x + normX * clampedLatDist;
-            nextZ = centerPt.z + normZ * clampedLatDist;
+            // Mantener al vehículo dentro de la pista siguiendo el muro
+            nextX = pA.x + dirX * longDist + normX * clampedLat;
+            nextZ = pA.z + dirZ * longDist + normZ * clampedLat;
 
-            // Pérdida de velocidad y sonido de impacto
-            if (Math.abs(carState.speed) > 25) {
+            // Pérdida de velocidad y sonido de impacto al tocar la pared
+            if (Math.abs(carState.speed) > 20) {
                 sfxImpacto();
-                carState.speed *= 0.58; // Frenado por impacto
+                carState.speed *= 0.65;
             }
         }
     }
@@ -2166,8 +2375,8 @@ function animar3D() {
         vehiculo3D.rotation.y = carState.angle;
 
         if (avatarConfig.vehiculo.startsWith('moto')) {
-            const lean = (izquierda ? 0.42 : (derecha ? -0.42 : 0)) * (Math.abs(carState.speed) / 70);
-            vehiculo3D.rotation.z = THREE.MathUtils.lerp(vehiculo3D.rotation.z, lean, 0.15);
+            const lean = (izquierda ? 0.44 : (derecha ? -0.44 : 0)) * (Math.abs(carState.speed) / 75);
+            vehiculo3D.rotation.z = THREE.MathUtils.lerp(vehiculo3D.rotation.z, lean, 0.16);
         }
 
         if (ruedaDelanteraIzq) ruedaDelanteraIzq.rotation.y = carState.steerAngle;
@@ -2181,7 +2390,7 @@ function animar3D() {
         });
 
         // Cámara de persecución suave con distancia perfecta para ver la pista y paredes
-        const distCam = avatarConfig.vehiculo.startsWith('moto') ? 8.0 : 9.5;
+        const distCam = avatarConfig.vehiculo.startsWith('moto') ? 8.2 : 9.6;
         const altoCam = avatarConfig.vehiculo.startsWith('moto') ? 4.2 : 4.8;
         const targetCamX = carState.x + Math.sin(carState.angle) * distCam;
         const targetCamZ = carState.z + Math.cos(carState.angle) * distCam;
@@ -2196,7 +2405,7 @@ function animar3D() {
     for (const pad of boostPads3D) {
         if (Math.hypot(carState.x - pad.x, carState.z - pad.z) < pad.radius) {
             if (carState.turboTimer <= 10) {
-                carState.turboTimer = 60;
+                carState.turboTimer = 65;
                 carState.speed = 125;
                 sfxTurbo();
             }
@@ -2224,12 +2433,17 @@ function animar3D() {
         }
     }
 
-    // 9. Chequeo de Vueltas y Meta
-    const distMeta = Math.hypot(carState.x, carState.z - (-80));
-    if (carState.z > 50) carState.checkpointPassed = true;
+    // ==============================================================
+    // 9. SISTEMA INFALIBLE DE CHECKPOINTS Y VALIDACIÓN DE VUELTAS
+    // ==============================================================
+    const trackIdx = closestIdx;
+    if (trackIdx >= 35 && trackIdx <= 55) carState.checkpoints[0] = true;
+    if (trackIdx >= 80 && trackIdx <= 100) carState.checkpoints[1] = true;
+    if (trackIdx >= 125 && trackIdx <= 145) carState.checkpoints[2] = true;
 
-    if (distMeta < 16 && carState.checkpointPassed) {
-        carState.checkpointPassed = false;
+    const cercaDeMeta = (trackIdx >= 170 || trackIdx <= 10);
+    if (cercaDeMeta && carState.checkpoints[0] && carState.checkpoints[1] && carState.checkpoints[2]) {
+        carState.checkpoints = [false, false, false];
         const lapTime = (performance.now() - carState.lapStartTime);
         carState.lapStartTime = performance.now();
 
@@ -2239,20 +2453,58 @@ function animar3D() {
             guardarRecordServidor('carreras_3d', 0, Math.round(lapTime));
         }
 
-        carState.lap++;
-        sfxVictoria();
-
-        if (carState.lap > carState.maxLaps) {
+        if (carState.lap < carState.maxLaps) {
+            carState.lap++;
+            sfxVictoria();
+            mostrarBannerHUD(carState.lap === carState.maxLaps ? '¡ÚLTIMA VUELTA!' : `¡VUELTA ${carState.lap}!`, '#ffe600');
+        } else if (!carState.raceFinished) {
+            carState.raceFinished = true;
+            sfxVictoria();
+            mostrarBannerHUD('🏁 ¡VICTORIA! 🏁', '#00ff88');
             desbloquearMundo('corporativo');
-            carState.lap = 1;
+            setTimeout(() => {
+                Swal.fire({
+                    title: '🏆 ¡GRAN PREMIO COMPLETADO!',
+                    text: `¡Felicidades, ${avatarConfig.nombre}! Has completado las 3 vueltas en tiempo récord. Mundo Corporativo desbloqueado.`,
+                    icon: 'success',
+                    background: '#06152b',
+                    color: '#fff',
+                    confirmButtonColor: '#00d2ff'
+                });
+            }, 1200);
         }
         document.getElementById('hud_lap_count').textContent = carState.lap + ' / ' + carState.maxLaps;
     }
 
-    // 10. Actualizar HUD
+    // 10. Actualizar HUD (Velocímetro, Cronómetro, Tacómetro LED y Marchas)
     const kmh = Math.max(0, Math.round(Math.abs(carState.speed)));
     document.getElementById('hud_speed').textContent = kmh;
     document.getElementById('hud_lap_time').textContent = formatearTiempo(performance.now() - carState.lapStartTime);
+
+    // Tacómetro LED de 8 segmentos
+    const numLeds = Math.min(8, Math.floor((Math.abs(carState.speed) / 95) * 8));
+    const leds = document.querySelectorAll('#hud_rpm_leds .rpm-led');
+    leds.forEach((led, idx) => {
+        if (carState.turboTimer > 0) {
+            led.style.background = (idx % 2 === 0 ? '#a855f7' : '#00d2ff');
+            led.style.boxShadow = '0 0 8px #a855f7';
+        } else if (idx < numLeds) {
+            if (idx < 4) led.style.background = '#22c55e';
+            else if (idx < 6) led.style.background = '#eab308';
+            else led.style.background = '#ef4444';
+            led.style.boxShadow = '0 0 6px currentColor';
+        } else {
+            led.style.background = '#1e293b';
+            led.style.boxShadow = 'none';
+        }
+    });
+
+    const gearEl = document.getElementById('hud_gear');
+    if (gearEl) {
+        if (carState.speed < -1) gearEl.textContent = 'R';
+        else if (Math.abs(carState.speed) < 2) gearEl.textContent = 'N';
+        else gearEl.textContent = 'D';
+    }
 
     // 11. Renderizar Mini-Mapa Radar
     renderizarRadar3D();
@@ -2302,9 +2554,41 @@ function formatearTiempo(ms) {
     return (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs + '.' + (millis < 10 ? '0' : '') + millis;
 }
 
+function mostrarBannerHUD(texto, color) {
+    const banner = document.getElementById('hud_banner_overlay');
+    const textEl = document.getElementById('hud_banner_text');
+    if (!banner || !textEl) return;
+    textEl.textContent = texto;
+    textEl.style.color = color || '#ffe600';
+    banner.style.opacity = '1';
+    banner.style.transform = 'translate(-50%, -50%) scale(1.1)';
+    setTimeout(() => {
+        banner.style.transform = 'translate(-50%, -50%) scale(1)';
+    }, 180);
+    setTimeout(() => {
+        banner.style.opacity = '0';
+        banner.style.transform = 'translate(-50%, -50%) scale(0.6)';
+    }, 2200);
+}
+
 function reiniciarCarrera3D() {
+    carState.x = 0;
+    carState.z = -80;
+    carState.speed = 0;
+    carState.angle = -Math.PI / 2;
+    carState.steerAngle = 0;
+    carState.lap = 1;
+    carState.raceFinished = false;
+    carState.checkpoints = [false, false, false];
+    carState.turboTimer = 0;
+    carState.driftTimer = 0;
+    carState.isDrifting = false;
+    carState.itemActual = null;
+    actualizarHUDItem();
+    document.getElementById('hud_lap_count').textContent = '1 / ' + carState.maxLaps;
     construirVehiculo3D();
     carState.lapStartTime = performance.now();
+    mostrarBannerHUD('¡REINICIADO!', '#ffe600');
 }
 </script>
 
