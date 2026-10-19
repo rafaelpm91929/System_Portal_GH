@@ -763,7 +763,7 @@ if ($pdo) {
                 <div class="d-flex align-items-center gap-3">
                     <div>
                         <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">POSICIÓN</div>
-                        <div class="fs-5 fw-bold" style="color: #ffe600;"><i class="bi bi-trophy-fill me-1"></i>1° / 8</div>
+                        <div class="fs-5 fw-bold" style="color: #ffe600;" id="hud_race_position"><i class="bi bi-trophy-fill me-1"></i>1° / 4</div>
                     </div>
                     <div class="border-start border-secondary ps-3">
                         <div class="text-secondary" style="font-size: 0.65rem; font-weight: 700;">TIEMPO DE VUELTA</div>
@@ -992,6 +992,21 @@ function sfxVictoria() {
     [523, 659, 783, 1046].forEach((f, i) => {
         setTimeout(() => reproducirTono(f, 0.2, 'triangle'), i * 140);
     });
+}
+function sfxLag() {
+    reproducirTono(180, 0.15, 'sawtooth');
+    setTimeout(() => reproducirTono(120, 0.2, 'square'), 70);
+    setTimeout(() => reproducirTono(90, 0.25, 'sawtooth'), 150);
+}
+function sfxLanzarLaptop() {
+    reproducirTono(520, 0.1, 'sine');
+    setTimeout(() => reproducirTono(980, 0.15, 'sawtooth'), 50);
+    setTimeout(() => reproducirTono(1300, 0.18, 'sine'), 110);
+}
+function sfxLaptopImpacto() {
+    reproducirTono(220, 0.15, 'sawtooth');
+    setTimeout(() => reproducirTono(110, 0.25, 'triangle'), 60);
+    setTimeout(() => reproducirTono(60, 0.35, 'square'), 120);
 }
 </script>
 
@@ -1339,6 +1354,8 @@ let escapeFlames = [];
 let itemBoxes3D = [];
 let boostPads3D = [];
 let trackPoints3D = [];
+let laptopProjectiles3D = [];
+let rivales3D = [];
 let radarCanvas3D, radarCtx3D;
 
 // Estado Físico y Arcade del Vehículo 3D (Estilo Mario Kart)
@@ -1355,6 +1372,8 @@ let carState = {
     steerAngle: 0,
     spinTimer: 0,
     hitObstacleTimer: 0,
+    apLentoTimer: 0,
+    apMeshOverCar: null,
     
     // Sistema de Derrape y Mini-Turbo (Mario Kart)
     isDrifting: false,
@@ -1364,7 +1383,7 @@ let carState = {
     currentTurboLevel: 0, // 0: None, 1: Blue (Mini), 2: Orange (Super)
     
     // Items y Poderes
-    itemActual: null, // 'nitro', 'hongo', 'escudo'
+    itemActual: null, // 'turbo', 'laptop', 'escudo'
     itemTimer: 0,
     
     lap: 1,
@@ -1446,12 +1465,19 @@ function initCarrera3D() {
     // 5. Construir Vehículo / Kart 3D
     construirVehiculo3D();
 
+    // 5.5. Construir Rivales IA de Agencias Grupo Huerta
+    crearRivales3D();
+
     // 6. Configurar salida en parrilla y bucle
     carState.x = 0;
     carState.z = -80;
     carState.speed = 0;
     carState.angle = -Math.PI / 2;
     carState.steerAngle = 0;
+    carState.spinTimer = 0;
+    carState.hitObstacleTimer = 0;
+    carState.apLentoTimer = 0;
+    if (carState.apMeshOverCar) carState.apMeshOverCar.visible = false;
     carState.lap = 1;
     carState.raceFinished = false;
     carState.checkpoints = [false, false, false];
@@ -2056,12 +2082,12 @@ let obstacles3D = [];
 function construirObstaculosPista() {
     obstacles3D = [];
 
-    // 1. Impresoras Láser de Oficina (HP / Kyocera) - Provocan trompos de atasco
+    // 1. Impresoras Láser de Oficina (HP / Kyocera) - Provocan trompos de atasco o falta de hojas
     const posImpresoras = [
-        { idx: 28, offsetLat: 3.5 },
-        { idx: 68, offsetLat: -4.0 },
-        { idx: 108, offsetLat: 2.8 },
-        { idx: 148, offsetLat: -3.2 }
+        { idx: 28, offsetLat: 3.5, msgTipo: 'atasco' },
+        { idx: 68, offsetLat: -4.0, msgTipo: 'hojas' },
+        { idx: 108, offsetLat: 2.8, msgTipo: 'atasco' },
+        { idx: 148, offsetLat: -3.2, msgTipo: 'hojas' }
     ];
 
     posImpresoras.forEach(p => {
@@ -2100,15 +2126,22 @@ function construirObstaculosPista() {
         paper.position.set(0, 1.15, -0.9);
         printerGroup.add(paper);
 
-        // Pantalla LCD con Error 404
+        // Pantalla LCD dinámica con Error 404 o Falta de hojas
         const scrCanvas = document.createElement('canvas');
         scrCanvas.width = 128; scrCanvas.height = 64;
         const sCtx = scrCanvas.getContext('2d');
         sCtx.fillStyle = '#0f172a'; sCtx.fillRect(0, 0, 128, 64);
-        sCtx.fillStyle = '#ef4444'; sCtx.font = 'bold 18px monospace'; sCtx.textAlign = 'center';
-        sCtx.fillText('ERR 404', 64, 28);
-        sCtx.fillStyle = '#f59e0b'; sCtx.font = 'bold 12px sans-serif';
-        sCtx.fillText('ATASCO', 64, 48);
+        if (p.msgTipo === 'hojas') {
+            sCtx.fillStyle = '#38bdf8'; sCtx.font = 'bold 15px monospace'; sCtx.textAlign = 'center';
+            sCtx.fillText('SIN HOJAS', 64, 26);
+            sCtx.fillStyle = '#facc15'; sCtx.font = 'bold 9px sans-serif';
+            sCtx.fillText('FALTARON HOJAS', 64, 46);
+        } else {
+            sCtx.fillStyle = '#ef4444'; sCtx.font = 'bold 18px monospace'; sCtx.textAlign = 'center';
+            sCtx.fillText('ERR 404', 64, 28);
+            sCtx.fillStyle = '#f59e0b'; sCtx.font = 'bold 12px sans-serif';
+            sCtx.fillText('ATASCO', 64, 48);
+        }
         const scrTex = new THREE.CanvasTexture(scrCanvas);
         const scr = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: scrTex }));
         scr.position.set(0.6, 1.42, 0.4);
@@ -2126,6 +2159,7 @@ function construirObstaculosPista() {
 
         obstacles3D.push({
             tipo: 'impresora',
+            msgTipo: p.msgTipo,
             x: posX,
             z: posZ,
             radius: 2.2,
@@ -2181,6 +2215,134 @@ function construirObstaculosPista() {
             group: cableGroup
         });
     });
+
+    // 3. Puntos de Acceso WiFi (Access Points - AP UniFi / Cisco)
+    const posAPs = [
+        { idx: 50, offsetLat: 2.8 },
+        { idx: 98, offsetLat: -2.8 },
+        { idx: 155, offsetLat: 2.2 }
+    ];
+
+    posAPs.forEach(a => {
+        const pt = trackPoints3D[a.idx % trackPoints3D.length];
+        const nextPt = trackPoints3D[(a.idx + 1) % trackPoints3D.length];
+        const dx = nextPt.x - pt.x;
+        const dz = nextPt.z - pt.z;
+        const len = Math.hypot(dx, dz) || 1;
+        const nx = -dz / len;
+        const nz = dx / len;
+
+        const posX = pt.x + nx * a.offsetLat;
+        const posZ = pt.z + nz * a.offsetLat;
+
+        const apGroup = new THREE.Group();
+
+        // Mástil soporte
+        const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 2.6, 8);
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8 });
+        const pole = new THREE.Mesh(poleGeo, poleMat);
+        pole.position.y = 1.3;
+        apGroup.add(pole);
+
+        // Plato AP UniFi blanco
+        const plateGeo = new THREE.CylinderGeometry(1.2, 1.3, 0.35, 16);
+        const plateMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+        const plate = new THREE.Mesh(plateGeo, plateMat);
+        plate.position.y = 2.6;
+        plate.rotation.x = Math.PI / 6;
+        apGroup.add(plate);
+
+        // Anillo LED circular en el plato
+        const ringGeo = new THREE.TorusGeometry(1.15, 0.08, 8, 20);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.y = 2.65;
+        ring.rotation.x = Math.PI / 6;
+        apGroup.add(ring);
+
+        // Antenas WiFi gemelas
+        for (let ant = -1; ant <= 1; ant += 2) {
+            const antMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.1, 6), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+            antMesh.position.set(ant * 0.8, 3.2, 0);
+            antMesh.rotation.z = ant * 0.25;
+            apGroup.add(antMesh);
+        }
+
+        // Rótulo Flotante: "AP WIFI 📶"
+        const lblCanvas = document.createElement('canvas');
+        lblCanvas.width = 128; lblCanvas.height = 64;
+        const lCtx = lblCanvas.getContext('2d');
+        lCtx.fillStyle = '#0284c7'; lCtx.fillRect(0, 0, 128, 64);
+        lCtx.fillStyle = '#ffffff'; lCtx.font = 'bold 16px sans-serif'; lCtx.textAlign = 'center';
+        lCtx.fillText('AP WIFI', 64, 28);
+        lCtx.font = 'bold 12px monospace';
+        lCtx.fillText('INTERNET', 64, 48);
+        const lblTex = new THREE.CanvasTexture(lblCanvas);
+        const lblMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.7), new THREE.MeshBasicMaterial({ map: lblTex, side: THREE.DoubleSide }));
+        lblMesh.position.set(0, 3.5, 0);
+        apGroup.add(lblMesh);
+
+        apGroup.position.set(posX, 0, posZ);
+        scene3D.add(apGroup);
+
+        obstacles3D.push({
+            tipo: 'ap_wifi',
+            x: posX,
+            z: posZ,
+            radius: 2.6,
+            group: apGroup,
+            ringLed: ring
+        });
+    });
+}
+
+// AP Flotante que se monta encima del vehículo al chocar con un AP
+function crearAPFlotanteMesh() {
+    const apGroup = new THREE.Group();
+
+    // Disco AP UniFi
+    const discGeo = new THREE.CylinderGeometry(0.7, 0.75, 0.18, 16);
+    const discMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 });
+    const disc = new THREE.Mesh(discGeo, discMat);
+    apGroup.add(disc);
+
+    // Anillo LED
+    const ringGeo = new THREE.TorusGeometry(0.68, 0.05, 8, 20);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    apGroup.add(ring);
+
+    // Arcos WiFi flotantes
+    for (let a = 1; a <= 3; a++) {
+        const arcGeo = new THREE.TorusGeometry(0.25 * a, 0.04, 6, 16, Math.PI * 0.7);
+        const arcMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+        const arc = new THREE.Mesh(arcGeo, arcMat);
+        arc.position.set(0, 0.25 + a * 0.22, 0);
+        arc.rotation.z = Math.PI * 0.65;
+        apGroup.add(arc);
+    }
+
+    // Cartel "📶 INTERNET LENTO"
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 256; signCanvas.height = 64;
+    const sCtx = signCanvas.getContext('2d');
+    sCtx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+    sCtx.roundRect(4, 4, 248, 56, 12);
+    sCtx.fill();
+    sCtx.strokeStyle = '#ef4444'; sCtx.lineWidth = 3;
+    sCtx.roundRect(4, 4, 248, 56, 12);
+    sCtx.stroke();
+    sCtx.fillStyle = '#f87171'; sCtx.font = 'bold 22px sans-serif'; sCtx.textAlign = 'center';
+    sCtx.fillText('📶 INTERNET LENTO', 128, 38);
+    const signTex = new THREE.CanvasTexture(signCanvas);
+    const signMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 0.55), new THREE.MeshBasicMaterial({ map: signTex, transparent: true, side: THREE.DoubleSide }));
+    signMesh.position.set(0, 1.45, 0);
+    apGroup.add(signMesh);
+
+    apGroup.visible = false;
+    scene3D.add(apGroup);
+    return apGroup;
 }
 
 // Árboles Cartoon 3D
@@ -2231,6 +2393,230 @@ function construirMolinoViento(x, z) {
 
     mill.position.set(x, 0, z);
     scene3D.add(mill);
+}
+
+// ==============================================================
+// LANZADOR DE PROYECTILES 3D: LAPTOPS DE SISTEMAS (BSOD CRASH)
+// ==============================================================
+function crearMeshLaptop3D() {
+    const lapGroup = new THREE.Group();
+
+    // 1. Chasis Base (Teclado)
+    const baseGeo = new THREE.BoxGeometry(1.6, 0.1, 1.1);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4, metalness: 0.8 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    lapGroup.add(base);
+
+    // Teclado con relieve
+    const kbGeo = new THREE.PlaneGeometry(1.4, 0.85);
+    const kbMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
+    const kb = new THREE.Mesh(kbGeo, kbMat);
+    kb.rotation.x = -Math.PI / 2;
+    kb.position.set(0, 0.06, 0.05);
+    lapGroup.add(kb);
+
+    // TrackPoint rojo característico de laptops de Sistemas
+    const tp = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+    tp.position.set(0, 0.07, 0.05);
+    lapGroup.add(tp);
+
+    // 2. Tapa y Pantalla Abierta
+    const screenPivot = new THREE.Group();
+    screenPivot.position.set(0, 0.05, -0.5);
+
+    const lid = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.05, 0.07), baseMat);
+    lid.position.set(0, 0.5, 0);
+    screenPivot.add(lid);
+
+    // Textura Pantalla Azul (BSOD)
+    const scrCanvas = document.createElement('canvas');
+    scrCanvas.width = 128; scrCanvas.height = 80;
+    const sCtx = scrCanvas.getContext('2d');
+    sCtx.fillStyle = '#0050ef'; sCtx.fillRect(0, 0, 128, 80);
+    sCtx.fillStyle = '#ffffff'; sCtx.font = 'bold 22px sans-serif';
+    sCtx.fillText(':(', 14, 28);
+    sCtx.font = 'bold 10px monospace';
+    sCtx.fillText('CRASH 404', 14, 46);
+    sCtx.font = '8px monospace';
+    sCtx.fillText('SYS_MEM_DUMP', 14, 62);
+    const scrTex = new THREE.CanvasTexture(scrCanvas);
+
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.9), new THREE.MeshBasicMaterial({ map: scrTex }));
+    scr.position.set(0, 0.5, 0.04);
+    screenPivot.add(scr);
+
+    // Inclinación de la pantalla abierta (115°)
+    screenPivot.rotation.x = -0.45;
+    lapGroup.add(screenPivot);
+
+    // Resplandor de energía cibernética
+    const glowGeo = new THREE.PlaneGeometry(1.8, 1.8);
+    const glowMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+    const glow = new THREE.Mesh(glowGeo, glowMat);
+    glow.rotation.x = -Math.PI / 2;
+    lapGroup.add(glow);
+
+    return lapGroup;
+}
+
+function dispararLaptop3D() {
+    if (!scene3D) return;
+
+    const lapMesh = crearMeshLaptop3D();
+    const spawnDist = 3.6;
+    const startX = carState.x - Math.sin(carState.angle) * spawnDist;
+    const startZ = carState.z - Math.cos(carState.angle) * spawnDist;
+
+    lapMesh.position.set(startX, 1.25, startZ);
+    scene3D.add(lapMesh);
+
+    const speedUnits = 2.1; // Velocidad de proyectil
+    const vx = -Math.sin(carState.angle) * speedUnits;
+    const vz = -Math.cos(carState.angle) * speedUnits;
+
+    laptopProjectiles3D.push({
+        group: lapMesh,
+        x: startX,
+        z: startZ,
+        vx: vx,
+        vz: vz,
+        life: 140
+    });
+}
+
+// ==============================================================
+// COMPETIDORES Y RIVALES IA DE LAS AGENCIAS GRUPO HUERTA
+// ==============================================================
+function crearMeshRival(tipoVeh, colorHex, nombre) {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.8, roughness: 0.3 });
+    const esMoto = tipoVeh.startsWith('moto');
+
+    if (!esMoto) {
+        // Chasis del auto rival
+        const body = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 4.2), mat);
+        body.position.y = 0.55;
+        group.add(body);
+
+        // Cabina
+        const cab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.65, 2.0), new THREE.MeshStandardMaterial({ color: 0x0a1d37, roughness: 0.2 }));
+        cab.position.set(0, 1.1, 0);
+        group.add(cab);
+
+        // Alerón trasero
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 0.5), mat);
+        wing.position.set(0, 1.0, 1.9);
+        group.add(wing);
+
+        // 4 Ruedas
+        const wGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.32, 12);
+        const wMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+        [[-1.1, 0.48, 1.3], [1.1, 0.48, 1.3], [-1.1, 0.48, -1.3], [1.1, 0.48, -1.3]].forEach(pos => {
+            const w = new THREE.Mesh(wGeo, wMat);
+            w.rotation.z = Math.PI / 2;
+            w.position.set(pos[0], pos[1], pos[2]);
+            group.add(w);
+        });
+
+        // Faros delanteros
+        const flMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.1), flMat); fl1.position.set(-0.7, 0.6, -2.1); group.add(fl1);
+        const fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.1), flMat); fl2.position.set(0.7, 0.6, -2.1); group.add(fl2);
+    } else {
+        // Moto rival
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.9, 2.8), mat);
+        frame.position.y = 0.8;
+        group.add(frame);
+
+        // 2 Ruedas de moto
+        const wGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.25, 12);
+        const wMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+        const wr1 = new THREE.Mesh(wGeo, wMat); wr1.rotation.z = Math.PI / 2; wr1.position.set(0, 0.55, -1.2); group.add(wr1);
+        const wr2 = new THREE.Mesh(wGeo, wMat); wr2.rotation.z = Math.PI / 2; wr2.position.set(0, 0.55, 1.2); group.add(wr2);
+
+        // Piloto rival
+        const rider = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), new THREE.MeshLambertMaterial({ color: colorHex }));
+        rider.position.set(0, 1.5, -0.2);
+        group.add(rider);
+    }
+
+    // Cartel flotante con nombre de la agencia
+    const nCanvas = document.createElement('canvas');
+    nCanvas.width = 256; nCanvas.height = 64;
+    const nCtx = nCanvas.getContext('2d');
+    nCtx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    nCtx.roundRect(4, 4, 248, 56, 12);
+    nCtx.fill();
+    nCtx.strokeStyle = '#' + new THREE.Color(colorHex).getHexString();
+    nCtx.lineWidth = 3;
+    nCtx.roundRect(4, 4, 248, 56, 12);
+    nCtx.stroke();
+    nCtx.fillStyle = '#ffffff'; nCtx.font = 'bold 20px sans-serif'; nCtx.textAlign = 'center';
+    nCtx.fillText(nombre, 128, 38);
+    const nTex = new THREE.CanvasTexture(nCanvas);
+    const nMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshBasicMaterial({ map: nTex, transparent: true, side: THREE.DoubleSide }));
+    nMesh.position.set(0, 2.3, 0);
+    group.add(nMesh);
+
+    return group;
+}
+
+function crearRivales3D() {
+    if (!scene3D) return;
+
+    // Limpiar anteriores si existían
+    rivales3D.forEach(r => {
+        if (r.mesh) scene3D.remove(r.mesh);
+    });
+    rivales3D = [];
+
+    const defsRivales = [
+        {
+            nombre: 'Jetta #4 Angelópolis',
+            vehiculo: 'auto_jetta',
+            color: 0x0284c7,
+            idxInicial: 35,
+            laneOffset: -3.2,
+            speedKmh: 94
+        },
+        {
+            nombre: 'Cupra #7 Garage Serdán',
+            vehiculo: 'auto_cupra',
+            color: 0xd97706,
+            idxInicial: 80,
+            laneOffset: 3.2,
+            speedKmh: 100
+        },
+        {
+            nombre: 'Ninja #99 Motos Huerta',
+            vehiculo: 'moto_kawasaki',
+            color: 0x16a34a,
+            idxInicial: 125,
+            laneOffset: 0.0,
+            speedKmh: 104
+        }
+    ];
+
+    defsRivales.forEach(def => {
+        const mesh = crearMeshRival(def.vehiculo, def.color, def.nombre);
+        scene3D.add(mesh);
+
+        rivales3D.push({
+            nombre: def.nombre,
+            vehiculo: def.vehiculo,
+            color: def.color,
+            mesh: mesh,
+            trackIdx: def.idxInicial,
+            subProgress: 0,
+            laneOffset: def.laneOffset,
+            speed: def.speedKmh,
+            baseSpeed: def.speedKmh,
+            spinTimer: 0,
+            lap: 1,
+            x: 0,
+            z: 0
+        });
+    });
 }
 
 // ==============================================================
@@ -2514,7 +2900,7 @@ function soltarDerrapeTurbo() {
 
 function agarrarCajaMisteriosa() {
     sfxItemBox();
-    const itemsPosibles = ['nitro', 'hongo', 'escudo'];
+    const itemsPosibles = ['turbo', 'laptop', 'turbo', 'laptop', 'escudo'];
     const itemElegido = itemsPosibles[Math.floor(Math.random() * itemsPosibles.length)];
     carState.itemActual = itemElegido;
     actualizarHUDItem();
@@ -2523,17 +2909,19 @@ function agarrarCajaMisteriosa() {
 function usarItem3D() {
     if (!carState.itemActual) return;
 
-    if (carState.itemActual === 'nitro') {
-        carState.turboTimer = 110;
-        carState.speed = 135;
+    if (carState.itemActual === 'turbo') {
+        carState.turboTimer = 95;
+        carState.speed = 145;
         sfxTurbo();
-    } else if (carState.itemActual === 'hongo') {
-        carState.turboTimer = 70;
-        carState.speed = 125;
-        sfxTurbo();
+        mostrarBannerHUD('⚡ ¡SUPER TURBO ACTIVADO!', '#00d2ff');
+    } else if (carState.itemActual === 'laptop') {
+        dispararLaptop3D();
+        sfxLanzarLaptop();
+        mostrarBannerHUD('💻 ¡LANZASTE UNA LAPTOP DE SISTEMAS!', '#c084fc');
     } else if (carState.itemActual === 'escudo') {
         carState.itemTimer = 180;
         sfxVictoria();
+        mostrarBannerHUD('🛡️ ¡ESCUDO FIREWALL ACTIVADO!', '#00ff88');
     }
 
     carState.itemActual = null;
@@ -2545,11 +2933,19 @@ function actualizarHUDItem() {
     const box = document.getElementById('hud_item_box');
     if (!icon || !box) return;
 
-    const iconos = { nitro: '🚀', hongo: '🍄', escudo: '⚡' };
+    const iconos = { turbo: '🚀', laptop: '💻', escudo: '🛡️' };
     if (carState.itemActual) {
         icon.textContent = iconos[carState.itemActual] || '❓';
-        box.style.borderColor = '#00d2ff';
-        box.style.boxShadow = '0 0 30px rgba(0, 210, 255, 0.7)';
+        if (carState.itemActual === 'laptop') {
+            box.style.borderColor = '#c084fc';
+            box.style.boxShadow = '0 0 30px rgba(192, 132, 252, 0.85)';
+        } else if (carState.itemActual === 'turbo') {
+            box.style.borderColor = '#00d2ff';
+            box.style.boxShadow = '0 0 30px rgba(0, 210, 255, 0.85)';
+        } else {
+            box.style.borderColor = '#22c55e';
+            box.style.boxShadow = '0 0 30px rgba(34, 197, 94, 0.85)';
+        }
     } else {
         icon.textContent = '❓';
         box.style.borderColor = '#ffe600';
@@ -2579,7 +2975,15 @@ function animar3D() {
     camera3D.updateProjectionMatrix();
 
     // 2. Aceleración Deportiva y Velocidad Calibrada (Top Speed: 118 km/h, Turbo: 158 km/h)
-    const accelBase = (carState.turboTimer > 0 ? 0.95 : 0.62);
+    let accelBase = (carState.turboTimer > 0 ? 0.95 : 0.62);
+    let maxKmh = (carState.turboTimer > 0) ? 158 : 118;
+
+    // Si tiene Internet Lento (AP sobre el auto): velocidad limitada
+    if (carState.apLentoTimer > 0) {
+        maxKmh = 48;
+        accelBase = 0.28;
+    }
+
     if (adelante) {
         carState.speed += accelBase;
     } else if (atras) {
@@ -2589,7 +2993,6 @@ function animar3D() {
         carState.speed *= 0.984; // Fricción suave
     }
 
-    const maxKmh = (carState.turboTimer > 0) ? 158 : 118;
     if (carState.speed > maxKmh) carState.speed = maxKmh;
     if (carState.speed < -28) carState.speed = -28;
 
@@ -2638,6 +3041,20 @@ function animar3D() {
         } else {
             carState.steerAngle = 0;
         }
+    }
+
+    // 4.5. Gestión del AP Flotante de Internet Lento sobre el vehículo
+    if (carState.apLentoTimer > 0) {
+        carState.apLentoTimer--;
+        if (!carState.apMeshOverCar) {
+            carState.apMeshOverCar = crearAPFlotanteMesh();
+        }
+        carState.apMeshOverCar.visible = true;
+        carState.apMeshOverCar.position.set(carState.x, 3.4, carState.z);
+        carState.apMeshOverCar.rotation.y += 0.06;
+    } else if (carState.apMeshOverCar && carState.apMeshOverCar.visible) {
+        carState.apMeshOverCar.visible = false;
+        mostrarBannerHUD('✅ ¡INTERNET RESTABLECIDO!', '#00ff88');
     }
 
     // 5. Desplazamiento Físico Calibrado (Escala 1 unidad = 1 metro)
@@ -2767,14 +3184,25 @@ function animar3D() {
         }
     }
 
-    // 8.5. Colisión con Obstáculos TI (Impresoras láser con atasco y Cables de Red)
+    // 8.5. Colisión con Obstáculos TI (Impresoras láser, Cables de Red y APs WiFi)
     if (carState.hitObstacleTimer > 0) {
         carState.hitObstacleTimer--;
     }
     for (const obs of obstacles3D) {
-        // Parpadeo dinámico del LED de error en impresoras láser
+        if (!obs.group.visible) {
+            if (obs.respawnTimer > 0) {
+                obs.respawnTimer--;
+                if (obs.respawnTimer === 0) obs.group.visible = true;
+            }
+            continue;
+        }
+
+        // Parpadeo dinámico del LED de error en impresoras o APs
         if (obs.tipo === 'impresora' && obs.led) {
             obs.led.material.color.setHex((Math.floor(performance.now() / 250) % 2 === 0) ? 0xef4444 : 0x222222);
+        }
+        if (obs.tipo === 'ap_wifi' && obs.ringLed) {
+            obs.ringLed.material.color.setHex((Math.floor(performance.now() / 300) % 2 === 0) ? 0x00d2ff : 0xf59e0b);
         }
 
         if (carState.hitObstacleTimer === 0 && Math.hypot(carState.x - obs.x, carState.z - obs.z) < obs.radius) {
@@ -2786,12 +3214,119 @@ function animar3D() {
                 carState.spinTimer = 35; // 35 frames de trompo
                 carState.speed *= 0.35;
                 sfxImpacto();
-                mostrarBannerHUD('⚠️ ¡ERROR 404: ATASCO DE IMPRESORA!', '#ef4444');
+                if (obs.msgTipo === 'hojas') {
+                    mostrarBannerHUD('📄 ¡SOLO FALTARON HOJAS JAJA!', '#facc15');
+                } else {
+                    mostrarBannerHUD('⚠️ ¡ERROR 404: ATASCO DE IMPRESORA!', '#ef4444');
+                }
             } else if (obs.tipo === 'cable_red') {
                 carState.speed *= 0.45;
                 sfxDerrape();
                 mostrarBannerHUD('🔌 ¡CABLE DE RED ENREDADO EN LLANTAS!', '#00d2ff');
+            } else if (obs.tipo === 'ap_wifi') {
+                carState.apLentoTimer = 240; // ~4 segundos con AP arriba del auto
+                carState.speed *= 0.50;
+                sfxLag();
+                mostrarBannerHUD('📶 ¡INTERNET LENTO! (AP SATURADO)', '#f59e0b');
             }
+        }
+    }
+
+    // 8.6. Proyectiles Laptop 3D Voladoras hacia competidores y obstáculos
+    for (let i = laptopProjectiles3D.length - 1; i >= 0; i--) {
+        const lap = laptopProjectiles3D[i];
+        lap.x += lap.vx;
+        lap.z += lap.vz;
+        lap.life--;
+
+        lap.group.position.set(lap.x, 1.25, lap.z);
+        lap.group.rotation.y += 0.25;
+        lap.group.rotation.x += 0.12;
+
+        let impactado = false;
+
+        // Impacto contra Rivales de Agencias
+        for (const rival of rivales3D) {
+            if (Math.hypot(lap.x - rival.x, lap.z - rival.z) < 3.2) {
+                rival.spinTimer = 45;
+                rival.speed *= 0.25;
+                sfxLaptopImpacto();
+                mostrarBannerHUD(`💥 ¡PANTALLAZO AZUL A ${rival.nombre.toUpperCase()}!`, '#c084fc');
+                impactado = true;
+                break;
+            }
+        }
+
+        // Impacto contra Obstáculos TI
+        if (!impactado) {
+            for (const obs of obstacles3D) {
+                if (obs.group.visible && Math.hypot(lap.x - obs.x, lap.z - obs.z) < obs.radius) {
+                    obs.group.visible = false;
+                    obs.respawnTimer = 240;
+                    sfxLaptopImpacto();
+                    mostrarBannerHUD('💥 ¡LAPTOP REVENTÓ EL OBSTÁCULO!', '#00ff88');
+                    impactado = true;
+                    break;
+                }
+            }
+        }
+
+        if (impactado || lap.life <= 0) {
+            scene3D.remove(lap.group);
+            laptopProjectiles3D.splice(i, 1);
+        }
+    }
+
+    // 8.7. IA de Competidores y Rivales de Agencias Grupo Huerta
+    if (trackPoints3D.length > 0) {
+        rivales3D.forEach(r => {
+            if (r.spinTimer > 0) {
+                r.spinTimer--;
+                r.mesh.rotation.y += 0.32;
+                r.speed *= 0.94;
+            } else {
+                r.speed = THREE.MathUtils.lerp(r.speed, r.baseSpeed, 0.05);
+            }
+
+            const pA = trackPoints3D[r.trackIdx];
+            const pB = trackPoints3D[(r.trackIdx + 1) % trackPoints3D.length];
+            const dx = pB.x - pA.x;
+            const dz = pB.z - pA.z;
+            const segLen = Math.hypot(dx, dz) || 1;
+            const nx = -dz / segLen;
+            const nz = dx / segLen;
+
+            r.subProgress += ((r.speed / 3.6) * 0.016) / segLen;
+            if (r.subProgress >= 1.0) {
+                r.subProgress -= 1.0;
+                r.trackIdx = (r.trackIdx + 1) % trackPoints3D.length;
+                if (r.trackIdx === 0) r.lap++;
+            }
+
+            const curX = THREE.MathUtils.lerp(pA.x, pB.x, r.subProgress) + nx * r.laneOffset;
+            const curZ = THREE.MathUtils.lerp(pA.z, pB.z, r.subProgress) + nz * r.laneOffset;
+            r.x = curX;
+            r.z = curZ;
+
+            r.mesh.position.set(curX, 0, curZ);
+            if (r.spinTimer === 0) {
+                r.mesh.rotation.y = Math.atan2(-dx, -dz);
+            }
+        });
+
+        // Cálculo dinámico de la posición en carrera (1° / 4)
+        const playerRankVal = carState.lap * 1000 + closestIdx;
+        let posJugador = 1;
+        rivales3D.forEach(r => {
+            const rivalRankVal = r.lap * 1000 + r.trackIdx;
+            if (rivalRankVal > playerRankVal) posJugador++;
+        });
+
+        const posEl = document.getElementById('hud_race_position');
+        if (posEl) {
+            const iconTrophy = (posJugador === 1) ? 'bi-trophy-fill' : 'bi-flag-fill';
+            posEl.innerHTML = `<i class="bi ${iconTrophy} me-1"></i>${posJugador}° / ${rivales3D.length + 1}`;
+            posEl.style.color = (posJugador === 1) ? '#ffe600' : (posJugador === 2 ? '#00d2ff' : '#f87171');
         }
     }
 
@@ -2897,12 +3432,25 @@ function renderizarRadar3D() {
     ctx.closePath();
     ctx.stroke();
 
+    // Puntos de los Rivales en el Radar
+    rivales3D.forEach(r => {
+        const rx = centerX + r.x * scale;
+        const ry = centerY + r.z * scale;
+        ctx.fillStyle = '#' + new THREE.Color(r.color).getHexString();
+        ctx.beginPath();
+        ctx.arc(rx, ry, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    });
+
     // Punto del Jugador
     const px = centerX + carState.x * scale;
     const py = centerY + carState.z * scale;
     ctx.fillStyle = '#ffe600';
     ctx.beginPath();
-    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.arc(px, py, 4.5, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 1.5;
@@ -2947,11 +3495,19 @@ function reiniciarCarrera3D() {
     carState.isDrifting = false;
     carState.spinTimer = 0;
     carState.hitObstacleTimer = 0;
+    carState.apLentoTimer = 0;
+    if (carState.apMeshOverCar) carState.apMeshOverCar.visible = false;
+
+    // Limpiar proyectiles de laptops
+    laptopProjectiles3D.forEach(l => { if (scene3D) scene3D.remove(l.group); });
+    laptopProjectiles3D = [];
+
     carState.itemActual = null;
     carState.itemTimer = 0;
     actualizarHUDItem();
     document.getElementById('hud_lap_count').textContent = '1 / ' + carState.maxLaps;
     construirVehiculo3D();
+    crearRivales3D();
     carState.lapStartTime = performance.now();
     mostrarBannerHUD('¡REINICIADO!', '#ffe600');
 }
