@@ -2491,64 +2491,139 @@ function dispararLaptop3D() {
 // ==============================================================
 // COMPETIDORES Y RIVALES IA DE LAS AGENCIAS GRUPO HUERTA
 // ==============================================================
+// Rueda deportiva de aleación detallada (Evita cortes cuadrados y modela rin y cálipers)
+function crearRuedaDeportiva(tipoVeh, radio, ancho, esDelantera) {
+    const wheelGroup = new THREE.Group();
+    const isCupra = (tipoVeh === 'auto_cupra');
+    const isJetta = (tipoVeh === 'auto_jetta' || tipoVeh === 'auto');
+    const isOmoda = (tipoVeh === 'auto_omoda');
+    const esMoto = tipoVeh.startsWith('moto');
+
+    // Neumático con hombro curvo deportivo
+    const tireMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.85 });
+    const tireMesh = new THREE.Mesh(new THREE.CylinderGeometry(radio, radio, ancho, 24), tireMat);
+    tireMesh.rotation.z = Math.PI / 2;
+    wheelGroup.add(tireMesh);
+
+    // Hombro redondeado exterior
+    const torusTire = new THREE.Mesh(new THREE.TorusGeometry(radio * 0.82, radio * 0.18, 10, 24), tireMat);
+    torusTire.position.x = ancho / 2 - 0.02;
+    wheelGroup.add(torusTire);
+
+    // Rin de aleación según marca
+    const rimColor = isCupra ? 0xd97706 : (isJetta ? 0xe2e8f0 : (esMoto ? (tipoVeh === 'moto_suzuki' ? 0x0284c7 : 0x16a34a) : 0x1e293b));
+    const rimMat = new THREE.MeshStandardMaterial({
+        color: rimColor,
+        metalness: isCupra ? 0.95 : (isJetta ? 0.9 : 0.85),
+        roughness: isCupra ? 0.2 : 0.25
+    });
+
+    const rimBase = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.72, radio * 0.72, ancho + 0.02, 18), rimMat);
+    rimBase.rotation.z = Math.PI / 2;
+    wheelGroup.add(rimBase);
+
+    // Radios / Brazos del rin en estrella (5 brazos)
+    for (let s = 0; s < 5; s++) {
+        const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.06, radio * 0.7, 0.12), rimMat);
+        spoke.position.x = ancho / 2 + 0.01;
+        spoke.rotation.x = (s * Math.PI * 2) / 5;
+        wheelGroup.add(spoke);
+    }
+
+    // Centro de rin con tapón
+    const capColor = isCupra ? 0xb45309 : (isJetta ? 0x0284c7 : 0x0f172a);
+    const hubCap = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.22, radio * 0.22, ancho + 0.04, 16), new THREE.MeshStandardMaterial({ color: capColor, metalness: 0.9 }));
+    hubCap.rotation.z = Math.PI / 2;
+    wheelGroup.add(hubCap);
+
+    // Disco de freno ventilado de acero inoxidable
+    const discMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95, roughness: 0.2 });
+    const brakeDisc = new THREE.Mesh(new THREE.CylinderGeometry(radio * 0.58, radio * 0.58, 0.04, 16), discMat);
+    brakeDisc.rotation.z = Math.PI / 2;
+    brakeDisc.position.x = -ancho * 0.15;
+    wheelGroup.add(brakeDisc);
+
+    // Pinza de freno deportiva (Caliper rojo GLI / cobre Cupra / dorado Moto)
+    const calColor = isCupra ? 0xd97706 : (isJetta ? 0xef4444 : (esMoto ? 0xeab308 : 0xef4444));
+    const caliper = new THREE.Mesh(new THREE.BoxGeometry(0.12, radio * 0.32, radio * 0.35), new THREE.MeshStandardMaterial({ color: calColor, metalness: 0.7 }));
+    caliper.position.set(-ancho * 0.12, radio * 0.32, 0);
+    wheelGroup.add(caliper);
+
+    return wheelGroup;
+}
+
+// ==============================================================
+// COMPETIDORES Y RIVALES IA DE LAS AGENCIAS GRUPO HUERTA
+// ==============================================================
 function crearMeshRival(tipoVeh, colorHex, nombre) {
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.8, roughness: 0.3 });
+    const mat = new THREE.MeshStandardMaterial({ color: colorHex, metalness: 0.85, roughness: 0.25 });
     const esMoto = tipoVeh.startsWith('moto');
 
     if (!esMoto) {
-        // Chasis del auto rival
-        const body = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.7, 4.2), mat);
-        body.position.y = 0.55;
+        // Carrocería deportiva esculpida
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.05, 4.1, 16), mat);
+        body.scale.set(1.0, 0.45, 1.0);
+        body.position.y = 0.6;
         group.add(body);
 
-        // Cabina
-        const cab = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.65, 2.0), new THREE.MeshStandardMaterial({ color: 0x0a1d37, roughness: 0.2 }));
-        cab.position.set(0, 1.1, 0);
+        // Cabina aerodinámica
+        const cab = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.9, 2.0, 14), new THREE.MeshStandardMaterial({ color: 0x071526, roughness: 0.1, metalness: 0.9 }));
+        cab.scale.set(1.0, 0.55, 1.0);
+        cab.position.set(0, 1.1, 0.1);
         group.add(cab);
 
         // Alerón trasero
-        const wing = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.1, 0.5), mat);
-        wing.position.set(0, 1.0, 1.9);
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.08, 0.4), mat);
+        wing.position.set(0, 0.95, 1.85);
         group.add(wing);
 
-        // 4 Ruedas
-        const wGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.32, 12);
-        const wMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
-        [[-1.1, 0.48, 1.3], [1.1, 0.48, 1.3], [-1.1, 0.48, -1.3], [1.1, 0.48, -1.3]].forEach(pos => {
-            const w = new THREE.Mesh(wGeo, wMat);
-            w.rotation.z = Math.PI / 2;
-            w.position.set(pos[0], pos[1], pos[2]);
-            group.add(w);
-        });
+        // 4 Ruedas detalladas
+        const wFL = crearRuedaDeportiva(tipoVeh, 0.44, 0.34, true); wFL.position.set(-1.12, 0.44, -1.25); group.add(wFL);
+        const wFR = crearRuedaDeportiva(tipoVeh, 0.44, 0.34, true); wFR.position.set(1.12, 0.44, -1.25); group.add(wFR);
+        const wRL = crearRuedaDeportiva(tipoVeh, 0.44, 0.34, false); wRL.position.set(-1.12, 0.44, 1.25); group.add(wRL);
+        const wRR = crearRuedaDeportiva(tipoVeh, 0.44, 0.34, false); wRR.position.set(1.12, 0.44, 1.25); group.add(wRR);
 
-        // Faros delanteros
+        // Faros LED
         const flMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.1), flMat); fl1.position.set(-0.7, 0.6, -2.1); group.add(fl1);
-        const fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.1), flMat); fl2.position.set(0.7, 0.6, -2.1); group.add(fl2);
+        const fl1 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.1), flMat); fl1.position.set(-0.68, 0.65, -2.06); group.add(fl1);
+        const fl2 = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.1), flMat); fl2.position.set(0.68, 0.65, -2.06); group.add(fl2);
     } else {
-        // Moto rival
-        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.9, 2.8), mat);
-        frame.position.y = 0.8;
-        group.add(frame);
+        // Moto deportiva rival
+        const tank = new THREE.Mesh(new THREE.SphereGeometry(0.52, 16, 14), mat);
+        tank.scale.set(0.7, 0.6, 1.2);
+        tank.position.set(0, 1.15, -0.1);
+        group.add(tank);
 
-        // 2 Ruedas de moto
-        const wGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.25, 12);
-        const wMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
-        const wr1 = new THREE.Mesh(wGeo, wMat); wr1.rotation.z = Math.PI / 2; wr1.position.set(0, 0.55, -1.2); group.add(wr1);
-        const wr2 = new THREE.Mesh(wGeo, wMat); wr2.rotation.z = Math.PI / 2; wr2.position.set(0, 0.55, 1.2); group.add(wr2);
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.3, 14), mat);
+        tail.rotation.x = Math.PI / 2.2;
+        tail.position.set(0, 1.22, 0.9);
+        group.add(tail);
 
-        // Piloto rival
-        const rider = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), new THREE.MeshLambertMaterial({ color: colorHex }));
-        rider.position.set(0, 1.5, -0.2);
+        const rWheel = crearRuedaDeportiva(tipoVeh, 0.58, 0.36, false); rWheel.position.set(0, 0.58, 1.35); group.add(rWheel);
+        const fWheel = crearRuedaDeportiva(tipoVeh, 0.55, 0.28, true); fWheel.position.set(0, 0.55, -1.4); group.add(fWheel);
+
+        // Piloto rival con joroba
+        const rider = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.8, 14), mat);
+        rider.position.set(0, 1.45, 0.1);
+        rider.rotation.x = 0.45;
         group.add(rider);
+
+        const hump = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.5, 10), mat);
+        hump.rotation.x = -Math.PI / 2.3;
+        hump.position.set(0, 1.68, 0.08);
+        group.add(hump);
+
+        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), mat);
+        helmet.position.set(0, 1.75, -0.3);
+        group.add(helmet);
     }
 
     // Cartel flotante con nombre de la agencia
     const nCanvas = document.createElement('canvas');
     nCanvas.width = 256; nCanvas.height = 64;
     const nCtx = nCanvas.getContext('2d');
-    nCtx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    nCtx.fillStyle = 'rgba(2, 6, 23, 0.88)';
     nCtx.roundRect(4, 4, 248, 56, 12);
     nCtx.fill();
     nCtx.strokeStyle = '#' + new THREE.Color(colorHex).getHexString();
@@ -2568,7 +2643,6 @@ function crearMeshRival(tipoVeh, colorHex, nombre) {
 function crearRivales3D() {
     if (!scene3D) return;
 
-    // Limpiar anteriores si existían
     rivales3D.forEach(r => {
         if (r.mesh) scene3D.remove(r.mesh);
     });
@@ -2624,8 +2698,8 @@ function crearRivales3D() {
 }
 
 // ==============================================================
-// CONSTRUCTOR DE VEHÍCULOS OFICIALES GRUPO HUERTA (3D DETALLADO)
-// JETTA • OMODA C5 • CUPRA FORMENTOR • SUZUKI GSX-R • KAWASAKI NINJA
+// CONSTRUCTOR DE VEHÍCULOS OFICIALES GRUPO HUERTA (3D ESCULPIDO)
+// JETTA GLI • OMODA C5 • CUPRA FORMENTOR • SUZUKI GSX-R • KAWASAKI NINJA
 // ==============================================================
 function construirVehiculo3D() {
     if (vehiculo3D) scene3D.remove(vehiculo3D);
@@ -2638,7 +2712,8 @@ function construirVehiculo3D() {
 
     if (!esMoto) {
         // ==========================================================
-        // AUTOS GRUPO HUERTA: JETTA, OMODA C5 O CUPRA FORMENTOR
+        // AUTOS GRUPO HUERTA: JETTA GLI • OMODA C5 • CUPRA FORMENTOR
+        // DISEÑO AERODINÁMICO CURVADO Y ESCULPIDO (NO CUADRADO)
         // ==========================================================
         const carGroup = new THREE.Group();
         const isCupra = (tipoVeh === 'auto_cupra');
@@ -2646,230 +2721,379 @@ function construirVehiculo3D() {
         const isJetta = (!isCupra && !isOmoda);
 
         let colorCarroceria = new THREE.Color(avatarConfig.colorTraje).getHex();
-        if (isCupra) colorCarroceria = 0x1b2838; // Azul Petróleo / Grafito mate característico de Cupra
-        
-        const bodyMat = new THREE.MeshStandardMaterial({ 
-            color: colorCarroceria, 
-            metalness: 0.85, 
-            roughness: 0.25 
-        });
+        if (isCupra) colorCarroceria = 0x243345; // Magnetic Tech / Petrol Blue mate
 
-        // 1. Chasis Inferior
-        const baseGeo = new THREE.BoxGeometry(2.0, 0.35, 4.2);
-        const baseMesh = new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 }));
-        baseMesh.position.y = 0.35;
+        const bodyMat = new THREE.MeshStandardMaterial({
+            color: colorCarroceria,
+            metalness: isCupra ? 0.65 : 0.88,
+            roughness: isCupra ? 0.35 : 0.22
+        });
+        const carbonMat = new THREE.MeshStandardMaterial({ color: 0x0a0f18, roughness: 0.4, metalness: 0.8 });
+        const glassMat = new THREE.MeshStandardMaterial({ color: 0x071526, roughness: 0.05, metalness: 0.95 });
+
+        // 1. Chasis Inferior y Fondo Plano Aerodinámico
+        const baseMesh = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.1, 4.3, 16), carbonMat);
+        baseMesh.scale.set(1.0, 0.22, 1.0);
+        baseMesh.position.set(0, 0.32, 0);
         carGroup.add(baseMesh);
 
+        // 2. Guardabarros y Pasos de Rueda Musculosos y Curvos (Widebody Stance)
+        const archMat = isCupra ? carbonMat : bodyMat;
+        const archPositions = [
+            [-1.12, 0.44, -1.25], [1.12, 0.44, -1.25],
+            [-1.12, 0.44, 1.25],  [1.12, 0.44, 1.25]
+        ];
+        archPositions.forEach(p => {
+            const arch = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.11, 10, 16, Math.PI), archMat);
+            arch.position.set(p[0], p[1], p[2]);
+            if (p[0] > 0) arch.rotation.y = Math.PI;
+            carGroup.add(arch);
+        });
+
+        // 3. Carrocería Esculpida Central (Curvas suaves)
+        const mainBody = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.08, 4.1, 16), bodyMat);
+        mainBody.scale.set(1.02, 0.42, 1.0);
+        mainBody.position.set(0, 0.62, 0);
+        carGroup.add(mainBody);
+
+        // Capó Aerodinámico Inclinado
+        const hood = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.02, 1.7, 12), bodyMat);
+        hood.scale.set(1.02, 0.32, 1.0);
+        hood.position.set(0, 0.65, -1.2);
+        hood.rotation.x = -0.06;
+        carGroup.add(hood);
+
+        // Nervaduras aerodinámicas del capó (Power Bulges)
+        const creaseL = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), bodyMat);
+        creaseL.position.set(-0.55, 0.78, -1.2); creaseL.rotation.x = -0.06; carGroup.add(creaseL);
+        const creaseR = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.5, 6), bodyMat);
+        creaseR.position.set(0.55, 0.78, -1.2); creaseR.rotation.x = -0.06; carGroup.add(creaseR);
+
+        // 4. Cabina tipo Coupé (Greenhouse) con parabrisas inclinado suave
+        const cabin = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.94, 2.2, 16), glassMat);
+        cabin.scale.set(1.0, 0.58, 1.0);
+        cabin.position.set(0, 1.15, 0.15);
+        cabin.rotation.x = -0.05;
+        carGroup.add(cabin);
+
+        // Techo Panorámico Curvo
+        const roofMat = isJetta ? carbonMat : (isOmoda ? carbonMat : bodyMat);
+        const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.86, 1.7, 14), roofMat);
+        roof.scale.set(0.98, 0.12, 1.0);
+        roof.position.set(0, 1.44, 0.15);
+        carGroup.add(roof);
+
+        // Antena Aleta de Tiburón (Shark Fin)
+        const fin = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 4), carbonMat);
+        fin.rotation.x = -0.4;
+        fin.position.set(0, 1.52, 0.85);
+        carGroup.add(fin);
+
+        // 5. Modelado Exclusivo por Marca
         if (isJetta) {
-            // ==================== VOLKSWAGEN JETTA SPORTLINE ====================
-            // Capó alargado de sedán
-            const hood = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.35, 1.6), bodyMat);
-            hood.position.set(0, 0.65, -1.2);
-            carGroup.add(hood);
-
-            // Cabina de Sedán con parabrisas inclinado
-            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.65, 1.8), new THREE.MeshStandardMaterial({ color: 0x0a1d37, roughness: 0.1, metalness: 0.9 }));
-            cabin.position.set(0, 1.05, 0.2);
-            carGroup.add(cabin);
-
-            // Techo de color carrocería
-            const roof = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.1, 1.5), bodyMat);
-            roof.position.set(0, 1.4, 0.2);
-            carGroup.add(roof);
-
-            // Maletero de sedán con alerón tipo lip
-            const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.4, 1.0), bodyMat);
+            // ==================== VOLKSWAGEN JETTA GLI / SPORTLINE ====================
+            // Maletero de sedán con alerón tipo lip curvo
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.96, 1.0, 1.1, 12), bodyMat);
+            trunk.scale.set(1.0, 0.35, 1.0);
             trunk.position.set(0, 0.65, 1.55);
             carGroup.add(trunk);
 
-            // Parrilla delantera cromada con emblema VW
-            const grille = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.3, 0.2), new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95 }));
-            grille.position.set(0, 0.65, -2.05);
+            const lipSpoiler = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.06, 0.22), carbonMat);
+            lipSpoiler.position.set(0, 0.84, 1.95);
+            carGroup.add(lipSpoiler);
+
+            // Parrilla Frontal Delgada en Negro Piano con Línea Roja GLI
+            const grille = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.24, 0.15), carbonMat);
+            grille.position.set(0, 0.64, -2.06);
             carGroup.add(grille);
 
-            // Línea roja deportiva GLI en fascia delantera
-            const redLine = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.08, 0.2), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-            redLine.position.set(0, 0.45, -2.06);
+            const redLine = new THREE.Mesh(new THREE.BoxGeometry(1.66, 0.04, 0.16), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            redLine.position.set(0, 0.64, -2.07);
             carGroup.add(redLine);
 
-            // Faros LED afilados Jetta
+            // Emblema Circular Volkswagen 3D en relieve cromado
+            const vwLogo = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 18), new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.95 }));
+            vwLogo.rotation.x = Math.PI / 2;
+            vwLogo.position.set(0, 0.64, -2.14);
+            carGroup.add(vwLogo);
+
+            // Faros LED afilados con firma lumínica en "C"
             const fLightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            const flL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.18, 0.2), fLightMat); flL.position.set(-0.7, 0.68, -2.05); carGroup.add(flL);
-            const flR = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.18, 0.2), fLightMat); flR.position.set(0.7, 0.68, -2.05); carGroup.add(flR);
+            const flL = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.16, 0.15), fLightMat); flL.position.set(-0.68, 0.68, -2.06); carGroup.add(flL);
+            const flR = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.16, 0.15), fLightMat); flR.position.set(0.68, 0.68, -2.06); carGroup.add(flR);
+
+            // Marcos Rojos Deportivos en Tomas de Fascia Inferior
+            const ductL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.1), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            ductL.position.set(-0.75, 0.42, -2.06); carGroup.add(ductL);
+            const ductR = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.1), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            ductR.position.set(0.75, 0.42, -2.06); carGroup.add(ductR);
+
+            // Calaveras traseras LED
+            const rLightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+            const rlL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.14, 0.12), rLightMat); rlL.position.set(-0.72, 0.72, 2.06); carGroup.add(rlL);
+            const rlR = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.14, 0.12), rLightMat); rlR.position.set(0.72, 0.72, 2.06); carGroup.add(rlR);
 
         } else if (isOmoda) {
             // ==================== OMODA C5 CROSSOVER ====================
-            // Carrocería SUV Coupé
-            const bodyOmoda = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.55, 3.9), bodyMat);
-            bodyOmoda.position.set(0, 0.75, 0);
-            carGroup.add(bodyOmoda);
+            // Caída Fastback Coupé y Doble Spoiler
+            const fastback = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.4, 12), bodyMat);
+            fastback.rotation.x = -Math.PI / 2.6;
+            fastback.position.set(0, 0.88, 1.35);
+            carGroup.add(fastback);
 
-            // Techo Flotante con pilares negros
-            const roofOmoda = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 2.1), new THREE.MeshStandardMaterial({ color: 0x050d1a, roughness: 0.2 }));
-            roofOmoda.position.set(0, 1.25, 0.1);
-            carGroup.add(roofOmoda);
+            const omodaSpoiler = new THREE.Mesh(new THREE.BoxGeometry(1.68, 0.12, 0.45), carbonMat);
+            omodaSpoiler.position.set(0, 1.45, 1.25);
+            carGroup.add(omodaSpoiler);
 
-            // Doble alerón trasero deportivo Omoda
-            const spoilerOmoda = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.15, 0.6), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 }));
-            spoilerOmoda.position.set(0, 1.55, 1.3);
-            carGroup.add(spoilerOmoda);
+            // Parrilla Diamante Paramétrica en Relieve 3D
+            const grillP = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.55, 0.15), carbonMat);
+            grillP.position.set(0, 0.62, -2.05);
+            carGroup.add(grillP);
 
-            // Parrilla Diamante Paramétrica Omoda (Textura de tachuelas)
-            const oGrille = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 0.2), new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 }));
-            oGrille.position.set(0, 0.7, -2.0);
-            carGroup.add(oGrille);
+            // Tachuelas/Diamantes cromados en degradado
+            for (let dy = -2; dy <= 2; dy++) {
+                for (let dx = -4; dx <= 4; dx++) {
+                    if (Math.abs(dx) + Math.abs(dy) <= 5) {
+                        const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(0.04), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95 }));
+                        diamond.position.set(dx * 0.18, 0.62 + dy * 0.08, -2.12);
+                        carGroup.add(diamond);
+                    }
+                }
+            }
 
-            // DRLs delgados en T Omoda
-            const drlMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
-            const drlL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.2), drlMat); drlL.position.set(-0.75, 0.95, -2.02); carGroup.add(drlL);
-            const drlR = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.2), drlMat); drlR.position.set(0.75, 0.95, -2.02); carGroup.add(drlR);
+            // Tira LED DRL Continua Ultra-Delgada en Borde del Capó
+            const drlBar = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.04, 0.15), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+            drlBar.position.set(0, 0.92, -2.06);
+            carGroup.add(drlBar);
+
+            // Faros Principales en Bloque Vertical en Fascia Baja
+            const mainLightMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+            const mlL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.28, 0.1), mainLightMat); mlL.position.set(-0.78, 0.58, -2.06); carGroup.add(mlL);
+            const mlR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.28, 0.1), mainLightMat); mlR.position.set(0.78, 0.58, -2.06); carGroup.add(mlR);
 
         } else if (isCupra) {
             // ==================== CUPRA FORMENTOR ====================
-            // Carrocería deportiva musculosa
-            const bodyCupra = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.5, 4.1), bodyMat);
-            bodyCupra.position.set(0, 0.72, 0);
-            carGroup.add(bodyCupra);
+            // Fascia Musculosa y Alerón de Techo Deportivo
+            const cupraSpoiler = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.12, 0.45), carbonMat);
+            cupraSpoiler.position.set(0, 1.48, 1.15);
+            carGroup.add(cupraSpoiler);
 
-            // Cabina baja deportiva con lunas tintadas
-            const cabinCupra = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.6, 2.0), new THREE.MeshStandardMaterial({ color: 0x091424, roughness: 0.1, metalness: 0.85 }));
-            cabinCupra.position.set(0, 1.15, 0.15);
-            carGroup.add(cabinCupra);
+            // Parrilla Hexagonal de Malla
+            const cupraGrille = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.9, 0.2, 6), carbonMat);
+            cupraGrille.scale.set(1.0, 0.45, 0.8);
+            cupraGrille.position.set(0, 0.68, -2.05);
+            carGroup.add(cupraGrille);
 
-            // EMBLEMA TRIBAL CUPRA COLOR COBRE / BRONCE
+            // Emblema Tribal Cupra en Cobre / Bronce
             const copperMat = new THREE.MeshStandardMaterial({ color: 0xd97706, metalness: 0.95, roughness: 0.2 });
-            const emblemCupra = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.4, 3), copperMat);
-            emblemCupra.rotation.x = Math.PI / 2;
-            emblemCupra.position.set(0, 0.72, -2.08);
-            carGroup.add(emblemCupra);
+            const cupraLogo = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.35, 3), copperMat);
+            cupraLogo.rotation.x = Math.PI / 2;
+            cupraLogo.position.set(0, 0.72, -2.12);
+            carGroup.add(cupraLogo);
 
-            // Retrovisores y tomas de aire con acentos de cobre
-            const mirrorL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.2), copperMat); mirrorL.position.set(-1.15, 1.1, -0.4); carGroup.add(mirrorL);
-            const mirrorR = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.15, 0.2), copperMat); mirrorR.position.set(1.15, 1.1, -0.4); carGroup.add(mirrorR);
+            // Faros Triangulares LED Afilados Cupra
+            const cLightMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const clL = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.38, 3), cLightMat); clL.rotation.z = Math.PI / 2; clL.rotation.y = -Math.PI / 2; clL.position.set(-0.72, 0.72, -2.06); carGroup.add(clL);
+            const clR = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.38, 3), cLightMat); clR.rotation.z = -Math.PI / 2; clR.rotation.y = Math.PI / 2; clR.position.set(0.72, 0.72, -2.06); carGroup.add(clR);
 
-            // Luz trasera LED continua "coast-to-coast"
-            const lightBar = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.1, 0.15), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
-            lightBar.position.set(0, 0.9, 2.05);
+            // Franja Trasera Continua LED Coast-to-Coast
+            const lightBar = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.08, 0.15), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            lightBar.position.set(0, 0.88, 2.05);
             carGroup.add(lightBar);
+
+            // Retrovisores aerodinámicos en cobre
+            const mirL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.2), copperMat); mirL.position.set(-1.12, 1.08, -0.35); carGroup.add(mirL);
+            const mirR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.14, 0.2), copperMat); mirR.position.set(1.12, 1.08, -0.35); carGroup.add(mirR);
         }
 
-        // 4 Ruedas de Aleación Deportiva con Cálipers
-        const tireMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
-        const tireGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.36, 18);
-        tireGeo.rotateZ(Math.PI / 2);
+        // 4 Ruedas de Aleación Deportiva Realistas
+        ruedaDelanteraIzq = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
+        ruedaDelanteraIzq.position.set(-1.12, 0.44, -1.25);
+        carGroup.add(ruedaDelanteraIzq);
 
-        ruedaDelanteraIzq = new THREE.Mesh(tireGeo, tireMat); ruedaDelanteraIzq.position.set(-1.15, 0.42, -1.25); carGroup.add(ruedaDelanteraIzq);
-        ruedaDelanteraDer = new THREE.Mesh(tireGeo, tireMat); ruedaDelanteraDer.position.set(1.15, 0.42, -1.25); carGroup.add(ruedaDelanteraDer);
+        ruedaDelanteraDer = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
+        ruedaDelanteraDer.position.set(1.12, 0.44, -1.25);
+        carGroup.add(ruedaDelanteraDer);
 
-        const rWheelL = new THREE.Mesh(tireGeo, tireMat); rWheelL.position.set(-1.15, 0.42, 1.25); carGroup.add(rWheelL);
-        const rWheelR = new THREE.Mesh(tireGeo, tireMat); rWheelR.position.set(1.15, 0.42, 1.25); carGroup.add(rWheelR);
+        const rWheelL = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, false);
+        rWheelL.position.set(-1.12, 0.44, 1.25);
+        carGroup.add(rWheelL);
 
-        // Doble Escape con Fuego de Nitro
-        const pipeMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.95 });
-        const pL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.6, 8), pipeMat); pL.rotation.x = Math.PI / 2; pL.position.set(-0.5, 0.42, 2.15); carGroup.add(pL);
-        const pR = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.6, 8), pipeMat); pR.rotation.x = Math.PI / 2; pR.position.set(0.5, 0.42, 2.15); carGroup.add(pR);
+        const rWheelR = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, false);
+        rWheelR.position.set(1.12, 0.44, 1.25);
+        carGroup.add(rWheelR);
+
+        // Difusor trasero y Escapes cromados con fuego
+        const pipeMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95 });
+        const pL = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.5, 12), pipeMat); pL.rotation.x = Math.PI / 2; pL.position.set(-0.55, 0.38, 2.15); carGroup.add(pL);
+        const pR = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.5, 12), pipeMat); pR.rotation.x = Math.PI / 2; pR.position.set(0.55, 0.38, 2.15); carGroup.add(pR);
 
         const flMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0 });
-        const flL = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flL.rotation.x = -Math.PI / 2; flL.position.set(-0.5, 0.42, 2.9); carGroup.add(flL);
-        const flR = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flR.rotation.x = -Math.PI / 2; flR.position.set(0.5, 0.42, 2.9); carGroup.add(flR);
+        const flL = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flL.rotation.x = -Math.PI / 2; flL.position.set(-0.55, 0.38, 2.85); carGroup.add(flL);
+        const flR = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flR.rotation.x = -Math.PI / 2; flR.position.set(0.55, 0.38, 2.85); carGroup.add(flR);
         escapeFlames.push(flL, flR);
 
         vehiculo3D.add(carGroup);
 
     } else {
         // ==========================================================
-        // MOTOS SUPERBIKE GRUPO HUERTA: SUZUKI GSX-R & KAWASAKI NINJA
+        // MOTOS SUPERBIKE MOTO GP: SUZUKI GSX-R & KAWASAKI NINJA
+        // DISEÑO AERODINÁMICO DE CIRCUITO (IDÉNTICO A LA FOTO 1)
         // ==========================================================
         const bikeGroup = new THREE.Group();
         const esKawa = (tipoVeh === 'moto_kawasaki');
         const colorCarenado = esKawa ? 0x22c55e : 0x0284c7; // Verde KRT o Azul Ecstar
-
-        // 1. Chasis Perimetral de Doble Viga de Aluminio
-        const frameMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95, roughness: 0.2 });
-        const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.35, 1.8), frameMat); frameL.position.set(-0.25, 0.95, 0); bikeGroup.add(frameL);
-        const frameR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.35, 1.8), frameMat); frameR.position.set(0.25, 0.95, 0); bikeGroup.add(frameR);
-
-        // 2. Carenado Frontal Aerodinámico de Pista
         const fairingMat = new THREE.MeshStandardMaterial({ color: colorCarenado, metalness: 0.85, roughness: 0.2 });
-        const noseCowl = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.8, 8), fairingMat);
-        noseCowl.rotation.x = -Math.PI / 2;
-        noseCowl.position.set(0, 1.15, -1.1);
-        bikeGroup.add(noseCowl);
+        const frameMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95, roughness: 0.2 });
+        const carbonMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.5, metalness: 0.7 });
 
-        // Alerones Winglets en Kawasaki Ninja
-        if (esKawa) {
-            const wingletMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
-            const wL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.06, 0.3), wingletMat); wL.position.set(-0.45, 1.1, -1.0); bikeGroup.add(wL);
-            const wR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.06, 0.3), wingletMat); wR.position.set(0.45, 1.1, -1.0); bikeGroup.add(wR);
-        }
+        // 1. Chasis Perimetral de Doble Viga de Aluminio Pulido
+        const frameL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.8, 8), frameMat);
+        frameL.position.set(-0.24, 0.95, 0); frameL.rotation.x = Math.PI / 2; bikeGroup.add(frameL);
+        const frameR = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 1.8, 8), frameMat);
+        frameR.position.set(0.24, 0.95, 0); frameR.rotation.x = Math.PI / 2; bikeGroup.add(frameR);
 
-        // Cúpula / Parabrisas transparente tintado
-        const screenMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, transparent: true, opacity: 0.85 });
-        const windscreen = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.35, 0.7), screenMat);
-        windscreen.position.set(0, 1.48, -0.6);
-        windscreen.rotation.x = -0.3;
-        bikeGroup.add(windscreen);
+        // 2. Basculante Trasero de Competición (Swingarm)
+        const swingL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.4, 8), frameMat);
+        swingL.position.set(-0.22, 0.62, 0.75); swingL.rotation.x = 0.25; bikeGroup.add(swingL);
+        const swingR = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.4, 8), frameMat);
+        swingR.position.set(0.22, 0.62, 0.75); swingR.rotation.x = 0.25; bikeGroup.add(swingR);
 
-        // Tanque de Gasolina ergonómico y Colín Monoplaza
-        const tank = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.65, 1.2), fairingMat);
-        tank.position.set(0, 1.2, -0.1);
-        bikeGroup.add(tank);
+        // 3. Neumático Trasero Ancho Slick de Competición (Estilo Moto GP como Foto 1)
+        const rearWheel = crearRuedaDeportiva(tipoVeh, 0.58, 0.38, false);
+        rearWheel.position.set(0, 0.58, 1.35);
+        bikeGroup.add(rearWheel);
 
-        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.35, 1.3, 6), fairingMat);
-        tail.rotation.x = Math.PI / 2.2;
-        tail.position.set(0, 1.25, 0.95);
-        bikeGroup.add(tail);
-
-        // 3. Horquilla Telescópica Dorada (Showa / Öhlins)
-        const forkMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.9, roughness: 0.2 });
-        const forkL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.4, 8), forkMat); forkL.position.set(-0.2, 0.75, -1.2); forkL.rotation.x = -0.25; bikeGroup.add(forkL);
-        const forkR = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.4, 8), forkMat); forkR.position.set(0.2, 0.75, -1.2); forkR.rotation.x = -0.25; bikeGroup.add(forkR);
-
-        // 4. Llantas Superbike con Frenos de Disco
-        const bWheelMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
-        const bWheelGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.28, 20);
-        bWheelGeo.rotateZ(Math.PI / 2);
-
-        ruedaDelanteraIzq = new THREE.Mesh(bWheelGeo, bWheelMat);
+        // Rueda delantera de carreras
+        ruedaDelanteraIzq = crearRuedaDeportiva(tipoVeh, 0.55, 0.28, true);
         ruedaDelanteraIzq.position.set(0, 0.55, -1.4);
         bikeGroup.add(ruedaDelanteraIzq);
         ruedaDelanteraDer = ruedaDelanteraIzq;
 
-        const rearWheel = new THREE.Mesh(bWheelGeo, bWheelMat);
-        rearWheel.position.set(0, 0.55, 1.35);
-        bikeGroup.add(rearWheel);
+        // Horquilla invertida delantera dorada (Showa / Öhlins)
+        const goldForkMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.95, roughness: 0.15 });
+        const forkL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.45, 8), goldForkMat);
+        forkL.position.set(-0.18, 0.78, -1.22); forkL.rotation.x = -0.24; bikeGroup.add(forkL);
+        const forkR = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.45, 8), goldForkMat);
+        forkR.position.set(0.18, 0.78, -1.22); forkR.rotation.x = -0.24; bikeGroup.add(forkR);
 
-        // 5. Escape Deportivo Elevado (Yoshimura / Akrapovic)
-        const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 1.2, 10), new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9 }));
-        exhaust.rotation.x = Math.PI / 2.3;
-        exhaust.rotation.z = -0.15;
-        exhaust.position.set(0.42, 0.75, 1.1);
+        // Semimanillares (Clip-ons)
+        const barL = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 6), carbonMat);
+        barL.position.set(-0.35, 1.35, -0.9); barL.rotation.z = Math.PI / 3; bikeGroup.add(barL);
+        const barR = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.35, 6), carbonMat);
+        barR.position.set(0.35, 1.35, -0.9); barR.rotation.z = -Math.PI / 3; bikeGroup.add(barR);
+
+        // 4. Depósito de Gasolina Curvado Orgánico (Sin Aristas Cuadradas)
+        const tank = new THREE.Mesh(new THREE.SphereGeometry(0.55, 18, 16), fairingMat);
+        tank.scale.set(0.72, 0.62, 1.25);
+        tank.position.set(0, 1.18, -0.15);
+        bikeGroup.add(tank);
+
+        // 5. Carenado Frontal Aerodinámico con Cúpula Transparente
+        const nose = new THREE.Mesh(new THREE.ConeGeometry(0.48, 1.8, 16), fairingMat);
+        nose.rotation.x = -Math.PI / 2;
+        nose.position.set(0, 1.15, -1.1);
+        bikeGroup.add(nose);
+
+        // Cúpula transparente de burbuja
+        const bubble = new THREE.Mesh(
+            new THREE.SphereGeometry(0.36, 16, 12, 0, Math.PI),
+            new THREE.MeshStandardMaterial({ color: 0x050d1a, roughness: 0.1, transparent: true, opacity: 0.85 })
+        );
+        bubble.rotation.x = -0.4;
+        bubble.position.set(0, 1.48, -0.75);
+        bikeGroup.add(bubble);
+
+        // Winglets aerodinámicos en Kawasaki
+        if (esKawa) {
+            const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.04, 0.28), carbonMat);
+            wingL.position.set(-0.48, 1.12, -1.0); wingL.rotation.z = -0.2; bikeGroup.add(wingL);
+            const wingR = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.04, 0.28), carbonMat);
+            wingR.position.set(0.48, 1.12, -1.0); wingR.rotation.z = 0.2; bikeGroup.add(wingR);
+        }
+
+        // 6. Colín Trasero Esculpido y Elevado (Monoplaza Moto GP)
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.36, 1.4, 16), fairingMat);
+        tail.scale.set(0.85, 0.65, 1.0);
+        tail.rotation.x = Math.PI / 2.15;
+        tail.position.set(0, 1.25, 0.95);
+        bikeGroup.add(tail);
+
+        // Luz de freno LED en el filo del colín
+        const tailLed = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.28, 8), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+        tailLed.rotation.z = Math.PI / 2;
+        tailLed.position.set(0, 1.44, 1.55);
+        bikeGroup.add(tailLed);
+
+        // 7. Escape Central Bajo el Colín (Undertail como en la Foto 1)
+        const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.75, 16), new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95, roughness: 0.2 }));
+        exhaust.rotation.x = Math.PI / 2.25;
+        exhaust.position.set(0, 1.15, 1.55);
         bikeGroup.add(exhaust);
 
+        // Boca del escape con bisel azulado por calor
+        const tipMesh = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.03, 8, 16), new THREE.MeshStandardMaterial({ color: 0x0284c7, metalness: 0.9 }));
+        tipMesh.position.set(0, 1.12, 1.95);
+        bikeGroup.add(tipMesh);
+
         const flM = new THREE.Mesh(new THREE.ConeGeometry(0.18, 1.1, 8), new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0 }));
-        flM.rotation.x = -Math.PI / 2.3;
-        flM.position.set(0.42, 0.75, 1.95);
+        flM.rotation.x = -Math.PI / 2.25;
+        flM.position.set(0, 1.12, 2.5);
         bikeGroup.add(flM);
         escapeFlames.push(flM);
 
-        // 6. Piloto en posición aerodinámica de carrera (Tucked-in)
+        // 8. Piloto Realista de Moto GP (Exacto como en la Imagen 1)
         const pilot = new THREE.Group();
-        const leathersMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(avatarConfig.colorTraje).getHex(), roughness: 0.8 });
-        
-        // Torso inclinado hacia adelante sobre el tanque
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.9), leathersMat);
-        torso.position.set(0, 1.5, 0.15);
-        torso.rotation.x = 0.45;
+        const suitColor = new THREE.Color(avatarConfig.colorTraje).getHex();
+        const leathersMat = new THREE.MeshStandardMaterial({ color: suitColor, roughness: 0.75 });
+        const accentMat = new THREE.MeshStandardMaterial({ color: esKawa ? 0x22c55e : 0xfacc15, roughness: 0.5 }); // Franjas amarillo fluorescente de competición
+
+        // Torso encorvado aerodinámico (Cilindro suave)
+        const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.85, 16), leathersMat);
+        torso.position.set(0, 1.48, 0.12);
+        torso.rotation.x = 0.48;
         pilot.add(torso);
 
-        // Casco con visor de carreras
-        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 14), leathersMat);
-        helmet.position.set(0, 1.75, -0.3);
+        // Franja de equipo en la espalda
+        const stripeBack = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.08, 0.8), accentMat);
+        stripeBack.position.set(0, 1.56, 0.12);
+        stripeBack.rotation.x = 0.48;
+        pilot.add(stripeBack);
+
+        // JOROBA AERODINÁMICA (Aero Hump de competición como en Foto 1)
+        const aeroHump = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 12), leathersMat);
+        aeroHump.rotation.x = -Math.PI / 2.3;
+        aeroHump.position.set(0, 1.72, 0.1);
+        pilot.add(aeroHump);
+
+        // Casco Integral Aerodinámico
+        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.32, 18, 18), leathersMat);
+        helmet.position.set(0, 1.78, -0.32);
         pilot.add(helmet);
 
-        const visor = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.24), new THREE.MeshBasicMaterial({ color: 0x00d2ff }));
-        visor.position.set(0, 1.75, -0.52);
+        // Visera Negra Curva Reflectante (Black Chrome Visor)
+        const visorMat = new THREE.MeshStandardMaterial({ color: 0x050d1a, roughness: 0.05, metalness: 0.95 });
+        const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.33, 0.14, 16, 1, false, 0, Math.PI * 0.7), visorMat);
+        visor.rotation.y = -Math.PI * 0.85;
+        visor.position.set(0, 1.78, -0.34);
         pilot.add(visor);
+
+        // Brazos y Codos en Posición de Conducción
+        const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.75, 10), leathersMat);
+        armL.position.set(-0.38, 1.42, -0.35); armL.rotation.x = 0.75; armL.rotation.z = -0.35; pilot.add(armL);
+        const armR = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.75, 10), leathersMat);
+        armR.position.set(0.38, 1.42, -0.35); armR.rotation.x = 0.75; armR.rotation.z = 0.35; pilot.add(armR);
+
+        // Piernas con Deslizaderas de Rodilla (Knee Sliders)
+        const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.8, 10), leathersMat);
+        legL.position.set(-0.35, 1.05, 0.45); legL.rotation.x = -0.65; legL.rotation.z = 0.25; pilot.add(legL);
+        const sliderL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.14), accentMat);
+        sliderL.position.set(-0.46, 0.95, 0.28); pilot.add(sliderL);
+
+        const legR = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.1, 0.8, 10), leathersMat);
+        legR.position.set(0.35, 1.05, 0.45); legR.rotation.x = -0.65; legR.rotation.z = -0.25; pilot.add(legR);
+        const sliderR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.14), accentMat);
+        sliderR.position.set(0.46, 0.95, 0.28); pilot.add(sliderR);
 
         bikeGroup.add(pilot);
         vehiculo3D.add(bikeGroup);
@@ -3148,16 +3372,19 @@ function animar3D() {
             fl.scale.set(1 + Math.random() * 0.3, 1 + Math.random() * 0.4, 1);
         });
 
-        // Cámara de persecución suave con distancia perfecta para ver la pista y paredes
-        const distCam = avatarConfig.vehiculo.startsWith('moto') ? 8.2 : 9.6;
-        const altoCam = avatarConfig.vehiculo.startsWith('moto') ? 4.2 : 4.8;
+        // Cámara de persecución deportiva inmersiva (Estilo Moto GP / Gran Turismo como en las fotos)
+        const esMotoCam = avatarConfig.vehiculo.startsWith('moto');
+        const distCam = esMotoCam ? 5.2 : 7.2;
+        const altoCam = esMotoCam ? 2.3 : 2.45;
+        const lookAtY = esMotoCam ? 1.38 : 1.2;
+
         const targetCamX = carState.x + Math.sin(carState.angle) * distCam;
         const targetCamZ = carState.z + Math.cos(carState.angle) * distCam;
 
-        camera3D.position.x = THREE.MathUtils.lerp(camera3D.position.x, targetCamX, 0.12);
-        camera3D.position.y = THREE.MathUtils.lerp(camera3D.position.y, altoCam, 0.12);
-        camera3D.position.z = THREE.MathUtils.lerp(camera3D.position.z, targetCamZ, 0.12);
-        camera3D.lookAt(carState.x, 1.4, carState.z);
+        camera3D.position.x = THREE.MathUtils.lerp(camera3D.position.x, targetCamX, 0.15);
+        camera3D.position.y = THREE.MathUtils.lerp(camera3D.position.y, altoCam, 0.15);
+        camera3D.position.z = THREE.MathUtils.lerp(camera3D.position.z, targetCamZ, 0.15);
+        camera3D.lookAt(carState.x, lookAtY, carState.z);
     }
 
     // 7. Colisión con Paneles Aceleradores
