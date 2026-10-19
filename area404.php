@@ -749,6 +749,24 @@ if ($pdo) {
                 </div>
             </div>
 
+            <!-- HUD: Item Box Estilo Mario Kart (Centro Superior) -->
+            <div class="game-hud" style="top: 20px; left: 50%; transform: translateX(-50%);">
+                <div id="hud_item_box" class="d-flex align-items-center justify-content-center" style="width: 66px; height: 66px; background: rgba(3, 10, 24, 0.9); border: 3px solid #ffe600; border-radius: 18px; box-shadow: 0 0 25px rgba(255, 230, 0, 0.45); font-size: 2.1rem; cursor: pointer;" onclick="usarItem3D()" title="Presiona [E] o haz clic para usar">
+                    <span id="hud_item_icon" style="filter: drop-shadow(0 0 8px rgba(255,255,255,0.8));">❓</span>
+                </div>
+                <div class="text-center mt-1" style="font-size: 0.65rem; color: #ffe600; font-weight: 800; letter-spacing: 1.5px; text-shadow: 0 0 8px #000;">
+                    [E] USAR PODER
+                </div>
+            </div>
+
+            <!-- HUD: Radar / Mini-Mapa Circular del Circuito (Esquina Superior Derecha) -->
+            <canvas id="radar3DCanvas" width="120" height="120" class="game-hud" style="top: 20px; right: 28px; background: rgba(3, 10, 24, 0.88); border: 2px solid var(--neon-blue); border-radius: 50%; box-shadow: 0 0 20px rgba(0, 210, 255, 0.4);"></canvas>
+
+            <!-- HUD: Indicador de Chispas / Mini-Turbo al Derrapar -->
+            <div id="hud_drift_indicator" class="game-hud" style="bottom: 110px; right: 30px; font-weight: 900; font-size: 1.15rem; letter-spacing: 1.5px; text-shadow: 0 0 12px currentColor; display: none;">
+                ⚡ MINI-TURBO!
+            </div>
+
             <!-- HUD: Velocímetro Digital y Marchas -->
             <div class="game-hud hud-speedometer">
                 <div class="text-secondary small fw-bold" style="font-size: 0.65rem; letter-spacing: 1.5px;">VELOCIDAD</div>
@@ -758,11 +776,12 @@ if ($pdo) {
 
             <!-- HUD: Teclas de Control -->
             <div class="game-hud hud-controls-hint text-secondary">
-                <i class="bi bi-keyboard text-info me-1"></i>
+                <i class="bi bi-controller text-info me-1"></i>
                 <kbd class="bg-dark text-white">W / ↑</kbd> Acelerar &bull; 
-                <kbd class="bg-dark text-white">S / ↓</kbd> Frenar &bull; 
-                <kbd class="bg-dark text-white">A / D</kbd> Girar &bull; 
-                <kbd class="bg-dark text-white">ESPACIO</kbd> Derrape
+                <kbd class="bg-dark text-white">S / ↓</kbd> Freno &bull; 
+                <kbd class="bg-dark text-white">A / D</kbd> Dirección &bull; 
+                <kbd class="bg-dark text-white">ESPACIO</kbd> Derrape (Chispas) &bull; 
+                <kbd class="bg-dark text-white">E</kbd> Item
             </div>
         </div>
     </div>
@@ -913,6 +932,16 @@ function sfxSalto() { reproducirTono(450, 0.15, 'square'); }
 function sfxMoneda() { reproducirTono(950, 0.12, 'sine'); setTimeout(() => reproducirTono(1300, 0.18, 'sine'), 80); }
 function sfxDerrape() { reproducirTono(140, 0.22, 'sawtooth'); }
 function sfxImpacto() { reproducirTono(90, 0.25, 'triangle'); }
+function sfxTurbo() { 
+    reproducirTono(280, 0.35, 'sawtooth'); 
+    setTimeout(() => reproducirTono(560, 0.45, 'sawtooth'), 80); 
+    setTimeout(() => reproducirTono(880, 0.5, 'sine'), 160); 
+}
+function sfxItemBox() {
+    [700, 850, 1050, 1300].forEach((freq, idx) => {
+        setTimeout(() => reproducirTono(freq, 0.1, 'sine'), idx * 50);
+    });
+}
 function sfxVictoria() {
     [523, 659, 783, 1046].forEach((f, i) => {
         setTimeout(() => reproducirTono(f, 0.2, 'triangle'), i * 140);
@@ -1202,20 +1231,36 @@ let scene3D, camera3D, renderer3D;
 let vehiculo3D = null;
 let animId3D = null;
 let ruedaDelanteraIzq, ruedaDelanteraDer;
+let escapeFlames = [];
+let itemBoxes3D = [];
+let boostPads3D = [];
+let trackPoints3D = [];
+let radarCanvas3D, radarCtx3D;
 
-// Estado Físico del Vehículo 3D
+// Estado Físico y Arcade del Vehículo 3D (Estilo Mario Kart)
 let carState = {
     x: 0,
     z: 0,
     speed: 0,
-    maxSpeed: 180, // km/h
-    accel: 0.65,
-    brake: 0.85,
+    maxSpeed: 175, // km/h
+    accel: 0.72,
+    brake: 0.90,
     friction: 0.985,
     angle: 0,
     angularVelocity: 0,
     steerAngle: 0,
+    
+    // Sistema de Derrape y Mini-Turbo (Mario Kart)
     isDrifting: false,
+    driftDirection: 0,
+    driftTimer: 0,
+    turboTimer: 0,
+    currentTurboLevel: 0, // 0: None, 1: Blue (Mini), 2: Orange (Super)
+    
+    // Items y Poderes
+    itemActual: null, // 'nitro', 'hongo', 'escudo'
+    itemTimer: 0,
+    
     lap: 1,
     maxLaps: 3,
     lapStartTime: 0,
@@ -1227,45 +1272,70 @@ let carState = {
 const keysPressed = {};
 window.addEventListener('keydown', e => {
     keysPressed[e.code] = true;
-    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','KeyE'].includes(e.code)) {
         e.preventDefault();
+    }
+    if (e.code === 'KeyE') {
+        usarItem3D();
     }
 });
 window.addEventListener('keyup', e => {
     keysPressed[e.code] = false;
+    
+    // Al soltar ESPACIO mientras derrapaba -> Disparar Mini-Turbo!
+    if (e.code === 'Space' && carState.isDrifting) {
+        soltarDerrapeTurbo();
+    }
 });
 
 function initCarrera3D() {
     const container = document.getElementById('contenedorJuego3D');
     if (!container || scene3D) return;
 
-    // 1. Escena, Niebla y Cámara
+    // Radar Canvas
+    radarCanvas3D = document.getElementById('radar3DCanvas');
+    if (radarCanvas3D) radarCtx3D = radarCanvas3D.getContext('2d');
+
+    // 1. Escena y Niebla Arcade
     scene3D = new THREE.Scene();
-    scene3D.background = new THREE.Color(avatarConfig.mundoSeleccionado === 'corporativo' ? 0x030814 : (avatarConfig.mundoSeleccionado === 'rancho' ? 0x5a8fb3 : 0x051329));
-    scene3D.fog = new THREE.FogExp2(scene3D.background, 0.007);
+    const esCorp = (avatarConfig.mundoSeleccionado === 'corporativo');
+    const esRancho = (avatarConfig.mundoSeleccionado === 'rancho');
+
+    scene3D.background = new THREE.Color(esCorp ? 0x050d1a : (esRancho ? 0x64b5f6 : 0x091e3a));
+    scene3D.fog = new THREE.FogExp2(scene3D.background, 0.0055);
 
     camera3D = new THREE.PerspectiveCamera(65, container.clientWidth / container.clientHeight, 0.1, 1000);
 
-    // 2. Renderer
-    renderer3D = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    // 2. Renderer con Sombras Suaves
+    renderer3D = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer3D.setSize(container.clientWidth, container.clientHeight);
     renderer3D.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer3D.shadowMap.enabled = true;
+    renderer3D.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer3D.domElement);
 
-    // 3. Luces
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.55);
-    scene3D.add(ambientLight);
+    // 3. Iluminación Vibrante Mario Kart
+    const hemiLight = new THREE.HemisphereLight(0xffffff, esRancho ? 0x795548 : 0x111827, 0.65);
+    scene3D.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
-    dirLight.position.set(50, 100, 50);
-    dirLight.castShadow = true;
-    scene3D.add(dirLight);
+    const sunLight = new THREE.DirectionalLight(0xfff5e6, 1.1);
+    sunLight.position.set(70, 140, 80);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 400;
+    const d = 160;
+    sunLight.shadow.camera.left = -d;
+    sunLight.shadow.camera.right = d;
+    sunLight.shadow.camera.top = d;
+    sunLight.shadow.camera.bottom = -d;
+    scene3D.add(sunLight);
 
-    // 4. Construir Pista y Decoración de Mundo
-    construirPista3D();
+    // 4. Construir Circuito Estilo Mario Kart (Pista, Pianos, Arco, Boosts, Cajas)
+    construirPista3DMarioKart();
 
-    // 5. Construir Vehículo 3D (Auto o Moto Suzuki/Kawasaki)
+    // 5. Construir Vehículo / Kart 3D
     construirVehiculo3D();
 
     // 6. Iniciar Bucle
@@ -1282,249 +1352,658 @@ function onWindowResize3D() {
     renderer3D.setSize(container.clientWidth, container.clientHeight);
 }
 
-function construirPista3D() {
+// ==============================================================
+// GENERADOR DE PISTA ESTILO MARIO KART (CURVAS, PIANOS, ITEMS)
+// ==============================================================
+function construirPista3DMarioKart() {
+    itemBoxes3D = [];
+    boostPads3D = [];
+
     const esRancho = (avatarConfig.mundoSeleccionado === 'rancho');
     const esCorp = (avatarConfig.mundoSeleccionado === 'corporativo');
 
-    // Suelo infinito
-    const groundGeo = new THREE.PlaneGeometry(800, 800);
-    const groundMat = new THREE.MeshLambertMaterial({ 
-        color: esRancho ? 0x5d4037 : (esCorp ? 0x061122 : 0x0a2216)
+    // 1. Suelo Base con Césped / Entorno
+    const groundGeo = new THREE.PlaneGeometry(900, 900);
+    const groundMat = new THREE.MeshLambertMaterial({
+        color: esRancho ? 0x689f38 : (esCorp ? 0x071326 : 0x15803d)
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene3D.add(ground);
 
-    // Circuito de Asfalto (Toroide / Curvas ovaladas)
-    const trackCurve = new THREE.EllipseCurve(0, 0, 120, 75, 0, 2 * Math.PI, false, 0);
-    const points = trackCurve.getPoints(120);
+    // 2. Trazado Curvilíneo Emocionante (Estilo Mario Kart)
+    const curvePoints = [
+        new THREE.Vector3(0, 0, -85),
+        new THREE.Vector3(80, 0, -80),
+        new THREE.Vector3(135, 0, -20),
+        new THREE.Vector3(120, 0, 60),
+        new THREE.Vector3(50, 0, 95),
+        new THREE.Vector3(-10, 0, 70),
+        new THREE.Vector3(-60, 0, 95),
+        new THREE.Vector3(-135, 0, 50),
+        new THREE.Vector3(-120, 0, -35),
+        new THREE.Vector3(-60, 0, -85)
+    ];
+    const catmull = new THREE.CatmullRomCurve3(curvePoints, true, 'centripetal');
+    trackPoints3D = catmull.getPoints(160);
 
-    // Asfalto con geometría de cinta
-    const trackWidth = 18;
-    const trackGeo = new THREE.BufferGeometry();
-    const positions = [];
+    const trackWidth = 22; // Pista ancha estilo Mario Kart
+    const roadPositions = [];
+    const kerbLeftPositions = [];
+    const kerbRightPositions = [];
+    const roadIndices = [];
+    const kerbIndices = [];
 
-    for (let i = 0; i < points.length; i++) {
-        const p1 = points[i];
-        const p2 = points[(i + 1) % points.length];
+    for (let i = 0; i < trackPoints3D.length; i++) {
+        const p1 = trackPoints3D[i];
+        const p2 = trackPoints3D[(i + 1) % trackPoints3D.length];
         const dx = p2.x - p1.x;
-        const dz = p2.y - p1.y;
+        const dz = p2.z - p1.z;
         const len = Math.hypot(dx, dz);
-        const nx = (-dz / len) * (trackWidth / 2);
-        const nz = (dx / len) * (trackWidth / 2);
+        const nx = (-dz / len);
+        const nz = (dx / len);
 
-        positions.push(p1.x + nx, 0.05, p1.y + nz);
-        positions.push(p1.x - nx, 0.05, p1.y - nz);
+        const leftEdge = new THREE.Vector3(p1.x + nx * (trackWidth / 2), 0.08, p1.z + nz * (trackWidth / 2));
+        const rightEdge = new THREE.Vector3(p1.x - nx * (trackWidth / 2), 0.08, p1.z - nz * (trackWidth / 2));
+
+        roadPositions.push(leftEdge.x, leftEdge.y, leftEdge.z);
+        roadPositions.push(rightEdge.x, rightEdge.y, rightEdge.z);
+
+        // Pianos exteriores a rayas (Kerbs)
+        const kerbWidth = 2.4;
+        const klOuter = new THREE.Vector3(p1.x + nx * (trackWidth / 2 + kerbWidth), 0.14, p1.z + nz * (trackWidth / 2 + kerbWidth));
+        const krOuter = new THREE.Vector3(p1.x - nx * (trackWidth / 2 + kerbWidth), 0.14, p1.z - nz * (trackWidth / 2 + kerbWidth));
+
+        kerbLeftPositions.push(leftEdge.x, 0.12, leftEdge.z);
+        kerbLeftPositions.push(klOuter.x, 0.14, klOuter.z);
+
+        kerbRightPositions.push(rightEdge.x, 0.12, rightEdge.z);
+        kerbRightPositions.push(krOuter.x, 0.14, krOuter.z);
     }
 
-    const indices = [];
-    for (let i = 0; i < points.length; i++) {
+    for (let i = 0; i < trackPoints3D.length; i++) {
         const i0 = i * 2;
         const i1 = i0 + 1;
-        const i2 = ((i + 1) % points.length) * 2;
+        const i2 = ((i + 1) % trackPoints3D.length) * 2;
         const i3 = i2 + 1;
-        indices.push(i0, i1, i2);
-        indices.push(i1, i3, i2);
+
+        roadIndices.push(i0, i1, i2);
+        roadIndices.push(i1, i3, i2);
+
+        kerbIndices.push(i0, i1, i2);
+        kerbIndices.push(i1, i3, i2);
     }
-    trackGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    trackGeo.setIndex(indices);
-    trackGeo.computeVertexNormals();
 
-    const trackColor = esRancho ? 0x795548 : (esCorp ? 0x111827 : 0x1f2937);
-    const trackMat = new THREE.MeshStandardMaterial({ color: trackColor, roughness: 0.85 });
-    const trackMesh = new THREE.Mesh(trackGeo, trackMat);
-    trackMesh.receiveShadow = true;
-    scene3D.add(trackMesh);
+    // Geometría Asfalto
+    const roadGeo = new THREE.BufferGeometry();
+    roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPositions, 3));
+    roadGeo.setIndex(roadIndices);
+    roadGeo.computeVertexNormals();
 
-    // Meta (Línea de cuadros blancos y negros)
-    const finishGeo = new THREE.PlaneGeometry(trackWidth, 4);
-    const finishMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const finishLine = new THREE.Mesh(finishGeo, finishMat);
-    finishLine.rotation.x = -Math.PI / 2;
-    finishLine.position.set(0, 0.08, -75);
-    scene3D.add(finishLine);
+    const roadColor = esRancho ? 0x8d6e63 : (esCorp ? 0x111827 : 0x1e293b);
+    const roadMat = new THREE.MeshStandardMaterial({ color: roadColor, roughness: 0.8, metalness: 0.1 });
+    const roadMesh = new THREE.Mesh(roadGeo, roadMat);
+    roadMesh.receiveShadow = true;
+    scene3D.add(roadMesh);
 
-    // Vallas Publicitarias y Edificios del Mundo
-    for (let i = 0; i < points.length; i += 8) {
-        const pt = points[i];
-        const dist = Math.hypot(pt.x, pt.y);
-        const bannerPos = { x: pt.x * 1.18, z: pt.y * 1.18 };
+    // Pianos Rojos y Blancos (Bordillos Rayados Mario Kart)
+    const kerbGeoL = new THREE.BufferGeometry();
+    kerbGeoL.setAttribute('position', new THREE.Float32BufferAttribute(kerbLeftPositions, 3));
+    kerbGeoL.setIndex(kerbIndices);
+    kerbGeoL.computeVertexNormals();
+
+    const kerbGeoR = new THREE.BufferGeometry();
+    kerbGeoR.setAttribute('position', new THREE.Float32BufferAttribute(kerbRightPositions, 3));
+    kerbGeoR.setIndex(kerbIndices);
+    kerbGeoR.computeVertexNormals();
+
+    // Textura generada por código para pianos bicolores
+    const canvasKerb = document.createElement('canvas');
+    canvasKerb.width = 64; canvasKerb.height = 16;
+    const ctxK = canvasKerb.getContext('2d');
+    ctxK.fillStyle = '#e11d48'; ctxK.fillRect(0, 0, 32, 16);
+    ctxK.fillStyle = '#ffffff'; ctxK.fillRect(32, 0, 32, 16);
+    const texKerb = new THREE.CanvasTexture(canvasKerb);
+    texKerb.wrapS = THREE.RepeatWrapping;
+    texKerb.wrapT = THREE.RepeatWrapping;
+    texKerb.repeat.set(35, 1);
+
+    const kerbMat = new THREE.MeshLambertMaterial({ map: texKerb });
+    const meshKL = new THREE.Mesh(kerbGeoL, kerbMat);
+    const meshKR = new THREE.Mesh(kerbGeoR, kerbMat);
+    scene3D.add(meshKL);
+    scene3D.add(meshKR);
+
+    // 3. Arco Monumental de Meta Mario Kart (Grand Prix Grupo Huerta)
+    construirArcoMeta(new THREE.Vector3(0, 0, -85));
+
+    // 4. Paneles Aceleradores Neón (Boost Pads Mario Kart)
+    const boostIndices = [25, 70, 115];
+    boostIndices.forEach(idx => {
+        const pt = trackPoints3D[idx];
+        const nextPt = trackPoints3D[(idx + 1) % trackPoints3D.length];
+        const padGroup = new THREE.Group();
+
+        // Placa en suelo
+        const padGeo = new THREE.PlaneGeometry(16, 6);
+        const padMat = new THREE.MeshBasicMaterial({ 
+            color: 0x00ffff, 
+            wireframe: false,
+            transparent: true,
+            opacity: 0.95
+        });
+        const padMesh = new THREE.Mesh(padGeo, padMat);
+        padMesh.rotation.x = -Math.PI / 2;
+        padMesh.position.y = 0.12;
+        padGroup.add(padMesh);
+
+        // Flechas chevron animadas
+        for (let a = -4; a <= 4; a += 4) {
+            const arrGeo = new THREE.ConeGeometry(1.6, 3, 3);
+            const arrMat = new THREE.MeshBasicMaterial({ color: 0xffe600 });
+            const arr = new THREE.Mesh(arrGeo, arrMat);
+            arr.rotation.x = Math.PI / 2;
+            arr.position.set(a, 0.18, 0);
+            padGroup.add(arr);
+        }
+
+        padGroup.position.set(pt.x, 0, pt.z);
+        padGroup.lookAt(nextPt.x, 0, nextPt.z);
+        scene3D.add(padGroup);
+        boostPads3D.push({ x: pt.x, z: pt.z, radius: 9, mesh: padGroup });
+    });
+
+    // 5. Cajas de Objetos Flotantes (Floating Mystery Item Boxes)
+    const itemIndices = [15, 50, 90, 135];
+    itemIndices.forEach(idx => {
+        const pt = trackPoints3D[idx];
+        for (let lane = -6; lane <= 6; lane += 6) {
+            const boxGroup = new THREE.Group();
+
+            // Cubo dorado semitransparente
+            const boxGeo = new THREE.BoxGeometry(2.4, 2.4, 2.4);
+            const boxMat = new THREE.MeshStandardMaterial({
+                color: 0xffe600,
+                emissive: 0xffaa00,
+                emissiveIntensity: 0.65,
+                transparent: true,
+                opacity: 0.85,
+                roughness: 0.1,
+                metalness: 0.8
+            });
+            const cube = new THREE.Mesh(boxGeo, boxMat);
+            boxGroup.add(cube);
+
+            // Borde neón
+            const wireGeo = new THREE.EdgesGeometry(boxGeo);
+            const wireMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+            const wire = new THREE.LineSegments(wireGeo, wireMat);
+            boxGroup.add(wire);
+
+            boxGroup.position.set(pt.x + (lane * 0.8), 2.2, pt.z);
+            scene3D.add(boxGroup);
+
+            itemBoxes3D.push({
+                group: boxGroup,
+                x: pt.x + (lane * 0.8),
+                z: pt.z,
+                activo: true,
+                respawnTimer: 0
+            });
+        }
+    });
+
+    // 6. Elementos Escénicos según Mundo
+    for (let i = 0; i < trackPoints3D.length; i += 6) {
+        const pt = trackPoints3D[i];
+        const bannerPos = { x: pt.x * 1.25, z: pt.z * 1.25 };
 
         if (esCorp) {
             // Rascacielos iluminados
-            const h = 40 + Math.random() * 80;
-            const bGeo = new THREE.BoxGeometry(16, h, 16);
-            const bMat = new THREE.MeshStandardMaterial({ 
-                color: 0x0d213d, 
-                emissive: (i % 16 === 0 ? 0x00d2ff : 0x0a192e), 
-                emissiveIntensity: 0.4 
+            const h = 45 + Math.random() * 85;
+            const bGeo = new THREE.BoxGeometry(18, h, 18);
+            const bMat = new THREE.MeshStandardMaterial({
+                color: 0x0a1c38,
+                emissive: (i % 12 === 0 ? 0x00d2ff : 0x020817),
+                emissiveIntensity: 0.5
             });
-            const building = new THREE.Mesh(bGeo, bMat);
-            building.position.set(bannerPos.x * 1.3, h / 2, bannerPos.z * 1.3);
-            scene3D.add(building);
+            const bld = new THREE.Mesh(bGeo, bMat);
+            bld.position.set(bannerPos.x * 1.35, h / 2, bannerPos.z * 1.35);
+            scene3D.add(bld);
         } else if (esRancho) {
-            // Pacas de heno y árboles campestres
-            const hayGeo = new THREE.CylinderGeometry(3, 3, 4, 12);
-            const hayMat = new THREE.MeshLambertMaterial({ color: 0xd4a373 });
-            const hay = new THREE.Mesh(hayGeo, hayMat);
-            hay.position.set(bannerPos.x, 2, bannerPos.z);
-            scene3D.add(hay);
+            // Molinos de viento y árboles campestres
+            if (i % 18 === 0) {
+                construirMolinoViento(bannerPos.x, bannerPos.z);
+            } else {
+                construirArbolCartoon(bannerPos.x, bannerPos.z);
+            }
         } else {
-            // Vallas de Agencias Grupo Huerta / Suzuki / Divol
-            const vallaGeo = new THREE.BoxGeometry(10, 3, 0.8);
-            const vallaMat = new THREE.MeshLambertMaterial({ 
-                color: (i % 16 === 0 ? 0x2563eb : (i % 24 === 0 ? 0x22c55e : 0x0284c7)) 
-            });
-            const valla = new THREE.Mesh(vallaGeo, vallaMat);
-            valla.position.set(bannerPos.x, 1.5, bannerPos.z);
-            valla.lookAt(0, 1.5, 0);
-            scene3D.add(valla);
+            // Farolas y vallas de Agencias Grupo Huerta / Suzuki / Divol
+            if (i % 12 === 0) {
+                construirFarolaNeón(bannerPos.x, bannerPos.z);
+            } else {
+                construirVallaSponsor(bannerPos.x, bannerPos.z, i);
+            }
         }
     }
 }
 
+function construirArcoMeta(pos) {
+    const archGroup = new THREE.Group();
+
+    // Columnas metálicas trusses
+    const colGeo = new THREE.BoxGeometry(2, 14, 2);
+    const colMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+    const colL = new THREE.Mesh(colGeo, colMat); colL.position.set(-14, 7, 0); archGroup.add(colL);
+    const colR = new THREE.Mesh(colGeo, colMat); colR.position.set(14, 7, 0); archGroup.add(colR);
+
+    // Viga superior
+    const beamGeo = new THREE.BoxGeometry(30, 3.5, 3);
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x00d2ff, emissive: 0x0077b6, emissiveIntensity: 0.5 });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, 13, 0);
+    archGroup.add(beam);
+
+    // Letrero 3D "🏁 GRUPO HUERTA GP"
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 512; signCanvas.height = 128;
+    const ctxS = signCanvas.getContext('2d');
+    ctxS.fillStyle = '#030a16'; ctxS.fillRect(0, 0, 512, 128);
+    ctxS.strokeStyle = '#00d2ff'; ctxS.lineWidth = 6; ctxS.strokeRect(4, 4, 504, 120);
+    ctxS.fillStyle = '#ffffff'; ctxS.font = 'bold 36px sans-serif'; ctxS.textAlign = 'center';
+    ctxS.fillText('🏁 GRUPO HUERTA GRAND PRIX 🏁', 256, 75);
+    const signTex = new THREE.CanvasTexture(signCanvas);
+
+    const signGeo = new THREE.PlaneGeometry(24, 5);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide });
+    const signMesh = new THREE.Mesh(signGeo, signMat);
+    signMesh.position.set(0, 13, 1.6);
+    archGroup.add(signMesh);
+
+    archGroup.position.copy(pos);
+    scene3D.add(archGroup);
+}
+
+function construirArbolCartoon(x, z) {
+    const tree = new THREE.Group();
+    const trunkGeo = new THREE.CylinderGeometry(0.8, 1.2, 4, 8);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 2;
+    tree.add(trunk);
+
+    const leavesGeo = new THREE.DodecahedronGeometry(3.5, 1);
+    const leavesMat = new THREE.MeshLambertMaterial({ color: 0x22c55e });
+    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+    leaves.position.y = 5.5;
+    tree.add(leaves);
+
+    tree.position.set(x, 0, z);
+    scene3D.add(tree);
+}
+
+function construirFarolaNeón(x, z) {
+    const poleGeo = new THREE.CylinderGeometry(0.2, 0.3, 10, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(x, 5, z);
+    scene3D.add(pole);
+
+    const lightMesh = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00d2ff }));
+    lightMesh.position.set(x, 10, z);
+    scene3D.add(lightMesh);
+}
+
+function construirMolinoViento(x, z) {
+    const mill = new THREE.Group();
+    const baseGeo = new THREE.CylinderGeometry(2, 4, 12, 8);
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 6;
+    mill.add(base);
+
+    const bladeGeo = new THREE.BoxGeometry(0.6, 12, 0.2);
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const b1 = new THREE.Mesh(bladeGeo, bladeMat); b1.position.y = 11; mill.add(b1);
+    const b2 = new THREE.Mesh(bladeGeo, bladeMat); b2.position.y = 11; b2.rotation.z = Math.PI / 2; mill.add(b2);
+
+    mill.position.set(x, 0, z);
+    scene3D.add(mill);
+}
+
+function construirVallaSponsor(x, z, i) {
+    const vallaGeo = new THREE.BoxGeometry(10, 3.2, 0.8);
+    const color = (i % 16 === 0 ? 0x2563eb : (i % 24 === 0 ? 0x22c55e : 0x0284c7));
+    const vallaMat = new THREE.MeshLambertMaterial({ color: color });
+    const valla = new THREE.Mesh(vallaGeo, vallaMat);
+    valla.position.set(x, 1.6, z);
+    valla.lookAt(0, 1.6, 0);
+    scene3D.add(valla);
+}
+
+// ==============================================================
+// CONSTRUCTOR DE VEHÍCULO 3D DETALLADO ESTILO MARIO KART
+// ==============================================================
 function construirVehiculo3D() {
     if (vehiculo3D) scene3D.remove(vehiculo3D);
 
     vehiculo3D = new THREE.Group();
+    escapeFlames = [];
+
     const esMoto = (avatarConfig.vehiculo.startsWith('moto'));
     const esKawa = (avatarConfig.vehiculo === 'moto_kawasaki');
     const colorPrimario = esMoto ? (esKawa ? 0x22c55e : 0x2563eb) : new THREE.Color(avatarConfig.colorTraje).getHex();
 
     if (!esMoto) {
         // ==========================================
-        // AUTO DEPORTIVO GT
+        // RACING KART ESTILO MARIO KART
         // ==========================================
-        // Carrocería principal
-        const bodyGeo = new THREE.BoxGeometry(2.2, 0.7, 4.4);
+        // Chasis principal de kart
+        const bodyGeo = new THREE.BoxGeometry(2.4, 0.75, 4.2);
         const bodyMat = new THREE.MeshStandardMaterial({ color: colorPrimario, metalness: 0.7, roughness: 0.25 });
         const carBody = new THREE.Mesh(bodyGeo, bodyMat);
-        carBody.position.y = 0.65;
+        carBody.position.y = 0.7;
         carBody.castShadow = true;
         vehiculo3D.add(carBody);
 
-        // Cabina con parabrisas polarizado
-        const cabinGeo = new THREE.BoxGeometry(1.6, 0.6, 2.2);
-        const cabinMat = new THREE.MeshStandardMaterial({ color: 0x081326, metalness: 0.9, roughness: 0.1 });
-        const cabin = new THREE.Mesh(cabinGeo, cabinMat);
-        cabin.position.set(0, 1.25, -0.2);
-        vehiculo3D.add(cabin);
+        // Morro redondeado con emblema
+        const noseGeo = new THREE.CylinderGeometry(0.9, 1.2, 1.2, 16);
+        noseGeo.rotateX(Math.PI / 2);
+        const nose = new THREE.Mesh(noseGeo, bodyMat);
+        nose.position.set(0, 0.65, -2.1);
+        vehiculo3D.add(nose);
 
-        // Alerón trasero
-        const wingGeo = new THREE.BoxGeometry(2.1, 0.1, 0.5);
-        const wingMat = new THREE.MeshStandardMaterial({ color: 0x0f172a });
+        // Asiento deportivo bucket
+        const seatGeo = new THREE.BoxGeometry(1.4, 1.4, 0.8);
+        const seatMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
+        const seat = new THREE.Mesh(seatGeo, seatMat);
+        seat.position.set(0, 1.2, 0.3);
+        vehiculo3D.add(seat);
+
+        // Volante de carreras
+        const wheelGeo = new THREE.TorusGeometry(0.35, 0.08, 8, 16);
+        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+        const steeringWheel = new THREE.Mesh(wheelGeo, wheelMat);
+        steeringWheel.rotation.x = Math.PI / 4;
+        steeringWheel.position.set(0, 1.15, -0.6);
+        vehiculo3D.add(steeringWheel);
+
+        // Alerón trasero elevado estilo kart GP
+        const wingPillarGeo = new THREE.BoxGeometry(0.2, 1.0, 0.4);
+        const pL = new THREE.Mesh(wingPillarGeo, seatMat); pL.position.set(-0.9, 1.3, 1.8); vehiculo3D.add(pL);
+        const pR = new THREE.Mesh(wingPillarGeo, seatMat); pR.position.set(0.9, 1.3, 1.8); vehiculo3D.add(pR);
+
+        const wingGeo = new THREE.BoxGeometry(2.8, 0.15, 0.9);
+        const wingMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.6 });
         const wing = new THREE.Mesh(wingGeo, wingMat);
-        wing.position.set(0, 1.25, 2.0);
+        wing.position.set(0, 1.8, 1.8);
         vehiculo3D.add(wing);
 
-        // Faros delanteros
-        const headGeo = new THREE.BoxGeometry(0.4, 0.15, 0.1);
-        const headMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
-        const hl = new THREE.Mesh(headGeo, headMat); hl.position.set(-0.75, 0.65, -2.2); vehiculo3D.add(hl);
-        const hr = new THREE.Mesh(headGeo, headMat); hr.position.set(0.75, 0.65, -2.2); vehiculo3D.add(hr);
+        // Tubos de escape dobles cromados
+        const exhGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 12);
+        exhGeo.rotateX(Math.PI / 2);
+        const exhMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.1 });
+        const exL = new THREE.Mesh(exhGeo, exhMat); exL.position.set(-0.6, 0.65, 2.3); vehiculo3D.add(exL);
+        const exR = new THREE.Mesh(exhGeo, exhMat); exR.position.set(0.6, 0.65, 2.3); vehiculo3D.add(exR);
 
-        // Ruedas (Cilindros rotados)
-        const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 16);
-        const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
-        wheelGeo.rotateZ(Math.PI / 2);
+        // Llamaradas animadas en escapes (Efecto Nitro Mario Kart)
+        const flameGeo = new THREE.ConeGeometry(0.25, 1.2, 8);
+        flameGeo.rotateX(-Math.PI / 2);
+        const flameMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0 });
+        const flL = new THREE.Mesh(flameGeo, flameMat); flL.position.set(-0.6, 0.65, 3.1); vehiculo3D.add(flL);
+        const flR = new THREE.Mesh(flameGeo, flameMat); flR.position.set(0.6, 0.65, 3.1); vehiculo3D.add(flR);
+        escapeFlames.push(flL, flR);
 
-        ruedaDelanteraIzq = new THREE.Mesh(wheelGeo, wheelMat); ruedaDelanteraIzq.position.set(-1.15, 0.38, -1.4); vehiculo3D.add(ruedaDelanteraIzq);
-        ruedaDelanteraDer = new THREE.Mesh(wheelGeo, wheelMat); ruedaDelanteraDer.position.set(1.15, 0.38, -1.4); vehiculo3D.add(ruedaDelanteraDer);
-        const rti = new THREE.Mesh(wheelGeo, wheelMat); rti.position.set(-1.15, 0.38, 1.4); vehiculo3D.add(rti);
-        const rtd = new THREE.Mesh(wheelGeo, wheelMat); rtd.position.set(1.15, 0.38, 1.4); vehiculo3D.add(rtd);
+        // Ruedas anchas con rines cromados
+        const rTireGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.45, 18);
+        rTireGeo.rotateZ(Math.PI / 2);
+        const tireMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
+
+        ruedaDelanteraIzq = new THREE.Mesh(rTireGeo, tireMat); ruedaDelanteraIzq.position.set(-1.35, 0.48, -1.3); vehiculo3D.add(ruedaDelanteraIzq);
+        ruedaDelanteraDer = new THREE.Mesh(rTireGeo, tireMat); ruedaDelanteraDer.position.set(1.35, 0.48, -1.3); vehiculo3D.add(ruedaDelanteraDer);
+        const rti = new THREE.Mesh(rTireGeo, tireMat); rti.position.set(-1.35, 0.48, 1.4); vehiculo3D.add(rti);
+        const rtd = new THREE.Mesh(rTireGeo, tireMat); rtd.position.set(1.35, 0.48, 1.4); vehiculo3D.add(rtd);
+
+        // Piloto 3D detallado con casco
+        const driver = new THREE.Group();
+        const headGeo = new THREE.SphereGeometry(0.42, 14, 14);
+        const headMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(avatarConfig.colorTraje).getHex() });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.set(0, 1.7, 0.2);
+        driver.add(head);
+
+        // Visor de carreras
+        const visorGeo = new THREE.BoxGeometry(0.45, 0.18, 0.3);
+        const visorMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+        const visor = new THREE.Mesh(visorGeo, visorMat);
+        visor.position.set(0, 1.7, -0.15);
+        driver.add(visor);
+
+        vehiculo3D.add(driver);
     } else {
         // ==========================================
-        // MOTO DE PISTA (SUZUKI / KAWASAKI)
+        // MOTO RACING SUPERBIKE (SUZUKI / KAWASAKI)
         // ==========================================
-        // Carenado aerodinámico
-        const fairingGeo = new THREE.BoxGeometry(0.8, 1.0, 2.8);
-        const fairingMat = new THREE.MeshStandardMaterial({ color: colorPrimario, metalness: 0.65, roughness: 0.3 });
-        const fairing = new THREE.Mesh(fairingGeo, fairingMat);
-        fairing.position.y = 0.9;
-        vehiculo3D.add(fairing);
+        const bikeBody = new THREE.Group();
 
-        // Parabrisas burbuja
-        const windGeo = new THREE.BoxGeometry(0.6, 0.4, 0.8);
-        const windMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
-        const wind = new THREE.Mesh(windGeo, windMat);
-        wind.position.set(0, 1.4, -0.6);
-        vehiculo3D.add(wind);
+        // Carenado aerodinámico frontal
+        const noseGeo = new THREE.ConeGeometry(0.6, 2.2, 8);
+        noseGeo.rotateX(-Math.PI / 2);
+        const cowlMat = new THREE.MeshStandardMaterial({ color: colorPrimario, metalness: 0.8, roughness: 0.2 });
+        const nose = new THREE.Mesh(noseGeo, cowlMat);
+        nose.position.set(0, 1.1, -1.1);
+        bikeBody.add(nose);
 
-        // Piloto inclinado en moto
-        const riderGeo = new THREE.SphereGeometry(0.35, 12, 12);
-        const riderMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(avatarConfig.colorTraje).getHex() });
-        const rider = new THREE.Mesh(riderGeo, riderMat);
-        rider.position.set(0, 1.6, 0.1);
-        vehiculo3D.add(rider);
+        // Depósito y colín
+        const tankGeo = new THREE.BoxGeometry(0.7, 0.8, 2.2);
+        const tank = new THREE.Mesh(tankGeo, cowlMat);
+        tank.position.set(0, 1.05, 0.1);
+        bikeBody.add(tank);
 
-        // Ruedas Delantera y Trasera
-        const mWheelGeo = new THREE.CylinderGeometry(0.44, 0.44, 0.25, 16);
-        const mWheelMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
+        // Parabrisas burbuja ahumado
+        const screenGeo = new THREE.BoxGeometry(0.5, 0.45, 0.8);
+        const screenMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+        const screen = new THREE.Mesh(screenGeo, screenMat);
+        screen.position.set(0, 1.5, -0.6);
+        bikeBody.add(screen);
+
+        // Tubo de escape Akrapovic con llamaradas
+        const exhMGeo = new THREE.CylinderGeometry(0.16, 0.22, 1.4, 12);
+        exhMGeo.rotateX(Math.PI / 2);
+        const exhMMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.9 });
+        const exhM = new THREE.Mesh(exhMGeo, exhMMat);
+        exhM.position.set(0.45, 0.7, 1.1);
+        bikeBody.add(exhM);
+
+        const flM = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.0, 8), new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0 }));
+        flM.rotation.x = -Math.PI / 2;
+        flM.position.set(0.45, 0.7, 2.0);
+        bikeBody.add(flM);
+        escapeFlames.push(flM);
+
+        // Ruedas delantera y trasera
+        const mWheelGeo = new THREE.CylinderGeometry(0.52, 0.52, 0.28, 18);
         mWheelGeo.rotateZ(Math.PI / 2);
+        const mWheelMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.9 });
 
         ruedaDelanteraIzq = new THREE.Mesh(mWheelGeo, mWheelMat);
-        ruedaDelanteraIzq.position.set(0, 0.44, -1.3);
-        vehiculo3D.add(ruedaDelanteraIzq);
+        ruedaDelanteraIzq.position.set(0, 0.52, -1.4);
+        bikeBody.add(ruedaDelanteraIzq);
         ruedaDelanteraDer = ruedaDelanteraIzq;
 
         const rearW = new THREE.Mesh(mWheelGeo, mWheelMat);
-        rearW.position.set(0, 0.44, 1.3);
-        vehiculo3D.add(rearW);
+        rearW.position.set(0, 0.52, 1.3);
+        bikeBody.add(rearW);
+
+        // Piloto agachado con rodilla afuera
+        const rider = new THREE.Group();
+        const rHead = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 12), new THREE.MeshStandardMaterial({ color: new THREE.Color(avatarConfig.colorTraje).getHex() }));
+        rHead.position.set(0, 1.65, -0.1);
+        rider.add(rHead);
+
+        bikeBody.add(rider);
+        vehiculo3D.add(bikeBody);
     }
 
-    // Posicionar en línea de salida
-    vehiculo3D.position.set(0, 0, -70);
+    // Posición inicial en parrilla de salida
+    vehiculo3D.position.set(0, 0, -80);
     scene3D.add(vehiculo3D);
 
     carState.x = 0;
-    carState.z = -70;
+    carState.z = -80;
     carState.speed = 0;
     carState.angle = 0;
+    carState.turboTimer = 0;
+    carState.itemActual = null;
+    actualizarHUDItem();
 }
 
+// ==============================================================
+// MECÁNICA DE DERRAPE CON CHISPAS Y MINI-TURBO MARIO KART
+// ==============================================================
+function soltarDerrapeTurbo() {
+    const indicator = document.getElementById('hud_drift_indicator');
+    if (indicator) indicator.style.display = 'none';
+
+    if (carState.currentTurboLevel === 2) {
+        // Super Mini-Turbo (Naranja / Fuego)
+        carState.turboTimer = 90; // 1.5 segs
+        carState.speed = Math.min(carState.speed + 60, 240);
+        sfxTurbo();
+    } else if (carState.currentTurboLevel === 1) {
+        // Mini-Turbo (Azul)
+        carState.turboTimer = 50; // 0.8 segs
+        carState.speed = Math.min(carState.speed + 35, 215);
+        sfxTurbo();
+    }
+
+    carState.isDrifting = false;
+    carState.driftTimer = 0;
+    carState.currentTurboLevel = 0;
+}
+
+// ==============================================================
+// SISTEMA DE ITEMS (RULETA Y ACTIVACIÓN [E])
+// ==============================================================
+function agarrarCajaMisteriosa() {
+    sfxItemBox();
+    const itemsPosibles = ['nitro', 'hongo', 'escudo'];
+    const itemElegido = itemsPosibles[Math.floor(Math.random() * itemsPosibles.length)];
+    carState.itemActual = itemElegido;
+    actualizarHUDItem();
+}
+
+function usarItem3D() {
+    if (!carState.itemActual) return;
+
+    if (carState.itemActual === 'nitro') {
+        carState.turboTimer = 140;
+        carState.speed = 240;
+        sfxTurbo();
+    } else if (carState.itemActual === 'hongo') {
+        carState.turboTimer = 90;
+        carState.speed = 220;
+        sfxTurbo();
+    } else if (carState.itemActual === 'escudo') {
+        carState.itemTimer = 180;
+        sfxVictoria();
+    }
+
+    carState.itemActual = null;
+    actualizarHUDItem();
+}
+
+function actualizarHUDItem() {
+    const icon = document.getElementById('hud_item_icon');
+    const box = document.getElementById('hud_item_box');
+    if (!icon || !box) return;
+
+    const iconos = { nitro: '🚀', hongo: '🍄', escudo: '⚡' };
+    if (carState.itemActual) {
+        icon.textContent = iconos[carState.itemActual] || '❓';
+        box.style.borderColor = '#00d2ff';
+        box.style.boxShadow = '0 0 30px rgba(0, 210, 255, 0.7)';
+    } else {
+        icon.textContent = '❓';
+        box.style.borderColor = '#ffe600';
+        box.style.boxShadow = '0 0 20px rgba(255, 230, 0, 0.45)';
+    }
+}
+
+// ==============================================================
+// BUCLE DE ANIMACIÓN Y RENDERIZADO 3D (60 FPS)
+// ==============================================================
 function animar3D() {
     animId3D = requestAnimationFrame(animar3D);
 
-    // Controles y Física
     const adelante = (keysPressed['KeyW'] || keysPressed['ArrowUp']);
     const atras = (keysPressed['KeyS'] || keysPressed['ArrowDown']);
     const izquierda = (keysPressed['KeyA'] || keysPressed['ArrowLeft']);
     const derecha = (keysPressed['KeyD'] || keysPressed['ArrowRight']);
-    const derrape = keysPressed['Space'];
+    const barraEspacio = keysPressed['Space'];
 
+    // 1. Manejo del Turbo
+    if (carState.turboTimer > 0) {
+        carState.turboTimer--;
+        carState.speed = Math.max(carState.speed, 210);
+        camera3D.fov = THREE.MathUtils.lerp(camera3D.fov, 80, 0.15); // Zoom dinámico de velocidad
+    } else {
+        camera3D.fov = THREE.MathUtils.lerp(camera3D.fov, 65, 0.1);
+    }
+    camera3D.updateProjectionMatrix();
+
+    // 2. Aceleración y Fricción
     if (adelante) {
-        carState.speed += carState.accel;
+        carState.speed += (carState.turboTimer > 0 ? carState.accel * 1.6 : carState.accel);
     } else if (atras) {
         carState.speed -= carState.brake;
     } else {
         carState.speed *= carState.friction;
     }
 
-    // Límite de velocidad
-    if (carState.speed > carState.maxSpeed) carState.speed = carState.maxSpeed;
+    const maxKmh = (carState.turboTimer > 0) ? 245 : carState.maxSpeed;
+    if (carState.speed > maxKmh) carState.speed = maxKmh;
     if (carState.speed < -40) carState.speed = -40;
 
-    // Giro (Mayor maniobrabilidad a velocidad media)
+    // 3. Sistema de Derrape Mario Kart
+    if (barraEspacio && Math.abs(carState.speed) > 40 && (izquierda || derecha)) {
+        carState.isDrifting = true;
+        carState.driftTimer++;
+
+        const indicator = document.getElementById('hud_drift_indicator');
+        if (indicator) {
+            indicator.style.display = 'block';
+            if (carState.driftTimer > 90) {
+                // Nivel 2: Super Mini-Turbo (Naranja)
+                carState.currentTurboLevel = 2;
+                indicator.style.color = '#ff6b00';
+                indicator.innerHTML = '🔥 SUPER MINI-TURBO!';
+            } else if (carState.driftTimer > 40) {
+                // Nivel 1: Mini-Turbo (Azul)
+                carState.currentTurboLevel = 1;
+                indicator.style.color = '#00d2ff';
+                indicator.innerHTML = '⚡ MINI-TURBO!';
+            }
+        }
+        sfxDerrape();
+    }
+
+    // 4. Dirección y Giro
     const factorGiro = Math.min(Math.abs(carState.speed) / 60, 1.0);
-    const anguloGiro = (derrape ? 0.055 : 0.038) * (carState.speed >= 0 ? 1 : -1);
+    const anguloGiro = (carState.isDrifting ? 0.055 : 0.038) * (carState.speed >= 0 ? 1 : -1);
 
     if (izquierda) {
         carState.angle += anguloGiro * factorGiro;
-        carState.steerAngle = -0.3;
+        carState.steerAngle = -0.35;
     } else if (derecha) {
         carState.angle -= anguloGiro * factorGiro;
-        carState.steerAngle = 0.3;
+        carState.steerAngle = 0.35;
     } else {
         carState.steerAngle = 0;
     }
 
-    // Efecto de Derrape
-    if (derrape && Math.abs(carState.speed) > 50) {
-        sfxDerrape();
-    }
-
-    // Avanzar según ángulo
+    // 5. Mover Vehículo
     const velMs = (carState.speed / 3.6) * 0.016;
     carState.x -= Math.sin(carState.angle) * velMs * 50;
     carState.z -= Math.cos(carState.angle) * velMs * 50;
@@ -1534,33 +2013,72 @@ function animar3D() {
         vehiculo3D.position.z = carState.z;
         vehiculo3D.rotation.y = carState.angle;
 
-        // Inclinación al girar para motos
+        // Inclinación realista en motos
         if (avatarConfig.vehiculo.startsWith('moto')) {
-            const lean = (izquierda ? 0.35 : (derecha ? -0.35 : 0)) * (Math.abs(carState.speed) / 120);
-            vehiculo3D.rotation.z = THREE.MathUtils.lerp(vehiculo3D.rotation.z, lean, 0.1);
+            const lean = (izquierda ? 0.45 : (derecha ? -0.45 : 0)) * (Math.abs(carState.speed) / 120);
+            vehiculo3D.rotation.z = THREE.MathUtils.lerp(vehiculo3D.rotation.z, lean, 0.12);
         }
 
-        // Giro visual de ruedas
+        // Ruedas y Llamaradas de Nitro
         if (ruedaDelanteraIzq) ruedaDelanteraIzq.rotation.y = carState.steerAngle;
         if (ruedaDelanteraDer && ruedaDelanteraDer !== ruedaDelanteraIzq) ruedaDelanteraDer.rotation.y = carState.steerAngle;
 
-        // Cámara de persecución suave detrás del vehículo
-        const distCam = avatarConfig.vehiculo.startsWith('moto') ? 7 : 8.5;
-        const altoCam = avatarConfig.vehiculo.startsWith('moto') ? 3.5 : 4.0;
+        // Animar fuego de escape al acelerar o turbo
+        const opFuego = (carState.turboTimer > 0) ? 0.95 : (adelante && carState.speed > 80 ? 0.45 : 0);
+        escapeFlames.forEach(fl => {
+            fl.material.opacity = opFuego;
+            fl.scale.set(1 + Math.random() * 0.3, 1 + Math.random() * 0.4, 1);
+        });
+
+        // Cámara de persecución dinámica
+        const distCam = avatarConfig.vehiculo.startsWith('moto') ? 7.2 : 8.8;
+        const altoCam = avatarConfig.vehiculo.startsWith('moto') ? 3.6 : 4.2;
         const targetCamX = carState.x + Math.sin(carState.angle) * distCam;
         const targetCamZ = carState.z + Math.cos(carState.angle) * distCam;
 
-        camera3D.position.x = THREE.MathUtils.lerp(camera3D.position.x, targetCamX, 0.1);
-        camera3D.position.y = THREE.MathUtils.lerp(camera3D.position.y, altoCam, 0.1);
-        camera3D.position.z = THREE.MathUtils.lerp(camera3D.position.z, targetCamZ, 0.1);
-        camera3D.lookAt(carState.x, 1.2, carState.z);
+        camera3D.position.x = THREE.MathUtils.lerp(camera3D.position.x, targetCamX, 0.12);
+        camera3D.position.y = THREE.MathUtils.lerp(camera3D.position.y, altoCam, 0.12);
+        camera3D.position.z = THREE.MathUtils.lerp(camera3D.position.z, targetCamZ, 0.12);
+        camera3D.lookAt(carState.x, 1.3, carState.z);
     }
 
-    // Chequeo de Vueltas y Meta
-    const distMeta = Math.hypot(carState.x, carState.z - (-75));
+    // 6. Colisión con Paneles Aceleradores (Boost Pads)
+    for (const pad of boostPads3D) {
+        if (Math.hypot(carState.x - pad.x, carState.z - pad.z) < pad.radius) {
+            if (carState.turboTimer <= 10) {
+                carState.turboTimer = 70;
+                carState.speed = 230;
+                sfxTurbo();
+            }
+        }
+    }
+
+    // 7. Colisión y Animación de Cajas de Objetos (Item Boxes)
+    for (const box of itemBoxes3D) {
+        if (box.activo) {
+            box.group.rotation.y += 0.04;
+            box.group.position.y = 2.2 + Math.sin(performance.now() * 0.005) * 0.3;
+
+            if (Math.hypot(carState.x - box.x, carState.z - box.z) < 3.2) {
+                box.activo = false;
+                box.group.visible = false;
+                box.respawnTimer = 250; // Reaparece en ~4 segundos
+                agarrarCajaMisteriosa();
+            }
+        } else {
+            box.respawnTimer--;
+            if (box.respawnTimer <= 0) {
+                box.activo = true;
+                box.group.visible = true;
+            }
+        }
+    }
+
+    // 8. Chequeo de Vueltas y Meta
+    const distMeta = Math.hypot(carState.x, carState.z - (-80));
     if (carState.z > 60) carState.checkpointPassed = true;
 
-    if (distMeta < 14 && carState.checkpointPassed) {
+    if (distMeta < 16 && carState.checkpointPassed) {
         carState.checkpointPassed = false;
         const lapTime = (performance.now() - carState.lapStartTime);
         carState.lapStartTime = performance.now();
@@ -1575,21 +2093,56 @@ function animar3D() {
         sfxVictoria();
 
         if (carState.lap > carState.maxLaps) {
-            // Completó las 3 vueltas -> Desbloquear Corporativo
             desbloquearMundo('corporativo');
             carState.lap = 1;
         }
         document.getElementById('hud_lap_count').textContent = carState.lap + ' / ' + carState.maxLaps;
     }
 
-    // Actualizar HUD
+    // 9. Actualizar HUD
     const kmh = Math.max(0, Math.round(Math.abs(carState.speed)));
     document.getElementById('hud_speed').textContent = kmh;
+    document.getElementById('hud_lap_time').textContent = formatearTiempo(performance.now() - carState.lapStartTime);
 
-    const lapActualMs = performance.now() - carState.lapStartTime;
-    document.getElementById('hud_lap_time').textContent = formatearTiempo(lapActualMs);
+    // 10. Actualizar Mini-Mapa Radar
+    renderizarRadar3D();
 
     renderer3D.render(scene3D, camera3D);
+}
+
+// Mini-Mapa Circular Radar
+function renderizarRadar3D() {
+    if (!radarCtx3D || trackPoints3D.length === 0) return;
+    const ctx = radarCtx3D;
+    ctx.clearRect(0, 0, 120, 120);
+
+    const centerX = 60;
+    const centerY = 60;
+    const scale = 0.38;
+
+    // Trazado de la pista en el radar
+    ctx.strokeStyle = 'rgba(0, 210, 255, 0.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    trackPoints3D.forEach((pt, idx) => {
+        const rx = centerX + pt.x * scale;
+        const ry = centerY + pt.z * scale;
+        if (idx === 0) ctx.moveTo(rx, ry);
+        else ctx.lineTo(rx, ry);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // Punto del Jugador
+    const px = centerX + carState.x * scale;
+    const py = centerY + carState.z * scale;
+    ctx.fillStyle = '#ffe600';
+    ctx.beginPath();
+    ctx.arc(px, py, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 }
 
 function formatearTiempo(ms) {
