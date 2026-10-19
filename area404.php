@@ -1371,6 +1371,8 @@ let carState = {
     angularVelocity: 0,
     steerAngle: 0,
     spinTimer: 0,
+    spinDuration: 0,
+    spinBaseAngle: 0,
     hitObstacleTimer: 0,
     apLentoTimer: 0,
     apMeshOverCar: null,
@@ -1475,6 +1477,8 @@ function initCarrera3D() {
     carState.angle = -Math.PI / 2;
     carState.steerAngle = 0;
     carState.spinTimer = 0;
+    carState.spinDuration = 0;
+    carState.spinBaseAngle = 0;
     carState.hitObstacleTimer = 0;
     carState.apLentoTimer = 0;
     if (carState.apMeshOverCar) carState.apMeshOverCar.visible = false;
@@ -3023,10 +3027,14 @@ function animar3D() {
         if (carState.itemTimer === 0) actualizarHUDItem();
     }
 
+    let spinVisualOffset = 0;
     if (carState.spinTimer > 0) {
         carState.spinTimer--;
-        carState.angle += 0.32; // Trompo descontrolado por atasco de impresora
-        carState.speed *= 0.93;
+        // Gira exactamente 3 vueltas completas (3 * 2 * PI = 6 * PI) mientras sigue avanzando hacia adelante
+        const dur = carState.spinDuration || 48;
+        const progress = 1 - (carState.spinTimer / dur);
+        spinVisualOffset = progress * Math.PI * 2 * 3;
+        carState.angle = carState.spinBaseAngle; // Mantiene el rumbo hacia el frente
         carState.steerAngle = 0;
     } else {
         const factorGiro = Math.min(Math.abs(carState.speed) / 38, 1.0);
@@ -3123,7 +3131,7 @@ function animar3D() {
     if (vehiculo3D) {
         vehiculo3D.position.x = carState.x;
         vehiculo3D.position.z = carState.z;
-        vehiculo3D.rotation.y = carState.angle;
+        vehiculo3D.rotation.y = carState.angle + spinVisualOffset;
 
         if (avatarConfig.vehiculo.startsWith('moto')) {
             const lean = (izquierda ? 0.44 : (derecha ? -0.44 : 0)) * (Math.abs(carState.speed) / 75);
@@ -3211,9 +3219,17 @@ function animar3D() {
                 sfxVictoria();
                 mostrarBannerHUD('🛡️ ¡ESCUDO TI ABSORBIÓ EL OBSTÁCULO!', '#00ff88');
             } else if (obs.tipo === 'impresora') {
-                carState.spinTimer = 35; // 35 frames de trompo
-                carState.speed *= 0.35;
+                carState.spinDuration = 48; // ~0.8 segundos para dar exactamente 3 vueltas completas de 360°
+                carState.spinTimer = 48;
+                carState.spinBaseAngle = carState.angle;
+                // Mantiene velocidad de rodaje hacia adelante para que no se quede ahí parada y continúe
+                carState.speed = Math.max(carState.speed * 0.70, 50);
                 sfxImpacto();
+
+                // Ocultar temporalmente la impresora para que el auto pase a través de ella limpiamente
+                obs.group.visible = false;
+                obs.respawnTimer = 220;
+
                 if (obs.msgTipo === 'hojas') {
                     mostrarBannerHUD('📄 ¡SOLO FALTARON HOJAS JAJA!', '#facc15');
                 } else {
@@ -3494,6 +3510,8 @@ function reiniciarCarrera3D() {
     carState.driftTimer = 0;
     carState.isDrifting = false;
     carState.spinTimer = 0;
+    carState.spinDuration = 0;
+    carState.spinBaseAngle = 0;
     carState.hitObstacleTimer = 0;
     carState.apLentoTimer = 0;
     if (carState.apMeshOverCar) carState.apMeshOverCar.visible = false;
