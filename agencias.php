@@ -948,11 +948,65 @@ include 'config_agencias.php';
             box-shadow: 0 0 0 0.25rem rgba(56, 189, 248, 0.25);
         }
 
-        /* Estilos del Mapa de Agencias */
+        /* Estilos del Mapa de Agencias en Pantalla Completa */
+        #modalMapaAgencias.modal {
+            padding: 0 !important;
+        }
+        #modalMapaAgencias .modal-dialog {
+            margin: 0 !important;
+            max-width: 100vw !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            min-height: 100vh !important;
+        }
+        #modalMapaAgencias .modal-content {
+            height: 100vh !important;
+            min-height: 100vh !important;
+            border-radius: 0 !important;
+            border: none !important;
+            display: flex !important;
+            flex-direction: column !important;
+            background: #06152b !important;
+        }
+        #modalMapaAgencias .modal-header {
+            flex-shrink: 0 !important;
+            border-radius: 0 !important;
+        }
+        #modalMapaAgencias .modal-body {
+            flex: 1 1 auto !important;
+            height: calc(100vh - 68px) !important;
+            max-height: calc(100vh - 68px) !important;
+            overflow: hidden !important;
+            display: flex !important;
+            padding: 0 !important;
+        }
         #mapaAgencias {
-            height: 600px;
-            width: 100%;
+            height: 100% !important;
+            width: 100% !important;
+            min-height: 100% !important;
             background: #e5e3df;
+        }
+        .map-sidebar-col {
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow: hidden !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        @media (max-width: 991.98px) {
+            #modalMapaAgencias .modal-body {
+                flex-direction: column !important;
+                overflow-y: auto !important;
+                height: calc(100vh - 68px) !important;
+            }
+            #mapaAgencias {
+                height: 55vh !important;
+                min-height: 350px !important;
+            }
+            .map-sidebar-col {
+                height: 45vh !important;
+                min-height: 300px !important;
+            }
         }
         .leaflet-bar a {
             background-color: #09192e !important;
@@ -1346,12 +1400,12 @@ include 'config_agencias.php';
 <!-- MODAL: MAPA DE UBICACIÓN DE AGENCIAS GRUPO HUERTA  -->
 <!-- =================================================== -->
 <div class="modal fade" id="modalMapaAgencias" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-centered">
-        <div class="modal-content border-0 shadow-2xl overflow-hidden" style="background: #06152b; border: 1px solid rgba(56, 189, 248, 0.3) !important;">
+    <div class="modal-dialog modal-fullscreen m-0">
+        <div class="modal-content border-0 rounded-0 shadow-none overflow-hidden" style="background: #06152b;">
             
             <div class="modal-header px-4 py-3" style="background: rgba(4, 13, 26, 0.95); border-bottom: 1px solid rgba(56, 189, 248, 0.2);">
                 <div class="d-flex align-items-center gap-3">
-                    <div class="d-flex align-items-center justify-content-center rounded-circle" style="width: 42px; height: 42px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8;">
+                    <div class="d-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style="width: 42px; height: 42px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #38bdf8;">
                         <i class="bi bi-geo-alt-fill fs-5"></i>
                     </div>
                     <div>
@@ -1365,21 +1419,23 @@ include 'config_agencias.php';
 
                 <div class="d-flex align-items-center gap-2">
                     <button type="button" class="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1" onclick="sincronizarTodasUbicaciones(false)" id="btn_modal_sync_all" title="Consultar las ubicaciones registradas en los portales de todas las agencias">
-                        <i class="bi bi-arrow-repeat"></i> <span>Sincronizar cPanels</span>
+                        <i class="bi bi-arrow-repeat"></i> <span class="d-none d-md-inline">Sincronizar cPanels</span>
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1" onclick="centrarMapaEnTodas()" title="Ajustar zoom para ver todas las agencias">
-                        <i class="bi bi-arrows-fullscreen"></i> Ver Todas
+                    <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3 py-1 d-flex align-items-center gap-1" onclick="centrarMapaEnTodas()" title="Ajustar zoom para ver todas las agencias">
+                        <i class="bi bi-arrows-fullscreen"></i> <span class="d-none d-md-inline">Ver Todas</span>
                     </button>
-                    <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn btn-sm btn-outline-danger rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1 ms-2" data-bs-dismiss="modal" title="Cerrar pantalla completa">
+                        <i class="bi bi-x-lg"></i> <span>Cerrar</span>
+                    </button>
                 </div>
             </div>
 
-            <div class="modal-body p-0">
-                <div class="row g-0">
+            <div class="modal-body p-0 flex-grow-1 overflow-hidden d-flex">
+                <div class="row g-0 w-100 h-100 flex-grow-1">
                     
-                    <!-- Lado Izquierdo: Mapa Interactivo Leaflet -->
-                    <div class="col-lg-8 position-relative">
-                        <div id="mapaAgencias"></div>
+                    <!-- Lado Izquierdo: Mapa Interactivo Leaflet en Pantalla Completa -->
+                    <div class="col-lg-8 col-xl-9 position-relative h-100 d-flex flex-column">
+                        <div id="mapaAgencias" class="w-100 h-100 flex-grow-1"></div>
                         
                         <!-- Barra de Estilos de Mapa Flotante -->
                         <div class="position-absolute top-0 end-0 m-3 d-flex flex-column gap-2" style="z-index: 1000;">
@@ -1398,10 +1454,10 @@ include 'config_agencias.php';
                     </div>
 
                     <!-- Lado Derecho: Lista de Agencias y Datos de Ubicación -->
-                    <div class="col-lg-4 d-flex flex-column" style="height: 600px; background: rgba(4, 14, 29, 0.98); border-left: 1px solid rgba(255, 255, 255, 0.08);">
+                    <div class="col-lg-4 col-xl-3 d-flex flex-column h-100 map-sidebar-col" style="background: rgba(4, 14, 29, 0.98); border-left: 1px solid rgba(255, 255, 255, 0.08);">
                         
                         <!-- Buscador de Agencia -->
-                        <div class="p-3 border-bottom border-secondary border-opacity-25">
+                        <div class="p-3 border-bottom border-secondary border-opacity-25 flex-shrink-0">
                             <div class="input-group input-group-sm">
                                 <span class="input-group-text bg-dark border-secondary border-opacity-50 text-secondary"><i class="bi bi-search"></i></span>
                                 <input type="text" id="filtroAgenciasMapa" class="form-control bg-dark border-secondary border-opacity-50 text-white" placeholder="Buscar agencia por nombre o dirección..." oninput="filtrarListaMapa(this.value)">
@@ -1414,7 +1470,7 @@ include 'config_agencias.php';
                         </div>
 
                         <!-- Pie del Panel Lateral -->
-                        <div class="p-3 border-top border-secondary border-opacity-25 small text-secondary d-flex justify-content-between align-items-center">
+                        <div class="p-3 border-top border-secondary border-opacity-25 small text-secondary d-flex justify-content-between align-items-center flex-shrink-0">
                             <span><i class="bi bi-info-circle me-1 text-info"></i> Clic en una agencia para ubicarla.</span>
                             <span class="text-light fw-bold" id="mapa_conteo_gps">0 con GPS</span>
                         </div>
@@ -1612,9 +1668,19 @@ function abrirModalMapaAgencias(centrarEnId = null) {
         setTimeout(() => {
             mapaInstancia.invalidateSize();
             cargarUbicacionesAgencias(window._agenciaAEnfocar);
-        }, 200);
+        }, 150);
+        setTimeout(() => {
+            mapaInstancia.invalidateSize();
+        }, 400);
     }
 }
+
+// Asegurar que el mapa en pantalla completa redibuje perfectamente en cambios de tamaño de pantalla
+window.addEventListener('resize', () => {
+    if (mapaInstancia) {
+        mapaInstancia.invalidateSize();
+    }
+});
 
 function initMapaAgencias() {
     if (mapaInstancia) {
