@@ -2789,22 +2789,6 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                 <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-30 font-monospace" style="font-size: 0.68rem;"><?php echo count($agentesTickets); ?></span>
             </button>
             <?php endif; ?>
-
-            <div class="sidebar-group-title mt-3">NAVEGACIÓN SISTEMA</div>
-            <a href="menu.php" class="sidebar-btn text-secondary">
-                <i class="bi bi-arrow-left-circle"></i>
-                <span>Menú Principal</span>
-            </a>
-            <a href="agencias.php" class="sidebar-btn text-secondary">
-                <i class="bi bi-buildings"></i>
-                <span>cPanels / Agencias</span>
-            </a>
-            <?php if (tienePermiso('usuarios', 'puede_ver')): ?>
-                <a href="usuarios.php" class="sidebar-btn text-secondary">
-                    <i class="bi bi-people"></i>
-                    <span>Usuarios</span>
-                </a>
-            <?php endif; ?>
         </div>
 
         <!-- Footer del Perfil en el Sidebar -->
@@ -2829,25 +2813,32 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
     <!-- CONTENIDO DE LA APLICACIÓN -->
     <div class="app-content">
         <!-- Navbar Superior -->
-        <div class="top-navbar d-flex justify-content-between align-items-center">
-            <div class="d-flex align-items-center gap-3">
-                <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 me-1 border-opacity-40" onclick="toggleSidebar()" title="Ocultar / Mostrar Menú Lateral">
-                    <i class="bi bi-layout-sidebar-inset me-1"></i> <span class="d-none d-md-inline">Menú</span>
+        <div class="top-navbar d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2 gap-md-3">
+                <button type="button" class="btn btn-outline-secondary btn-sm text-white rounded-3 px-2.5 py-1.5" onclick="toggleSidebar()" title="Ocultar / Mostrar Menú Lateral" style="border-color: rgba(255,255,255,0.18);">
+                    <i class="bi bi-layout-sidebar-inset"></i> <span class="d-none d-md-inline ms-1">Menú</span>
                 </button>
-                <div class="d-flex align-items-center gap-2">
-                    <span class="fw-bold tracking-wide" id="topNavTituloSeccion">
-                        <i class="bi bi-ticket-detailed-fill text-info me-1"></i> Tickets de Soporte
+                <a href="menu.php" class="btn btn-outline-light btn-sm rounded-3 px-3 py-1.5 d-flex align-items-center gap-2" title="Volver al Menú Principal">
+                    <i class="bi bi-arrow-left"></i> <span>Menú Principal</span>
+                </a>
+                <div class="d-flex align-items-center gap-2 border-start border-secondary ps-3 ms-1">
+                    <i class="bi bi-ticket-detailed-fill text-info fs-5"></i>
+                    <span class="fw-bold tracking-wide text-white" id="topNavTituloSeccion">
+                        Módulo Tickets <span class="text-secondary fw-normal d-none d-md-inline">| Soporte Dirección Sistemas</span>
                     </span>
-                    <span class="agent-badge ms-2 d-none d-sm-inline-flex"><i class="bi bi-person-badge-fill"></i> PANEL DE AGENTE TI</span>
+                    <span class="agent-badge ms-2 d-none d-lg-inline-flex"><i class="bi bi-person-badge-fill"></i> PANEL DE AGENTE TI</span>
                 </div>
             </div>
             <div class="d-flex align-items-center gap-3">
+                <?php include_once __DIR__ . '/componente_notificaciones.php'; ?>
                 <div class="text-end d-none d-md-block">
-                    <div class="small fw-semibold"><?php echo htmlspecialchars($nombreUsuario); ?></div>
-                    <div class="text-secondary" style="font-size: 0.75rem;"><?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolActual); ?></span></div>
+                    <div class="small fw-semibold text-white"><?php echo htmlspecialchars($nombreUsuario); ?></div>
+                    <div class="text-secondary" style="font-size: 0.75rem;">
+                        <?php echo htmlspecialchars($agenciaUsuario); ?> &bull; <span class="badge bg-primary text-uppercase"><?php echo htmlspecialchars($rolActual); ?></span>
+                    </div>
                 </div>
                 <a href="logout.php" class="btn btn-outline-danger btn-sm rounded-3 px-3">
-                    <i class="bi bi-box-arrow-right me-1"></i> Salir
+                    <i class="bi bi-box-arrow-right me-1"></i> Cerrar sesión
                 </a>
             </div>
         </div>
