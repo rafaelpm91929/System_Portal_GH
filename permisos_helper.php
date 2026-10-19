@@ -113,25 +113,25 @@ function asegurarTablasPermisos($pdo) {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN telefono VARCHAR(50) NULL");
         } catch (Throwable $eTel) {}
 
-        // Migración transparente si existía 'agencias'
+        // Desactivar módulos obsoletos que ya no forman parte del portal
         try {
-            $pdo->exec("UPDATE modulos SET clave = 'agencia', nombre = 'Datos de la Agencia', icono = 'bi-building' WHERE clave = 'agencias'");
-            $pdo->exec("UPDATE usuario_permisos SET modulo_clave = 'agencia' WHERE modulo_clave = 'agencias'");
+            $pdo->exec("UPDATE modulos SET estatus = 0 WHERE clave IN ('equipos', 'infraestructura', 'directorio', 'ordenes_servicio', 'celulares', 'licencias')");
+        } catch (Throwable $tObs) {}
+
+        // Sincronización y unificación de la clave oficial 'agencias'
+        try {
+            $pdo->exec("UPDATE modulos SET clave = 'agencias' WHERE clave = 'agencia'");
+            $pdo->exec("UPDATE usuario_permisos SET modulo_clave = 'agencias' WHERE modulo_clave = 'agencia'");
         } catch (Throwable $tMig) {}
 
-        // 4. Sembrado Inicial de Módulos (Catálogo completo de módulos del portal)
+        // 4. Catálogo oficial y vigente de módulos del portal Grupo Huerta (6 módulos reales)
         $modulosBase = [
-            ['agencia',          'Datos de la Agencia',                'Ficha oficial de la sucursal, datos de la agencia y encargado de sistemas', 'bi-building',               1, 1],
-            ['usuarios',         'Gestión de Usuarios',                'Administración de usuarios, roles y permisos del portal',                   'bi-people-fill',          2, 1],
-            ['equipos',          'Inventario de Equipos',              'Control de PCs, laptops, servidores e impresoras',                          'bi-display',              3, 1],
-            ['infraestructura',   'Infraestructura (SITE / IDF)',       'Control de racks, switches y cableado estructurado',                        'bi-hdd-rack',             4, 1],
-            ['politicas',        'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado',     'bi-file-earmark-lock2-fill', 5, 1],
-            ['compliance',       'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales',          'bi-journal-check',        6, 1],
-            ['tickets',          'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'bi-ticket-detailed-fill', 7, 1],
-            ['directorio',       'Directorio',                         'Directorio oficial de colaboradores, correos y extensiones',                'bi-telephone-inbound-fill', 8, 1],
-            ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 9, 1],
-            ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              10, 1],
-            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                11, 1]
+            ['usuarios',   'Gestión de Usuarios',                'Administración de cuentas, roles y permisos de acceso al portal',                'bi-people-fill',              1, 1],
+            ['agencias',   'Agencias',                           'Catálogo de sucursales Grupo Huerta, bases de datos cPanel y encargados TI',     'bi-buildings-fill',           2, 1],
+            ['tickets',    'Tickets Soporte Dirección Sistemas', 'Recepción y seguimiento de tickets para las áreas de Sistemas',                  'bi-ticket-detailed-fill',     3, 1],
+            ['politicas',  'Políticas Corporativas',             'Políticas institucionales, reglamentos y normativas en visor blindado',          'bi-file-earmark-lock2-fill',  4, 1],
+            ['compliance', 'Compliance',                         'Formatos oficiales, manuales operativos y avisos institucionales',               'bi-journal-check',            5, 1],
+            ['area404',    'Área 404 (Gaming & Recreación)',     'Zona recreativa Grupo Huerta: Carreras 3D Gran Premio GH y Super Taller Run 2D', 'bi-controller',               6, 1]
         ];
 
         foreach ($modulosBase as $m) {
@@ -165,17 +165,12 @@ function obtenerCatalogoModulos($pdo = null) {
         } catch (Throwable $e) {}
     }
     return [
-        ['clave' => 'agencia',          'nombre' => 'Datos de la Agencia',                'descripcion' => 'Ficha oficial de la sucursal, datos de la agencia y encargado de sistemas', 'icono' => 'bi-building',               'orden' => 1, 'estatus' => 1],
-        ['clave' => 'usuarios',         'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de usuarios, roles y permisos del portal',                   'icono' => 'bi-people-fill',          'orden' => 2, 'estatus' => 1],
-        ['clave' => 'equipos',          'nombre' => 'Inventario de Equipos',              'descripcion' => 'Control de PCs, laptops, servidores e impresoras',                          'icono' => 'bi-display',              'orden' => 3, 'estatus' => 1],
-        ['clave' => 'infraestructura',   'nombre' => 'Infraestructura (SITE / IDF)',       'descripcion' => 'Control de racks, switches y cableado estructurado',                        'icono' => 'bi-hdd-rack',             'orden' => 4, 'estatus' => 1],
-        ['clave' => 'politicas',        'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado',     'icono' => 'bi-file-earmark-lock2-fill', 'orden' => 5, 'estatus' => 1],
-        ['clave' => 'compliance',       'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales',          'icono' => 'bi-journal-check',        'orden' => 6, 'estatus' => 1],
-        ['clave' => 'tickets',          'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas',            'icono' => 'bi-ticket-detailed-fill', 'orden' => 7, 'estatus' => 1],
-        ['clave' => 'directorio',       'nombre' => 'Directorio',                         'descripcion' => 'Directorio oficial de colaboradores, correos y extensiones',                'icono' => 'bi-telephone-inbound-fill', 'orden' => 8, 'estatus' => 1],
-        ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 9, 'estatus' => 1],
-        ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 10, 'estatus' => 1],
-        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 11, 'estatus' => 1]
+        ['clave' => 'usuarios',   'nombre' => 'Gestión de Usuarios',                'descripcion' => 'Administración de cuentas, roles y permisos de acceso al portal',                'icono' => 'bi-people-fill',              'orden' => 1, 'estatus' => 1],
+        ['clave' => 'agencias',   'nombre' => 'Agencias',                           'descripcion' => 'Catálogo de sucursales Grupo Huerta, bases de datos cPanel y encargados TI',     'icono' => 'bi-buildings-fill',           'orden' => 2, 'estatus' => 1],
+        ['clave' => 'tickets',    'nombre' => 'Tickets Soporte Dirección Sistemas', 'descripcion' => 'Recepción y seguimiento de tickets para las áreas de Sistemas',                  'icono' => 'bi-ticket-detailed-fill',     'orden' => 3, 'estatus' => 1],
+        ['clave' => 'politicas',  'nombre' => 'Políticas Corporativas',             'descripcion' => 'Políticas institucionales, reglamentos y normativas en visor blindado',          'icono' => 'bi-file-earmark-lock2-fill',  'orden' => 4, 'estatus' => 1],
+        ['clave' => 'compliance', 'nombre' => 'Compliance',                         'descripcion' => 'Formatos oficiales, manuales operativos y avisos institucionales',               'icono' => 'bi-journal-check',            'orden' => 5, 'estatus' => 1],
+        ['clave' => 'area404',    'nombre' => 'Área 404 (Gaming & Recreación)',     'descripcion' => 'Zona recreativa Grupo Huerta: Carreras 3D Gran Premio GH y Super Taller Run 2D', 'icono' => 'bi-controller',               'orden' => 6, 'estatus' => 1]
     ];
 }
 

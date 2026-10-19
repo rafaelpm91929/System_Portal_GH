@@ -24,8 +24,7 @@ $puedeVerUsuarios = tienePermiso('usuarios', 'puede_ver');
 $puedeVerAgencias = tienePermiso('agencias', 'puede_ver');
 $puedeVerTickets  = tienePermiso('tickets', 'puede_ver');
 $puedeVerPoliticas = tienePermiso('politicas', 'puede_ver');
-$puedeVerCompliance = tienePermiso('compliance', 'puede_ver');
-$puedeVerArea404 = true; // Zona Gaming y Recreación oficial Grupo Huerta
+$puedeVerArea404 = tienePermiso('area404', 'puede_ver'); // Control granular por rol / usuario
 
 $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0) + ($puedeVerPoliticas ? 1 : 0) + ($puedeVerCompliance ? 1 : 0) + ($puedeVerArea404 ? 1 : 0);
 ?>

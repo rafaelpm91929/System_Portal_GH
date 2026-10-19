@@ -206,6 +206,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $pVer = 1; $pCrear = 1; $pEditar = 1; $pEliminar = 1; $pExportar = 1;
                         } else {
                             $tieneAcceso = in_array($mClave, $modulosPermitidos);
+                            if (!$tieneAcceso && $mClave === 'agencias' && in_array('agencia', $modulosPermitidos)) $tieneAcceso = true;
+                            if (!$tieneAcceso && $mClave === 'agencia' && in_array('agencias', $modulosPermitidos)) $tieneAcceso = true;
                             $pVer = $tieneAcceso ? 1 : 0;
                             $pCrear = $tieneAcceso ? 1 : 0;
                             $pEditar = $tieneAcceso ? 1 : 0;
@@ -213,6 +215,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $pExportar = $tieneAcceso ? 1 : 0;
                         }
                         $stmtSave->execute([$targetUserId, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                        if ($mClave === 'agencias') {
+                            $stmtSave->execute([$targetUserId, 'agencia', $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                        }
                     }
 
                     // Procesar foto de perfil si se subió en el formulario modal
@@ -285,6 +290,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $pExportar = isset($permisos_posted[$mClave]['puede_exportar']) ? 1 : 0;
 
                         $stmtSave->execute([$target_user_id, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                        if ($mClave === 'agencias') {
+                            $stmtSave->execute([$target_user_id, 'agencia', $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
+                        }
                     }
 
                     $mensaje = "Matriz de permisos granulares actualizada correctamente.";
@@ -1169,6 +1177,7 @@ $areasCatalogoSistemas = [
                                 <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3 py-1" onclick="aplicarPresetModulos('tickets')"><i class="bi bi-ticket-detailed-fill me-1"></i> Solo Tickets</button>
                                 <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 py-1" onclick="aplicarPresetModulos('agencias')"><i class="bi bi-buildings-fill me-1"></i> Solo Agencias</button>
                                 <button type="button" class="btn btn-outline-warning btn-sm rounded-pill px-3 py-1" onclick="aplicarPresetModulos('soporte')"><i class="bi bi-headset me-1"></i> Tickets + Agencias</button>
+                                <button type="button" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1" style="color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);" onclick="aplicarPresetModulos('area404')"><i class="bi bi-controller me-1"></i> Solo Área 404</button>
                             </div>
                         </div>
 
@@ -1524,7 +1533,13 @@ $areasCatalogoSistemas = [
         } else {
             let modsActivos = [];
             modulosCatGlobal.forEach(m => {
-                if (uPerms[m.clave] && parseInt(uPerms[m.clave].puede_ver) === 1) {
+                let tieneVer = (uPerms[m.clave] && parseInt(uPerms[m.clave].puede_ver) === 1);
+                if (!tieneVer && m.clave === 'agencias' && uPerms['agencia']) {
+                    tieneVer = (parseInt(uPerms['agencia'].puede_ver) === 1);
+                } else if (!tieneVer && m.clave === 'agencia' && uPerms['agencias']) {
+                    tieneVer = (parseInt(uPerms['agencias'].puede_ver) === 1);
+                }
+                if (tieneVer) {
                     modsActivos.push(m);
                 }
             });
@@ -1605,7 +1620,7 @@ $areasCatalogoSistemas = [
         const tbodyPerms = document.getElementById('ficha_tabla_permisos_body');
         let rowsPermsHtml = '';
         modulosCatGlobal.forEach(m => {
-            const p = uPerms[m.clave] || {};
+            const p = uPerms[m.clave] || (m.clave === 'agencias' ? (uPerms['agencia'] || {}) : (m.clave === 'agencia' ? (uPerms['agencias'] || {}) : {}));
             const isSA = (rolLower === 'superadmin');
             const checkIcon = '<i class="bi bi-check-circle-fill text-success fs-5"></i>';
             const crossIcon = '<i class="bi bi-dash-circle text-secondary opacity-25 fs-5"></i>';
@@ -1735,9 +1750,11 @@ $areasCatalogoSistemas = [
             } else if (preset === 'tickets') {
                 cb.checked = (clave === 'tickets');
             } else if (preset === 'agencias') {
-                cb.checked = (clave === 'agencias');
+                cb.checked = (clave === 'agencias' || clave === 'agencia');
             } else if (preset === 'soporte') {
-                cb.checked = (clave === 'tickets' || clave === 'agencias');
+                cb.checked = (clave === 'tickets' || clave === 'agencias' || clave === 'agencia');
+            } else if (preset === 'area404') {
+                cb.checked = (clave === 'area404');
             }
             actualizarCardStyle(clave);
         });
@@ -1812,7 +1829,12 @@ $areasCatalogoSistemas = [
             const uPerms = permisosMapGlobal[u.id] || {};
             checkboxes.forEach(cb => {
                 const clave = cb.value;
-                const tieneAcceso = (uPerms[clave] && parseInt(uPerms[clave].puede_ver) === 1);
+                let tieneAcceso = (uPerms[clave] && parseInt(uPerms[clave].puede_ver) === 1);
+                if (!tieneAcceso && clave === 'agencias' && uPerms['agencia']) {
+                    tieneAcceso = (parseInt(uPerms['agencia'].puede_ver) === 1);
+                } else if (!tieneAcceso && clave === 'agencia' && uPerms['agencias']) {
+                    tieneAcceso = (parseInt(uPerms['agencias'].puede_ver) === 1);
+                }
                 cb.checked = Boolean(tieneAcceso);
                 actualizarCardStyle(clave);
             });
@@ -1858,11 +1880,13 @@ $areasCatalogoSistemas = [
             const uPerms = permisosMapGlobal[u.id] || {};
             for (const moduloClave in uPerms) {
                 const pm = uPerms[moduloClave];
-                if (pm.puede_ver == 1) marcarCheck(moduloClave, 'perm-ver');
-                if (pm.puede_crear == 1) marcarCheck(moduloClave, 'perm-crear');
-                if (pm.puede_editar == 1) marcarCheck(moduloClave, 'perm-editar');
-                if (pm.puede_eliminar == 1) marcarCheck(moduloClave, 'perm-eliminar');
-                if (pm.puede_exportar == 1) marcarCheck(moduloClave, 'perm-exportar');
+                let targetKey = moduloClave;
+                if (moduloClave === 'agencia') targetKey = 'agencias';
+                if (pm.puede_ver == 1) marcarCheck(targetKey, 'perm-ver');
+                if (pm.puede_crear == 1) marcarCheck(targetKey, 'perm-crear');
+                if (pm.puede_editar == 1) marcarCheck(targetKey, 'perm-editar');
+                if (pm.puede_eliminar == 1) marcarCheck(targetKey, 'perm-eliminar');
+                if (pm.puede_exportar == 1) marcarCheck(targetKey, 'perm-exportar');
             }
         }
 

@@ -14,6 +14,7 @@ require_once 'permisos_helper.php';
 if ($pdo && isset($_SESSION['usuario_id'])) {
     cargarPermisosSesion($pdo, $_SESSION['usuario_id']);
 }
+requerirPermiso('area404', 'puede_ver');
 
 // Datos de Identidad Oficial (No editables por el usuario)
 $usuarioId      = $_SESSION['usuario_id'];
