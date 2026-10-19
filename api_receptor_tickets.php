@@ -7,6 +7,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
+require_once __DIR__ . '/notificaciones_tickets_helper.php';
 include_once __DIR__ . '/config_agencias.php';
 
 date_default_timezone_set('America/Mexico_City');
@@ -224,6 +225,11 @@ if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion' || 
             $stmtUpdAct->execute([$fechaMsg, $targetId]);
         }
 
+        // Notificar en portal y por correo según el autor del mensaje
+        if (function_exists('notificarMensajeTicket')) {
+            notificarMensajeTicket($pdo, $targetId, $mensajeReq, $autorNom, $autorRol, false);
+        }
+
         echo json_encode([
             'status'         => 'ok', 
             'mensaje'        => 'Mensaje agregado al ticket correctamente.', 
@@ -338,6 +344,17 @@ if ($accionReq === 'firmar_reporte' || $accionReq === 'guardar_firma_reporte') {
                 @curl_close($chWh);
             }
         } catch (Throwable $eWhF) {}
+
+        // Notificar en portal y por correo al solicitante y especialistas
+        if (function_exists('notificarModificacionTicketCreador')) {
+            notificarModificacionTicketCreador(
+                $pdo,
+                $targetId,
+                "Reporte Firmado Digitalmente",
+                "El reporte de servicio técnico para el ticket #$folioOficial fue firmado digitalmente de conformidad por $firmadoPor.",
+                $firmadoPor
+            );
+        }
 
         echo json_encode([
             'status'             => 'ok',
@@ -463,6 +480,22 @@ try {
     ]);
 
     $idGenerado = $pdo->lastInsertId();
+
+    // Notificar en portal y por correo a los especialistas asignados al área
+    if (function_exists('notificarNuevoTicketArea')) {
+        notificarNuevoTicketArea($pdo, $idGenerado, [
+            'folio'               => $folio,
+            'titulo'              => $titulo,
+            'area_sistemas'       => $area,
+            'descripcion'         => $descripcion,
+            'prioridad'           => $prioridad,
+            'solicitante_nombre'  => $solicitanteNombre,
+            'solicitante_email'   => $solicitanteEmail,
+            'solicitante_agencia' => $agenciaNombre,
+            'asignado_a'          => '',
+            'estado'              => 'Abierto'
+        ]);
+    }
 
     echo json_encode([
         'status'         => 'ok',

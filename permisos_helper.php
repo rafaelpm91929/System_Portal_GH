@@ -1172,6 +1172,7 @@ function asegurarTablaNotificaciones($pdo = null) {
                     icono VARCHAR(50) DEFAULT 'bi-bell-fill',
                     color VARCHAR(30) DEFAULT 'primary',
                     referencia_id INTEGER NULL,
+                    usuario_id INTEGER NULL,
                     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
                     estatus INTEGER DEFAULT 1
                 );
@@ -1183,6 +1184,7 @@ function asegurarTablaNotificaciones($pdo = null) {
                     UNIQUE (notificacion_id, usuario_id)
                 );
             ");
+            try { $pdo->exec("ALTER TABLE notificaciones ADD COLUMN usuario_id INTEGER NULL"); } catch (Throwable $tCol) {}
         } else {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS `notificaciones` (
@@ -1195,10 +1197,12 @@ function asegurarTablaNotificaciones($pdo = null) {
                     `icono` VARCHAR(50) DEFAULT 'bi-bell-fill',
                     `color` VARCHAR(30) DEFAULT 'primary',
                     `referencia_id` INT NULL,
+                    `usuario_id` INT NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
                     `estatus` TINYINT(1) DEFAULT 1,
                     INDEX `idx_notif_modulo` (`modulo`),
-                    INDEX `idx_notif_estatus` (`estatus`)
+                    INDEX `idx_notif_estatus` (`estatus`),
+                    INDEX `idx_notif_usuario_id` (`usuario_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
                 CREATE TABLE IF NOT EXISTS `notificaciones_lecturas` (
@@ -1210,6 +1214,8 @@ function asegurarTablaNotificaciones($pdo = null) {
                     INDEX `idx_notif_usr` (`usuario_id`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
+            try { $pdo->exec("ALTER TABLE `notificaciones` ADD COLUMN `usuario_id` INT NULL"); } catch (Throwable $tColMy) {}
+            try { $pdo->exec("ALTER TABLE `notificaciones` ADD INDEX `idx_notif_usuario_id` (`usuario_id`)"); } catch (Throwable $tIdxMy) {}
         }
 
         // Sembrar notificaciones iniciales a partir de políticas existentes si no hay registros
@@ -1240,18 +1246,23 @@ function asegurarTablaNotificaciones($pdo = null) {
 }
 
 /**
- * Registra una nueva notificación en el sistema
+ * Registra una nueva notificación en el sistema (Global o específica para un usuario)
  */
-function crearNotificacion($modulo, $tipo, $titulo, $mensaje, $enlace = '', $icono = 'bi-bell-fill', $color = 'primary', $referenciaId = null, $pdo = null) {
+function crearNotificacion($modulo, $tipo, $titulo, $mensaje, $enlace = '', $icono = 'bi-bell-fill', $color = 'primary', $referenciaId = null, $usuarioId = null, $pdo = null) {
+    if ($usuarioId instanceof PDO) {
+        $pdo = $usuarioId;
+        $usuarioId = null;
+    }
     if (!$pdo) {
         global $pdo;
     }
     if (!$pdo) return false;
     asegurarTablaNotificaciones($pdo);
     try {
+        $targetUsr = ($usuarioId !== null && (int)$usuarioId > 0) ? (int)$usuarioId : null;
         $stmt = $pdo->prepare("
-            INSERT INTO notificaciones (modulo, tipo, titulo, mensaje, enlace, icono, color, referencia_id, creado_en, estatus)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            INSERT INTO notificaciones (modulo, tipo, titulo, mensaje, enlace, icono, color, referencia_id, usuario_id, creado_en, estatus)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ");
         return $stmt->execute([
             $modulo,
@@ -1262,6 +1273,7 @@ function crearNotificacion($modulo, $tipo, $titulo, $mensaje, $enlace = '', $ico
             $icono,
             $color,
             $referenciaId,
+            $targetUsr,
             date('Y-m-d H:i:s')
         ]);
     } catch (Throwable $e) {
@@ -1270,7 +1282,7 @@ function crearNotificacion($modulo, $tipo, $titulo, $mensaje, $enlace = '', $ico
 }
 
 /**
- * Obtiene las notificaciones disponibles para el usuario actual respetando sus permisos
+ * Obtiene las notificaciones disponibles para el usuario actual respetando sus permisos y notificaciones privadas
  */
 function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = null) {
     if (!$pdo) {
@@ -1293,11 +1305,12 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
             LEFT JOIN notificaciones_lecturas nl 
                    ON nl.notificacion_id = n.id AND nl.usuario_id = ?
             WHERE n.estatus = 1
+              AND (n.usuario_id IS NULL OR n.usuario_id = ?)
             ORDER BY n.creado_en DESC, n.id DESC
             LIMIT " . (int)$limite;
 
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$usuarioId]);
+        $stmt->execute([$usuarioId, $usuarioId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $permitidas = [];
@@ -1305,12 +1318,19 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
 
         foreach ($rows as $r) {
             $modulo = trim($r['modulo'] ?? '');
+            $targetUsr = $r['usuario_id'] ?? null;
             
             // VERIFICACIÓN ESTRICTA DE PERMISOS:
             // Si la notificación pertenece a un módulo y el usuario no tiene permiso de ver dicho módulo,
-            // NO se le muestra la notificación.
-            if (!empty($modulo) && !tienePermiso($modulo, 'puede_ver')) {
-                continue;
+            // pero la notificación va dirigida específicamente a él (ej. su ticket propio), se le permite ver.
+            if ($targetUsr === null || $targetUsr === '') {
+                if (!empty($modulo) && !tienePermiso($modulo, 'puede_ver')) {
+                    continue;
+                }
+            } else {
+                if ((int)$targetUsr !== $usuarioId) {
+                    continue;
+                }
             }
 
             $esLeido = !empty($r['leido']);

@@ -21,6 +21,7 @@ header("Expires: 0");
 
 require_once 'conexion.php';
 require_once 'permisos_helper.php';
+require_once 'notificaciones_tickets_helper.php';
 require_once 'excel_helper.php';
 include_once 'config_agencias.php';
 
@@ -301,6 +302,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                 $folio = 'TK-' . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
                 $solicitanteUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
+                if (empty($solicitanteEmail) && !empty($_SESSION['usuario_email'])) {
+                    $solicitanteEmail = $_SESSION['usuario_email'];
+                }
                 $stmt = $pdo->prepare("
                     INSERT INTO tickets_soporte 
                     (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_id, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, asignado_a, archivo_adjunto)
@@ -321,6 +325,24 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                     ':asignado'  => $asignadoA,
                     ':archivo'   => $archivoUrl
                 ]);
+                $nuevoTicketId = (int)$pdo->lastInsertId();
+
+                // Notificar en portal y por correo a los especialistas asignados al área
+                if (function_exists('notificarNuevoTicketArea')) {
+                    notificarNuevoTicketArea($pdo, $nuevoTicketId, [
+                        'folio'               => $folio,
+                        'titulo'              => $titulo,
+                        'area_sistemas'       => $area,
+                        'descripcion'         => $descripcion,
+                        'prioridad'           => $prioridad,
+                        'solicitante_nombre'  => $solicitanteNombre,
+                        'solicitante_email'   => $solicitanteEmail,
+                        'solicitante_agencia' => $solicitanteAgencia,
+                        'asignado_a'          => $asignadoA,
+                        'estado'              => 'Abierto'
+                    ]);
+                }
+
                 $mensaje = "Ticket con Folio <strong>$folio</strong> para la agencia <strong>" . htmlspecialchars($solicitanteAgencia) . "</strong> registrado con éxito.";
             } catch (Throwable $e) {
                 $error = "Error al registrar el ticket: " . $e->getMessage();
@@ -467,6 +489,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         }
                     } catch (Throwable $eWh) {}
 
+                    // Notificar en portal y por correo al creador/solicitante del ticket
+                    if (function_exists('notificarModificacionTicketCreador')) {
+                        $detalleCambio = "• Estado: $nuevoEstado\n"
+                                       . "• Prioridad: $prioridad\n"
+                                       . "• Especialista Asignado: " . ($asignadoA ?: 'Sin asignar') . "\n";
+                        if (!empty($notasResolucion)) {
+                            $detalleCambio .= "\nNotas de atención / resolución:\n$notasResolucion\n";
+                        }
+                        if (!empty($archivoEvidenciaUrl)) {
+                            $detalleCambio .= "\n(Se adjuntó archivo de evidencia a la atención del ticket).";
+                        }
+                        notificarModificacionTicketCreador($pdo, $ticketId, "Actualización de Estado / Asignación", $detalleCambio, $nombreUsuario, $nuevoEstado);
+                    }
+
                     $mensaje = "Ticket ID #$ticketId actualizado correctamente por el agente.";
                     if (!empty($_POST['redirect_ver'])) {
                         header("Location: tickets.php?ver=" . $ticketId . "&actualizado=1");
@@ -580,6 +616,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                             @curl_close($chWh);
                         }
                     } catch (Throwable $eWhR) {}
+
+                    // Notificar en portal y por correo al creador del ticket
+                    if (function_exists('notificarModificacionTicketCreador')) {
+                        $detalleRep = "Se ha registrado el Reporte Oficial de Servicio Técnico (Orden #$folioTk):\n"
+                                    . "• Técnico responsable: $tecnicoNombre\n"
+                                    . (!empty($trabajoSolicitado) ? "• Trabajo Solicitado: $trabajoSolicitado\n" : "")
+                                    . (!empty($trabajosRealizados) ? "• Trabajos Realizados: $trabajosRealizados\n" : "")
+                                    . (!empty($observaciones) ? "• Observaciones: $observaciones\n" : "")
+                                    . ($habilitarFirma ? "\nFavor de ingresar a su portal para revisar y estampar su firma digital de conformidad." : "");
+                        notificarModificacionTicketCreador($pdo, $ticketId, "Reporte de Servicio Técnico", $detalleRep, $tecnicoNombre);
+                    }
 
                     $mensaje = $habilitarFirma ? "Reporte de servicio para Infraestructura guardado y enviado para firma digital del usuario." : "Reporte de servicio actualizado.";
                     header("Location: tickets.php?ver=" . $ticketId . "&reporte_guardado=1");
@@ -714,6 +761,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                             } catch (Throwable $eWhM) {}
                         }
 
+                        // Notificar en portal y por correo según el autor del mensaje
+                        if (function_exists('notificarMensajeTicket')) {
+                            notificarMensajeTicket($pdo, $ticketId, $mensajeTxt, $nombreUsuario, $autorRol, (bool)$esNotaInterna);
+                        }
+
                         header("Location: tickets.php?ver=" . $ticketId . "&enviado=1");
                         exit();
                     }
@@ -740,6 +792,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                 } else {
                     $stmt = $pdo->prepare("UPDATE tickets_soporte SET asignado_a = :nombre, estado = CASE WHEN estado = 'Abierto' THEN 'En Proceso' ELSE estado END WHERE id = :id");
                     $stmt->execute([':nombre' => $nombreUsuario, ':id' => $ticketId]);
+
+                    // Notificar al creador del ticket en portal y por correo
+                    if (function_exists('notificarModificacionTicketCreador')) {
+                        notificarModificacionTicketCreador($pdo, $ticketId, "Especialista Asignado", "El especialista $nombreUsuario ha tomado tu ticket para brindarle atención directa.", $nombreUsuario, 'En Proceso');
+                    }
+
                     $mensaje = "Te has autoasignado el ticket #$ticketId. Estado actualizado a 'En Proceso'.";
                 }
             } catch (Throwable $e) {
@@ -932,6 +990,17 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                     } catch (Throwable $eWhC) {}
 
                     if ($ticketId > 0) {
+                        // Notificar al creador del ticket en portal y por correo
+                        if (function_exists('notificarModificacionTicketCreador')) {
+                            $detCita = "Se ha programado una visita técnica para tu ticket:\n"
+                                     . "• Folio Cita: $folioCita\n"
+                                     . "• Fecha y Hora: " . date('d/m/Y', strtotime($fechaCita)) . " a las $horaCita hrs\n"
+                                     . "• Técnico Asignado: $tecnicoCita\n"
+                                     . "• Tipo de Cita: $tipoCita\n"
+                                     . "• Asunto: $asuntoCita" . (!empty($descCita) ? "\n• Observaciones: $descCita" : "");
+                            notificarModificacionTicketCreador($pdo, $ticketId, "Cita Técnica Programada", $detCita, $nombreUsuario);
+                        }
+
                         $mensaje = "Cita programada con éxito con folio <strong>$folioCita</strong> vinculada al ticket <strong>$ticketFolio</strong>.";
                         if ($origenTicketId > 0) {
                             $_SESSION['redir_ticket_ver'] = $origenTicketId;
@@ -1044,6 +1113,18 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                                 enviarWebhookCitaAgencia($pdo, $citaPrev['agencia'], $citaPayloadWh, 'guardar_cita');
                             }
                         } catch (Throwable $eWhR) {}
+
+                        // Notificar al creador del ticket en portal y por correo
+                        if (!empty($citaPrev['ticket_id']) && function_exists('notificarModificacionTicketCreador')) {
+                            $detReprog = "La visita técnica vinculada a tu ticket ha sido modificada:\n"
+                                       . "• Folio Cita: $folioCitaTxt\n"
+                                       . "• Fecha y Hora: " . date('d/m/Y', strtotime($fechaCita)) . " a las $horaCita hrs\n"
+                                       . "• Técnico Asignado: $tecnicoCita\n"
+                                       . "• Estado de la Cita: $estadoCita\n"
+                                       . (!empty($motivoCambio) ? "• Motivo del cambio: $motivoCambio\n" : "")
+                                       . (!empty($notasCita) ? "• Notas de atención: $notasCita\n" : "");
+                            notificarModificacionTicketCreador($pdo, $citaPrev['ticket_id'], "Cita Técnica Actualizada", $detReprog, $nombreUsuario);
+                        }
 
                         if ($origenTicketId > 0 || !empty($citaPrev['ticket_id'])) {
                             $_SESSION['redir_ticket_ver'] = $origenTicketId ?: $citaPrev['ticket_id'];
