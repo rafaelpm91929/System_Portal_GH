@@ -25,8 +25,9 @@ $puedeVerAgencias = tienePermiso('agencias', 'puede_ver');
 $puedeVerTickets  = tienePermiso('tickets', 'puede_ver');
 $puedeVerPoliticas = tienePermiso('politicas', 'puede_ver');
 $puedeVerCompliance = tienePermiso('compliance', 'puede_ver');
+$puedeVerArea404 = true; // Zona Gaming y Recreación oficial Grupo Huerta
 
-$totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0) + ($puedeVerPoliticas ? 1 : 0) + ($puedeVerCompliance ? 1 : 0);
+$totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0) + ($puedeVerTickets ? 1 : 0) + ($puedeVerPoliticas ? 1 : 0) + ($puedeVerCompliance ? 1 : 0) + ($puedeVerArea404 ? 1 : 0);
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -129,6 +130,11 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
         .card-politicas:hover {
             border-color: #a855f7;
             background: #190e2b;
+        }
+        .card-area404:hover {
+            border-color: #00d2ff !important;
+            background: linear-gradient(135deg, rgba(6, 21, 43, 0.95) 0%, rgba(15, 34, 61, 0.95) 100%) !important;
+            box-shadow: 0 22px 45px rgba(0, 210, 255, 0.3) !important;
         }
 
         .module-icon-box {
@@ -337,6 +343,28 @@ $totalModulosVisibles = ($puedeVerUsuarios ? 1 : 0) + ($puedeVerAgencias ? 1 : 0
 
                     <a href="compliance.php" class="btn-module" style="background: linear-gradient(135deg, #b8972e 0%, #8c711e 100%); border: 1px solid rgba(245, 223, 158, 0.4); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.35);">
                         Ingresar a Compliance <i class="bi bi-arrow-right ms-1"></i>
+                    </a>
+                </div>
+            <?php endif; ?>
+
+            <!-- 6. ÁREA 404 - GAMING & RECREACIÓN -->
+            <?php if ($puedeVerArea404): ?>
+                <div class="main-module-card card-area404" style="border: 1px solid rgba(0, 210, 255, 0.4); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35), 0 0 20px rgba(0, 210, 255, 0.15);">
+                    <span class="module-badge" style="background: rgba(0, 210, 255, 0.15); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.4);">
+                        <i class="bi bi-controller"></i> GAMING HUB
+                    </span>
+
+                    <div class="module-icon-box" style="background: linear-gradient(135deg, rgba(0, 210, 255, 0.2), rgba(157, 78, 221, 0.2)); color: #00d2ff; border: 1px solid rgba(0, 210, 255, 0.35);">
+                        <i class="bi bi-joystick"></i>
+                    </div>
+
+                    <div class="module-title" style="background: linear-gradient(135deg, #00d2ff, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Área 404</div>
+                    <div class="module-desc">
+                        Zona recreativa Grupo Huerta: Carreras 3D (Autos y Motos Suzuki/Kawasaki) y aventura de plataformas 2D Super Taller Run estilo Mario Bros, con avatar personalizable y circuitos desbloqueables (Corporativo y El Rancho).
+                    </div>
+
+                    <a href="area404.php" class="btn-module" style="background: linear-gradient(135deg, #0284c7 0%, #7e22ce 100%); border: 1px solid rgba(0, 210, 255, 0.4); box-shadow: 0 4px 18px rgba(0, 210, 255, 0.35);">
+                        Entrar a Área 404 <i class="bi bi-arrow-right ms-1"></i>
                     </a>
                 </div>
             <?php endif; ?>
