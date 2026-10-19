@@ -1693,6 +1693,117 @@ function construirPilaNeumaticos(x, z) {
     scene3D.add(stack);
 }
 
+// Arco Monumental de Meta con Línea de Salida a Cuadros
+function construirArcoMeta(pos) {
+    const archGroup = new THREE.Group();
+
+    // Columnas metálicas trusses
+    const colGeo = new THREE.BoxGeometry(2, 14, 2);
+    const colMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+    const colL = new THREE.Mesh(colGeo, colMat); colL.position.set(-14, 7, 0); archGroup.add(colL);
+    const colR = new THREE.Mesh(colGeo, colMat); colR.position.set(14, 7, 0); archGroup.add(colR);
+
+    // Viga superior transversal
+    const beamGeo = new THREE.BoxGeometry(30, 3.5, 3);
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x00d2ff, emissive: 0x0077b6, emissiveIntensity: 0.5 });
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(0, 13, 0);
+    archGroup.add(beam);
+
+    // Letrero 3D "🏁 GRUPO HUERTA GRAND PRIX 🏁"
+    const signCanvas = document.createElement('canvas');
+    signCanvas.width = 512; signCanvas.height = 128;
+    const ctxS = signCanvas.getContext('2d');
+    ctxS.fillStyle = '#030a16'; ctxS.fillRect(0, 0, 512, 128);
+    // Borde de cuadros blanco y negro
+    for (let bx = 0; bx < 512; bx += 16) {
+        ctxS.fillStyle = (bx % 32 === 0) ? '#ffffff' : '#000000';
+        ctxS.fillRect(bx, 0, 16, 10);
+        ctxS.fillRect(bx, 118, 16, 10);
+    }
+    ctxS.strokeStyle = '#00d2ff'; ctxS.lineWidth = 4; ctxS.strokeRect(4, 12, 504, 104);
+    ctxS.fillStyle = '#ffffff'; ctxS.font = 'bold 32px sans-serif'; ctxS.textAlign = 'center';
+    ctxS.fillText('🏁 GRUPO HUERTA GRAND PRIX 🏁', 256, 72);
+    const signTex = new THREE.CanvasTexture(signCanvas);
+
+    const signGeo = new THREE.PlaneGeometry(24, 5);
+    const signMat = new THREE.MeshBasicMaterial({ map: signTex, side: THREE.DoubleSide });
+    const signMesh = new THREE.Mesh(signGeo, signMat);
+    signMesh.position.set(0, 13, 1.6);
+    archGroup.add(signMesh);
+
+    // Línea de meta de cuadros en el suelo
+    const checkCanvas = document.createElement('canvas');
+    checkCanvas.width = 256; checkCanvas.height = 64;
+    const chCtx = checkCanvas.getContext('2d');
+    for (let cy = 0; cy < 64; cy += 16) {
+        for (let cx = 0; cx < 256; cx += 16) {
+            chCtx.fillStyle = ((cx / 16 + cy / 16) % 2 === 0) ? '#ffffff' : '#111827';
+            chCtx.fillRect(cx, cy, 16, 16);
+        }
+    }
+    const checkTex = new THREE.CanvasTexture(checkCanvas);
+    const checkGeo = new THREE.PlaneGeometry(20, 4);
+    const checkMat = new THREE.MeshBasicMaterial({ map: checkTex, polygonOffset: true, polygonOffsetFactor: -1 });
+    const checkMesh = new THREE.Mesh(checkGeo, checkMat);
+    checkMesh.rotation.x = -Math.PI / 2;
+    checkMesh.position.set(0, 0.15, 0);
+    archGroup.add(checkMesh);
+
+    archGroup.position.copy(pos);
+    scene3D.add(archGroup);
+}
+
+// Árboles Cartoon 3D
+function construirArbolCartoon(x, z) {
+    const tree = new THREE.Group();
+    const trunkGeo = new THREE.CylinderGeometry(0.8, 1.2, 4, 8);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 2;
+    tree.add(trunk);
+
+    const leavesGeo = new THREE.DodecahedronGeometry(3.5, 1);
+    const leavesMat = new THREE.MeshLambertMaterial({ color: 0x22c55e });
+    const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+    leaves.position.y = 5.5;
+    tree.add(leaves);
+
+    tree.position.set(x, 0, z);
+    scene3D.add(tree);
+}
+
+// Farolas Neón
+function construirFarolaNeón(x, z) {
+    const poleGeo = new THREE.CylinderGeometry(0.2, 0.3, 10, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(x, 5, z);
+    scene3D.add(pole);
+
+    const lightMesh = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 8), new THREE.MeshBasicMaterial({ color: 0x00d2ff }));
+    lightMesh.position.set(x, 10, z);
+    scene3D.add(lightMesh);
+}
+
+// Molino de Viento para El Rancho
+function construirMolinoViento(x, z) {
+    const mill = new THREE.Group();
+    const baseGeo = new THREE.CylinderGeometry(2, 4, 12, 8);
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 6;
+    mill.add(base);
+
+    const bladeGeo = new THREE.BoxGeometry(0.6, 12, 0.2);
+    const bladeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const b1 = new THREE.Mesh(bladeGeo, bladeMat); b1.position.y = 11; mill.add(b1);
+    const b2 = new THREE.Mesh(bladeGeo, bladeMat); b2.position.y = 11; b2.rotation.z = Math.PI / 2; mill.add(b2);
+
+    mill.position.set(x, 0, z);
+    scene3D.add(mill);
+}
+
 // ==============================================================
 // CONSTRUCTOR DE GO-KART 3D AUTÉNTICO (MARIO KART STYLE)
 // ==============================================================
