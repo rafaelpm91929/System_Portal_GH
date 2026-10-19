@@ -469,7 +469,7 @@ if ($pdo) {
         <a href="menu.php" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2">
             <i class="bi bi-arrow-left"></i> <span>Menú Portal</span>
         </a>
-        <div class="arcade-logo">
+        <div class="arcade-logo" onclick="cambiarSeccion('hub')" style="cursor: pointer;" title="Volver al Menú Principal">
             <i class="bi bi-controller"></i>
             <span>ÁREA 404</span>
         </div>
@@ -480,6 +480,10 @@ if ($pdo) {
 
     <!-- Identidad del Usuario Oficial (Protegida) -->
     <div class="d-flex align-items-center gap-3">
+        <button type="button" class="btn btn-sm btn-outline-warning rounded-pill px-3" onclick="cambiarSeccion('records')">
+            <i class="bi bi-trophy-fill me-1"></i> Salón de la Fama
+        </button>
+
         <div class="user-identity-chip" title="Nombre y sucursal verificados oficialmente en el Portal de Sistemas">
             <i class="bi bi-lock-fill text-warning" title="Identidad protegida"></i>
             <div class="text-start">
@@ -499,176 +503,153 @@ if ($pdo) {
 
 <div class="container-fluid px-4 py-4">
 
-    <!-- Pestañas Principales del Módulo -->
-    <div class="arcade-tabs">
-        <button type="button" class="arcade-tab-btn active" onclick="cambiarSeccion('hub')" id="tab_hub">
-            <i class="bi bi-grid-fill"></i> Sala Principal & Avatar
-        </button>
-        <button type="button" class="arcade-tab-btn" onclick="cambiarSeccion('carreras')" id="tab_carreras">
-            <i class="bi bi-flag-fill text-danger"></i> Gran Premio 3D (Autos y Motos)
-        </button>
-        <button type="button" class="arcade-tab-btn" onclick="cambiarSeccion('plataformas')" id="tab_plataformas">
-            <i class="bi bi-tools text-warning"></i> Super Taller Run 2D (Mario Bros)
-        </button>
-        <button type="button" class="arcade-tab-btn" onclick="cambiarSeccion('records')" id="tab_records">
-            <i class="bi bi-trophy-fill text-warning"></i> Salón de la Fama
-        </button>
+    <!-- ======================================================= -->
+    <!-- 1. SALA PRINCIPAL: SOLO LOS 2 JUEGOS DISPONIBLES        -->
+    <!-- ======================================================= -->
+    <div id="seccion_hub" class="seccion-modulo">
+        <div class="text-center mb-4 mt-2">
+            <span class="cyber-badge mb-2" style="background: rgba(0, 210, 255, 0.15); color: #00d2ff; border-color: rgba(0, 210, 255, 0.4); font-size: 0.85rem; padding: 6px 16px;">
+                <i class="bi bi-joystick me-1"></i> ARCADE PORTAL SISTEMAS GRUPO HUERTA
+            </span>
+            <h2 class="fw-bold text-white mb-2" style="letter-spacing: 1.5px;">
+                SELECCIONA TU MODO DE JUEGO
+            </h2>
+            <p class="text-secondary mx-auto" style="max-width: 650px; font-size: 0.95rem;">
+                Bienvenido al hub de entretenimiento oficial de Sistemas Grupo Huerta. Elige uno de los dos juegos para comenzar:
+            </p>
+        </div>
+
+        <div class="row g-4 justify-content-center max-w-5xl mx-auto" style="max-width: 1060px;">
+            <!-- BOTÓN JUEGO 1: GRAN PREMIO GH -->
+            <div class="col-md-6">
+                <div class="arcade-card h-100 d-flex flex-column justify-content-between p-4" style="border: 2px solid rgba(0, 210, 255, 0.45); background: radial-gradient(circle at top right, rgba(0, 210, 255, 0.18), rgba(6, 21, 43, 0.9) 65%);">
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="cyber-badge" style="background: rgba(0,210,255,0.25); color:#00d2ff; border-color: rgba(0,210,255,0.6); font-size: 0.8rem;">
+                                🏎️ 3D WebGL • Carreras
+                            </span>
+                            <span class="badge bg-primary bg-opacity-25 text-info rounded-pill">60 FPS</span>
+                        </div>
+                        <div class="text-center my-3">
+                            <i class="bi bi-speedometer2 text-info" style="font-size: 4.8rem; filter: drop-shadow(0 0 25px rgba(0, 210, 255, 0.65));"></i>
+                        </div>
+                        <h3 class="fw-bold text-white text-center mb-2" style="letter-spacing: 1.2px;">
+                            Gran Premio GH
+                        </h3>
+                        <p class="text-secondary text-center small mb-4" style="line-height: 1.6;">
+                            Carreras de alta velocidad en 3D con curvas reales, derrapes y mini-turbo. Conduce deportivos oficiales de Grupo Huerta: <strong>VW Jetta GLI</strong>, <strong>Cupra Formentor</strong>, <strong>Omoda C5</strong> o superbikes <strong>Suzuki GSX-R</strong> y <strong>Kawasaki Ninja</strong>.
+                        </p>
+                        <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap">
+                            <span class="badge bg-dark border border-secondary text-light">VW Jetta GLI</span>
+                            <span class="badge bg-dark border border-secondary text-light">Cupra Formentor</span>
+                            <span class="badge bg-dark border border-secondary text-light">Omoda C5</span>
+                            <span class="badge bg-dark border border-secondary text-light">Suzuki GSX-R</span>
+                            <span class="badge bg-dark border border-secondary text-light">Kawasaki Ninja</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-info btn-lg w-100 rounded-pill fw-bold py-3 text-uppercase shadow-lg" onclick="abrirLobbyGranPremio()" style="letter-spacing: 1.5px; font-size: 1.15rem; box-shadow: 0 0 30px rgba(0, 210, 255, 0.5);">
+                        <i class="bi bi-play-circle-fill fs-5 me-2 align-middle"></i> JUGAR GRAN PREMIO GH ➜
+                    </button>
+                </div>
+            </div>
+
+            <!-- BOTÓN JUEGO 2: SUPER TALLER RUN -->
+            <div class="col-md-6">
+                <div class="arcade-card h-100 d-flex flex-column justify-content-between p-4" style="border: 2px solid rgba(255, 230, 0, 0.45); background: radial-gradient(circle at top right, rgba(255, 230, 0, 0.18), rgba(6, 21, 43, 0.9) 65%);">
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="cyber-badge" style="background: rgba(255,230,0,0.25); color:#ffe600; border-color: rgba(255,230,0,0.6); font-size: 0.8rem;">
+                                🍄 2D Retro • Mario Bros
+                            </span>
+                            <span class="badge bg-warning bg-opacity-25 text-warning rounded-pill">Arcade Clásico</span>
+                        </div>
+                        <div class="text-center my-3">
+                            <i class="bi bi-tools text-warning" style="font-size: 4.8rem; filter: drop-shadow(0 0 25px rgba(255, 230, 0, 0.65));"></i>
+                        </div>
+                        <h3 class="fw-bold text-white text-center mb-2" style="letter-spacing: 1.2px;">
+                            Super Taller RUN
+                        </h3>
+                        <p class="text-secondary text-center small mb-4" style="line-height: 1.6;">
+                            Aventura clásica de plataformas estilo Mario Bros ambientada en talleres mecánicos y agencias. Salta sobre charcos de aceite, esquiva obstáculos, recolecta llaves y herramientas para llegar al Showroom.
+                        </p>
+                        <div class="d-flex justify-content-center gap-2 mb-4 flex-wrap">
+                            <span class="badge bg-dark border border-secondary text-light">Agencia & Taller</span>
+                            <span class="badge bg-dark border border-secondary text-light">Oficinas Corporativas</span>
+                            <span class="badge bg-dark border border-secondary text-light">El Rancho</span>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-warning btn-lg w-100 rounded-pill fw-bold text-dark py-3 text-uppercase shadow-lg" onclick="cambiarSeccion('plataformas')" style="letter-spacing: 1.5px; font-size: 1.15rem; box-shadow: 0 0 30px rgba(255, 230, 0, 0.5);">
+                        <i class="bi bi-play-circle-fill fs-5 me-2 align-middle"></i> JUGAR SUPER TALLER RUN ➜
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- ======================================================= -->
-    <!-- 1. SALA PRINCIPAL (HUB & CREADOR DE AVATAR / VEHÍCULO)  -->
+    <!-- 1.5. LOBBY GRAN PREMIO GH (VISTA PREVIA, PISTA E INICIO) -->
     <!-- ======================================================= -->
-    <div id="seccion_hub" class="seccion-modulo">
-        <div class="row g-4">
-            
-            <!-- Tarjetas de Acceso Rápido a los 2 Juegos -->
-            <div class="col-lg-7">
-                <h4 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                    <i class="bi bi-joystick text-info"></i> Selecciona tu Modo de Juego
+    <div id="seccion_carreras_lobby" class="seccion-modulo d-none">
+        <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3 py-2 d-flex align-items-center gap-2" onclick="cambiarSeccion('hub')">
+                <i class="bi bi-arrow-left"></i> <span>Volver a Selección de Juegos</span>
+            </button>
+            <div class="text-center">
+                <h4 class="fw-bold text-white mb-0 d-flex align-items-center gap-2 justify-content-center">
+                    <i class="bi bi-speedometer2 text-info"></i> Gran Premio GH &bull; Sala de Preparación
                 </h4>
-                
-                <div class="row g-3 mb-4">
-                    <!-- Tarjeta Juego 1: Carreras 3D -->
-                    <div class="col-md-6">
-                        <div class="arcade-card h-100 d-flex flex-column justify-content-between" style="border-left: 4px solid var(--neon-blue);">
-                            <div>
-                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <span class="cyber-badge" style="background: rgba(0,210,255,0.2); color:#00d2ff;">3D WebGL</span>
-                                    <i class="bi bi-speedometer2 fs-2 text-info"></i>
-                                </div>
-                                <h5 class="fw-bold text-white mb-2">Gran Premio 3D</h5>
-                                <p class="text-secondary small mb-3">
-                                    Pistas con curvas reales, derrapes, velocímetro y cronómetro de vueltas. Conduce autos deportivos de Grupo Huerta o motos de pista <strong>Suzuki GSX-R</strong> y <strong>Kawasaki Ninja</strong>.
-                                </p>
-                            </div>
-                            <button type="button" class="btn btn-info w-100 rounded-pill fw-bold" onclick="cambiarSeccion('carreras')">
-                                <i class="bi bi-play-fill fs-5"></i> Jugar Carreras 3D
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Tarjeta Juego 2: Plataformas 2D -->
-                    <div class="col-md-6">
-                        <div class="arcade-card h-100 d-flex flex-column justify-content-between" style="border-left: 4px solid var(--neon-yellow);">
-                            <div>
-                                <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <span class="cyber-badge" style="background: rgba(255,230,0,0.2); color:#ffe600;">2D Retro</span>
-                                    <i class="bi bi-wrench-adjustable-circle fs-2 text-warning"></i>
-                                </div>
-                                <h5 class="fw-bold text-white mb-2">Super Taller Run</h5>
-                                <p class="text-secondary small mb-3">
-                                    Aventura de plataformas estilo Mario Bros ambientada en taller de autos y motos. Salta sobre charcos de aceite, recolecta llaves y herramientas para llegar al Showroom.
-                                </p>
-                            </div>
-                            <button type="button" class="btn btn-warning w-100 rounded-pill fw-bold text-dark" onclick="cambiarSeccion('plataformas')">
-                                <i class="bi bi-play-fill fs-5"></i> Jugar Plataformas 2D
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Selección y Desbloqueo de Mundos -->
-                <h4 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                    <i class="bi bi-globe-americas text-primary"></i> Circuitos y Mundos Disponibles
-                </h4>
-
-                <div class="row g-3">
-                    <!-- Mundo 1: Agencia y Taller -->
-                    <div class="col-md-4">
-                        <div class="world-pill active" id="pill_mundo_taller" onclick="seleccionarMundo('taller')">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <i class="bi bi-buildings-fill text-info fs-5"></i>
-                                <span class="fw-bold small text-white">Agencia & Taller</span>
-                            </div>
-                            <div class="small text-secondary" style="font-size: 0.75rem;">
-                                Circuito central de autos y motos. Elevadores y boxes.
-                            </div>
-                            <span class="badge bg-success bg-opacity-25 text-success rounded-pill mt-2" style="font-size: 0.65rem;">
-                                <i class="bi bi-check-circle-fill"></i> Desbloqueado
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Mundo 2: Corporativo Grupo Huerta -->
-                    <div class="col-md-4">
-                        <div class="world-pill" id="pill_mundo_corporativo" onclick="seleccionarMundo('corporativo')">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <i class="bi bi-building-fill-lock text-warning fs-5"></i>
-                                <span class="fw-bold small text-white">Corporativo</span>
-                            </div>
-                            <div class="small text-secondary" style="font-size: 0.75rem;">
-                                Rascacielos nocturnos, oficinas ejecutivas y túnel de cristal.
-                            </div>
-                            <span class="badge bg-warning bg-opacity-25 text-warning rounded-pill mt-2" id="badge_mundo_corporativo" style="font-size: 0.65rem;">
-                                <i class="bi bi-lock-fill"></i> 1,000 pts o 3 Vueltas
-                            </span>
-                        </div>
-                    </div>
-
-                    <!-- Mundo 3: El Rancho -->
-                    <div class="col-md-4">
-                        <div class="world-pill" id="pill_mundo_rancho" onclick="seleccionarMundo('rancho')">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <i class="bi bi-tree-fill text-success fs-5"></i>
-                                <span class="fw-bold small text-white">El Rancho</span>
-                            </div>
-                            <div class="small text-secondary" style="font-size: 0.75rem;">
-                                Pista campestre de terracería, pacas de heno y establos.
-                            </div>
-                            <span class="badge bg-secondary bg-opacity-25 text-light rounded-pill mt-2" id="badge_mundo_rancho" style="font-size: 0.65rem;">
-                                <i class="bi bi-lock-fill"></i> 2,500 pts o Trofeo
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
+                <div class="text-secondary small">Personaliza tu vehículo, elige el circuito y arranca la carrera</div>
             </div>
+            <div>
+                <span class="badge bg-info bg-opacity-20 text-info border border-info rounded-pill px-3 py-2">
+                    <i class="bi bi-person-badge me-1"></i> Piloto: <?php echo htmlspecialchars($nombreUsuario); ?>
+                </span>
+            </div>
+        </div>
 
-            <!-- Columna Derecha: Taller de Personalización de Avatar & Vehículo -->
-            <div class="col-lg-5">
-                <div class="arcade-card">
+        <div class="row g-4">
+            <!-- COLUMNA 1: VISTA PREVIA Y PERSONALIZACIÓN DEL VEHÍCULO -->
+            <div class="col-lg-6">
+                <div class="arcade-card h-100">
                     <h5 class="fw-bold mb-3 d-flex align-items-center justify-content-between">
-                        <span><i class="bi bi-palette-fill text-info me-2"></i>Personaliza tu Avatar y Vehículo</span>
-                        <span class="badge bg-primary bg-opacity-20 text-info rounded-pill small">Auto-Guardado</span>
+                        <span><i class="bi bi-eye-fill text-info me-2"></i>Vista Previa del Vehículo</span>
+                        <span class="badge bg-primary bg-opacity-20 text-info rounded-pill small" id="lblShowroomVehiculo">Auto Seleccionado</span>
                     </h5>
 
-                    <!-- Preview Visual del Avatar y Vehículo -->
-                    <div class="text-center mb-3">
-                        <canvas id="avatarPreviewCanvas" width="340" height="180" class="shadow-lg"></canvas>
-                        <div class="small text-secondary mt-1">
-                            Piloto: <strong class="text-white"><?php echo htmlspecialchars($nombreUsuario); ?></strong> (<span class="text-info"><?php echo htmlspecialchars($agenciaUsuario); ?></span>)
+                    <!-- Canvas 3D Showroom Turntable Interactivo -->
+                    <div class="text-center mb-3 position-relative" style="background: radial-gradient(circle at center, #071938 0%, #020712 100%); border-radius: 18px; border: 2px solid rgba(0, 210, 255, 0.35); overflow: hidden; height: 250px;" id="showroom3DContainer">
+                        <div class="position-absolute bottom-0 start-50 translate-middle-x pb-2" style="z-index: 10; pointer-events: none;">
+                            <span class="badge bg-dark bg-opacity-75 text-info border border-info rounded-pill px-3 py-1" style="font-size: 0.75rem;">
+                                🔄 Vista 3D en Tiempo Real (360°)
+                            </span>
                         </div>
                     </div>
 
-                    <!-- 1. Tipo de Vehículo Grupo Huerta -->
+                    <!-- Selector de Vehículo Grupo Huerta -->
                     <div class="mb-3">
-                        <label class="form-label small text-secondary fw-bold">Vehículo de Carreras (Agencias Grupo Huerta)</label>
+                        <label class="form-label small text-secondary fw-bold">Elegir Vehículo Oficial Grupo Huerta</label>
                         <div class="row g-2">
-                            <!-- VW Jetta -->
                             <div class="col-4">
                                 <div class="vehicle-btn active" id="veh_auto_jetta" onclick="setVehiculo('auto_jetta')">
                                     <i class="bi bi-car-front-fill fs-4 text-info d-block mb-1"></i>
                                     <div class="fw-bold small">VW Jetta</div>
-                                    <div class="text-secondary" style="font-size: 0.65rem;">Sportline</div>
+                                    <div class="text-secondary" style="font-size: 0.65rem;">Sportline GLI</div>
                                 </div>
                             </div>
-                            <!-- Omoda C5 -->
                             <div class="col-4">
                                 <div class="vehicle-btn" id="veh_auto_omoda" onclick="setVehiculo('auto_omoda')">
                                     <i class="bi bi-car-front-fill fs-4 text-warning d-block mb-1"></i>
                                     <div class="fw-bold small">Omoda C5</div>
-                                    <div class="text-secondary" style="font-size: 0.65rem;">Crossover</div>
+                                    <div class="text-secondary" style="font-size: 0.65rem;">Crossover Coupé</div>
                                 </div>
                             </div>
-                            <!-- Cupra Formentor -->
                             <div class="col-4">
                                 <div class="vehicle-btn" id="veh_auto_cupra" onclick="setVehiculo('auto_cupra')">
                                     <i class="bi bi-lightning-charge-fill fs-4 d-block mb-1" style="color: #ea580c;"></i>
                                     <div class="fw-bold small" style="color: #ea580c;">Cupra</div>
-                                    <div class="text-secondary" style="font-size: 0.65rem;">Formentor</div>
+                                    <div class="text-secondary" style="font-size: 0.65rem;">Formentor Mate</div>
                                 </div>
                             </div>
-                            <!-- Suzuki GSX-R -->
                             <div class="col-6">
                                 <div class="vehicle-btn" id="veh_moto_suzuki" onclick="setVehiculo('moto_suzuki')">
                                     <i class="bi bi-bicycle fs-4 text-primary d-block mb-1"></i>
@@ -676,7 +657,6 @@ if ($pdo) {
                                     <div class="text-secondary" style="font-size: 0.65rem;">Superbike Ecstar</div>
                                 </div>
                             </div>
-                            <!-- Kawasaki Ninja -->
                             <div class="col-6">
                                 <div class="vehicle-btn" id="veh_moto_kawasaki" onclick="setVehiculo('moto_kawasaki')">
                                     <i class="bi bi-bicycle fs-4 text-success d-block mb-1"></i>
@@ -687,40 +667,126 @@ if ($pdo) {
                         </div>
                     </div>
 
-                    <!-- 2. Casco / Equipo del Piloto -->
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary fw-bold">Casco y Estilo de Cabeza</label>
-                        <div class="btn-group btn-group-sm w-100" role="group">
-                            <input type="radio" class="btn-check" name="optCasco" id="casco1" value="carreras" checked onchange="setCasco('carreras')">
-                            <label class="btn btn-outline-info" for="casco1">🪖 Casco Racing</label>
+                    <!-- Casco y Color de Escudería -->
+                    <div class="row g-2 align-items-center">
+                        <div class="col-sm-6">
+                            <label class="form-label small text-secondary fw-bold mb-1">Casco / Piloto</label>
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <input type="radio" class="btn-check" name="optCasco" id="casco1" value="carreras" checked onchange="setCasco('carreras')">
+                                <label class="btn btn-outline-info" for="casco1">🪖 Racing</label>
 
-                            <input type="radio" class="btn-check" name="optCasco" id="casco2" value="gorra" onchange="setCasco('gorra')">
-                            <label class="btn btn-outline-info" for="casco2">🧢 Gorra Taller</label>
+                                <input type="radio" class="btn-check" name="optCasco" id="casco2" value="gorra" onchange="setCasco('gorra')">
+                                <label class="btn btn-outline-info" for="casco2">🧢 Gorra</label>
 
-                            <input type="radio" class="btn-check" name="optCasco" id="casco3" value="gamer" onchange="setCasco('gamer')">
-                            <label class="btn btn-outline-info" for="casco3">🎧 Gamer Headset</label>
+                                <input type="radio" class="btn-check" name="optCasco" id="casco3" value="gamer" onchange="setCasco('gamer')">
+                                <label class="btn btn-outline-info" for="casco3">🎧 Gamer</label>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small text-secondary fw-bold mb-1">Color de Escudería</label>
+                            <div class="d-flex align-items-center gap-2 justify-content-between">
+                                <div class="color-dot active" style="background: #00d2ff;" onclick="setColorTraje('#00d2ff', this)" title="Cyan GH"></div>
+                                <div class="color-dot" style="background: #2563eb;" onclick="setColorTraje('#2563eb', this)" title="Azul Suzuki"></div>
+                                <div class="color-dot" style="background: #22c55e;" onclick="setColorTraje('#22c55e', this)" title="Verde Kawasaki"></div>
+                                <div class="color-dot" style="background: #ef4444;" onclick="setColorTraje('#ef4444', this)" title="Rojo GLI"></div>
+                                <div class="color-dot" style="background: #eab308;" onclick="setColorTraje('#eab308', this)" title="Dorado"></div>
+                                <div class="color-dot" style="background: #a855f7;" onclick="setColorTraje('#a855f7', this)" title="Nitro Púrpura"></div>
+                            </div>
                         </div>
                     </div>
-
-                    <!-- 3. Color del Traje / Overol -->
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary fw-bold">Color del Traje / Overol de Escudería</label>
-                        <div class="d-flex align-items-center gap-2">
-                            <div class="color-dot active" style="background: #00d2ff;" onclick="setColorTraje('#00d2ff', this)" title="Azul Cyan GH"></div>
-                            <div class="color-dot" style="background: #2563eb;" onclick="setColorTraje('#2563eb', this)" title="Azul Suzuki"></div>
-                            <div class="color-dot" style="background: #22c55e;" onclick="setColorTraje('#22c55e', this)" title="Verde Kawasaki"></div>
-                            <div class="color-dot" style="background: #ef4444;" onclick="setColorTraje('#ef4444', this)" title="Rojo Racing"></div>
-                            <div class="color-dot" style="background: #eab308;" onclick="setColorTraje('#eab308', this)" title="Dorado Corporativo"></div>
-                            <div class="color-dot" style="background: #a855f7;" onclick="setColorTraje('#a855f7', this)" title="Nitro Púrpura"></div>
-                        </div>
-                    </div>
-
-                    <button type="button" class="btn btn-outline-info btn-sm w-100 rounded-pill" onclick="guardarAvatarServidor()">
-                        <i class="bi bi-cloud-arrow-up-fill me-1"></i> Guardar Avatar en mi Perfil
-                    </button>
                 </div>
             </div>
 
+            <!-- COLUMNA 2: ELEGIR PISTA Y BOTÓN DE INICIAR -->
+            <div class="col-lg-6">
+                <div class="arcade-card h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="fw-bold mb-3 d-flex align-items-center justify-content-between">
+                            <span><i class="bi bi-geo-alt-fill text-warning me-2"></i>Elegir Pista / Circuito</span>
+                            <span class="badge bg-warning bg-opacity-20 text-warning rounded-pill small" id="lblPistaSeleccionada">Agencia & Taller</span>
+                        </h5>
+
+                        <div class="d-flex flex-column gap-3 mb-4">
+                            <!-- Circuito 1: Agencia & Taller Central -->
+                            <div class="world-pill active" id="pill_mundo_taller" onclick="seleccionarMundo('taller')">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(0, 210, 255, 0.2); color: #00d2ff;">
+                                            <i class="bi bi-buildings-fill fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold text-white">Agencia & Taller Central</div>
+                                            <div class="text-secondary small" style="font-size: 0.78rem;">
+                                                Asfalto de servicio urbano, elevadores hidráulicos y obstáculos de sistemas (impresoras y cables).
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-success bg-opacity-25 text-success rounded-pill px-3 py-1">
+                                        <i class="bi bi-check-circle-fill"></i> Activo
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Circuito 2: Corporativo Grupo Huerta -->
+                            <div class="world-pill" id="pill_mundo_corporativo" onclick="seleccionarMundo('corporativo')">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(255, 230, 0, 0.2); color: #ffe600;">
+                                            <i class="bi bi-building-fill-lock fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold text-white">Corporativo Grupo Huerta</div>
+                                            <div class="text-secondary small" style="font-size: 0.78rem;">
+                                                Rascacielos nocturnos neón, túnel de cristal y oficinas ejecutivas de alta velocidad.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-warning bg-opacity-25 text-warning rounded-pill px-3 py-1" id="badge_mundo_corporativo">
+                                        <i class="bi bi-lock-fill"></i> 1,000 pts
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Circuito 3: El Rancho -->
+                            <div class="world-pill" id="pill_mundo_rancho" onclick="seleccionarMundo('rancho')">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div class="d-flex align-items-center gap-3">
+                                        <div class="rounded-circle d-flex align-items-center justify-content-center" style="width: 44px; height: 44px; background: rgba(34, 197, 94, 0.2); color: #22c55e;">
+                                            <i class="bi bi-tree-fill fs-5"></i>
+                                        </div>
+                                        <div>
+                                            <div class="fw-bold text-white">El Rancho (Terracería)</div>
+                                            <div class="text-secondary small" style="font-size: 0.78rem;">
+                                                Pista campestre de terracería, pacas de heno, establos y curvas de derrape en tierra.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-secondary bg-opacity-25 text-light rounded-pill px-3 py-1" id="badge_mundo_rancho">
+                                        <i class="bi bi-lock-fill"></i> 2,500 pts
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Guía de Controles -->
+                        <div class="p-3 rounded-3 mb-3" style="background: rgba(2, 6, 23, 0.6); border: 1px solid rgba(255, 255, 255, 0.08);">
+                            <div class="small fw-bold text-info mb-1"><i class="bi bi-keyboard me-1"></i> Controles de Carrera:</div>
+                            <div class="text-secondary small" style="font-size: 0.76rem;">
+                                <kbd class="bg-dark text-white">W / ↑</kbd> Acelerar &bull; 
+                                <kbd class="bg-dark text-white">S / ↓</kbd> Frenar &bull; 
+                                <kbd class="bg-dark text-white">A / D</kbd> Girar &bull; 
+                                <kbd class="bg-dark text-white">ESPACIO</kbd> Derrape + Mini-Turbo &bull; 
+                                <kbd class="bg-dark text-white">E</kbd> Poder
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN GIGANTE DE INICIAR CARRERA -->
+                    <button type="button" class="btn btn-success btn-lg w-100 py-3 rounded-pill fw-bold text-uppercase shadow-lg mt-3" onclick="iniciarCarreraDesdeLobby()" style="font-size: 1.35rem; letter-spacing: 1.5px; background: linear-gradient(135deg, #00d2ff, #00ff88); color: #020612; border: none; box-shadow: 0 0 35px rgba(0, 255, 136, 0.5);">
+                        <i class="bi bi-play-circle-fill me-2 fs-2 align-middle"></i> 🚦 INICIAR CARRERA 3D
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -729,15 +795,18 @@ if ($pdo) {
     <!-- ======================================================= -->
     <div id="seccion_carreras" class="seccion-modulo d-none">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <h4 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
-                    <i class="bi bi-speedometer2 text-info"></i> Gran Premio GH 3D
-                </h4>
-                <span class="badge bg-info bg-opacity-20 text-info border border-info rounded-pill" id="lblMundoActivo3D">
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-outline-info btn-sm rounded-pill px-3" onclick="abrirLobbyGranPremio()">
+                    <i class="bi bi-sliders me-1"></i> Cambiar Auto / Pista
+                </button>
+                <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3" onclick="cambiarSeccion('hub')">
+                    <i class="bi bi-house-door me-1"></i> Menú Juegos
+                </button>
+                <span class="badge bg-info bg-opacity-20 text-info border border-info rounded-pill ms-2" id="lblMundoActivo3D">
                     Circuito: Agencia & Taller
                 </span>
                 <span class="badge bg-primary bg-opacity-20 text-primary border border-primary rounded-pill" id="lblVehiculoActivo3D">
-                    Vehículo: Auto GT
+                    Vehículo: VW Jetta GLI
                 </span>
             </div>
 
@@ -837,8 +906,11 @@ if ($pdo) {
     <!-- ======================================================= -->
     <div id="seccion_plataformas" class="seccion-modulo d-none">
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <div class="d-flex align-items-center gap-3">
-                <h4 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3" onclick="cambiarSeccion('hub')">
+                    <i class="bi bi-arrow-left me-1"></i> Menú Juegos
+                </button>
+                <h4 class="fw-bold mb-0 text-white d-flex align-items-center gap-2 ms-2">
                     <i class="bi bi-tools text-warning"></i> Super Taller Run 2D
                 </h4>
                 <span class="badge bg-warning bg-opacity-20 text-warning border border-warning rounded-pill" id="lblMundoActivo2D">
@@ -894,9 +966,14 @@ if ($pdo) {
     <div id="seccion_records" class="seccion-modulo d-none">
         <div class="arcade-card">
             <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-                <h4 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
-                    <i class="bi bi-trophy-fill text-warning"></i> Salón de la Fama de Grupo Huerta
-                </h4>
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3" onclick="cambiarSeccion('hub')">
+                        <i class="bi bi-arrow-left me-1"></i> Menú Juegos
+                    </button>
+                    <h4 class="fw-bold mb-0 text-white d-flex align-items-center gap-2">
+                        <i class="bi bi-trophy-fill text-warning"></i> Salón de la Fama de Grupo Huerta
+                    </h4>
+                </div>
                 <div class="btn-group" role="group">
                     <button type="button" class="btn btn-outline-info btn-sm active" id="btnRank3D" onclick="cargarRanking('carreras_3d')">
                         🏎️ Carreras 3D
@@ -1218,6 +1295,159 @@ function dibujarAvatarPreview() {
     }
 }
 
+let showroomScene, showroomCamera, showroomRenderer, showroomVehiculoMesh, showroomAnimId;
+
+function initShowroom3D() {
+    const container = document.getElementById('showroom3DContainer');
+    if (!container) return;
+
+    const w = container.clientWidth || 400;
+    const h = container.clientHeight || 250;
+
+    if (!showroomRenderer) {
+        showroomScene = new THREE.Scene();
+        showroomCamera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
+        showroomCamera.position.set(0, 1.9, 5.8);
+        showroomCamera.lookAt(0, 0.65, 0);
+
+        showroomRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        showroomRenderer.setSize(w, h);
+        showroomRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        showroomRenderer.shadowMap.enabled = true;
+        container.appendChild(showroomRenderer.domElement);
+
+        // Iluminación Showroom Studio
+        const hemi = new THREE.HemisphereLight(0xffffff, 0x091b33, 0.9);
+        showroomScene.add(hemi);
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+        keyLight.position.set(5, 8, 5);
+        showroomScene.add(keyLight);
+
+        const rimLight = new THREE.DirectionalLight(0x00d2ff, 1.3);
+        rimLight.position.set(-5, 4, -4);
+        showroomScene.add(rimLight);
+
+        const goldLight = new THREE.DirectionalLight(0xffd700, 0.6);
+        goldLight.position.set(4, 2, -4);
+        showroomScene.add(goldLight);
+
+        // Podio de exhibición circular
+        const podium = new THREE.Mesh(
+            new THREE.CylinderGeometry(2.5, 2.7, 0.14, 32),
+            new THREE.MeshStandardMaterial({ color: 0x07152b, roughness: 0.35, metalness: 0.85 })
+        );
+        podium.position.y = -0.07;
+        showroomScene.add(podium);
+
+        const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(2.6, 0.04, 10, 48),
+            new THREE.MeshBasicMaterial({ color: 0x00d2ff })
+        );
+        ring.rotation.x = Math.PI / 2;
+        showroomScene.add(ring);
+
+        window.addEventListener('resize', () => {
+            if (showroomRenderer && showroomCamera && container) {
+                const nw = container.clientWidth;
+                const nh = container.clientHeight || 250;
+                if (nw > 0) {
+                    showroomCamera.aspect = nw / nh;
+                    showroomCamera.updateProjectionMatrix();
+                    showroomRenderer.setSize(nw, nh);
+                }
+            }
+        });
+    } else {
+        const nw = container.clientWidth;
+        const nh = container.clientHeight || 250;
+        showroomCamera.aspect = nw / nh;
+        showroomCamera.updateProjectionMatrix();
+        showroomRenderer.setSize(nw, nh);
+    }
+
+    actualizarShowroomVehiculo();
+
+    if (!showroomAnimId) {
+        animarShowroom();
+    }
+}
+
+function animarShowroom() {
+    if (showroomVehiculoMesh) {
+        showroomVehiculoMesh.rotation.y += 0.012; // Rotación 360 grados en showroom
+    }
+    if (showroomRenderer && showroomScene && showroomCamera) {
+        showroomRenderer.render(showroomScene, showroomCamera);
+    }
+    showroomAnimId = requestAnimationFrame(animarShowroom);
+}
+
+function actualizarShowroomVehiculo() {
+    if (!showroomScene || typeof crearModeloVehiculoCompleto !== 'function') return;
+    if (showroomVehiculoMesh) {
+        showroomScene.remove(showroomVehiculoMesh);
+    }
+    showroomVehiculoMesh = crearModeloVehiculoCompleto(avatarConfig.vehiculo, avatarConfig.colorTraje, avatarConfig.casco, false);
+    showroomVehiculoMesh.position.set(0, 0, 0);
+    showroomScene.add(showroomVehiculoMesh);
+    actualizarLabelsHUD();
+}
+
+function abrirLobbyGranPremio() {
+    if (typeof carState !== 'undefined') {
+        carState.speed = 0;
+    }
+    document.querySelectorAll('.seccion-modulo').forEach(s => s.classList.add('d-none'));
+    const lobby = document.getElementById('seccion_carreras_lobby');
+    if (lobby) lobby.classList.remove('d-none');
+
+    // Sincronizar botones visuales
+    ['auto_jetta', 'auto_omoda', 'auto_cupra', 'moto_suzuki', 'moto_kawasaki', 'auto'].forEach(v => {
+        const el = document.getElementById('veh_' + v);
+        if (el) el.classList.toggle('active', v === avatarConfig.vehiculo || (v === 'auto_jetta' && avatarConfig.vehiculo === 'auto'));
+    });
+    ['taller', 'corporativo', 'rancho'].forEach(m => {
+        const pill = document.getElementById('pill_mundo_' + m);
+        if (pill) pill.classList.toggle('active', m === avatarConfig.mundoSeleccionado);
+    });
+
+    actualizarLabelsHUD();
+    setTimeout(() => {
+        initShowroom3D();
+    }, 60);
+}
+
+function iniciarCarreraDesdeLobby() {
+    if (showroomAnimId) {
+        cancelAnimationFrame(showroomAnimId);
+        showroomAnimId = null;
+    }
+
+    document.querySelectorAll('.seccion-modulo').forEach(s => s.classList.add('d-none'));
+    const secJuego = document.getElementById('seccion_carreras');
+    if (secJuego) secJuego.classList.remove('d-none');
+
+    if (!scene3D) {
+        initCarrera3D();
+    } else {
+        const esCorp = (avatarConfig.mundoSeleccionado === 'corporativo');
+        const esRancho = (avatarConfig.mundoSeleccionado === 'rancho');
+
+        scene3D.background = new THREE.Color(esCorp ? 0x050d1a : (esRancho ? 0x64b5f6 : 0x091e3a));
+        scene3D.fog = new THREE.FogExp2(scene3D.background, 0.0055);
+
+        construirPista3DMarioKart();
+        construirVehiculo3D();
+        crearRivales3D();
+        reiniciarCarrera3D();
+        setTimeout(onWindowResize3D, 50);
+    }
+
+    actualizarLabelsHUD();
+    mostrarBannerHUD('¡A CORRER!', '#00d2ff');
+}
+
 function setVehiculo(tipo) {
     avatarConfig.vehiculo = tipo;
     ['auto_jetta', 'auto_omoda', 'auto_cupra', 'moto_suzuki', 'moto_kawasaki', 'auto'].forEach(v => {
@@ -1225,6 +1455,7 @@ function setVehiculo(tipo) {
         if (el) el.classList.toggle('active', v === tipo || (v === 'auto_jetta' && tipo === 'auto'));
     });
     actualizarLabelsHUD();
+    actualizarShowroomVehiculo();
     dibujarAvatarPreview();
     guardarAvatarServidor();
     if (scene3D && typeof construirVehiculo3D === 'function') {
@@ -1234,6 +1465,7 @@ function setVehiculo(tipo) {
 
 function setCasco(tipo) {
     avatarConfig.casco = tipo;
+    actualizarShowroomVehiculo();
     dibujarAvatarPreview();
     guardarAvatarServidor();
 }
@@ -1242,8 +1474,12 @@ function setColorTraje(hex, elem) {
     avatarConfig.colorTraje = hex;
     document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('active'));
     if (elem) elem.classList.add('active');
+    actualizarShowroomVehiculo();
     dibujarAvatarPreview();
     guardarAvatarServidor();
+    if (scene3D && typeof construirVehiculo3D === 'function') {
+        construirVehiculo3D();
+    }
 }
 
 function seleccionarMundo(mundoId) {
@@ -1291,16 +1527,31 @@ function desbloquearMundo(mundoId) {
 }
 
 function actualizarLabelsHUD() {
-    const nombresMundos = { taller: 'Agencia & Taller Central', corporativo: 'Corporativo Grupo Huerta', rancho: 'El Rancho (Terracería)' };
-    const nombresVeh = { auto: 'Auto Deportivo GT', moto_suzuki: 'Moto Suzuki GSX-R', moto_kawasaki: 'Kawasaki Ninja' };
+    const nombresMundos = { 
+        taller: 'Agencia & Taller Central', 
+        corporativo: 'Corporativo Grupo Huerta', 
+        rancho: 'El Rancho (Terracería)' 
+    };
+    const nombresVeh = { 
+        auto_jetta: 'VW Jetta Sportline GLI', 
+        auto: 'VW Jetta Sportline GLI', 
+        auto_omoda: 'Omoda C5 Crossover Coupé', 
+        auto_cupra: 'Cupra Formentor Mate', 
+        moto_suzuki: 'Suzuki GSX-R Superbike Ecstar', 
+        moto_kawasaki: 'Kawasaki Ninja ZX-10R Verde KRT' 
+    };
 
     const lblM3D = document.getElementById('lblMundoActivo3D');
     const lblV3D = document.getElementById('lblVehiculoActivo3D');
     const lblM2D = document.getElementById('lblMundoActivo2D');
+    const lblPistaSel = document.getElementById('lblPistaSeleccionada');
+    const lblVehShow = document.getElementById('lblShowroomVehiculo');
 
-    if (lblM3D) lblM3D.textContent = 'Circuito: ' + (nombresMundos[avatarConfig.mundoSeleccionado] || 'Agencia');
-    if (lblV3D) lblV3D.textContent = 'Vehículo: ' + (nombresVeh[avatarConfig.vehiculo] || 'Auto');
-    if (lbl2D => lblM2D) lblM2D.textContent = 'Nivel: ' + (nombresMundos[avatarConfig.mundoSeleccionado] || 'Taller');
+    if (lblM3D) lblM3D.textContent = 'Circuito: ' + (nombresMundos[avatarConfig.mundoSeleccionado] || 'Agencia & Taller');
+    if (lblV3D) lblV3D.textContent = 'Vehículo: ' + (nombresVeh[avatarConfig.vehiculo] || 'VW Jetta GLI');
+    if (lblM2D) lblM2D.textContent = 'Nivel: ' + (nombresMundos[avatarConfig.mundoSeleccionado] || 'Taller');
+    if (lblPistaSel) lblPistaSel.textContent = nombresMundos[avatarConfig.mundoSeleccionado] || 'Agencia & Taller';
+    if (lblVehShow) lblVehShow.textContent = nombresVeh[avatarConfig.vehiculo] || 'VW Jetta GLI';
 }
 
 function guardarAvatarServidor() {
@@ -1315,17 +1566,25 @@ function guardarAvatarServidor() {
 }
 
 function cambiarSeccion(seccionId) {
-    document.querySelectorAll('.seccion-modulo').forEach(s => s.classList.add('d-none'));
-    document.querySelectorAll('.arcade-tab-btn').forEach(b => b.classList.remove('active'));
-
-    const sec = document.getElementById('seccion_' + seccionId);
-    const tab = document.getElementById('tab_' + seccionId);
-    if (sec) sec.classList.remove('d-none');
-    if (tab) tab.classList.add('active');
-
     if (seccionId === 'carreras') {
-        initCarrera3D();
-    } else if (seccionId === 'plataformas') {
+        abrirLobbyGranPremio();
+        return;
+    }
+
+    if (showroomAnimId) {
+        cancelAnimationFrame(showroomAnimId);
+        showroomAnimId = null;
+    }
+
+    if (typeof carState !== 'undefined' && seccionId !== 'carreras_juego') {
+        carState.speed = 0;
+    }
+
+    document.querySelectorAll('.seccion-modulo').forEach(s => s.classList.add('d-none'));
+    const sec = document.getElementById('seccion_' + seccionId);
+    if (sec) sec.classList.remove('d-none');
+
+    if (seccionId === 'plataformas') {
         initJuego2D();
     } else if (seccionId === 'records') {
         cargarRanking('carreras_3d');
@@ -2701,13 +2960,10 @@ function crearRivales3D() {
 // CONSTRUCTOR DE VEHÍCULOS OFICIALES GRUPO HUERTA (3D ESCULPIDO)
 // JETTA GLI • OMODA C5 • CUPRA FORMENTOR • SUZUKI GSX-R • KAWASAKI NINJA
 // ==============================================================
-function construirVehiculo3D() {
-    if (vehiculo3D) scene3D.remove(vehiculo3D);
-
-    vehiculo3D = new THREE.Group();
-    escapeFlames = [];
-
-    const tipoVeh = avatarConfig.vehiculo || 'auto_jetta';
+function crearModeloVehiculoCompleto(tipoVeh, colorHex, cascoTipo, forGame) {
+    const vehGroup = new THREE.Group();
+    tipoVeh = tipoVeh || 'auto_jetta';
+    colorHex = colorHex || '#00d2ff';
     const esMoto = tipoVeh.startsWith('moto');
 
     if (!esMoto) {
@@ -2720,7 +2976,7 @@ function construirVehiculo3D() {
         const isOmoda = (tipoVeh === 'auto_omoda');
         const isJetta = (!isCupra && !isOmoda);
 
-        let colorCarroceria = new THREE.Color(avatarConfig.colorTraje).getHex();
+        let colorCarroceria = new THREE.Color(colorHex).getHex();
         if (isCupra) colorCarroceria = 0x243345; // Magnetic Tech / Petrol Blue mate
 
         const bodyMat = new THREE.MeshStandardMaterial({
@@ -2907,13 +3163,18 @@ function construirVehiculo3D() {
         }
 
         // 4 Ruedas de Aleación Deportiva Realistas
-        ruedaDelanteraIzq = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
-        ruedaDelanteraIzq.position.set(-1.12, 0.44, -1.25);
-        carGroup.add(ruedaDelanteraIzq);
+        const wFL = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
+        wFL.position.set(-1.12, 0.44, -1.25);
+        carGroup.add(wFL);
 
-        ruedaDelanteraDer = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
-        ruedaDelanteraDer.position.set(1.12, 0.44, -1.25);
-        carGroup.add(ruedaDelanteraDer);
+        const wFR = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, true);
+        wFR.position.set(1.12, 0.44, -1.25);
+        carGroup.add(wFR);
+
+        if (forGame) {
+            ruedaDelanteraIzq = wFL;
+            ruedaDelanteraDer = wFR;
+        }
 
         const rWheelL = crearRuedaDeportiva(tipoVeh, 0.44, 0.36, false);
         rWheelL.position.set(-1.12, 0.44, 1.25);
@@ -2931,9 +3192,12 @@ function construirVehiculo3D() {
         const flMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff, transparent: true, opacity: 0 });
         const flL = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flL.rotation.x = -Math.PI / 2; flL.position.set(-0.55, 0.38, 2.85); carGroup.add(flL);
         const flR = new THREE.Mesh(new THREE.ConeGeometry(0.2, 1.2, 8), flMat); flR.rotation.x = -Math.PI / 2; flR.position.set(0.55, 0.38, 2.85); carGroup.add(flR);
-        escapeFlames.push(flL, flR);
 
-        vehiculo3D.add(carGroup);
+        if (forGame) {
+            escapeFlames.push(flL, flR);
+        }
+
+        vehGroup.add(carGroup);
 
     } else {
         // ==========================================================
@@ -2965,10 +3229,14 @@ function construirVehiculo3D() {
         bikeGroup.add(rearWheel);
 
         // Rueda delantera de carreras
-        ruedaDelanteraIzq = crearRuedaDeportiva(tipoVeh, 0.55, 0.28, true);
-        ruedaDelanteraIzq.position.set(0, 0.55, -1.4);
-        bikeGroup.add(ruedaDelanteraIzq);
-        ruedaDelanteraDer = ruedaDelanteraIzq;
+        const fWheel = crearRuedaDeportiva(tipoVeh, 0.55, 0.28, true);
+        fWheel.position.set(0, 0.55, -1.4);
+        bikeGroup.add(fWheel);
+
+        if (forGame) {
+            ruedaDelanteraIzq = fWheel;
+            ruedaDelanteraDer = fWheel;
+        }
 
         // Horquilla invertida delantera dorada (Showa / Öhlins)
         const goldForkMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.95, roughness: 0.15 });
@@ -3040,11 +3308,14 @@ function construirVehiculo3D() {
         flM.rotation.x = -Math.PI / 2.25;
         flM.position.set(0, 1.12, 2.5);
         bikeGroup.add(flM);
-        escapeFlames.push(flM);
+
+        if (forGame) {
+            escapeFlames.push(flM);
+        }
 
         // 8. Piloto Realista de Moto GP (Exacto como en la Imagen 1)
         const pilot = new THREE.Group();
-        const suitColor = new THREE.Color(avatarConfig.colorTraje).getHex();
+        const suitColor = new THREE.Color(colorHex).getHex();
         const leathersMat = new THREE.MeshStandardMaterial({ color: suitColor, roughness: 0.75 });
         const accentMat = new THREE.MeshStandardMaterial({ color: esKawa ? 0x22c55e : 0xfacc15, roughness: 0.5 }); // Franjas amarillo fluorescente de competición
 
@@ -3096,12 +3367,20 @@ function construirVehiculo3D() {
         sliderR.position.set(0.46, 0.95, 0.28); pilot.add(sliderR);
 
         bikeGroup.add(pilot);
-        vehiculo3D.add(bikeGroup);
+        vehGroup.add(bikeGroup);
     }
 
+    return vehGroup;
+}
+
+function construirVehiculo3D() {
+    if (vehiculo3D && scene3D) scene3D.remove(vehiculo3D);
+
+    escapeFlames = [];
+    vehiculo3D = crearModeloVehiculoCompleto(avatarConfig.vehiculo, avatarConfig.colorTraje, avatarConfig.casco, true);
     vehiculo3D.position.set(carState.x || 0, 0, carState.z || -80);
     vehiculo3D.rotation.y = carState.angle || (-Math.PI / 2);
-    scene3D.add(vehiculo3D);
+    if (scene3D) scene3D.add(vehiculo3D);
 }
 
 // ==============================================================
@@ -3186,6 +3465,11 @@ function actualizarHUDItem() {
 // ==============================================================
 function animar3D() {
     animId3D = requestAnimationFrame(animar3D);
+
+    const secCarreras = document.getElementById('seccion_carreras');
+    if (!secCarreras || secCarreras.classList.contains('d-none')) {
+        return;
+    }
 
     const adelante = (keysPressed['KeyW'] || keysPressed['ArrowUp']);
     const atras = (keysPressed['KeyS'] || keysPressed['ArrowDown']);
