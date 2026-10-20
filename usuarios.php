@@ -211,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                             $pVer = $tieneAcceso ? 1 : 0;
                             $pCrear = $tieneAcceso ? 1 : 0;
                             $pEditar = $tieneAcceso ? 1 : 0;
-                            $pEliminar = ($tieneAcceso && strtolower($rol) === 'admin') ? 1 : 0;
+                            $pEliminar = ($tieneAcceso && strtolower($rol) === 'admin' && $mClave !== 'tickets') ? 1 : 0;
                             $pExportar = $tieneAcceso ? 1 : 0;
                         }
                         $stmtSave->execute([$targetUserId, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);
@@ -287,6 +287,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         $pCrear    = isset($permisos_posted[$mClave]['puede_crear']) ? 1 : 0;
                         $pEditar   = isset($permisos_posted[$mClave]['puede_editar']) ? 1 : 0;
                         $pEliminar = isset($permisos_posted[$mClave]['puede_eliminar']) ? 1 : 0;
+                        if ($mClave === 'tickets' && strtolower($targetRolDb) !== 'superadmin') {
+                            $pEliminar = 0; // Exclusivo de SuperAdmin en tickets
+                        }
                         $pExportar = isset($permisos_posted[$mClave]['puede_exportar']) ? 1 : 0;
 
                         $stmtSave->execute([$target_user_id, $mClave, $pVer, $pCrear, $pEditar, $pEliminar, $pExportar]);

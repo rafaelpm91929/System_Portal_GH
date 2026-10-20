@@ -124,6 +124,11 @@ function asegurarTablasPermisos($pdo) {
             $pdo->exec("UPDATE usuario_permisos SET modulo_clave = 'agencias' WHERE modulo_clave = 'agencia'");
         } catch (Throwable $tMig) {}
 
+        // Garantizar que la eliminación en tickets sea privilegio exclusivo del rol SuperAdmin
+        try {
+            $pdo->exec("UPDATE usuario_permisos SET puede_eliminar = 0 WHERE modulo_clave = 'tickets' AND usuario_id IN (SELECT id FROM usuarios WHERE LOWER(rol) != 'superadmin')");
+        } catch (Throwable $tFixPerm) {}
+
         // 4. Catálogo oficial y vigente de módulos del portal Grupo Huerta (6 módulos reales)
         $modulosBase = [
             ['usuarios',   'Gestión de Usuarios',                'Administración de cuentas, roles y permisos de acceso al portal',                'bi-people-fill',              1, 1],

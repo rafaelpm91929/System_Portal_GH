@@ -806,22 +806,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         }
     }
 
-    // 4. Eliminar Ticket
-    if ($accion === 'eliminar_ticket' && $esAdmin) {
-        $ticketId = intval($_POST['ticket_id'] ?? 0);
-        if ($ticketId > 0) {
-            try {
-                $stmt = $pdo->prepare("DELETE FROM tickets_soporte WHERE id = :id");
-                $stmt->execute([':id' => $ticketId]);
-                $mensaje = "El ticket #$ticketId ha sido eliminado correctamente.";
-            } catch (Throwable $e) {
-                $error = "Error al eliminar el ticket: " . $e->getMessage();
+    // 4. Eliminar Ticket (Exclusivo SuperAdmin)
+    if ($accion === 'eliminar_ticket') {
+        if (!$esSuperAdmin) {
+            $error = "Acceso denegado: Únicamente el rol SuperAdmin tiene privilegios para eliminar tickets.";
+        } else {
+            $ticketId = intval($_POST['ticket_id'] ?? 0);
+            if ($ticketId > 0) {
+                try {
+                    $stmt = $pdo->prepare("DELETE FROM tickets_soporte WHERE id = :id");
+                    $stmt->execute([':id' => $ticketId]);
+                    $mensaje = "El ticket #$ticketId ha sido eliminado correctamente.";
+                } catch (Throwable $e) {
+                    $error = "Error al eliminar el ticket: " . $e->getMessage();
+                }
             }
         }
     }
 
-    // 5. Vaciar Todos los Tickets (Solo SuperAdmin)
-    if ($accion === 'vaciar_todos_tickets' && $esAdmin) {
+    // 5. Vaciar Todos los Tickets (Exclusivo SuperAdmin)
+    if ($accion === 'vaciar_todos_tickets') {
+        if (!$esSuperAdmin) {
+            $error = "Acceso denegado: Únicamente el rol SuperAdmin tiene privilegios para vaciar tickets.";
+        } else {
         try {
             $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
             if ($driver === 'sqlite') {
@@ -841,6 +848,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
             $mensaje = "Se han eliminado todos los tickets y se ha reiniciado el contador de folios a 0.";
         } catch (Throwable $e) {
             $error = "Error al vaciar tickets: " . $e->getMessage();
+        }
         }
     }
 
@@ -1140,35 +1148,39 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
         }
     }
 
-    // 8. Eliminar Cita
-    if ($accion === 'eliminar_cita' && $esAdmin) {
-        $citaId = intval($_POST['cita_id'] ?? 0);
-        $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
-        if ($citaId > 0) {
-            try {
-                $stmtPrevDel = $pdo->prepare("SELECT * FROM citas_soporte WHERE id = ?");
-                $stmtPrevDel->execute([$citaId]);
-                $citaDel = $stmtPrevDel->fetch(PDO::FETCH_ASSOC);
+    // 8. Eliminar Cita (Exclusivo SuperAdmin)
+    if ($accion === 'eliminar_cita') {
+        if (!$esSuperAdmin) {
+            $error = "Acceso denegado: Únicamente el rol SuperAdmin tiene privilegios para eliminar citas.";
+        } else {
+            $citaId = intval($_POST['cita_id'] ?? 0);
+            $origenTicketId = intval($_POST['origen_ticket_id'] ?? 0);
+            if ($citaId > 0) {
+                try {
+                    $stmtPrevDel = $pdo->prepare("SELECT * FROM citas_soporte WHERE id = ?");
+                    $stmtPrevDel->execute([$citaId]);
+                    $citaDel = $stmtPrevDel->fetch(PDO::FETCH_ASSOC);
 
-                $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE id = ?");
-                $stmtDelC->execute([$citaId]);
-                $mensaje = "Cita ID #$citaId eliminada correctamente.";
+                    $stmtDelC = $pdo->prepare("DELETE FROM citas_soporte WHERE id = ?");
+                    $stmtDelC->execute([$citaId]);
+                    $mensaje = "Cita ID #$citaId eliminada correctamente.";
 
-                if ($citaDel && !empty($citaDel['agencia'])) {
-                    try {
-                        enviarWebhookCitaAgencia($pdo, $citaDel['agencia'], [
-                            'folio_cita' => $citaDel['folio'] ?: ('CTA-' . $citaId)
-                        ], 'eliminar_cita');
-                    } catch (Throwable $eWhDel) {}
+                    if ($citaDel && !empty($citaDel['agencia'])) {
+                        try {
+                            enviarWebhookCitaAgencia($pdo, $citaDel['agencia'], [
+                                'folio_cita' => $citaDel['folio'] ?: ('CTA-' . $citaId)
+                            ], 'eliminar_cita');
+                        } catch (Throwable $eWhDel) {}
+                    }
+
+                    if ($origenTicketId > 0) {
+                        $_SESSION['redir_ticket_ver'] = $origenTicketId;
+                    } else {
+                        $_SESSION['tab_activa'] = 'citas';
+                    }
+                } catch (Throwable $eDelC) {
+                    $error = "Error al eliminar cita: " . $eDelC->getMessage();
                 }
-
-                if ($origenTicketId > 0) {
-                    $_SESSION['redir_ticket_ver'] = $origenTicketId;
-                } else {
-                    $_SESSION['tab_activa'] = 'citas';
-                }
-            } catch (Throwable $eDelC) {
-                $error = "Error al eliminar cita: " . $eDelC->getMessage();
             }
         }
     }
@@ -3515,7 +3527,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                     <span><i class="bi bi-printer me-2"></i> Imprimir Ficha de Ticket</span>
                                     <i class="bi bi-chevron-right small text-secondary"></i>
                                 </button>
-                                <?php if ($esAdmin): ?>
+                                <?php if ($esSuperAdmin): ?>
                                     <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente este ticket?');" class="m-0">
                                         <input type="hidden" name="accion" value="eliminar_ticket">
                                         <input type="hidden" name="ticket_id" value="<?php echo $ticketActivo['id']; ?>">
@@ -3524,6 +3536,17 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                             <i class="bi bi-chevron-right small text-secondary"></i>
                                         </button>
                                     </form>
+                                    <?php if ($citaTicketActivo): ?>
+                                        <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente la cita técnica de este ticket?');" class="m-0 mt-1">
+                                            <input type="hidden" name="accion" value="eliminar_cita">
+                                            <input type="hidden" name="cita_id" value="<?php echo $citaTicketActivo['id']; ?>">
+                                            <input type="hidden" name="origen_ticket_id" value="<?php echo $ticketActivo['id']; ?>">
+                                            <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 py-2 text-start w-100 d-flex align-items-center justify-content-between border-opacity-35">
+                                                <span><i class="bi bi-calendar-x me-2"></i> Eliminar Cita Asociada</span>
+                                                <i class="bi bi-chevron-right small text-secondary"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -3907,7 +3930,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
 
             <!-- Botones de Acción -->
             <div class="d-flex align-items-center gap-2">
-                <?php if ($esAdmin && $totalTickets > 0): ?>
+                <?php if ($esSuperAdmin && $totalTickets > 0): ?>
                     <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar TODOS los tickets registrados y reiniciar el contador a 0?');" style="display:inline;">
                         <input type="hidden" name="accion" value="vaciar_todos_tickets">
                         <button type="submit" class="btn btn-outline-danger btn-sm rounded-3 px-3 py-2 fw-semibold d-flex align-items-center gap-1" title="Eliminar todos los tickets">
@@ -4082,7 +4105,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                     <a href="tickets.php?ver=<?php echo $t['id']; ?>" class="btn btn-sm btn-info rounded-3 px-2 py-1 text-dark fw-bold" title="Abrir ticket completo y contestar">
                                         <i class="bi bi-headset me-1"></i> Atender
                                     </a>
-                                    <?php if ($esAdmin): ?>
+                                    <?php if ($esSuperAdmin): ?>
                                         <form method="POST" onsubmit="return confirm('¿Seguro que deseas eliminar permanentemente este ticket?');" style="display:inline;">
                                             <input type="hidden" name="accion" value="eliminar_ticket">
                                             <input type="hidden" name="ticket_id" value="<?php echo $t['id']; ?>">
@@ -4285,7 +4308,7 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                                                 <button type="button" class="btn btn-outline-info btn-sm rounded-3 py-1 px-2" onclick="abrirModalActualizarCita(<?php echo htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>)" title="Atender / Modificar Cita">
                                                     <i class="bi bi-pencil-square"></i>
                                                 </button>
-                                                <?php if ($esAdmin): ?>
+                                                <?php if ($esSuperAdmin): ?>
                                                     <form method="POST" class="d-inline" onsubmit="return confirm('¿Seguro que deseas eliminar esta cita?');">
                                                         <input type="hidden" name="accion" value="eliminar_cita">
                                                         <input type="hidden" name="cita_id" value="<?php echo $c['id']; ?>">
@@ -4888,6 +4911,26 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
         </div>
     </div>
 </div>
+<?php if ($esSuperAdmin): ?>
+<!-- Formulario exclusivo de eliminación de citas para SuperAdmin -->
+<form id="formEliminarCitaModal" method="POST" style="display:none;">
+    <input type="hidden" name="accion" value="eliminar_cita">
+    <input type="hidden" name="cita_id" id="eliminarCitaModalId" value="">
+    <input type="hidden" name="origen_ticket_id" id="eliminarCitaModalOrigenId" value="">
+</form>
+<script>
+function confirmarEliminarCitaDesdeModal() {
+    const id = document.getElementById("citaActualizarId").value;
+    const origen = document.getElementById("citaActualizarOrigenTicketId").value || 0;
+    if (!id) return;
+    if (confirm("¿Seguro que deseas eliminar permanentemente esta cita técnica? Esta acción es irreversible.")) {
+        document.getElementById("eliminarCitaModalId").value = id;
+        document.getElementById("eliminarCitaModalOrigenId").value = origen;
+        document.getElementById("formEliminarCitaModal").submit();
+    }
+}
+</script>
+<?php endif; ?>
 
 <!-- ============================================== -->
 <!-- MODAL: ATENCIÓN Y SEGUIMIENTO POR EL AGENTE -->
@@ -4983,6 +5026,26 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
         </div>
     </div>
 </div>
+<?php if ($esSuperAdmin): ?>
+<!-- Formulario exclusivo de eliminación de citas para SuperAdmin -->
+<form id="formEliminarCitaModal" method="POST" style="display:none;">
+    <input type="hidden" name="accion" value="eliminar_cita">
+    <input type="hidden" name="cita_id" id="eliminarCitaModalId" value="">
+    <input type="hidden" name="origen_ticket_id" id="eliminarCitaModalOrigenId" value="">
+</form>
+<script>
+function confirmarEliminarCitaDesdeModal() {
+    const id = document.getElementById("citaActualizarId").value;
+    const origen = document.getElementById("citaActualizarOrigenTicketId").value || 0;
+    if (!id) return;
+    if (confirm("¿Seguro que deseas eliminar permanentemente esta cita técnica? Esta acción es irreversible.")) {
+        document.getElementById("eliminarCitaModalId").value = id;
+        document.getElementById("eliminarCitaModalOrigenId").value = origen;
+        document.getElementById("formEliminarCitaModal").submit();
+    }
+}
+</script>
+<?php endif; ?>
 
 <!-- Modal Nueva Cita Técnica -->
 <div class="modal fade" id="modalNuevaCita" tabindex="-1" aria-labelledby="modalNuevaCitaLabel" aria-hidden="true">
@@ -5097,6 +5160,26 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
         </div>
     </div>
 </div>
+<?php if ($esSuperAdmin): ?>
+<!-- Formulario exclusivo de eliminación de citas para SuperAdmin -->
+<form id="formEliminarCitaModal" method="POST" style="display:none;">
+    <input type="hidden" name="accion" value="eliminar_cita">
+    <input type="hidden" name="cita_id" id="eliminarCitaModalId" value="">
+    <input type="hidden" name="origen_ticket_id" id="eliminarCitaModalOrigenId" value="">
+</form>
+<script>
+function confirmarEliminarCitaDesdeModal() {
+    const id = document.getElementById("citaActualizarId").value;
+    const origen = document.getElementById("citaActualizarOrigenTicketId").value || 0;
+    if (!id) return;
+    if (confirm("¿Seguro que deseas eliminar permanentemente esta cita técnica? Esta acción es irreversible.")) {
+        document.getElementById("eliminarCitaModalId").value = id;
+        document.getElementById("eliminarCitaModalOrigenId").value = origen;
+        document.getElementById("formEliminarCitaModal").submit();
+    }
+}
+</script>
+<?php endif; ?>
 
 <!-- Modal Actualizar Cita -->
 <div class="modal fade" id="modalActualizarCita" tabindex="-1" aria-labelledby="modalActualizarCitaLabel" aria-hidden="true">
@@ -5119,6 +5202,8 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                     <div class="mb-3">
                         <div class="text-secondary small fw-bold text-uppercase">Agencia / Sucursal</div>
                         <div id="citaActualizarAgencia" class="fw-bold fs-6 text-info"></div>
+
+
                     </div>
                     <div class="mb-3">
                         <div class="text-secondary small fw-bold text-uppercase">Asunto / Ticket Vinculado</div>
@@ -5173,16 +5258,45 @@ $agentesTickets = ($esSuperAdmin && $pdo) ? obtenerAgentesConAccesoTickets($pdo)
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer border-top border-secondary border-opacity-25">
-                    <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
-                    <button type="submit" class="btn btn-warning rounded-3 px-4 fw-bold text-dark">
-                        <i class="bi bi-save me-1"></i> Guardar Cambios
-                    </button>
+                <div class="modal-footer border-top border-secondary border-opacity-25 d-flex justify-content-between align-items-center">
+                    <div>
+                        <?php if ($esSuperAdmin): ?>
+                            <button type="button" class="btn btn-outline-danger rounded-3 btn-sm px-3" onclick="confirmarEliminarCitaDesdeModal()">
+                                <i class="bi bi-trash3 me-1"></i> Eliminar Cita
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-secondary rounded-3" data-bs-dismiss="modal">Cerrar</button>
+                        <button type="submit" class="btn btn-warning rounded-3 px-4 fw-bold text-dark">
+                            <i class="bi bi-save me-1"></i> Guardar Cambios
+                        </button>
+                    </div>
                 </div>
             </form>
         </div>
     </div>
 </div>
+<?php if ($esSuperAdmin): ?>
+<!-- Formulario exclusivo de eliminación de citas para SuperAdmin -->
+<form id="formEliminarCitaModal" method="POST" style="display:none;">
+    <input type="hidden" name="accion" value="eliminar_cita">
+    <input type="hidden" name="cita_id" id="eliminarCitaModalId" value="">
+    <input type="hidden" name="origen_ticket_id" id="eliminarCitaModalOrigenId" value="">
+</form>
+<script>
+function confirmarEliminarCitaDesdeModal() {
+    const id = document.getElementById("citaActualizarId").value;
+    const origen = document.getElementById("citaActualizarOrigenTicketId").value || 0;
+    if (!id) return;
+    if (confirm("¿Seguro que deseas eliminar permanentemente esta cita técnica? Esta acción es irreversible.")) {
+        document.getElementById("eliminarCitaModalId").value = id;
+        document.getElementById("eliminarCitaModalOrigenId").value = origen;
+        document.getElementById("formEliminarCitaModal").submit();
+    }
+}
+</script>
+<?php endif; ?>
 
 <!-- ======================================================= -->
 <!-- MODAL FORMATO / REPORTE DE SERVICIO TÉCNICO (INFRAESTRUCTURA) -->
