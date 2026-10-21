@@ -632,13 +632,12 @@ function obtenerIconoArea($nombreArea) {
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 42%;
-            max-width: 270px;
-            opacity: 0.045;
+            width: 45%;
+            max-width: 320px;
+            opacity: 0.12;
             pointer-events: none;
             z-index: 3;
             text-align: center;
-            filter: grayscale(100%);
             user-select: none;
         }
 
@@ -1244,6 +1243,8 @@ function obtenerIconoArea($nombreArea) {
     const FORENSIC_AGENCIA = "<?php echo addslashes($agenciaNombre); ?>";
     const FORENSIC_IP = "<?php echo addslashes($ipUsuario); ?>";
     let currentFolioDoc = 'GH-POL';
+    const logoGhPreloaded = new Image();
+    logoGhPreloaded.src = 'uploads/logo_gh.png';
 
     // =========================================================================
     // BLINDAJE DUAL: ENTRELAZADO DESTRUCTIVO + TRAMPA ESTEGANOGRÁFICA INVISIBLE
@@ -1268,10 +1269,10 @@ function obtenerIconoArea($nombreArea) {
             const agenciaTxt = (agencia || 'AGENCIA').toUpperCase();
             const folioTxt = folio || 'GH-POL';
 
-            // 1. Franjas fijas perimetrales de seguridad en bordes superior e inferior
+            // 1. Franjas perimetrales sutiles en bordes superior e inferior
             ctx.save();
             ctx.font = 'bold 10px "Inter", "Segoe UI", Arial, sans-serif';
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.40)';
             const barraSuperior = `USUARIO: ${usuarioTxt} (${loginTxt})   |   AGENCIA: ${agenciaTxt}   |   FECHA: ${fechaHoraFmt}`;
             ctx.fillText(barraSuperior, 24, 20);
 
@@ -1279,9 +1280,7 @@ function obtenerIconoArea($nombreArea) {
             ctx.fillText(barraInferior, 24, height - 14);
             ctx.restore();
 
-            // 2. ENTRELAZADO DESTRUCTIVO DIAGONAL (ANTI-IA INPAINTING)
-            // Se dibuja con alta densidad (48%-52%) entrelazado con las letras de la política.
-            // Si una IA intenta borrar la marca, destruye y perfora las letras del documento haciéndolo ilegible.
+            // 2. MATRIZ DIAGONAL ARMONIZADA (CON LOGO GH Y TRANSPARENCIA CALIBRADA)
             ctx.save();
             ctx.translate(width / 2, height / 2);
             ctx.rotate(-28 * Math.PI / 180);
@@ -1299,7 +1298,7 @@ function obtenerIconoArea($nombreArea) {
             const startY = -height * 0.7;
             const endY   = height * 1.7;
 
-            // Fusión de tinta con el documento
+            // Fusión de tinta suave con el documento
             ctx.globalCompositeOperation = 'multiply';
 
             let row = 0;
@@ -1307,38 +1306,44 @@ function obtenerIconoArea($nombreArea) {
                 row++;
                 const offX = (row % 2 === 0) ? (stepX / 2) : 0;
                 for (let x = startX + offX; x < endX; x += stepX) {
+                    // Logo oficial de Grupo Huerta en cada bloque
+                    if (logoGhPreloaded && logoGhPreloaded.complete && logoGhPreloaded.naturalWidth > 0) {
+                        ctx.save();
+                        ctx.globalAlpha = 0.28;
+                        ctx.drawImage(logoGhPreloaded, x, y - 14, 20, 20);
+                        ctx.restore();
+                    }
+
                     // Línea 1: Encabezado institucional
                     ctx.font = 'bold 9.5px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(71, 85, 105, 0.42)';
-                    ctx.fillText(line1, x, y);
+                    ctx.fillStyle = 'rgba(71, 85, 105, 0.26)';
+                    ctx.fillText(line1, x + 24, y);
 
-                    // Línea 2: USUARIO nítido y destructivo para IA
-                    ctx.font = 'bold 13px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.52)';
+                    // Línea 2: USUARIO nítido con transparencia suave y legible
+                    ctx.font = 'bold 12.5px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.29)';
                     ctx.fillText(line2, x, y + 17);
 
-                    // Línea 3: AGENCIA
+                    // Línea 3: AGENCIA con transparencia suave
                     ctx.font = 'bold 11.5px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.46)';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.27)';
                     ctx.fillText(line3, x, y + 33);
 
-                    // Línea 4: FECHA Y HORA con tinte de seguridad carmesí
+                    // Línea 4: FECHA Y HORA con tinte de seguridad sutil
                     ctx.font = 'bold 11px "Inter", "Segoe UI", Arial, monospace';
-                    ctx.fillStyle = 'rgba(185, 28, 28, 0.50)';
+                    ctx.fillStyle = 'rgba(185, 28, 28, 0.28)';
                     ctx.fillText(line4, x, y + 49);
                 }
             }
             ctx.restore();
 
             // 3. TRAMPA FORENSE ESTEGANOGRÁFICA INVISIBLE (YELLOW-DOTS / MIC)
-            // Inyecta micro-puntos matemáticos invisibles en el canal azul a lo largo del documento.
-            // Aunque la IA borre la marca visible, la trampa invisible sobrevive intacta.
             inyectarTrampaEsteganograficaAntiIA(ctx, width, height, loginTxt, agenciaTxt, `${dia}/${mes}/${anio}`, folioTxt);
 
         } catch (eCanvasW) {}
     }
 
-    // Inyección de micro-puntos forenses (Estándar EURion / Machine Identification Codes)
+        // Inyección de micro-puntos forenses (Estándar EURion / Machine Identification Codes)
     function inyectarTrampaEsteganograficaAntiIA(ctx, width, height, login, agencia, fechaStr, folio) {
         if (!ctx) return;
         try {
