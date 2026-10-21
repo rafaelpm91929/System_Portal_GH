@@ -33,6 +33,7 @@ if (!function_exists('resolverEnlacePortalTicket')) {
         $folio = trim($ticketData['folio'] ?? '');
         $ticketId = $ticketData['id'] ?? '';
         $agencia = trim($ticketData['solicitante_agencia'] ?? '');
+        $solEmail = trim($ticketData['solicitante_email'] ?? '');
 
         // Si es para un agente/especialista central TI, siempre va al portal central GH
         if (!$esParaCreador || empty($agencia)) {
@@ -46,17 +47,22 @@ if (!function_exists('resolverEnlacePortalTicket')) {
 
         // 1. Si el ticket tiene guardado webhook_url, deducir la base del portal directamente de ahí
         if (!empty($ticketData['webhook_url'])) {
-            $urlAgencia = preg_replace('#/api_webhook_ticket\.php.*$#i', '', $ticketData['webhook_url']);
+            $urlAgencia = preg_replace('#/(?:api_webhook_ticket|api_obtener_datos)\.php.*$#i', '', $ticketData['webhook_url']);
         } elseif ($pdo && !empty($folio)) {
             try {
-                $stmtWhD = $pdo->prepare("SELECT webhook_url FROM tickets_soporte WHERE folio = ? OR id = ? LIMIT 1");
+                $stmtWhD = $pdo->prepare("SELECT webhook_url, solicitante_email FROM tickets_soporte WHERE folio = ? OR id = ? LIMIT 1");
                 $stmtWhD->execute([$folio, $ticketId]);
-                $whD = $stmtWhD->fetchColumn();
-                if (!empty($whD)) {
-                    $urlAgencia = preg_replace('#/api_webhook_ticket\.php.*$#i', '', $whD);
+                $rWh = $stmtWhD->fetch(PDO::FETCH_ASSOC);
+                if (!empty($rWh['webhook_url'])) {
+                    $urlAgencia = preg_replace('#/(?:api_webhook_ticket|api_obtener_datos)\.php.*$#i', '', $rWh['webhook_url']);
+                }
+                if (empty($solEmail) && !empty($rWh['solicitante_email'])) {
+                    $solEmail = trim($rWh['solicitante_email']);
                 }
             } catch (Throwable $eWhD) {}
         }
+
+        // 2. Buscar en tabla agencias de la BD Central
         if (empty($urlAgencia) && $pdo) {
             try {
                 $stmt = $pdo->prepare("SELECT subdominio, cpanel, endpoint FROM agencias WHERE LOWER(nombre) = LOWER(?) OR LOWER(clave) = LOWER(?) OR nombre LIKE ? LIMIT 1");
@@ -64,21 +70,27 @@ if (!function_exists('resolverEnlacePortalTicket')) {
                 $agRow = $stmt->fetch(PDO::FETCH_ASSOC);
                 if ($agRow) {
                     if (!empty($agRow['endpoint'])) {
-                        // ej: https://portal.divolavilla.com/sistemas/api_obtener_datos.php -> https://portal.divolavilla.com/sistemas
-                        $baseEp = preg_replace('#/[^/]*$#', '', $agRow['endpoint']);
+                        $baseEp = preg_replace('#/(?:api_webhook_ticket|api_obtener_datos)\.php.*$#i', '', $agRow['endpoint']);
                         $urlAgencia = rtrim($baseEp, '/');
                     } elseif (!empty($agRow['subdominio']) || !empty($agRow['cpanel'])) {
                         $sub = !empty($agRow['subdominio']) ? $agRow['subdominio'] : $agRow['cpanel'];
                         $sub = preg_replace('#^https?://#i', '', rtrim($sub, '/'));
-                        if (strpos($sub, '/sistemas') === false) {
-                            $sub .= '/sistemas';
-                        }
-                        $urlAgencia = 'https://' . $sub;
+                        $pathP = (stripos($sub, 'portal.') === 0 || strpos($sub, '/') !== false) ? '' : '/sistemas';
+                        $urlAgencia = 'https://' . rtrim($sub, '/') . $pathP;
                     }
                 }
             } catch (Throwable $e) {}
         }
 
+        // 3. Fallback inteligente por dominio del correo del solicitante (ej: aux.sistemas@suzukimotosmontevideo.com)
+        if (empty($urlAgencia) && !empty($solEmail) && filter_var($solEmail, FILTER_VALIDATE_EMAIL)) {
+            $emDomain = substr(strrchr($solEmail, "@"), 1);
+            if ($emDomain && stripos($emDomain, 'grupohuerta.mx') === false) {
+                $urlAgencia = 'https://portal.' . $emDomain;
+            }
+        }
+
+        // 4. Buscar en CATALOGO_AGENCIAS
         if (empty($urlAgencia)) {
             global $CATALOGO_AGENCIAS;
             if (!empty($CATALOGO_AGENCIAS)) {
@@ -87,14 +99,12 @@ if (!function_exists('resolverEnlacePortalTicket')) {
                     $nomAg = strtolower(trim($ag['nombre'] ?? ''));
                     if ($k === $agNorm || $nomAg === $agNorm || strpos($agNorm, $nomAg) !== false || strpos($nomAg, $agNorm) !== false) {
                         if (!empty($ag['endpoint'])) {
-                            $baseEp = preg_replace('#/[^/]*$#', '', $ag['endpoint']);
+                            $baseEp = preg_replace('#/(?:api_webhook_ticket|api_obtener_datos)\.php.*$#i', '', $ag['endpoint']);
                             $urlAgencia = rtrim($baseEp, '/');
                         } elseif (!empty($ag['subdominio'])) {
                             $sub = preg_replace('#^https?://#i', '', rtrim($ag['subdominio'], '/'));
-                            if (strpos($sub, '/sistemas') === false) {
-                                $sub .= '/sistemas';
-                            }
-                            $urlAgencia = 'https://' . $sub;
+                            $pathP = (stripos($sub, 'portal.') === 0 || strpos($sub, '/') !== false) ? '' : '/sistemas';
+                            $urlAgencia = 'https://' . rtrim($sub, '/') . $pathP;
                         }
                         break;
                     }
@@ -102,7 +112,7 @@ if (!function_exists('resolverEnlacePortalTicket')) {
             }
         }
 
-        // Fallback si la agencia es Divol La Villa u otra sucursal
+        // Fallback final
         if (empty($urlAgencia)) {
             if (stripos($agencia, 'villa') !== false || stripos($agencia, 'divol') !== false) {
                 $urlAgencia = 'https://portal.divolavilla.com/sistemas';
