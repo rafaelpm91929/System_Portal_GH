@@ -53,36 +53,117 @@ $error = '';
 // =============================================================================
 $politicasLista = [];
 $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
-$ctx = stream_context_create([
-    'http' => [
-        'timeout' => 6,
-        'header'  => "User-Agent: PortalAgencia/1.0\r\n"
-    ],
-    'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false
-    ]
-]);
+$rawCentral = false;
 
-$resp = @file_get_contents($urlCentral, false, $ctx);
-if ($resp) {
-    $dataJson = json_decode($resp, true);
+// A. Consulta robusta vía cURL (compatible con cualquier cPanel sin importar allow_url_fopen)
+if (function_exists('curl_init')) {
+    $ch = curl_init($urlCentral);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_USERAGENT      => 'PortalAgenciaClient/2.0'
+    ]);
+    $rawCentral = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode !== 200) {
+        $rawCentral = false;
+    }
+}
+
+// B. Fallback a stream_context si cURL no devolvió resultado
+if ($rawCentral === false) {
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => 6,
+            'header'  => "User-Agent: PortalAgenciaClient/2.0\r\n"
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false
+        ]
+    ]);
+    $rawCentral = @file_get_contents($urlCentral, false, $ctx);
+}
+
+if ($rawCentral) {
+    $dataJson = json_decode($rawCentral, true);
     if (!empty($dataJson['exito']) && !empty($dataJson['politicas'])) {
         $politicasLista = $dataJson['politicas'];
     }
 }
 
+// C. Sincronizar y respaldar en base de datos local para disponibilidad permanente
+if (!empty($politicasLista) && $pdo) {
+    try {
+        asegurarTablaPoliticas($pdo);
+        $stmtChkPol = $pdo->prepare("SELECT id FROM politicas_corporativas WHERE id = ? LIMIT 1");
+        $stmtInsPol = $pdo->prepare("
+            INSERT INTO politicas_corporativas 
+            (id, titulo, descripcion, categoria, area, subarea, archivo_pdf, version, fecha_vigencia, obligatorio_lectura, estatus, creado_por, creado_en, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmtUpdPol = $pdo->prepare("
+            UPDATE politicas_corporativas 
+            SET titulo = ?, descripcion = ?, categoria = ?, area = ?, subarea = ?, archivo_pdf = ?, version = ?, fecha_vigencia = ?, obligatorio_lectura = ?, estatus = ?, actualizado_en = ?
+            WHERE id = ?
+        ");
+
+        foreach ($politicasLista as $pol) {
+            $pId = intval($pol['id'] ?? 0);
+            if ($pId <= 0) continue;
+            $stmtChkPol->execute([$pId]);
+            if ($stmtChkPol->fetchColumn()) {
+                $stmtUpdPol->execute([
+                    $pol['titulo'] ?? '',
+                    $pol['descripcion'] ?? '',
+                    $pol['categoria'] ?? 'General',
+                    $pol['area'] ?? ($pol['categoria'] ?? 'General'),
+                    $pol['subarea'] ?? '',
+                    $pol['archivo_pdf'] ?? '',
+                    $pol['version'] ?? '1.0',
+                    $pol['fecha_vigencia'] ?? null,
+                    intval($pol['obligatorio_lectura'] ?? 0),
+                    intval($pol['estatus'] ?? 1),
+                    $pol['actualizado_en'] ?? date('Y-m-d H:i:s'),
+                    $pId
+                ]);
+            } else {
+                $stmtInsPol->execute([
+                    $pId,
+                    $pol['titulo'] ?? '',
+                    $pol['descripcion'] ?? '',
+                    $pol['categoria'] ?? 'General',
+                    $pol['area'] ?? ($pol['categoria'] ?? 'General'),
+                    $pol['subarea'] ?? '',
+                    $pol['archivo_pdf'] ?? '',
+                    $pol['version'] ?? '1.0',
+                    $pol['fecha_vigencia'] ?? null,
+                    intval($pol['obligatorio_lectura'] ?? 0),
+                    intval($pol['estatus'] ?? 1),
+                    $pol['creado_por'] ?? 'Central GH',
+                    $pol['creado_en'] ?? date('Y-m-d H:i:s'),
+                    $pol['actualizado_en'] ?? date('Y-m-d H:i:s')
+                ]);
+            }
+        }
+    } catch (Throwable $eSyncPol) {}
+}
+
 // Fallback: si no hay conexión con Central GH, consultar base de datos local
-    if (empty($politicasLista) && $pdo) {
-        try {
-            $stmtList = $pdo->query("
-                SELECT * FROM politicas_corporativas 
-                WHERE estatus = 1 
-                ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
-            ");
-            $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
-        } catch (Throwable $e) {}
-    }
+if (empty($politicasLista) && $pdo) {
+    try {
+        $stmtList = $pdo->query("
+            SELECT * FROM politicas_corporativas 
+            WHERE estatus = 1 
+            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
+        ");
+        $politicasLista = $stmtList ? $stmtList->fetchAll(PDO::FETCH_ASSOC) : [];
+    } catch (Throwable $e) {}
+}
 
     // Asegurar notificaciones locales para políticas vigentes
     if (!empty($politicasLista) && $pdo) {

@@ -52,20 +52,40 @@ $avisos = [];
 $origenDatos = 'central_gh';
 
 $urlCentral = 'https://portal.grupohuerta.mx/api_compliance.php?action=listar';
-$ctx = stream_context_create([
-    'http' => [
-        'timeout' => 6,
-        'header'  => "User-Agent: PortalAgenciaCompliance/1.0\r\n"
-    ],
-    'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false
-    ]
-]);
+$rawComp = false;
 
-$resp = @file_get_contents($urlCentral, false, $ctx);
-if ($resp) {
-    $dataJson = json_decode($resp, true);
+if (function_exists('curl_init')) {
+    $ch = curl_init($urlCentral);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 8,
+        CURLOPT_CONNECTTIMEOUT => 4,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_USERAGENT      => 'PortalAgenciaCompliance/2.0'
+    ]);
+    $rawComp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($httpCode !== 200) $rawComp = false;
+}
+
+if ($rawComp === false) {
+    $ctx = stream_context_create([
+        'http' => [
+            'timeout' => 6,
+            'header'  => "User-Agent: PortalAgenciaCompliance/2.0\r\n"
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false
+        ]
+    ]);
+    $rawComp = @file_get_contents($urlCentral, false, $ctx);
+}
+
+if ($rawComp) {
+    $dataJson = json_decode($rawComp, true);
     if (!empty($dataJson['exito'])) {
         $formatos = $dataJson['formatos'] ?? [];
         $manuales = $dataJson['manuales'] ?? [];

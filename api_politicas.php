@@ -159,18 +159,29 @@ if ($action === 'sincronizar_central') {
     // URL del endpoint central de Grupo Huerta
     $urlCentral = 'https://portal.grupohuerta.mx/api_politicas.php?action=listar';
 
-    $ctx = stream_context_create([
-        'http' => [
-            'timeout' => 8,
-            'header'  => "User-Agent: PortalAgenciaClient/1.0\r\n"
-        ],
-        'ssl' => [
-            'verify_peer' => false,
-            'verify_peer_name' => false
-        ]
-    ]);
-
-    $response = @file_get_contents($urlCentral, false, $ctx);
+    $response = false;
+    if (function_exists('curl_init')) {
+        $ch = curl_init($urlCentral);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_USERAGENT      => 'PortalAgenciaClient/2.0'
+        ]);
+        $response = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code !== 200) $response = false;
+    }
+    if ($response === false) {
+        $ctx = stream_context_create([
+            'http' => ['timeout' => 8, 'header' => "User-Agent: PortalAgenciaClient/2.0\r\n"],
+            'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
+        ]);
+        $response = @file_get_contents($urlCentral, false, $ctx);
+    }
     if ($response === false) {
         echo json_encode([
             'exito' => false, 
