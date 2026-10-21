@@ -1400,64 +1400,99 @@ function obtenerIconoArea($nombreArea) {
     // =========================================================================
     // BLINDAJE ANTI-IA: MARCAS DIRECTAS EN PÍXELES DE CANVAS Y RUIDO ADVERSARIAL
     // =========================================================================
-    function aplicarMarcasAntiIADirectoEnCanvas(ctx, width, height, user, login, agencia, ip, folio) {
-        if (!ctx) return;
-        try {
-            ctx.save();
-
-            // 1. Matriz diagonal ejecutiva entrelazada directamente con los píxeles del documento (Anti-IA indivisible)
-            ctx.translate(width / 2, height / 2);
-            ctx.rotate(-28 * Math.PI / 180);
-            ctx.translate(-width / 2, -height / 2);
-
-            const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
-            const line1 = `GRUPO HUERTA • CONFIDENCIAL • USO INTERNO`;
-            const line2 = `${user} (${login}) • IP: ${ip} • ${agencia}`;
-            const line3 = `FOLIO: ${folio || 'GH-POL'} • ${ahora} • TRAZA FORENSE`;
-
-            // Espaciado armónico y legible para evitar saturación visual manteniendo cobertura total
-            const stepY = 135;
-            const stepX = 360;
-            const startX = -width * 0.7;
-            const endX   = width * 1.7;
-            const startY = -height * 0.7;
-            const endY   = height * 1.7;
-
-            let row = 0;
-            for (let y = startY; y < endY; y += stepY) {
-                row++;
-                const offX = (row % 2 === 0) ? (stepX / 2) : 0;
-                for (let x = startX + offX; x < endX; x += stepX) {
-                    // Tipografía corporativa ejecutiva: tono slate/grafito suave que no cansa la vista pero se funde en los píxeles
-                    ctx.font = '700 9.5px "Inter", "Segoe UI", -apple-system, sans-serif';
-                    ctx.fillStyle = 'rgba(71, 85, 105, 0.09)';
-                    ctx.fillText(line1, x, y);
-
-                    ctx.font = '600 11px "Inter", "Segoe UI", -apple-system, sans-serif';
-                    ctx.fillStyle = 'rgba(51, 65, 85, 0.115)';
-                    ctx.fillText(line2, x, y + 16);
-
-                    ctx.font = '500 8.5px "Inter", "Segoe UI", monospace';
-                    ctx.fillStyle = 'rgba(100, 116, 139, 0.085)';
-                    ctx.fillText(line3, x, y + 30);
-                }
-            }
-            ctx.restore();
-
-            // 2. Micro-Marcas de Trazabilidad Esteganográfica en esquinas y márgenes
-            ctx.save();
-            ctx.fillStyle = 'rgba(100, 116, 139, 0.12)';
-            ctx.font = '7.5px monospace';
-            const stgCode = `[STG-DLP:${login}:${ip}:${ahora}:${folio || 'GH'}]`;
-            ctx.fillText(stgCode, 20, 18);
-            ctx.fillText(stgCode, width - 240, 18);
-            ctx.fillText(stgCode, 20, height - 12);
-            ctx.fillText(stgCode, width - 240, height - 12);
-            ctx.restore();
-
-        } catch (eCanvasW) {}
-    }
-
+    function aplicarMarcasAntiIADirectoEnCanvas(ctx, width, height, user, login, agencia, ip, folio) {
+        if (!ctx) return;
+        try {
+            // Formatear fecha y hora completa con segundos para máxima claridad forense
+            const d = new Date();
+            const pad = n => String(n).padStart(2, '0');
+            const dia = pad(d.getDate());
+            const mes = pad(d.getMonth() + 1);
+            const anio = d.getFullYear();
+            let h = d.getHours();
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12;
+            h = h ? h : 12;
+            const hora = `${pad(h)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${ampm}`;
+            const fechaHoraFmt = `${dia}/${mes}/${anio} ${hora}`;
+
+            const usuarioTxt = (user || 'COLABORADOR').toUpperCase();
+            const loginTxt = (login || '').toLowerCase();
+            const agenciaTxt = (agencia || 'AGENCIA').toUpperCase();
+            const ipTxt = ip || '0.0.0.0';
+            const folioTxt = folio || 'GH-POL';
+
+            // 1. Franjas horizontales de seguridad legibles en bordes superior e inferior de cada página
+            ctx.save();
+            ctx.font = 'bold 10px "Inter", "Segoe UI", Arial, sans-serif';
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+            const barraSuperior = `USUARIO: ${usuarioTxt} (${loginTxt})   |   AGENCIA: ${agenciaTxt}   |   FECHA: ${fechaHoraFmt}   |   IP: ${ipTxt}`;
+            ctx.fillText(barraSuperior, 24, 20);
+
+            const barraInferior = `TRAZABILIDAD FORENSE: ${usuarioTxt}   |   ${agenciaTxt}   |   ${fechaHoraFmt}   |   FOLIO: ${folioTxt}`;
+            ctx.fillText(barraInferior, 24, height - 14);
+            ctx.restore();
+
+            // 2. Matriz diagonal ejecutiva de alta legibilidad entrelazada en los píxeles (Anti-IA)
+            ctx.save();
+            ctx.translate(width / 2, height / 2);
+            ctx.rotate(-28 * Math.PI / 180);
+            ctx.translate(-width / 2, -height / 2);
+
+            const line1 = `GRUPO HUERTA  •  CONFIDENCIAL INSTITUCIONAL`;
+            const line2 = `USUARIO: ${usuarioTxt} (${loginTxt})`;
+            const line3 = `AGENCIA: ${agenciaTxt}  •  IP: ${ipTxt}`;
+            const line4 = `FECHA: ${fechaHoraFmt}  •  FOLIO: ${folioTxt}`;
+
+            const stepY = 150;
+            const stepX = 420;
+            const startX = -width * 0.7;
+            const endX   = width * 1.7;
+            const startY = -height * 0.7;
+            const endY   = height * 1.7;
+
+            let row = 0;
+            for (let y = startY; y < endY; y += stepY) {
+                row++;
+                const offX = (row % 2 === 0) ? (stepX / 2) : 0;
+                for (let x = startX + offX; x < endX; x += stepX) {
+                    // Línea 1: Encabezado institucional
+                    ctx.font = 'bold 9.5px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.fillStyle = 'rgba(100, 116, 139, 0.22)';
+                    ctx.fillText(line1, x, y);
+
+                    // Línea 2: USUARIO destacado, nítido y legible
+                    ctx.font = 'bold 12.5px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.24)';
+                    ctx.fillText(line2, x, y + 16);
+
+                    // Línea 3: AGENCIA destacada y nítida
+                    ctx.font = 'bold 11.5px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+                    ctx.fillText(line3, x, y + 32);
+
+                    // Línea 4: FECHA Y HORA con tinte de seguridad nítido
+                    ctx.font = 'bold 11px "Inter", "Segoe UI", Arial, monospace';
+                    ctx.fillStyle = 'rgba(185, 28, 28, 0.24)';
+                    ctx.fillText(line4, x, y + 47);
+                }
+            }
+            ctx.restore();
+
+            // 3. Micro-Marcas de Trazabilidad Esteganográfica en esquinas
+            ctx.save();
+            ctx.fillStyle = 'rgba(100, 116, 139, 0.18)';
+            ctx.font = '8px monospace';
+            const stgCode = `[STG-DLP:${loginTxt}:${ipTxt}:${dia}/${mes}/${anio}:${folioTxt}]`;
+            ctx.fillText(stgCode, 24, 34);
+            ctx.fillText(stgCode, width - 260, 34);
+            ctx.fillText(stgCode, 24, height - 28);
+            ctx.fillText(stgCode, width - 260, height - 28);
+            ctx.restore();
+
+        } catch (eCanvasW) {}
+    }
+
     function aplicarMicroRuidoAdversarialAntiIA(ctx, width, height) {
         if (!ctx) return;
         try {
