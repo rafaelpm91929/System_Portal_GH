@@ -91,7 +91,26 @@ if (!function_exists('normalizarAgencia')) {
 
 // Resuelve la URL y token de webhook para cualquier agencia dinámica
 if (!function_exists('resolverUrlWebhookAgencia')) {
-    function resolverUrlWebhookAgencia($pdo, $agencia) {
+    function resolverUrlWebhookAgencia($pdo, $agencia, $folioOrId = '') {
+        global $CATALOGO_AGENCIAS;
+        $targetUrl = '';
+        $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
+        if (empty($agencia) && empty($folioOrId)) return ['url' => '', 'token' => $tokenWh];
+
+        // 1. Si viene folio o ID, consultar webhook_url guardado directamente en el ticket
+        if ($pdo && !empty($folioOrId)) {
+            try {
+                $stmtTkWh = $pdo->prepare("SELECT webhook_url, solicitante_agencia FROM tickets_soporte WHERE folio = ? OR id = ? LIMIT 1");
+                $stmtTkWh->execute([$folioOrId, $folioOrId]);
+                $tkWhRow = $stmtTkWh->fetch(PDO::FETCH_ASSOC);
+                if ($tkWhRow && !empty($tkWhRow['webhook_url'])) {
+                    return ['url' => $tkWhRow['webhook_url'], 'token' => $tokenWh];
+                }
+                if ($tkWhRow && empty($agencia) && !empty($tkWhRow['solicitante_agencia'])) {
+                    $agencia = $tkWhRow['solicitante_agencia'];
+                }
+            } catch (Throwable $eTkWh) {}
+        }
         global $CATALOGO_AGENCIAS;
         $targetUrl = '';
         $tokenWh = 'GH_SISTEMAS_TICKETS_2026!';
@@ -466,7 +485,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         $tInfo = $stmtTInfo->fetch(PDO::FETCH_ASSOC);
 
                         if ($tInfo && !empty($tInfo['solicitante_agencia'])) {
-                            $whInfo = resolverUrlWebhookAgencia($pdo, $tInfo['solicitante_agencia']);
+                            $whInfo = resolverUrlWebhookAgencia($pdo, $tInfo['solicitante_agencia'], $tInfo['folio']);
                             $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/sistemas/api_webhook_ticket.php';
                             $tokenWh = $whInfo['token'];
                             $postDataWh = [
@@ -597,7 +616,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                     // Disparar Webhook a la agencia sucursal para sincronización en tiempo real
                     try {
                         if (!empty($tkData['solicitante_agencia'])) {
-                            $whInfo = resolverUrlWebhookAgencia($pdo, $tkData['solicitante_agencia']);
+                            $whInfo = resolverUrlWebhookAgencia($pdo, $tkData['solicitante_agencia'], $folioTk);
                             $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/sistemas/api_webhook_ticket.php';
                             $tokenWh = $whInfo['token'];
                             $postDataWh = [
@@ -739,7 +758,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $pdo) {
                         // Notificar a la agencia sucursal en tiempo real la contestación vía webhook
                         if (!empty($tActual['solicitante_agencia']) && !$esNotaInterna) {
                             try {
-                                $whInfo = resolverUrlWebhookAgencia($pdo, $tActual['solicitante_agencia']);
+                                $whInfo = resolverUrlWebhookAgencia($pdo, $tActual['solicitante_agencia'], $tActual['folio']);
                                 $targetUrl = $whInfo['url'] ?: 'https://portal.divolavilla.com/sistemas/api_webhook_ticket.php';
                                 $tokenWh = $whInfo['token'];
                                 $postMsgWh = [

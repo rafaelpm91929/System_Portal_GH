@@ -43,6 +43,20 @@ if (!function_exists('resolverEnlacePortalTicket')) {
 
         // Si es para el creador / solicitante de una agencia sucursal:
         $urlAgencia = '';
+
+        // 1. Si el ticket tiene guardado webhook_url, deducir la base del portal directamente de ahí
+        if (!empty($ticketData['webhook_url'])) {
+            $urlAgencia = preg_replace('#/api_webhook_ticket\.php.*$#i', '', $ticketData['webhook_url']);
+        } elseif ($pdo && !empty($folio)) {
+            try {
+                $stmtWhD = $pdo->prepare("SELECT webhook_url FROM tickets_soporte WHERE folio = ? OR id = ? LIMIT 1");
+                $stmtWhD->execute([$folio, $ticketId]);
+                $whD = $stmtWhD->fetchColumn();
+                if (!empty($whD)) {
+                    $urlAgencia = preg_replace('#/api_webhook_ticket\.php.*$#i', '', $whD);
+                }
+            } catch (Throwable $eWhD) {}
+        }
         if ($pdo) {
             try {
                 $stmt = $pdo->prepare("SELECT subdominio, cpanel, endpoint FROM agencias WHERE LOWER(nombre) = LOWER(?) OR LOWER(clave) = LOWER(?) OR nombre LIKE ? LIMIT 1");

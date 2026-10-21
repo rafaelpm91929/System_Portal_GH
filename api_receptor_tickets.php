@@ -140,6 +140,41 @@ if (!$datos && !empty($_POST)) {
 }
 
 // Acción de consulta de estado por folios o agencia
+// Handshake de registro dinámico de agencias y sincronización de webhook_url
+$accionHandshake = $datos['accion'] ?? ($_POST['accion'] ?? '');
+if ($accionHandshake === 'handshake_agencia' || !empty($datos['webhook_url']) || !empty($_POST['webhook_url'])) {
+    $agenciaHs = trim($datos['agencia'] ?? ($_POST['agencia'] ?? ''));
+    $whUrlHs   = trim($datos['webhook_url'] ?? ($_POST['webhook_url'] ?? ''));
+    $hostHs    = trim($datos['host'] ?? ($_POST['host'] ?? ''));
+
+    if (!empty($agenciaHs) && !empty($whUrlHs) && $pdo) {
+        try {
+            $stmtAgChk = $pdo->prepare("SELECT id FROM agencias WHERE LOWER(nombre) = LOWER(?) LIMIT 1");
+            $stmtAgChk->execute([$agenciaHs]);
+            $agIdExist = $stmtAgChk->fetchColumn();
+            if ($agIdExist) {
+                $stmtAgUpd = $pdo->prepare("UPDATE agencias SET endpoint = ?, subdominio = COALESCE(NULLIF(?, ''), subdominio) WHERE id = ?");
+                $stmtAgUpd->execute([$whUrlHs, $hostHs, $agIdExist]);
+            } else {
+                $claveGen = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $agenciaHs));
+                $stmtAgIns = $pdo->prepare("INSERT INTO agencias (clave, nombre, subdominio, cpanel, endpoint, token, local_api_token, estatus) VALUES (?, ?, ?, ?, ?, 'GH_SISTEMAS_TICKETS_2026!', 'GH_SISTEMAS_TICKETS_2026!', 1)");
+                $stmtAgIns->execute([$claveGen, $agenciaHs, $hostHs, $hostHs, $whUrlHs]);
+            }
+
+            // Actualizar tickets existentes de esta agencia con el nuevo webhook_url
+            try {
+                $stmtUpdTkWh = $pdo->prepare("UPDATE tickets_soporte SET webhook_url = ? WHERE solicitante_agencia = ? AND (webhook_url IS NULL OR webhook_url = '')");
+                $stmtUpdTkWh->execute([$whUrlHs, $agenciaHs]);
+            } catch (Throwable $eTkWhU) {}
+
+            if ($accionHandshake === 'handshake_agencia') {
+                echo json_encode(['status' => 'ok', 'mensaje' => "Agencia $agenciaHs registrada y sincronizada correctamente en Central TI."], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        } catch (Throwable $eHsProc) {}
+    }
+}
+
 $accionReq = $datos['accion'] ?? ($_GET['accion'] ?? ($_POST['accion'] ?? ''));
 if ($accionReq === 'consultar' || $accionReq === 'consultar_estado' || isset($_GET['consultar'])) {
     $foliosParam = $datos['folios'] ?? ($_POST['folios'] ?? ($_GET['folios'] ?? null));

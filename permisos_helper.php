@@ -405,6 +405,11 @@ function asegurarTablaTickets($pdo = null) {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN evidencia_resolucion VARCHAR(255) NULL;");
         } catch (Throwable $eAlt2) {}
 
+        // Migración automática de columna webhook_url
+        try {
+            $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN webhook_url VARCHAR(255) NULL;");
+        } catch (Throwable $eAlt2) {}
+
         // Migración automática de columnas para Reporte de Servicio y Firma Digital (Infraestructura)
         $columnasReporte = [
             'requiere_firma_reporte'      => "TINYINT(1) DEFAULT 0",
