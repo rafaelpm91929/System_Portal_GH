@@ -1206,6 +1206,19 @@ function obtenerIconoArea($nombreArea) {
             <p class="text-secondary small">Aplicando marcas de agua forenses y trama óptica anti-captura.</p>
         </div>
     </div>
+
+    <!-- BARRA INFERIOR DE ADVERTENCIA LEGAL Y TRAZABILIDAD ANTI-IA -->
+    <div class="visor-forensic-footer text-center py-2 px-3 border-top border-secondary border-opacity-25" style="background: rgba(5, 12, 22, 0.95);">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 text-secondary" style="font-size: 0.72rem;">
+            <div class="d-flex align-items-center gap-1.5 text-warning">
+                <i class="bi bi-shield-lock-fill"></i>
+                <span class="text-light"><strong>TRAZABILIDAD FORENSE ACTIVA:</strong> Micro-marca indivisible inyectada en píxeles. La alteración o eliminación mediante IA destruye el contenido del texto y no borra la firma criptográfica.</span>
+            </div>
+            <div class="font-monospace text-warning text-opacity-80">
+                AUDITORÍA: <span class="text-white"><?php echo htmlspecialchars($loginUsuario); ?></span> | IP: <span class="text-white"><?php echo htmlspecialchars($ipUsuario); ?></span>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -1217,6 +1230,91 @@ function obtenerIconoArea($nombreArea) {
     const FORENSIC_USER_LOGIN = "<?php echo addslashes($loginUsuario); ?>";
     const FORENSIC_AGENCIA = "<?php echo addslashes($agenciaNombre); ?>";
     const FORENSIC_IP = "<?php echo addslashes($ipUsuario); ?>";
+    let currentFolioDoc = 'GH-POL';
+
+    // =========================================================================
+    // BLINDAJE ANTI-IA: MARCAS DIRECTAS EN PÍXELES DE CANVAS Y RUIDO ADVERSARIAL
+    // =========================================================================
+    function aplicarMarcasAntiIADirectoEnCanvas(ctx, width, height, user, login, agencia, ip, folio) {
+        if (!ctx) return;
+        try {
+            ctx.save();
+
+            // 1. Matriz de sellos diagonales densos entrelazados directamente con los píxeles de las letras
+            ctx.translate(width / 2, height / 2);
+            ctx.rotate(-28 * Math.PI / 180);
+            ctx.translate(-width / 2, -height / 2);
+
+            const ahora = new Date().toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+            const line1 = `GRUPO HUERTA • SEGURIDAD INSTITUCIONAL • CONFIDENCIAL`;
+            const line2 = `${user} (${login}) • IP: ${ip} • ${agencia}`;
+            const line3 = `FOLIO: ${folio || 'GH-POL'} • ${ahora} • TRAZA FORENSE INDIVISIBLE`;
+
+            const stepY = 85;
+            const stepX = 320;
+            const startX = -width * 0.6;
+            const endX   = width * 1.6;
+            const startY = -height * 0.6;
+            const endY   = height * 1.6;
+
+            let row = 0;
+            for (let y = startY; y < endY; y += stepY) {
+                row++;
+                const offX = (row % 2 === 0) ? (stepX / 2) : 0;
+                for (let x = startX + offX; x < endX; x += stepX) {
+                    // Capa 1: Rojo corporativo de advertencia
+                    ctx.font = '900 10px "Inter", "Segoe UI", sans-serif';
+                    ctx.fillStyle = 'rgba(220, 38, 38, 0.16)';
+                    ctx.fillText(line1, x, y);
+
+                    // Capa 2: Tinta oscura que se enreda con el texto del documento
+                    ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+                    ctx.fillText(line2, x, y + 15);
+
+                    // Capa 3: Código de seguridad ámbar
+                    ctx.font = '600 10px "Inter", "Segoe UI", sans-serif';
+                    ctx.fillStyle = 'rgba(180, 83, 9, 0.18)';
+                    ctx.fillText(line3, x, y + 30);
+                }
+            }
+            ctx.restore();
+
+            // 2. Micro-Marcas de Trazabilidad Esteganográfica en esquinas y márgenes
+            ctx.save();
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+            ctx.font = '7px monospace';
+            const stgCode = `[STG-DLP:${login}:${ip}:${ahora}:${folio || 'GH'}]`;
+            ctx.fillText(stgCode, 20, 18);
+            ctx.fillText(stgCode, width - 240, 18);
+            ctx.fillText(stgCode, 20, height - 12);
+            ctx.fillText(stgCode, width - 240, height - 12);
+            ctx.restore();
+
+        } catch (eCanvasW) {}
+    }
+
+    function aplicarMicroRuidoAdversarialAntiIA(ctx, width, height) {
+        if (!ctx) return;
+        try {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const d = imgData.data;
+            const step = 6;
+            for (let y = 0; y < height; y += step) {
+                for (let x = 0; x < width; x += step) {
+                    const i = (y * width + x) * 4;
+                    const r = d[i], g = d[i+1], b = d[i+2];
+                    if (r > 40 || g > 40 || b > 40) {
+                        const delta = ((x + y) % 2 === 0) ? 3 : -3;
+                        d[i]   = Math.min(255, Math.max(0, r + delta));
+                        d[i+1] = Math.min(255, Math.max(0, g + delta));
+                        d[i+2] = Math.min(255, Math.max(0, b + delta));
+                    }
+                }
+            }
+            ctx.putImageData(imgData, 0, 0);
+        } catch (eNoise) {}
+    }
 
     let currentAreaSeleccionada = 'todas';
 
@@ -1847,6 +1945,7 @@ function obtenerIconoArea($nombreArea) {
         if (!modal || !container) return;
 
         tituloLbl.textContent = tituloDoc;
+        currentFolioDoc = folioDoc || 'GH-POL';
         if (folioLbl && folioDoc) {
             folioLbl.textContent = folioDoc;
         }
@@ -1935,6 +2034,11 @@ function obtenerIconoArea($nombreArea) {
                     const ctx = canvas.getContext('2d');
 
                     page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+                        // 1. Blindaje Anti-IA directo sobre los píxeles del Canvas antes de las capas DOM
+                        aplicarMarcasAntiIADirectoEnCanvas(ctx, w, h, FORENSIC_USER_NAME, FORENSIC_USER_LOGIN, FORENSIC_AGENCIA, FORENSIC_IP, currentFolioDoc);
+                        aplicarMicroRuidoAdversarialAntiIA(ctx, w, h);
+
+                        // 2. Capas visuales DOM superiores complementarias
                         const securityPattern = document.createElement('div');
                         securityPattern.className = 'banknote-security-pattern';
                         wrapper.appendChild(securityPattern);
