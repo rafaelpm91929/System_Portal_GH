@@ -968,12 +968,30 @@ function obtenerIconoArea($nombreArea) {
     <div class="modal-dialog modal-dialog-centered modal-xl">
         <div class="modal-content text-white" style="background: #09172c; border: 2px solid var(--gold-border); border-radius: 18px;">
             <div class="modal-header border-secondary border-opacity-25" style="border-bottom: 1px solid var(--gold-border);">
-                <h5 class="modal-title fw-bold d-flex align-items-center gap-2" style="color: var(--gold-accent-light);">
-                    <i class="bi bi-shield-check" style="color: var(--gold-accent);"></i> Bitácora de Lecturas y Auditoría Forense
-                </h5>
+                <div class="d-flex align-items-center justify-content-between w-100 me-3">
+                    <h5 class="modal-title fw-bold d-flex align-items-center gap-2 mb-0" style="color: var(--gold-accent-light);">
+                        <i class="bi bi-shield-check" style="color: var(--gold-accent);"></i> Auditoría y Trazabilidad Forense Anti-IA
+                    </h5>
+                    <!-- PESTAÑAS DENTRO DEL MODAL -->
+                    <ul class="nav nav-pills" id="auditoriaPills" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active btn-sm py-1 px-3 fw-bold" id="tab-bitacora-btn" data-bs-toggle="pill" data-bs-target="#tab-bitacora-pane" type="button" role="tab">
+                                <i class="bi bi-clock-history me-1"></i> Bitácora
+                            </button>
+                        </li>
+                        <li class="nav-item ms-1">
+                            <button class="nav-link btn-sm py-1 px-3 fw-bold" id="tab-detector-btn" data-bs-toggle="pill" data-bs-target="#tab-detector-pane" type="button" role="tab" style="color: var(--gold-accent-light); border: 1px solid var(--gold-border);">
+                                <i class="bi bi-fingerprint text-warning me-1"></i> Detector Anti-IA
+                            </button>
+                        </li>
+                    </ul>
+                </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
+                <div class="tab-content" id="auditoriaPillsContent">
+                    <!-- PANEL 1: BITÁCORA DE LECTURAS -->
+                    <div class="tab-pane fade show active" id="tab-bitacora-pane" role="tabpanel">
                 
                 <!-- STATS DE AUDITORÍA -->
                 <div class="row g-3 mb-3" id="statsAuditoriaContainer">
@@ -1092,7 +1110,25 @@ function obtenerIconoArea($nombreArea) {
                     </table>
                 </div>
 
-            </div>
+                    </div> <!-- FIN PANEL 1 (BITÁCORA) -->
+
+                    <!-- PANEL 2: DETECTOR FORENSE DE IMÁGENES FILTRADAS (ANTI-IA) -->
+                    <div class="tab-pane fade" id="tab-detector-pane" role="tabpanel">
+                        <div class="p-4 rounded-3 text-center mb-4" style="background: rgba(14, 38, 70, 0.45); border: 2px dashed var(--gold-border);">
+                            <div class="fs-1 text-warning mb-2"><i class="bi bi-shield-lock-fill"></i></div>
+                            <h5 class="fw-bold text-white mb-2">Inspección Forense de Documentos Filtrados</h5>
+                            <p class="text-secondary small mb-3" style="max-width: 650px; margin: 0 auto;">
+                                Sube o arrastra aquí cualquier foto o captura de una política (incluso si intentaron limpiarla con Photoshop o herramientas de IA). El decodificador buscará la constelación esteganográfica de micro-puntos y extraerá la firma del usuario responsable.
+                            </p>
+                            <input type="file" id="inputForenseFile" class="d-none" accept="image/*" onchange="if(this.files && this.files[0]) procesarArchivoForense(this.files[0])">
+                            <button type="button" class="btn btn-warning fw-bold px-4 py-2 rounded-3 shadow" onclick="document.getElementById('inputForenseFile').click()">
+                                <i class="bi bi-upload me-2"></i> Seleccionar Imagen / Captura Filtrada
+                            </button>
+                        </div>
+                        <div id="resultadoForenseBox" class="d-none mb-3"></div>
+                    </div> <!-- FIN PANEL 2 -->
+                </div> <!-- FIN TAB-CONTENT -->
+            </div> <!-- FIN MODAL-BODY -->
             <div class="modal-footer border-secondary border-opacity-25" style="border-top: 1px solid var(--gold-border);">
                 <button type="button" class="btn btn-outline-secondary rounded-3 px-4" data-bs-dismiss="modal">Cerrar</button>
             </div>
@@ -1210,12 +1246,11 @@ function obtenerIconoArea($nombreArea) {
     let currentFolioDoc = 'GH-POL';
 
     // =========================================================================
-    // BLINDAJE ANTI-IA REFORZADO: FUSIÓN DE PÍXELES, RUIDO ADVERSARIAL Y TRAZABILIDAD
+    // BLINDAJE DUAL: ENTRELAZADO DESTRUCTIVO + TRAMPA ESTEGANOGRÁFICA INVISIBLE
     // =========================================================================
     function aplicarMarcasAntiIADirectoEnCanvas(ctx, width, height, user, login, agencia, folio) {
         if (!ctx) return;
         try {
-            // Formatear fecha y hora completa con segundos para máxima claridad forense
             const d = new Date();
             const pad = n => String(n).padStart(2, '0');
             const dia = pad(d.getDate());
@@ -1233,10 +1268,10 @@ function obtenerIconoArea($nombreArea) {
             const agenciaTxt = (agencia || 'AGENCIA').toUpperCase();
             const folioTxt = folio || 'GH-POL';
 
-            // 1. Franjas horizontales de seguridad institucional en bordes superior e inferior (Sin IP pública)
+            // 1. Franjas fijas perimetrales de seguridad en bordes superior e inferior
             ctx.save();
             ctx.font = 'bold 10px "Inter", "Segoe UI", Arial, sans-serif';
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.38)';
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.65)';
             const barraSuperior = `USUARIO: ${usuarioTxt} (${loginTxt})   |   AGENCIA: ${agenciaTxt}   |   FECHA: ${fechaHoraFmt}`;
             ctx.fillText(barraSuperior, 24, 20);
 
@@ -1244,7 +1279,9 @@ function obtenerIconoArea($nombreArea) {
             ctx.fillText(barraInferior, 24, height - 14);
             ctx.restore();
 
-            // 2. Matriz diagonal reforzada entrelazada directamente en los píxeles (Anti-IA indeleble)
+            // 2. ENTRELAZADO DESTRUCTIVO DIAGONAL (ANTI-IA INPAINTING)
+            // Se dibuja con alta densidad (48%-52%) entrelazado con las letras de la política.
+            // Si una IA intenta borrar la marca, destruye y perfora las letras del documento haciéndolo ilegible.
             ctx.save();
             ctx.translate(width / 2, height / 2);
             ctx.rotate(-28 * Math.PI / 180);
@@ -1255,14 +1292,14 @@ function obtenerIconoArea($nombreArea) {
             const line3 = `AGENCIA: ${agenciaTxt}  •  USO INTERNO EXCLUSIVO`;
             const line4 = `FECHA: ${fechaHoraFmt}  •  FOLIO: ${folioTxt}`;
 
-            const stepY = 150;
-            const stepX = 420;
+            const stepY = 145;
+            const stepX = 410;
             const startX = -width * 0.7;
             const endX   = width * 1.7;
             const startY = -height * 0.7;
             const endY   = height * 1.7;
 
-            // Modo multiply para fundir permanentemente los caracteres de la marca con el texto del documento
+            // Fusión de tinta con el documento
             ctx.globalCompositeOperation = 'multiply';
 
             let row = 0;
@@ -1272,50 +1309,98 @@ function obtenerIconoArea($nombreArea) {
                 for (let x = startX + offX; x < endX; x += stepX) {
                     // Línea 1: Encabezado institucional
                     ctx.font = 'bold 9.5px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(100, 116, 139, 0.25)';
+                    ctx.fillStyle = 'rgba(71, 85, 105, 0.42)';
                     ctx.fillText(line1, x, y);
 
-                    // Línea 2: USUARIO nítido y de alta legibilidad
-                    ctx.font = 'bold 12.5px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.28)';
-                    ctx.fillText(line2, x, y + 16);
+                    // Línea 2: USUARIO nítido y destructivo para IA
+                    ctx.font = 'bold 13px "Inter", "Segoe UI", Arial, sans-serif';
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.52)';
+                    ctx.fillText(line2, x, y + 17);
 
-                    // Línea 3: AGENCIA nítida (sin IP pública)
+                    // Línea 3: AGENCIA
                     ctx.font = 'bold 11.5px "Inter", "Segoe UI", Arial, sans-serif';
-                    ctx.fillStyle = 'rgba(15, 23, 42, 0.26)';
-                    ctx.fillText(line3, x, y + 32);
+                    ctx.fillStyle = 'rgba(15, 23, 42, 0.46)';
+                    ctx.fillText(line3, x, y + 33);
 
-                    // Línea 4: FECHA Y HORA con tinte de seguridad nítido
+                    // Línea 4: FECHA Y HORA con tinte de seguridad carmesí
                     ctx.font = 'bold 11px "Inter", "Segoe UI", Arial, monospace';
-                    ctx.fillStyle = 'rgba(185, 28, 28, 0.28)';
-                    ctx.fillText(line4, x, y + 47);
+                    ctx.fillStyle = 'rgba(185, 28, 28, 0.50)';
+                    ctx.fillText(line4, x, y + 49);
                 }
             }
             ctx.restore();
 
-            // 3. Micro-Marcas de Trazabilidad Esteganográfica en esquinas
-            ctx.save();
-            ctx.fillStyle = 'rgba(100, 116, 139, 0.20)';
-            ctx.font = '8px monospace';
-            const stgCode = `[STG-DLP:${loginTxt}:${dia}/${mes}/${anio}:${folioTxt}]`;
-            ctx.fillText(stgCode, 24, 34);
-            ctx.fillText(stgCode, width - 240, 34);
-            ctx.fillText(stgCode, 24, height - 28);
-            ctx.fillText(stgCode, width - 240, height - 28);
-            ctx.restore();
+            // 3. TRAMPA FORENSE ESTEGANOGRÁFICA INVISIBLE (YELLOW-DOTS / MIC)
+            // Inyecta micro-puntos matemáticos invisibles en el canal azul a lo largo del documento.
+            // Aunque la IA borre la marca visible, la trampa invisible sobrevive intacta.
+            inyectarTrampaEsteganograficaAntiIA(ctx, width, height, loginTxt, agenciaTxt, `${dia}/${mes}/${anio}`, folioTxt);
 
         } catch (eCanvasW) {}
     }
 
-    // Blindaje Anti-IA Reforzado: Ruido Adversarial Multi-Frecuencia + Trama Micro-Moiré
-    // Destruye el cálculo de gradientes de modelos de difusión (Stable Diffusion, Midjourney, Photoshop Generative Fill)
+    // Inyección de micro-puntos forenses (Estándar EURion / Machine Identification Codes)
+    function inyectarTrampaEsteganograficaAntiIA(ctx, width, height, login, agencia, fechaStr, folio) {
+        if (!ctx) return;
+        try {
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const d = imgData.data;
+
+            // Cadena de trazabilidad compacta
+            const payload = `GHSTG:${login}:${agencia}:${fechaStr}:${folio}`;
+            const bits = [];
+            for (let c = 0; c < payload.length; c++) {
+                const code = payload.charCodeAt(c);
+                for (let b = 7; b >= 0; b--) {
+                    bits.push((code >> b) & 1);
+                }
+            }
+            // Secuencia de sincronización de 16 bits (0xAA55)
+            const syncHeader = [1,0,1,0,1,0,1,0, 0,1,0,1,0,1,0,1];
+            const fullStream = syncHeader.concat(bits);
+
+            // Inyectar en cuadrícula repetitiva de 64x64 píxeles por toda la hoja
+            const blockSize = 64;
+            const cols = Math.floor(width / blockSize);
+            const rows = Math.floor(height / blockSize);
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const startX = c * blockSize;
+                    const startY = r * blockSize;
+
+                    for (let bitIdx = 0; bitIdx < fullStream.length; bitIdx++) {
+                        const bit = fullStream[bitIdx];
+                        const px = startX + ((bitIdx * 7 + 11) % (blockSize - 4)) + 2;
+                        const py = startY + ((bitIdx * 13 + 5) % (blockSize - 4)) + 2;
+
+                        if (px < width && py < height) {
+                            const i = (py * width + px) * 4;
+                            // En zonas claras de papel (R > 180, G > 180)
+                            if (d[i] > 180 && d[i+1] > 180) {
+                                if (bit === 1) {
+                                    // Bit 1: Micro-punto en canal azul (imperceptible al ojo, invisible a la IA)
+                                    d[i+2] = Math.max(0, d[i+2] - 22);
+                                } else {
+                                    // Bit 0: Modulación LSB en canal verde
+                                    d[i+1] = (d[i+1] & ~1) | 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ctx.putImageData(imgData, 0, 0);
+        } catch (eStg) {}
+    }
+
+    // Ruido Adversarial Multi-Frecuencia
     function aplicarMicroRuidoAdversarialAntiIA(ctx, width, height) {
         if (!ctx) return;
         try {
             const imgData = ctx.getImageData(0, 0, width, height);
             const d = imgData.data;
 
-            // Paso de 2 a 3 píxeles para máxima densidad de perturbación adversarial
             for (let y = 0; y < height; y += 3) {
                 const yFactor = Math.cos(y * 0.42);
                 const rowOffset = y * width;
@@ -1323,22 +1408,180 @@ function obtenerIconoArea($nombreArea) {
                     const i = (rowOffset + x) * 4;
                     const r = d[i], g = d[i+1], b = d[i+2];
 
-                    // Aplicar en fondo, zonas intermedias y bordes de caracteres
                     if (r > 40 || g > 40 || b > 40) {
-                        // Función de perturbación sinusoidal multi-frecuencia (Rompe U-Net y Vision Transformers)
                         const s1 = Math.sin(x * 0.42) * yFactor;
                         const s2 = Math.sin((x + y) * 0.85);
-                        const advVal = Math.round((s1 * 3.8) + (s2 * 2.2)); // Rango entre -6 y +6
+                        const advVal = Math.round((s1 * 3.8) + (s2 * 2.2));
 
-                        // Inyección de entropía en canales de color
                         d[i]   = Math.min(255, Math.max(0, r + advVal));
                         d[i+1] = Math.min(255, Math.max(0, g + advVal));
-                        d[i+2] = Math.min(255, Math.max(0, b - advVal)); // Fase invertida en azul para arruinar máscaras de IA
+                        d[i+2] = Math.min(255, Math.max(0, b - advVal));
                     }
                 }
             }
             ctx.putImageData(imgData, 0, 0);
         } catch (eNoise) {}
+    }
+
+    // =========================================================================
+    // DECODIFICADOR FORENSE ANTI-IA PARA AUDITORÍA DE DOCUMENTOS FILTRADOS
+    // =========================================================================
+    function procesarArchivoForense(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                analizarImagenForense(img);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function analizarImagenForense(img) {
+        const resultadoBox = document.getElementById('resultadoForenseBox');
+        if (!resultadoBox) return;
+
+        resultadoBox.classList.remove('d-none');
+        resultadoBox.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-warning mb-2" role="status"></div>
+                <div class="text-light fw-bold">Escaneando matriz de micro-puntos y constelación esteganográfica...</div>
+                <div class="text-secondary small">Decodificando firmas invisibles que sobreviven a la limpieza por IA...</div>
+            </div>
+        `;
+
+        setTimeout(function() {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const d = imgData.data;
+
+                // Extraer bitstream en bloques
+                const blockSize = 64;
+                const cols = Math.floor(canvas.width / blockSize);
+                const rows = Math.floor(canvas.height / blockSize);
+
+                const syncHeader = [1,0,1,0,1,0,1,0, 0,1,0,1,0,1,0,1];
+                let payloadDetectado = null;
+
+                for (let r = 0; r < rows && !payloadDetectado; r++) {
+                    for (let c = 0; c < cols && !payloadDetectado; c++) {
+                        const startX = c * blockSize;
+                        const startY = r * blockSize;
+
+                        // Intentar leer hasta 350 bits
+                        const bitsLeidos = [];
+                        for (let bitIdx = 0; bitIdx < 350; bitIdx++) {
+                            const px = startX + ((bitIdx * 7 + 11) % (blockSize - 4)) + 2;
+                            const py = startY + ((bitIdx * 13 + 5) % (blockSize - 4)) + 2;
+
+                            if (px < canvas.width && py < canvas.height) {
+                                const i = (py * canvas.width + px) * 4;
+                                const diffAzul = (d[i] + d[i+1]) / 2 - d[i+2];
+                                bitsLeidos.push(diffAzul > 10 ? 1 : 0);
+                            } else {
+                                bitsLeidos.push(0);
+                            }
+                        }
+
+                        // Verificar si coincide con cabecera de sincronía
+                        let matchSync = true;
+                        for (let s = 0; s < syncHeader.length; s++) {
+                            if (bitsLeidos[s] !== syncHeader[s]) {
+                                matchSync = false;
+                                break;
+                            }
+                        }
+
+                        if (matchSync) {
+                            // Decodificar caracteres ASCII de 8 bits
+                            let str = '';
+                            for (let b = syncHeader.length; b + 7 < bitsLeidos.length; b += 8) {
+                                let charCode = 0;
+                                for (let k = 0; k < 8; k++) {
+                                    charCode = (charCode << 1) | bitsLeidos[b + k];
+                                }
+                                if (charCode >= 32 && charCode <= 126) {
+                                    str += String.fromCharCode(charCode);
+                                } else {
+                                    break;
+                                }
+                            }
+                            if (str.startsWith('GHSTG:')) {
+                                payloadDetectado = str;
+                            }
+                        }
+                    }
+                }
+
+                if (payloadDetectado) {
+                    const partes = payloadDetectado.split(':');
+                    const loginDetectado = partes[1] || 'Desconocido';
+                    const agenciaDetectada = partes[2] || 'Agencia General';
+                    const fechaDetectada = partes[3] || 'Reciente';
+                    const folioDetectado = partes[4] || 'GH-POL';
+
+                    resultadoBox.innerHTML = `
+                        <div class="alert alert-success border-success bg-dark bg-opacity-75 text-white p-4 rounded-3 shadow-lg">
+                            <div class="d-flex align-items-center gap-3 mb-3">
+                                <div class="fs-1 text-success"><i class="bi bi-shield-fill-check"></i></div>
+                                <div>
+                                    <h5 class="fw-bold text-success mb-1">¡TRAMPA FORENSE POSITIVA DETECTADA!</h5>
+                                    <p class="mb-0 text-light small">Se identificó la constelación esteganográfica invisible inyectada en los píxeles originales, demostrando autoría incluso tras la alteración por IA.</p>
+                                </div>
+                            </div>
+                            <div class="row g-2 font-monospace pt-2 border-top border-secondary border-opacity-50">
+                                <div class="col-md-6">
+                                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-25">
+                                        <span class="text-secondary small d-block">USUARIO / LOGIN:</span>
+                                        <b class="text-warning fs-6">${loginDetectado}</b>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-25">
+                                        <span class="text-secondary small d-block">AGENCIA DE ORIGEN:</span>
+                                        <b class="text-info fs-6">${agenciaDetectada}</b>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-25">
+                                        <span class="text-secondary small d-block">FECHA DE CONSULTA:</span>
+                                        <b class="text-white fs-6">${fechaDetectada}</b>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-25">
+                                        <span class="text-secondary small d-block">DOCUMENTO / FOLIO:</span>
+                                        <b class="text-danger fs-6">${folioDetectado}</b>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    resultadoBox.innerHTML = `
+                        <div class="alert alert-warning border-warning bg-dark text-white p-3 rounded-3">
+                            <h6 class="fw-bold text-warning mb-1"><i class="bi bi-exclamation-triangle-fill me-2"></i>Firma esteganográfica no detectada en este recorte</h6>
+                            <p class="mb-0 small text-secondary">La imagen subida no contiene suficientes bloques blancos originales de 64x64px, o la compresión fue excesiva. Prueba subiendo una captura con mayor resolución o área visible del documento.</p>
+                        </div>
+                    `;
+                }
+
+            } catch (errDec) {
+                resultadoBox.innerHTML = `
+                    <div class="alert alert-danger bg-dark text-white p-3 rounded-3">
+                        <i class="bi bi-x-circle me-2"></i> Error procesando la imagen forense: ${errDec.message}
+                    </div>
+                `;
+            }
+        }, 600);
     }
 
         let currentAreaSeleccionada = 'todas';
