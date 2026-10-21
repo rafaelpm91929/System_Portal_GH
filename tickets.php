@@ -463,18 +463,23 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                         $stmtChk->execute([$ticketId, $folio, $txtM, $autorNomM]);
                         if (!$stmtChk->fetchColumn()) {
                             try {
-                                $stmtIns->execute([
-                                    $ticketId,
-                                    $folio,
-                                    $m['autor_id'] ?? null,
-                                    $autorNomM,
-                                    $m['autor_usuario'] ?? '',
-                                    $m['autor_rol'] ?? 'agente',
-                                    $m['autor_agencia'] ?? 'Dirección Sistemas',
-                                    $txtM,
-                                    $m['archivo_adjunto'] ?? null,
-                                    $fechaM
-                                ]);
+                                try {
+                                    $stmtIns->execute([
+                                        $ticketId,
+                                        $folio,
+                                        $m['autor_id'] ?? null,
+                                        $autorNomM,
+                                        $m['autor_usuario'] ?? '',
+                                        $m['autor_rol'] ?? 'agente',
+                                        $m['autor_agencia'] ?? 'Dirección Sistemas',
+                                        $txtM,
+                                        $m['archivo_adjunto'] ?? null,
+                                        $fechaM
+                                    ]);
+                                } catch (Throwable $eTkIns1) {
+                                    $stmtIns2 = $pdo->prepare("INSERT INTO tickets_mensajes (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, mensaje, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                                    $stmtIns2->execute([$ticketId, $folio, $autorNomM, $m['autor_usuario'] ?? '', $m['autor_rol'] ?? 'agente', $txtM, $fechaM]);
+                                }
 
                                 // Si el mensaje viene de un agente técnico, generar notificación en la campanita para el solicitante
                                 $rolMsg = strtolower(trim($m['autor_rol'] ?? 'agente'));

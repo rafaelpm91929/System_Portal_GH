@@ -461,6 +461,13 @@ function asegurarTablaTickets($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_agencia` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_id` INT NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_usuario` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_email` VARCHAR(150) NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `es_nota_interna` TINYINT(1) DEFAULT 0"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `archivo_adjunto` VARCHAR(255) NULL"); } catch (Throwable $t) {}
+        try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `folio` VARCHAR(50) NULL"); } catch (Throwable $t) {}
     } catch (Throwable $e) {}
 }
 

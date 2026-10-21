@@ -10,6 +10,11 @@ header("Cache-Control: no-cache, no-store, must-revalidate");
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
 
+if ($pdo) {
+    asegurarTablaTickets($pdo);
+    try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_agencia` VARCHAR(100) NULL"); } catch (Throwable $t) {}
+}
+
 if (!$pdo) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'mensaje' => 'Error de conexión a la base de datos local de la agencia.'], JSON_UNESCAPED_UNICODE);
@@ -374,12 +379,23 @@ try {
             $stmtDup = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");
             $stmtDup->execute([$tkId, $folio, $nuevoMensaje]);
             if (!$stmtDup->fetchColumn()) {
-                $stmtInsM = $pdo->prepare("
-                    INSERT INTO tickets_mensajes 
-                    (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmtInsM->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $autorAg, $nuevoMensaje, $adj, $actualizadoEn]);
+                try {
+                    $stmtInsM = $pdo->prepare("
+                        INSERT INTO tickets_mensajes 
+                        (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmtInsM->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $autorAg, $nuevoMensaje, $adj, $actualizadoEn]);
+                } catch (Throwable $eInsM1) {
+                    try {
+                        $stmtInsM2 = $pdo->prepare("
+                            INSERT INTO tickets_mensajes 
+                            (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, mensaje, creado_en)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ");
+                        $stmtInsM2->execute([$tkId, $folio, $autorNom, $autorUsr, $autorRol, $nuevoMensaje, $actualizadoEn]);
+                    } catch (Throwable $eInsM2) {}
+                }
             }
         }
     }

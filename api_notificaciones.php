@@ -230,18 +230,25 @@ if ($action === 'listar') {
                                 // Guardar en tickets_mensajes si no existe
                                 $stmtChkM->execute([$myTk['id'], $fol, $txtMsg]);
                                 if (!$stmtChkM->fetchColumn()) {
-                                    $stmtInsM->execute([
-                                        $myTk['id'],
-                                        $fol,
-                                        $rm['autor_id'] ?? null,
-                                        $rm['autor_nombre'] ?? 'Sistemas',
-                                        $rm['autor_usuario'] ?? '',
-                                        $rm['autor_rol'] ?? 'agente',
-                                        $rm['autor_agencia'] ?? 'Central',
-                                        $txtMsg,
-                                        $rm['archivo_adjunto'] ?? null,
-                                        $rm['creado_en'] ?? date('Y-m-d H:i:s')
-                                    ]);
+                                    try {
+                                        $stmtInsM->execute([
+                                            $myTk['id'],
+                                            $fol,
+                                            $rm['autor_id'] ?? null,
+                                            $rm['autor_nombre'] ?? 'Sistemas',
+                                            $rm['autor_usuario'] ?? '',
+                                            $rm['autor_rol'] ?? 'agente',
+                                            $rm['autor_agencia'] ?? 'Central',
+                                            $txtMsg,
+                                            $rm['archivo_adjunto'] ?? null,
+                                            $rm['creado_en'] ?? date('Y-m-d H:i:s')
+                                        ]);
+                                    } catch (Throwable $eInsNM) {
+                                        try {
+                                            $stmtInsNM2 = $pdo->prepare("INSERT INTO tickets_mensajes (ticket_id, folio, autor_nombre, autor_usuario, autor_rol, mensaje, creado_en) VALUES (?, ?, ?, ?, ?, ?, ?)");
+                                            $stmtInsNM2->execute([$myTk['id'], $fol, $rm['autor_nombre'] ?? 'Sistemas', $rm['autor_usuario'] ?? '', $rm['autor_rol'] ?? 'agente', $txtMsg, $rm['creado_en'] ?? date('Y-m-d H:i:s')]);
+                                        } catch (Throwable $eInsNM2) {}
+                                    }
                                 }
 
                                 // Crear notificación en la campanita si es contestación de TI y no se ha notificado
