@@ -525,6 +525,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
         $solicitanteUsuario = $loginUsuario;
         $solicitanteNombre = trim($_POST['solicitante_nombre'] ?? $nombreUsuario);
         $solicitanteEmail = trim($_POST['solicitante_email'] ?? $emailUsuario);
+        if (empty($solicitanteEmail) && $pdo && !empty($usuarioId)) {
+            try {
+                $stmtEm = $pdo->prepare("SELECT email FROM usuarios WHERE id = ? LIMIT 1");
+                $stmtEm->execute([$usuarioId]);
+                $dbEm = trim($stmtEm->fetchColumn() ?: '');
+                if (!empty($dbEm)) {
+                    $solicitanteEmail = $dbEm;
+                    $emailUsuario = $dbEm;
+                    $_SESSION['usuario_email'] = $dbEm;
+                }
+            } catch (Throwable $tEm) {}
+        }
         $solicitanteAgencia = trim($_POST['solicitante_agencia'] ?? $agenciaUsuario);
 
         if (empty($titulo) || empty($descripcion) || empty($area)) {
@@ -2521,7 +2533,7 @@ if ($ticketSeleccionado) {
                         </div>
                         <div class="col-md-4">
                             <label class="form-label text-secondary small fw-bold text-uppercase">Correo de Contacto</label>
-                            <input type="email" name="solicitante_email" value="<?php echo htmlspecialchars($_SESSION['usuario_email'] ?? ''); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #94a3b8;" readonly>
+                            <input type="email" name="solicitante_email" value="<?php echo htmlspecialchars($emailUsuario ?: ($_SESSION['usuario_email'] ?? '')); ?>" class="form-control rounded-3 border-secondary border-opacity-25" style="background: #061325; color: #f1f5f9;" placeholder="tu.correo@agencia.com" required>
                         </div>
 
                         <!-- Botones de Acción -->
