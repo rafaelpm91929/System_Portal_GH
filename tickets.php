@@ -204,9 +204,20 @@ function enviarTicketACentral($datosTicket, $archivoLocal = null) {
     $agencia = !empty($datosTicket['agencia']) ? $datosTicket['agencia'] : ($agenciaUsuario ?: ($identidad['nombre'] ?: 'Divol La Villa'));
     $urlCentral = 'https://portal.grupohuerta.mx/api_receptor_tickets.php?token=' . urlencode($token);
 
+    // Detectar automáticamente la URL del portal de esta agencia para retorno de webhooks y correos
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+    $proto = $isHttps ? 'https://' : 'http://';
+    $hostPropio = $_SERVER['HTTP_HOST'] ?? '';
+    $dirPropio = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+    $webhookUrlPropia = !empty($hostPropio) ? ($proto . $hostPropio . $dirPropio . '/api_webhook_ticket.php') : '';
+    $portalUrlPropia  = !empty($hostPropio) ? ($proto . $hostPropio . $dirPropio . '/') : '';
+
     $payload = [
         'token'               => $token,
         'agencia'             => $agencia,
+        'webhook_url'         => $webhookUrlPropia,
+        'portal_url'          => $portalUrlPropia,
+        'host'                => $hostPropio,
         'area_sistemas'       => $datosTicket['area_sistemas'] ?? 'INFRAESTRUCTURA',
         'titulo'              => $datosTicket['titulo'] ?? '',
         'descripcion'         => $datosTicket['descripcion'] ?? '',
@@ -464,6 +475,29 @@ function sincronizarMensajesDeTicket($pdo, $ticketId, $folio) {
                                     $m['archivo_adjunto'] ?? null,
                                     $fechaM
                                 ]);
+
+                                // Si el mensaje viene de un agente técnico, generar notificación en la campanita para el solicitante
+                                $rolMsg = strtolower(trim($m['autor_rol'] ?? 'agente'));
+                                if (($rolMsg === 'agente' || $rolMsg === 'admin' || $rolMsg === 'superadmin') && function_exists('crearNotificacion')) {
+                                    try {
+                                        $stmtTkOwner = $pdo->prepare("SELECT id, solicitante_id FROM tickets_soporte WHERE folio = ? LIMIT 1");
+                                        $stmtTkOwner->execute([$folio]);
+                                        $tkOwner = $stmtTkOwner->fetch(PDO::FETCH_ASSOC);
+                                        $solOwnerId = !empty($tkOwner['solicitante_id']) ? (int)$tkOwner['solicitante_id'] : null;
+                                        crearNotificacion(
+                                            'tickets',
+                                            'mensaje_ticket',
+                                            "Respuesta en tu Ticket #$folio",
+                                            "El especialista $autorNomM contestó: \"" . mb_substr($txtM, 0, 80) . "\"",
+                                            'tickets.php?ver=' . $folio,
+                                            'bi-chat-dots-fill',
+                                            'primary',
+                                            $ticketId,
+                                            $solOwnerId,
+                                            $pdo
+                                        );
+                                    } catch (Throwable $eNotSync) {}
+                                }
                             } catch (Throwable $eIns) {}
                         }
                     }
@@ -740,10 +774,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 try {
                     $tokenMsg = 'GH_SISTEMAS_TICKETS_2026!';
                     $agenciaMsg = $agenciaUsuario ?: $identidadActual['nombre'];
+                    $isHttpsM = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+                    $protoM = $isHttpsM ? 'https://' : 'http://';
+                    $hostM = $_SERVER['HTTP_HOST'] ?? '';
+                    $dirM = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+                    $webhookUrlM = !empty($hostM) ? ($protoM . $hostM . $dirM . '/api_webhook_ticket.php') : '';
+                    $portalUrlM  = !empty($hostM) ? ($protoM . $hostM . $dirM . '/') : '';
+
                     $postFields = [
                         'token'         => $tokenMsg,
                         'accion'        => 'agregar_mensaje',
                         'folio'         => $folioT,
+                        'ticket_id'     => $ticketId,
+                        'webhook_url'   => $webhookUrlM,
+                        'portal_url'    => $portalUrlM,
+                        'host'          => $hostM,
                         'autor_nombre'  => $nombreUsuario,
                         'autor_usuario' => $loginUsuario,
                         'autor_rol'     => $rolAutor,

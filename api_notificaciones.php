@@ -98,6 +98,123 @@ if ($action === 'listar') {
         } catch (Throwable $eSync) {}
     }
 
+        // 1. Handshake automático hacia Central TI: registra en Central la URL exacta de esta agencia
+    if (empty($_SESSION['central_handshake_ts']) || (time() - $_SESSION['central_handshake_ts']) > 180) {
+        try {
+            $isHttpsH = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
+            $protoH = $isHttpsH ? 'https://' : 'http://';
+            $hostH = $_SERVER['HTTP_HOST'] ?? '';
+            $dirH = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+            $whUrlH = !empty($hostH) ? ($protoH . $hostH . $dirH . '/api_webhook_ticket.php') : '';
+            $ptUrlH = !empty($hostH) ? ($protoH . $hostH . $dirH . '/') : '';
+            $nomAgH = $_SESSION['agencia'] ?? 'Agencia';
+
+            if (!empty($whUrlH)) {
+                $ctxH = stream_context_create([
+                    'http' => [
+                        'method'  => 'POST',
+                        'header'  => "Content-Type: application/json\r\nAuthorization: Bearer GH_SISTEMAS_TICKETS_2026!\r\n",
+                        'content' => json_encode([
+                            'token'       => 'GH_SISTEMAS_TICKETS_2026!',
+                            'accion'      => 'handshake_agencia',
+                            'agencia'     => $nomAgH,
+                            'webhook_url' => $whUrlH,
+                            'portal_url'  => $ptUrlH,
+                            'host'        => $hostH
+                        ], JSON_UNESCAPED_UNICODE),
+                        'timeout' => 2
+                    ],
+                    'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+                ]);
+                @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctxH);
+                $_SESSION['central_handshake_ts'] = time();
+            }
+        } catch (Throwable $eHsh) {}
+    }
+
+    // 2. Fallback Pull: Sincronizar en segundo plano respuestas de tickets pendientes de este usuario
+    if (!empty($_SESSION['usuario_id']) && $pdo) {
+        $uIdSess = (int)$_SESSION['usuario_id'];
+        $uLoginSess = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
+        $uNomSess = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? '');
+        $uMailSess = $_SESSION['usuario_email'] ?? ($_SESSION['email'] ?? '');
+
+        try {
+            // Buscar tickets activos del usuario
+            $stmtMisT = $pdo->prepare("
+                SELECT id, folio, estado, actualizado_en 
+                FROM tickets_soporte 
+                WHERE estado != 'Cerrado' 
+                  AND (solicitante_id = ? OR LOWER(solicitante_usuario) = LOWER(?) OR LOWER(solicitante_email) = LOWER(?) OR LOWER(solicitante_nombre) = LOWER(?))
+                ORDER BY id DESC LIMIT 5
+            ");
+            $stmtMisT->execute([$uIdSess, $uLoginSess, $uMailSess, $uNomSess]);
+            $misTickets = $stmtMisT->fetchAll(PDO::FETCH_ASSOC);
+
+            if (!empty($misTickets)) {
+                foreach ($misTickets as $myTk) {
+                    $fol = $myTk['folio'];
+                    if (empty($fol)) continue;
+
+                    // Consultar mensajes remotos de este ticket
+                    $ctxM = stream_context_create([
+                        'http' => ['timeout' => 2, 'header' => "Authorization: Bearer GH_SISTEMAS_TICKETS_2026!\r\n"],
+                        'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
+                    ]);
+                    $urlM = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($fol) . '&token=' . urlencode('GH_SISTEMAS_TICKETS_2026!');
+                    $resM = @file_get_contents($urlM, false, $ctxM);
+                    if ($resM) {
+                        $decM = json_decode($resM, true);
+                        if (!empty($decM['status']) && $decM['status'] === 'ok' && !empty($decM['mensajes'])) {
+                            $stmtChkM = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");
+                            $stmtInsM = $pdo->prepare("
+                                INSERT INTO tickets_mensajes 
+                                (ticket_id, folio, autor_id, autor_nombre, autor_usuario, autor_rol, autor_agencia, mensaje, archivo_adjunto, creado_en)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ");
+
+                            foreach ($decM['mensajes'] as $rm) {
+                                $txtMsg = trim($rm['mensaje'] ?? '');
+                                if (empty($txtMsg)) continue;
+                                $stmtChkM->execute([$myTk['id'], $fol, $txtMsg]);
+                                if (!$stmtChkM->fetchColumn()) {
+                                    $stmtInsM->execute([
+                                        $myTk['id'],
+                                        $fol,
+                                        $rm['autor_id'] ?? null,
+                                        $rm['autor_nombre'] ?? 'Sistemas',
+                                        $rm['autor_usuario'] ?? '',
+                                        $rm['autor_rol'] ?? 'agente',
+                                        $rm['autor_agencia'] ?? 'Central',
+                                        $txtMsg,
+                                        $rm['archivo_adjunto'] ?? null,
+                                        $rm['creado_en'] ?? date('Y-m-d H:i:s')
+                                    ]);
+
+                                    $rolAut = strtolower(trim($rm['autor_rol'] ?? 'agente'));
+                                    if (($rolAut === 'agente' || $rolAut === 'admin' || $rolAut === 'superadmin') && function_exists('crearNotificacion')) {
+                                        crearNotificacion(
+                                            'tickets',
+                                            'mensaje_ticket',
+                                            "Respuesta en tu Ticket #$fol",
+                                            "El agente " . ($rm['autor_nombre'] ?? 'de soporte') . " contestó: \"" . mb_substr($txtMsg, 0, 80) . "\"",
+                                            'tickets.php?ver=' . $fol,
+                                            'bi-chat-dots-fill',
+                                            'primary',
+                                            $myTk['id'],
+                                            $uIdSess,
+                                            $pdo
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable $ePullSync) {}
+    }
+
     $resultado = obtenerNotificacionesUsuario($usuarioId, 30, $pdo);
     echo json_encode([
         'exito' => true,
