@@ -509,11 +509,12 @@ try {
     $folio = 'TK-' . date('Y') . '-' . str_pad($nextNum, 4, '0', STR_PAD_LEFT);
 
     $fechaActualTicket = date('Y-m-d H:i:s');
+    $webhookUrlIn = trim($datos['webhook_url'] ?? ($_POST['webhook_url'] ?? ''));
     $stmt = $pdo->prepare("
         INSERT INTO tickets_soporte 
-        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, creado_en, actualizado_en)
+        (folio, area_sistemas, titulo, descripcion, prioridad, estado, solicitante_usuario, solicitante_nombre, solicitante_email, solicitante_agencia, archivo_adjunto, webhook_url, creado_en, actualizado_en)
         VALUES
-        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_usr, :sol_nom, :sol_em, :sol_ag, :archivo, :creado, :act)
+        (:folio, :area, :titulo, :desc, :prio, 'Abierto', :sol_usr, :sol_nom, :sol_em, :sol_ag, :archivo, :wh, :creado, :act)
     ");
     $stmt->execute([
         ':folio'    => $folio,
@@ -526,13 +527,14 @@ try {
         ':sol_em'   => $solicitanteEmail,
         ':sol_ag'   => $agenciaNombre,
         ':archivo'  => $rutaAdjunto,
+        ':wh'       => $webhookUrlIn,
         ':creado'   => $fechaActualTicket,
         ':act'      => $fechaActualTicket
     ]);
 
     $idGenerado = $pdo->lastInsertId();
 
-    // Notificar en portal y por correo a los especialistas asignados al área
+    // A. Notificar en portal y por correo a los especialistas asignados al área
     if (function_exists('notificarNuevoTicketArea')) {
         notificarNuevoTicketArea($pdo, $idGenerado, [
             'folio'               => $folio,
@@ -543,9 +545,50 @@ try {
             'solicitante_nombre'  => $solicitanteNombre,
             'solicitante_email'   => $solicitanteEmail,
             'solicitante_agencia' => $agenciaNombre,
+            'webhook_url'         => $webhookUrlIn,
             'asignado_a'          => '',
             'estado'              => 'Abierto'
         ]);
+    }
+
+    // B. Enviar acuse de recibo y confirmación por correo al Solicitante/Creador del ticket
+    if (!empty($solicitanteEmail) && filter_var($solicitanteEmail, FILTER_VALIDATE_EMAIL) && function_exists('enviarCorreoSistemas') && function_exists('generarPlantillaCorreoTicket')) {
+        try {
+            $enlaceTicketCreador = function_exists('resolverEnlacePortalTicket') 
+                ? resolverEnlacePortalTicket($pdo, [
+                    'id'                  => $idGenerado,
+                    'folio'               => $folio,
+                    'solicitante_agencia' => $agenciaNombre,
+                    'webhook_url'         => $webhookUrlIn
+                  ], true)
+                : ('https://portal.grupohuerta.mx/tickets.php?ver=' . $folio);
+
+            $asuntoConf = "[SISTEMAS GH] Ticket #$folio recibido: $titulo";
+            $detalleConf = "Hemos recibido tu solicitud de soporte en la Dirección de Sistemas de Grupo Huerta.\n\n"
+                         . "• Folio Oficial: $folio\n"
+                         . "• Área Asignada: $area\n"
+                         . "• Sucursal: $agenciaNombre\n\n"
+                         . "Un especialista del área atenderá tu requerimiento y podrás consultar cualquier avance directamente en tu portal.\n\n"
+                         . "Detalle reportado:\n$descripcion";
+
+            $htmlConf = generarPlantillaCorreoTicket([
+                'folio'              => $folio,
+                'titulo'             => $titulo,
+                'area_sistemas'      => $area,
+                'estado'             => 'Abierto',
+                'prioridad'          => $prioridad,
+                'solicitante_nombre' => $solicitanteNombre,
+                'solicitante_agencia'=> $agenciaNombre,
+                'asignado_a'         => 'Por Asignar',
+                'tipo_alerta'        => 'TICKET RECIBIDO CON ÉXITO',
+                'color_badge'        => '#10b981',
+                'detalle_html'       => $detalleConf,
+                'enlace_boton'       => $enlaceTicketCreador,
+                'texto_boton'        => 'Ver Ticket en mi Portal'
+            ]);
+
+            enviarCorreoSistemas($solicitanteEmail, $solicitanteNombre, $asuntoConf, $htmlConf);
+        } catch (Throwable $eConfMail) {}
     }
 
     echo json_encode([

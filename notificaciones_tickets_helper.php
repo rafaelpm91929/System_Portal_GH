@@ -57,7 +57,7 @@ if (!function_exists('resolverEnlacePortalTicket')) {
                 }
             } catch (Throwable $eWhD) {}
         }
-        if ($pdo) {
+        if (empty($urlAgencia) && $pdo) {
             try {
                 $stmt = $pdo->prepare("SELECT subdominio, cpanel, endpoint FROM agencias WHERE LOWER(nombre) = LOWER(?) OR LOWER(clave) = LOWER(?) OR nombre LIKE ? LIMIT 1");
                 $stmt->execute([$agencia, $agencia, '%' . $agencia . '%']);
@@ -238,7 +238,11 @@ if (!function_exists('enviarCorreoSistemas')) {
                 'Importance: High'
             ];
             $headersStr = implode("\r\n", $headers);
-            return @mail($destinatarioEmail, $asuntoEncoded, $cuerpoHtml, $headersStr, "-f" . $fromEmail);
+            $resMail = @mail($destinatarioEmail, $asuntoEncoded, $cuerpoHtml, $headersStr, "-f" . $fromEmail);
+            if (!$resMail) {
+                $resMail = @mail($destinatarioEmail, $asuntoEncoded, $cuerpoHtml, $headersStr);
+            }
+            return $resMail;
         } catch (Throwable $t) {
             return false;
         }
@@ -586,6 +590,13 @@ if (!function_exists('notificarNuevoTicketArea')) {
             $desc = trim($ticketData['descripcion'] ?? '');
 
             $especialistas = obtenerEspecialistasAreaTicket($pdo, $area);
+            // Si el área no tiene especialistas específicamente configurados, notificar a los Administradores de Sistemas
+            if (empty($especialistas)) {
+                try {
+                    $stmtAdm = $pdo->query("SELECT id, usuario, nombre, email, rol, areas_tickets FROM usuarios WHERE activo = 1 AND LOWER(rol) IN ('superadmin', 'admin')");
+                    $especialistas = $stmtAdm ? $stmtAdm->fetchAll(PDO::FETCH_ASSOC) : [];
+                } catch (Throwable $tAdm) {}
+            }
             if (empty($especialistas)) return;
 
             $enlaceTicket = resolverEnlacePortalTicket($pdo, $ticketData, false);
