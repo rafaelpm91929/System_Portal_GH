@@ -149,18 +149,17 @@ if ($action === 'listar') {
         $uMailSess  = strtolower(trim($_SESSION['usuario_email'] ?? ($_SESSION['email'] ?? '')));
 
         try {
-            // Buscar tickets activos del usuario
+            // Buscar tickets del usuario (activos o recientes)
             $stmtMisT = $pdo->prepare("
-                SELECT id, folio, estado, actualizado_en 
+                SELECT id, folio, titulo, estado, creado_en, actualizado_en 
                 FROM tickets_soporte 
-                WHERE estado != 'Cerrado' 
-                  AND (
+                WHERE (
                     (solicitante_id IS NOT NULL AND solicitante_id = :uid)
                     OR (:ulogin != '' AND LOWER(COALESCE(solicitante_usuario, '')) = :ulogin)
                     OR (:umail != '' AND LOWER(COALESCE(solicitante_email, '')) = :umail)
                     OR (:unom != '' AND LOWER(COALESCE(solicitante_nombre, '')) = :unom)
                   )
-                ORDER BY id DESC LIMIT 5
+                ORDER BY id DESC LIMIT 10
             ");
             $stmtMisT->execute([
                 ':uid'    => $uIdSess,
@@ -172,10 +171,30 @@ if ($action === 'listar') {
 
             if (!empty($misTickets)) {
                 foreach ($misTickets as $myTk) {
-                    $fol = $myTk['folio'];
+                    $fol = trim($myTk['folio'] ?? '');
                     if (empty($fol)) continue;
 
-                    // Consultar mensajes remotos vía cURL
+                    // A. Asegurar notificación inicial del ticket en la campanita si no existe
+                    if (function_exists('crearNotificacion')) {
+                        $stmtNChk = $pdo->prepare("SELECT id FROM notificaciones WHERE modulo = 'tickets' AND (referencia_id = ? OR enlace LIKE ?) LIMIT 1");
+                        $stmtNChk->execute([$myTk['id'], '%' . $fol . '%']);
+                        if (!$stmtNChk->fetchColumn()) {
+                            crearNotificacion(
+                                'tickets',
+                                'ticket_creado',
+                                "Ticket #$fol Registrado",
+                                "Tu requerimiento \"" . ($myTk['titulo'] ?? 'Ticket') . "\" fue recibido en el sistema de soporte.",
+                                'tickets.php?ver=' . $fol,
+                                'bi-ticket-detailed-fill',
+                                'success',
+                                $myTk['id'],
+                                $uIdSess,
+                                $pdo
+                            );
+                        }
+                    }
+
+                    // B. Consultar mensajes y respuestas remotas de Central TI vía cURL
                     $urlM = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($fol) . '&token=' . urlencode('GH_SISTEMAS_TICKETS_2026!');
                     $chM = curl_init($urlM);
                     curl_setopt_array($chM, [
@@ -206,6 +225,9 @@ if ($action === 'listar') {
                             foreach ($decM['mensajes'] as $rm) {
                                 $txtMsg = trim($rm['mensaje'] ?? '');
                                 if (empty($txtMsg)) continue;
+                                $rolAut = strtolower(trim($rm['autor_rol'] ?? 'agente'));
+
+                                // Guardar en tickets_mensajes si no existe
                                 $stmtChkM->execute([$myTk['id'], $fol, $txtMsg]);
                                 if (!$stmtChkM->fetchColumn()) {
                                     $stmtInsM->execute([
@@ -220,9 +242,19 @@ if ($action === 'listar') {
                                         $rm['archivo_adjunto'] ?? null,
                                         $rm['creado_en'] ?? date('Y-m-d H:i:s')
                                     ]);
+                                }
 
-                                    $rolAut = strtolower(trim($rm['autor_rol'] ?? 'agente'));
-                                    if (($rolAut === 'agente' || $rolAut === 'admin' || $rolAut === 'superadmin') && function_exists('crearNotificacion')) {
+                                // Crear notificación en la campanita si es contestación de TI y no se ha notificado
+                                if (($rolAut === 'agente' || $rolAut === 'admin' || $rolAut === 'superadmin') && function_exists('crearNotificacion')) {
+                                    $stmtNotifChk = $pdo->prepare("
+                                        SELECT id FROM notificaciones 
+                                        WHERE modulo = 'tickets' 
+                                          AND (referencia_id = ? OR enlace LIKE ?) 
+                                          AND mensaje LIKE ?
+                                        LIMIT 1
+                                    ");
+                                    $stmtNotifChk->execute([$myTk['id'], '%' . $fol . '%', '%' . mb_substr($txtMsg, 0, 30) . '%']);
+                                    if (!$stmtNotifChk->fetchColumn()) {
                                         crearNotificacion(
                                             'tickets',
                                             'mensaje_ticket',

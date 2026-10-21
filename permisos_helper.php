@@ -1306,7 +1306,7 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
             LEFT JOIN notificaciones_lecturas nl 
                    ON nl.notificacion_id = n.id AND nl.usuario_id = ?
             WHERE n.estatus = 1
-              AND (n.usuario_id IS NULL OR n.usuario_id = ?)
+              AND (n.usuario_id IS NULL OR n.usuario_id = ? OR n.modulo = 'tickets')
             ORDER BY n.creado_en DESC, n.id DESC
             LIMIT 100";
 
@@ -1335,42 +1335,42 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
                 if (preg_match('/(?:ver=|folio=)(TK-[A-Z0-9\-]+|[0-9]+)/i', $r['enlace'] ?? '', $mF)) {
                     $folioEnlace = $mF[1];
                 }
+                if (empty($folioEnlace) && preg_match('/#(TK-[A-Z0-9\-]+)/i', ($r['titulo'] ?? '') . ' ' . ($r['mensaje'] ?? ''), $mT)) {
+                    $folioEnlace = $mT[1];
+                }
 
                 $esCreador = false;
-                // Si la notificación ya fue dirigida explícitamente a su usuario_id
-                if ($targetUsr !== null && $targetUsr === $usuarioId) {
-                    $esCreador = true;
-                } elseif ($refTicketId > 0 || !empty($folioEnlace)) {
-                    try {
-                        $tkInfo = null;
-                        if (!empty($folioEnlace)) {
-                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE folio = ? LIMIT 1");
-                            $stmtTk->execute([$folioEnlace]);
-                            $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
-                        }
-                        if (!$tkInfo && $refTicketId > 0) {
-                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE id = ? LIMIT 1");
-                            $stmtTk->execute([$refTicketId]);
-                            $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
-                        }
-                        if ($tkInfo) {
-                            $solId = !empty($tkInfo['solicitante_id']) ? (int)$tkInfo['solicitante_id'] : 0;
-                            $solUsr = strtolower(trim($tkInfo['solicitante_usuario'] ?? ''));
-                            $solMail = strtolower(trim($tkInfo['solicitante_email'] ?? ''));
-                            $solNom = strtolower(trim($tkInfo['solicitante_nombre'] ?? ''));
+                try {
+                    $tkInfo = null;
+                    if (!empty($folioEnlace)) {
+                        $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE folio = ? OR id = ? LIMIT 1");
+                        $stmtTk->execute([$folioEnlace, is_numeric($folioEnlace) ? (int)$folioEnlace : 0]);
+                        $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if (!$tkInfo && $refTicketId > 0) {
+                        $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE id = ? LIMIT 1");
+                        $stmtTk->execute([$refTicketId]);
+                        $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
+                    }
+                    if ($tkInfo) {
+                        $solId = !empty($tkInfo['solicitante_id']) ? (int)$tkInfo['solicitante_id'] : 0;
+                        $solUsr = strtolower(trim($tkInfo['solicitante_usuario'] ?? ''));
+                        $solMail = strtolower(trim($tkInfo['solicitante_email'] ?? ''));
+                        $solNom = strtolower(trim($tkInfo['solicitante_nombre'] ?? ''));
 
-                            if ($solId > 0 && $solId === $usuarioId) {
-                                $esCreador = true;
-                            } elseif (!empty($solUsr) && !empty($usuarioLogin) && $solUsr === $usuarioLogin) {
-                                $esCreador = true;
-                            } elseif (!empty($solMail) && !empty($usuarioEmail) && $solMail === $usuarioEmail) {
-                                $esCreador = true;
-                            } elseif (!empty($solNom) && !empty($usuarioNombre) && $solNom === $usuarioNombre) {
-                                $esCreador = true;
-                            }
+                        if ($solId > 0 && $solId === $usuarioId) {
+                            $esCreador = true;
+                        } elseif (!empty($solUsr) && !empty($usuarioLogin) && ($solUsr === $usuarioLogin || strpos($solUsr, $usuarioLogin) !== false || strpos($usuarioLogin, $solUsr) !== false)) {
+                            $esCreador = true;
+                        } elseif (!empty($solMail) && !empty($usuarioEmail) && ($solMail === $usuarioEmail || strpos($solMail, $usuarioEmail) !== false || strpos($usuarioEmail, $solMail) !== false)) {
+                            $esCreador = true;
+                        } elseif (!empty($solNom) && !empty($usuarioNombre) && ($solNom === $usuarioNombre || strpos($solNom, $usuarioNombre) !== false || strpos($usuarioNombre, $solNom) !== false)) {
+                            $esCreador = true;
                         }
-                    } catch (Throwable $eTk) {}
-                }
+                    } elseif ($targetUsr !== null && $targetUsr === $usuarioId) {
+                        $esCreador = true;
+                    }
+                } catch (Throwable $eTk) {}
 
                 // Si NO es el creador/solicitante del ticket, NUNCA mostrarle la notificación
                 if (!$esCreador) {
