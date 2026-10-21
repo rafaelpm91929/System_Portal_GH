@@ -836,11 +836,14 @@ function obtenerIconoArea($nombreArea) {
             </p>
         </div>
 
-        <!-- BUSCADOR CON CONTORNO DORADO -->
-        <div class="w-100 w-md-auto" style="min-width: 280px; max-width: 360px;">
+        <!-- BUSCADOR CON CONTORNO DORADO (BÚSQUEDA PROFUNDA EN TÍTULO Y CONTENIDO DE PDFS) -->
+        <div class="w-100 w-md-auto" style="min-width: 300px; max-width: 420px;">
             <div class="input-group input-group-sm">
                 <span class="input-group-text bg-dark text-secondary" style="border: 1px solid var(--gold-border); border-right: none; border-radius: 10px 0 0 10px;"><i class="bi bi-search" style="color: var(--gold-accent);"></i></span>
-                <input type="text" id="filtroTextoPolitica" class="form-control gold-search-input" style="border-radius: 0 10px 10px 0;" placeholder="Buscar por título, folio o subárea..." oninput="filtrarPoliticasGlobal()">
+                <input type="text" id="filtroTextoPolitica" class="form-control gold-search-input" style="border-radius: 0 10px 10px 0;" placeholder="Buscar por título, palabra o frase dentro del PDF..." oninput="filtrarPoliticasGlobal()">
+            </div>
+            <div id="indicadorStatusIndexacion" class="d-flex align-items-center justify-content-end mt-1 text-secondary font-monospace" style="font-size: 0.68rem;">
+                <span id="txtStatusIndexacion"><i class="bi bi-cpu text-warning me-1"></i>Búsqueda profunda en PDFs activa</span>
             </div>
         </div>
     </div>
@@ -980,7 +983,7 @@ function obtenerIconoArea($nombreArea) {
                                             $folioCode = 'GH-POL-' . str_pad($pol['id'], 3, '0', STR_PAD_LEFT);
                                             $textoBusqueda = strtolower($pol['titulo'] . ' ' . $pol['descripcion'] . ' ' . $folioCode . ' ' . $nombreArea . ' ' . $nombreSubarea);
                                         ?>
-                                            <div class="policy-item-row fila-politica-item" data-search="<?php echo htmlspecialchars($textoBusqueda); ?>" data-area="<?php echo htmlspecialchars($nombreArea); ?>">
+                                            <div class="policy-item-row fila-politica-item" id="filaPolitica_<?php echo $pol['id']; ?>" data-doc-id="<?php echo $pol['id']; ?>" data-doc-titulo="<?php echo htmlspecialchars($pol['titulo']); ?>" data-doc-folio="<?php echo $folioCode; ?>" data-doc-version="<?php echo htmlspecialchars($pol['version'] ?? '1.0'); ?>" data-search="<?php echo htmlspecialchars($textoBusqueda); ?>" data-area="<?php echo htmlspecialchars($nombreArea); ?>">">
                                                 <div class="d-flex align-items-center gap-3" style="max-width: 65%;">
                                                     <span class="folio-pill flex-shrink-0"><?php echo $folioCode; ?></span>
                                                     
@@ -1004,6 +1007,8 @@ function obtenerIconoArea($nombreArea) {
                                                                 <?php echo htmlspecialchars($pol['descripcion']); ?>
                                                             </p>
                                                         <?php endif; ?>
+                                                        <!-- CONTENEDOR DE COINCIDENCIA DENTRO DEL CONTENIDO DEL PDF -->
+                                                        <div class="snippet-busqueda-pdf mt-2 d-none" id="snippetMatch_<?php echo $pol['id']; ?>"></div>
                                                     </div>
                                                 </div>
 
@@ -1013,7 +1018,7 @@ function obtenerIconoArea($nombreArea) {
                                                         <span style="color: var(--gold-accent-light);"><i class="bi bi-shield-check me-1"></i> Protegido</span>
                                                     </div>
 
-                                                    <button type="button" class="btn-view-doc" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>', '<?php echo $folioCode; ?>')">
+                                                    <button type="button" class="btn-view-doc" id="btnLeerPol_<?php echo $pol['id']; ?>" onclick="abrirVisorBlindado(<?php echo $pol['id']; ?>, '<?php echo addslashes(htmlspecialchars($pol['titulo'])); ?>', '<?php echo $folioCode; ?>', this.getAttribute('data-target-page') || null)">
                                                         <i class="bi bi-eye-fill"></i> Leer
                                                     </button>
 
@@ -1374,13 +1379,24 @@ function obtenerIconoArea($nombreArea) {
                 <span>Página <b id="lblPaginaActual" class="text-white">1</b> de <b id="lblTotalPaginas" class="text-white">1</b></span>
             </div>
 
+            <!-- BUSCADOR INTERNO DENTRO DEL PDF -->
+            <div class="d-flex align-items-center gap-1.5 ms-1">
+                <div class="input-group input-group-sm" style="max-width: 220px;">
+                    <input type="text" id="visorBuscadorTexto" class="form-control bg-dark text-white border-secondary small" style="font-size: 0.76rem; border-color: var(--gold-border) !important;" placeholder="Buscar palabra en PDF..." onkeyup="if(event.key==='Enter') buscarTextoEnVisorActual()">
+                    <button type="button" class="btn btn-dark text-warning border-secondary btn-sm" style="border-color: var(--gold-border) !important;" onclick="buscarTextoEnVisorActual()" title="Buscar en este documento">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <span id="lblVisorMatchCount" class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50 font-monospace small d-none">0 coincidencias</span>
+            </div>
+
             <!-- BADGES DE SEGURIDAD -->
-            <span class="badge bg-dark border rounded-pill px-2.5 py-1.5 small font-monospace d-none d-lg-inline-flex align-items-center" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+            <span class="badge bg-dark border rounded-pill px-2.5 py-1.5 small font-monospace d-none d-xl-inline-flex align-items-center" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
                 <i class="bi bi-shield-lock-fill me-1" style="color: var(--gold-accent);"></i> Anti-Cámara Moiré
             </span>
 
-            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger rounded-pill px-2.5 py-1.5 small font-monospace d-none d-md-inline-flex align-items-center">
-                <i class="bi bi-cursor-fill text-danger me-1"></i> Bloqueo de Cursor Activo
+            <span class="badge bg-danger bg-opacity-25 text-danger border border-danger rounded-pill px-2.5 py-1.5 small font-monospace d-none d-lg-inline-flex align-items-center">
+                <i class="bi bi-cursor-fill text-danger me-1"></i> Bloqueo Cursor Activo
             </span>
             
             <!-- BOTÓN CERRAR VISOR -->
@@ -1837,10 +1853,97 @@ function obtenerIconoArea($nombreArea) {
         tab.show();
     }
 
-    // 2. BUSCADOR GLOBAL EN TIEMPO REAL
+    // =========================================================================
+    // 2. BUSCADOR PROFUNDO: TÍTULO, SUBÁREA Y CONTENIDO COMPLETO DE CADA PDF
+    // =========================================================================
+    const indiceTextualPdfs = {}; // { [docId]: [ { page: 1, text: "..." }, ... ] }
+    let isIndexacionPdfsIniciada = false;
+
+    // Indexación en segundo plano no bloqueante usando PDF.js + Caché local
+    async function indexarTodosLosPdfsEnSegundoPlano() {
+        if (isIndexacionPdfsIniciada) return;
+        isIndexacionPdfsIniciada = true;
+
+        const filas = document.querySelectorAll('.fila-politica-item');
+        if (!filas.length) return;
+
+        const indBadge = document.getElementById('txtStatusIndexacion');
+        if (indBadge) {
+            indBadge.innerHTML = '<span class="spinner-border spinner-border-sm text-warning me-1" style="width:10px;height:10px;"></span>Indexando contenido de PDFs...';
+        }
+
+        for (const fila of filas) {
+            const docId = fila.getAttribute('data-doc-id');
+            const docVer = fila.getAttribute('data-doc-version') || '1.0';
+            if (!docId) continue;
+
+            const cacheKey = `gh_pdf_idx_v2_${docId}_${docVer}`;
+            let paginasIndexadas = null;
+
+            try {
+                const cachedRaw = localStorage.getItem(cacheKey);
+                if (cachedRaw) {
+                    paginasIndexadas = JSON.parse(cachedRaw);
+                }
+            } catch (e) {}
+
+            if (paginasIndexadas && Array.isArray(paginasIndexadas)) {
+                indiceTextualPdfs[docId] = paginasIndexadas;
+                aplicarIndiceAFila(fila, paginasIndexadas);
+            } else {
+                try {
+                    const streamUrl = 'api_politicas.php?action=stream_pdf&id=' + encodeURIComponent(docId);
+                    const pdf = await pdfjsLib.getDocument({ url: streamUrl, withCredentials: true }).promise;
+                    const paginas = [];
+
+                    for (let p = 1; p <= pdf.numPages; p++) {
+                        const page = await pdf.getPage(p);
+                        const textContent = await page.getTextContent();
+                        const pageText = textContent.items.map(item => item.str).join(' ');
+                        paginas.push({ page: p, text: pageText });
+                    }
+
+                    indiceTextualPdfs[docId] = paginas;
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(paginas));
+                    } catch (eS) {}
+
+                    aplicarIndiceAFila(fila, paginas);
+                } catch (errPdf) {}
+            }
+        }
+
+        if (indBadge) {
+            indBadge.innerHTML = '<i class="bi bi-check2-all text-success me-1"></i>Búsqueda profunda en PDFs activa';
+        }
+
+        // Si el usuario ya tenía texto escrito, refrescar inmediatamente
+        const queryActual = (document.getElementById('filtroTextoPolitica')?.value || '').trim();
+        if (queryActual.length > 0) {
+            filtrarPoliticasGlobal();
+        }
+    }
+
+    function aplicarIndiceAFila(fila, paginas) {
+        const textoCompletoPdf = paginas.map(p => p.text).join(' ').toLowerCase();
+        const searchActual = fila.getAttribute('data-search') || '';
+        if (!searchActual.includes(textoCompletoPdf.slice(0, 40))) {
+            fila.setAttribute('data-search', searchActual + ' ' + textoCompletoPdf);
+        }
+    }
+
+    // Iniciar indexación en segundo plano tras renderizado
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => setTimeout(indexarTodosLosPdfsEnSegundoPlano, 300));
+    } else {
+        setTimeout(indexarTodosLosPdfsEnSegundoPlano, 300);
+    }
+
+    // Filtrar en tiempo real por título, metadatos y contenido interno de PDF
     function filtrarPoliticasGlobal() {
-        const query = (document.getElementById('filtroTextoPolitica').value || '').toLowerCase().trim();
-        
+        const input = document.getElementById('filtroTextoPolitica');
+        const query = (input?.value || '').toLowerCase().trim();
+
         if (query.length > 0) {
             const tabDetalleBtn = document.getElementById('pill-detalle-tab');
             const tab = bootstrap.Tab.getOrCreateInstance(tabDetalleBtn);
@@ -1852,14 +1955,63 @@ function obtenerIconoArea($nombreArea) {
             document.querySelectorAll('.bloque-subarea-item').forEach(subCard => {
                 let subcardTieneMatches = false;
                 const filas = subCard.querySelectorAll('.fila-politica-item');
+
                 filas.forEach(fila => {
-                    const texto = fila.getAttribute('data-search') || '';
-                    if (texto.includes(query)) {
+                    const docId = fila.getAttribute('data-doc-id');
+                    const searchBase = fila.getAttribute('data-search') || '';
+                    const snippetBox = document.getElementById(`snippetMatch_${docId}`);
+                    const btnLeer = fila.querySelector('.btn-view-doc');
+
+                    if (searchBase.includes(query)) {
                         fila.style.display = 'flex';
                         subcardTieneMatches = true;
                         encontrados++;
+
+                        // Buscar coincidencia exacta dentro de las páginas del PDF
+                        let matchInfo = null;
+                        if (indiceTextualPdfs[docId]) {
+                            for (const item of indiceTextualPdfs[docId]) {
+                                const idx = item.text.toLowerCase().indexOf(query);
+                                if (idx !== -1) {
+                                    const start = Math.max(0, idx - 45);
+                                    const end = Math.min(item.text.length, idx + query.length + 45);
+                                    const snippetTxt = item.text.slice(start, end).replace(/\s+/g, ' ');
+                                    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                                    const highlighted = snippetTxt.replace(regex, '<mark class="bg-warning text-dark px-1 fw-bold rounded">$1</mark>');
+                                    matchInfo = {
+                                        page: item.page,
+                                        highlighted: highlighted
+                                    };
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (matchInfo && snippetBox) {
+                            snippetBox.classList.remove('d-none');
+                            snippetBox.innerHTML = `
+                                <div class="p-2 rounded mt-1" style="background: rgba(212, 175, 55, 0.12); border-left: 3px solid var(--gold-accent); font-size: 0.76rem;">
+                                    <span class="fw-bold" style="color: var(--gold-accent-light);"><i class="bi bi-file-earmark-text-fill me-1"></i>Coincidencia en Página ${matchInfo.page}:</span>
+                                    <span class="text-white">...${matchInfo.highlighted}...</span>
+                                </div>
+                            `;
+                            if (btnLeer) {
+                                btnLeer.setAttribute('data-target-page', matchInfo.page);
+                            }
+                        } else if (snippetBox) {
+                            snippetBox.classList.add('d-none');
+                            snippetBox.innerHTML = '';
+                            if (btnLeer) {
+                                btnLeer.removeAttribute('data-target-page');
+                            }
+                        }
+
                     } else {
                         fila.style.display = 'none';
+                        if (snippetBox) {
+                            snippetBox.classList.add('d-none');
+                            snippetBox.innerHTML = '';
+                        }
                     }
                 });
 
@@ -1868,11 +2020,65 @@ function obtenerIconoArea($nombreArea) {
 
             document.getElementById('lblBadgeConteoDetalle').textContent = encontrados + ' Encontradas';
         } else {
+            // Limpiar snippets
+            document.querySelectorAll('.snippet-busqueda-pdf').forEach(s => {
+                s.classList.add('d-none');
+                s.innerHTML = '';
+            });
+
             if (currentAreaSeleccionada === 'todas') {
                 volverACatalogoAreas();
             } else {
                 seleccionarArea(currentAreaSeleccionada);
             }
+        }
+    }
+
+    // Buscar palabra dentro del visor abierto
+    let visorMatchPages = [];
+    let visorCurrentMatchIdx = -1;
+
+    async function buscarTextoEnVisorActual() {
+        const query = (document.getElementById('visorBuscadorTexto')?.value || '').toLowerCase().trim();
+        const badge = document.getElementById('lblVisorMatchCount');
+        if (!currentPdfDoc || !query) {
+            if (badge) badge.classList.add('d-none');
+            return;
+        }
+
+        visorMatchPages = [];
+        visorCurrentMatchIdx = -1;
+
+        for (let p = 1; p <= currentPdfDoc.numPages; p++) {
+            const page = await currentPdfDoc.getPage(p);
+            const content = await page.getTextContent();
+            const text = content.items.map(i => i.str).join(' ').toLowerCase();
+            if (text.includes(query)) {
+                visorMatchPages.push(p);
+            }
+        }
+
+        if (badge) {
+            badge.classList.remove('d-none');
+            if (visorMatchPages.length > 0) {
+                visorCurrentMatchIdx = 0;
+                badge.className = 'badge bg-warning text-dark font-monospace small';
+                badge.textContent = `${visorMatchPages.length} coincidencia(s)`;
+                irAPaginaVisor(visorMatchPages[0]);
+            } else {
+                badge.className = 'badge bg-secondary text-white font-monospace small';
+                badge.textContent = 'Sin coincidencias';
+            }
+        }
+    }
+
+    function irAPaginaVisor(pageNum) {
+        const targetWrapper = document.getElementById(`page-slot-${pageNum}`) || document.getElementById(`pdfPageWrapper_${pageNum}`);
+        const container = document.getElementById('visorCanvasContainer');
+        if (targetWrapper && container) {
+            targetWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const lblPag = document.getElementById('lblPaginaActual');
+            if (lblPag) lblPag.textContent = pageNum;
         }
     }
 
@@ -2525,12 +2731,16 @@ function obtenerIconoArea($nombreArea) {
                         if (paginasRenderizadas === pdf.numPages) {
                             isPdfRenderCompleted = true;
                             setTimeout(function() {
+                                if (targetPageParaScroll) {
+                                    irAPaginaVisor(targetPageParaScroll);
+                                    targetPageParaScroll = null;
+                                }
                                 if (ultimoMouseX !== null && ultimoMouseY !== null) {
                                     verificarCursorSobrePdf(ultimoMouseX, ultimoMouseY);
                                 } else {
                                     actualizarEstadoBloqueoPdf(true);
                                 }
-                            }, 120);
+                            }, 140);
                         }
                     });
 
