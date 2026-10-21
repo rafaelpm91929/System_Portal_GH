@@ -158,7 +158,7 @@ if (isset($pdo) && $pdo !== null) {
                 'rfc'         => $r['rfc'] ?? '',
                 'cpanel'      => $cp ?: $sub,
                 'subdominio'  => $sub,
-                'endpoint'    => $endp ?: ('https://' . $sub . '/api_webhook_ticket.php'),
+                'endpoint'    => $endp ?: ('https://' . $sub . '/sistemas/api_obtener_datos.php'),
                 'token'       => $tok ?: ($r['local_api_token'] ?: 'GH_SISTEMAS_TICKETS_2026!'),
                 'icono'       => $r['icono'] ?: 'bi-building-fill-check',
                 'color'       => $r['color'] ?: '#2563eb',

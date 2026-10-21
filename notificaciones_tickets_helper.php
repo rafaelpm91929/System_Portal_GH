@@ -23,6 +23,85 @@ if (!function_exists('obtenerUrlPortalSistemas')) {
         return 'https://portal.grupohuerta.mx';
     }
 }
+/**
+ * Resuelve la URL del portal donde debe verse el ticket:
+ * - Si es para el creador / solicitante de sucursal: Devuelve la URL del portal de su agencia específica (ej: https://portal.divolavilla.com/sistemas/tickets.php?ver=TK-...)
+ * - Si es para el especialista / agente de TI Central: Devuelve la URL del portal central (https://portal.grupohuerta.mx/tickets.php?ver=...)
+ */
+if (!function_exists('resolverEnlacePortalTicket')) {
+    function resolverEnlacePortalTicket($pdo, $ticketData, $esParaCreador = true) {
+        $folio = trim($ticketData['folio'] ?? '');
+        $ticketId = $ticketData['id'] ?? '';
+        $agencia = trim($ticketData['solicitante_agencia'] ?? '');
+
+        // Si es para un agente/especialista central TI, siempre va al portal central GH
+        if (!$esParaCreador || empty($agencia)) {
+            $urlCentral = obtenerUrlPortalSistemas();
+            $paramVer = !empty($ticketId) ? $ticketId : $folio;
+            return $urlCentral . '/tickets.php?ver=' . urlencode($paramVer);
+        }
+
+        // Si es para el creador / solicitante de una agencia sucursal:
+        $urlAgencia = '';
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("SELECT subdominio, cpanel, endpoint FROM agencias WHERE LOWER(nombre) = LOWER(?) OR LOWER(clave) = LOWER(?) OR nombre LIKE ? LIMIT 1");
+                $stmt->execute([$agencia, $agencia, '%' . $agencia . '%']);
+                $agRow = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($agRow) {
+                    if (!empty($agRow['endpoint'])) {
+                        // ej: https://portal.divolavilla.com/sistemas/api_obtener_datos.php -> https://portal.divolavilla.com/sistemas
+                        $baseEp = preg_replace('#/[^/]*$#', '', $agRow['endpoint']);
+                        $urlAgencia = rtrim($baseEp, '/');
+                    } elseif (!empty($agRow['subdominio']) || !empty($agRow['cpanel'])) {
+                        $sub = !empty($agRow['subdominio']) ? $agRow['subdominio'] : $agRow['cpanel'];
+                        $sub = preg_replace('#^https?://#i', '', rtrim($sub, '/'));
+                        if (strpos($sub, '/sistemas') === false) {
+                            $sub .= '/sistemas';
+                        }
+                        $urlAgencia = 'https://' . $sub;
+                    }
+                }
+            } catch (Throwable $e) {}
+        }
+
+        if (empty($urlAgencia)) {
+            global $CATALOGO_AGENCIAS;
+            if (!empty($CATALOGO_AGENCIAS)) {
+                $agNorm = strtolower($agencia);
+                foreach ($CATALOGO_AGENCIAS as $k => $ag) {
+                    $nomAg = strtolower(trim($ag['nombre'] ?? ''));
+                    if ($k === $agNorm || $nomAg === $agNorm || strpos($agNorm, $nomAg) !== false || strpos($nomAg, $agNorm) !== false) {
+                        if (!empty($ag['endpoint'])) {
+                            $baseEp = preg_replace('#/[^/]*$#', '', $ag['endpoint']);
+                            $urlAgencia = rtrim($baseEp, '/');
+                        } elseif (!empty($ag['subdominio'])) {
+                            $sub = preg_replace('#^https?://#i', '', rtrim($ag['subdominio'], '/'));
+                            if (strpos($sub, '/sistemas') === false) {
+                                $sub .= '/sistemas';
+                            }
+                            $urlAgencia = 'https://' . $sub;
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback si la agencia es Divol La Villa u otra sucursal
+        if (empty($urlAgencia)) {
+            if (stripos($agencia, 'villa') !== false || stripos($agencia, 'divol') !== false) {
+                $urlAgencia = 'https://portal.divolavilla.com/sistemas';
+            } else {
+                $urlAgencia = obtenerUrlPortalSistemas();
+            }
+        }
+
+        $paramVer = !empty($folio) ? $folio : $ticketId;
+        return rtrim($urlAgencia, '/') . '/tickets.php?ver=' . urlencode($paramVer);
+    }
+}
+
 
 /**
  * Envío de correos electrónicos corporativos (Soporta SMTP seguro y fallback a mail() nativo de PHP)
@@ -495,8 +574,7 @@ if (!function_exists('notificarNuevoTicketArea')) {
             $especialistas = obtenerEspecialistasAreaTicket($pdo, $area);
             if (empty($especialistas)) return;
 
-            $urlBase = obtenerUrlPortalSistemas();
-            $enlaceTicket = $urlBase . '/tickets.php?ver=' . $ticketId;
+            $enlaceTicket = resolverEnlacePortalTicket($pdo, $ticketData, false);
 
             $asuntoCorreo = "[SISTEMAS GH] Nuevo Ticket #$folio asignado a $area ($agencia)";
             $detalleHtml = "Se ha registrado un nuevo ticket de soporte asignado a tu área de especialidad:\n\n"
@@ -581,8 +659,7 @@ if (!function_exists('notificarModificacionTicketCreador')) {
             $estadoActual = $nuevoEstado ?: ($tk['estado'] ?? 'En Proceso');
             $agenteAsignado = trim($tk['asignado_a'] ?: ($autorCambio ?: 'Especialista de Sistemas'));
 
-            $urlBase = obtenerUrlPortalSistemas();
-            $enlaceTicket = $urlBase . '/tickets.php?ver=' . $ticketId;
+            $enlaceTicket = resolverEnlacePortalTicket($pdo, $tk, true);
 
             // A. Notificación en el Portal para el que subió el ticket
             if (!empty($creador['id']) && function_exists('crearNotificacion')) {
@@ -649,8 +726,8 @@ if (!function_exists('notificarMensajeTicket')) {
 
             $folio = trim($tk['folio'] ?? ('TK-' . $ticketId));
             $area = strtoupper(trim($tk['area_sistemas'] ?? ''));
-            $urlBase = obtenerUrlPortalSistemas();
-            $enlaceTicket = $urlBase . '/tickets.php?ver=' . $ticketId;
+            $enlaceTicketCreador = resolverEnlacePortalTicket($pdo, $tk, true);
+            $enlaceTicketCentral = resolverEnlacePortalTicket($pdo, $tk, false);
             $resumenMsg = mb_substr($mensajeTexto, 0, 180) . (mb_strlen($mensajeTexto) > 180 ? '...' : '');
 
             // CASO A: El especialista/agente respondió -> Notificar al solicitante/creador
@@ -688,7 +765,7 @@ if (!function_exists('notificarMensajeTicket')) {
                             'tipo_alerta'        => 'NUEVA RESPUESTA DE SOPORTE',
                             'color_badge'        => '#8b5cf6',
                             'detalle_html'       => "El especialista <strong>" . htmlspecialchars($autorNombre) . "</strong> ha dejado una respuesta en el ticket:\n\n\"" . htmlspecialchars($mensajeTexto) . "\"",
-                            'enlace_boton'       => $enlaceTicket,
+                            'enlace_boton'       => $enlaceTicketCreador,
                             'texto_boton'        => 'Ver y Responder en el Portal'
                         ]);
                         enviarCorreoSistemas($creador['email'], $creador['nombre'], $asunto, $html);
@@ -727,7 +804,7 @@ if (!function_exists('notificarMensajeTicket')) {
                     'tipo_alerta'        => 'NUEVA RESPUESTA DEL SOLICITANTE',
                     'color_badge'        => '#f59e0b',
                     'detalle_html'       => "El solicitante <strong>" . htmlspecialchars($autorNombre) . "</strong> ha enviado un nuevo mensaje en el ticket:\n\n\"" . htmlspecialchars($mensajeTexto) . "\"",
-                    'enlace_boton'       => $enlaceTicket,
+                    'enlace_boton'       => $enlaceTicketCentral,
                     'texto_boton'        => 'Atender Respuesta en el Portal'
                 ]);
 
