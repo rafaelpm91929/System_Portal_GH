@@ -1342,14 +1342,17 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
                     $esCreador = true;
                 } elseif ($refTicketId > 0 || !empty($folioEnlace)) {
                     try {
-                        if ($refTicketId > 0) {
-                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE id = ? LIMIT 1");
-                            $stmtTk->execute([$refTicketId]);
-                        } else {
+                        $tkInfo = null;
+                        if (!empty($folioEnlace)) {
                             $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE folio = ? LIMIT 1");
                             $stmtTk->execute([$folioEnlace]);
+                            $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
                         }
-                        $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
+                        if (!$tkInfo && $refTicketId > 0) {
+                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE id = ? LIMIT 1");
+                            $stmtTk->execute([$refTicketId]);
+                            $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
+                        }
                         if ($tkInfo) {
                             $solId = !empty($tkInfo['solicitante_id']) ? (int)$tkInfo['solicitante_id'] : 0;
                             $solUsr = strtolower(trim($tkInfo['solicitante_usuario'] ?? ''));

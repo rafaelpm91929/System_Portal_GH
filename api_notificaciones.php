@@ -99,7 +99,7 @@ if ($action === 'listar') {
     }
 
         // 1. Handshake automático hacia Central TI: registra en Central la URL exacta de esta agencia
-    if (empty($_SESSION['central_handshake_ts']) || (time() - $_SESSION['central_handshake_ts']) > 180) {
+    if (empty($_SESSION['central_handshake_ts']) || (time() - $_SESSION['central_handshake_ts']) > 120) {
         try {
             $isHttpsH = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443);
             $protoH = $isHttpsH ? 'https://' : 'http://';
@@ -110,34 +110,43 @@ if ($action === 'listar') {
             $nomAgH = $_SESSION['agencia'] ?? 'Agencia';
 
             if (!empty($whUrlH)) {
-                $ctxH = stream_context_create([
-                    'http' => [
-                        'method'  => 'POST',
-                        'header'  => "Content-Type: application/json\r\nAuthorization: Bearer GH_SISTEMAS_TICKETS_2026!\r\n",
-                        'content' => json_encode([
-                            'token'       => 'GH_SISTEMAS_TICKETS_2026!',
-                            'accion'      => 'handshake_agencia',
-                            'agencia'     => $nomAgH,
-                            'webhook_url' => $whUrlH,
-                            'portal_url'  => $ptUrlH,
-                            'host'        => $hostH
-                        ], JSON_UNESCAPED_UNICODE),
-                        'timeout' => 2
-                    ],
-                    'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+                $payloadHs = json_encode([
+                    'token'       => 'GH_SISTEMAS_TICKETS_2026!',
+                    'accion'      => 'handshake_agencia',
+                    'agencia'     => $nomAgH,
+                    'webhook_url' => $whUrlH,
+                    'portal_url'  => $ptUrlH,
+                    'host'        => $hostH
+                ], JSON_UNESCAPED_UNICODE);
+
+                $chH = curl_init('https://portal.grupohuerta.mx/api_receptor_tickets.php');
+                curl_setopt_array($chH, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_POST           => true,
+                    CURLOPT_POSTFIELDS     => $payloadHs,
+                    CURLOPT_TIMEOUT        => 3,
+                    CURLOPT_CONNECTTIMEOUT => 2,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_SSL_VERIFYHOST => false,
+                    CURLOPT_HTTPHEADER     => [
+                        'Content-Type: application/json; charset=utf-8',
+                        'Authorization: Bearer GH_SISTEMAS_TICKETS_2026!',
+                        'User-Agent: PortalAgenciaNotif/2.0'
+                    ]
                 ]);
-                @file_get_contents('https://portal.grupohuerta.mx/api_receptor_tickets.php', false, $ctxH);
+                @curl_exec($chH);
+                @curl_close($chH);
                 $_SESSION['central_handshake_ts'] = time();
             }
         } catch (Throwable $eHsh) {}
     }
 
-    // 2. Fallback Pull: Sincronizar en segundo plano respuestas de tickets pendientes de este usuario
+    // 2. Fallback Pull: Sincronizar en vivo respuestas y mensajes de Central para los tickets del usuario
     if (!empty($_SESSION['usuario_id']) && $pdo) {
-        $uIdSess = (int)$_SESSION['usuario_id'];
-        $uLoginSess = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '');
-        $uNomSess = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? '');
-        $uMailSess = $_SESSION['usuario_email'] ?? ($_SESSION['email'] ?? '');
+        $uIdSess    = (int)$_SESSION['usuario_id'];
+        $uLoginSess = strtolower(trim($_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '')));
+        $uNomSess   = strtolower(trim($_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? '')));
+        $uMailSess  = strtolower(trim($_SESSION['usuario_email'] ?? ($_SESSION['email'] ?? '')));
 
         try {
             // Buscar tickets activos del usuario
@@ -145,10 +154,20 @@ if ($action === 'listar') {
                 SELECT id, folio, estado, actualizado_en 
                 FROM tickets_soporte 
                 WHERE estado != 'Cerrado' 
-                  AND (solicitante_id = ? OR LOWER(solicitante_usuario) = LOWER(?) OR LOWER(solicitante_email) = LOWER(?) OR LOWER(solicitante_nombre) = LOWER(?))
+                  AND (
+                    (solicitante_id IS NOT NULL AND solicitante_id = :uid)
+                    OR (:ulogin != '' AND LOWER(COALESCE(solicitante_usuario, '')) = :ulogin)
+                    OR (:umail != '' AND LOWER(COALESCE(solicitante_email, '')) = :umail)
+                    OR (:unom != '' AND LOWER(COALESCE(solicitante_nombre, '')) = :unom)
+                  )
                 ORDER BY id DESC LIMIT 5
             ");
-            $stmtMisT->execute([$uIdSess, $uLoginSess, $uMailSess, $uNomSess]);
+            $stmtMisT->execute([
+                ':uid'    => $uIdSess,
+                ':ulogin' => $uLoginSess,
+                ':umail'  => $uMailSess,
+                ':unom'   => $uNomSess
+            ]);
             $misTickets = $stmtMisT->fetchAll(PDO::FETCH_ASSOC);
 
             if (!empty($misTickets)) {
@@ -156,14 +175,25 @@ if ($action === 'listar') {
                     $fol = $myTk['folio'];
                     if (empty($fol)) continue;
 
-                    // Consultar mensajes remotos de este ticket
-                    $ctxM = stream_context_create([
-                        'http' => ['timeout' => 2, 'header' => "Authorization: Bearer GH_SISTEMAS_TICKETS_2026!\r\n"],
-                        'ssl'  => ['verify_peer' => false, 'verify_peer_name' => false]
-                    ]);
+                    // Consultar mensajes remotos vía cURL
                     $urlM = 'https://portal.grupohuerta.mx/api_consultar_tickets.php?mensajes=1&folio=' . urlencode($fol) . '&token=' . urlencode('GH_SISTEMAS_TICKETS_2026!');
-                    $resM = @file_get_contents($urlM, false, $ctxM);
-                    if ($resM) {
+                    $chM = curl_init($urlM);
+                    curl_setopt_array($chM, [
+                        CURLOPT_RETURNTRANSFER => true,
+                        CURLOPT_TIMEOUT        => 3,
+                        CURLOPT_CONNECTTIMEOUT => 2,
+                        CURLOPT_SSL_VERIFYPEER => false,
+                        CURLOPT_SSL_VERIFYHOST => false,
+                        CURLOPT_HTTPHEADER     => [
+                            'Authorization: Bearer GH_SISTEMAS_TICKETS_2026!',
+                            'User-Agent: PortalAgenciaNotif/2.0'
+                        ]
+                    ]);
+                    $resM = curl_exec($chM);
+                    $httpCodeM = curl_getinfo($chM, CURLINFO_HTTP_CODE);
+                    curl_close($chM);
+
+                    if ($resM !== false && $httpCodeM === 200) {
                         $decM = json_decode($resM, true);
                         if (!empty($decM['status']) && $decM['status'] === 'ok' && !empty($decM['mensajes'])) {
                             $stmtChkM = $pdo->prepare("SELECT id FROM tickets_mensajes WHERE (ticket_id = ? OR folio = ?) AND mensaje = ? LIMIT 1");

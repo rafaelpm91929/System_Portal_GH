@@ -23,6 +23,9 @@ $tokenEnviado = str_replace('Bearer ', '', trim($authHeader));
 
 $inputJson = file_get_contents('php://input');
 $datos = json_decode($inputJson, true) ?: [];
+if (empty($datos) && !empty($_POST)) {
+    $datos = $_POST;
+}
 
 if (empty($tokenEnviado) && !empty($datos['token'])) {
     $tokenEnviado = trim($datos['token']);

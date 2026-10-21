@@ -613,6 +613,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                 ]);
 
                 $nuevoId = (int)$pdo->lastInsertId();
+
+                // Generar notificación inmediata en la campanita para el usuario que creó el ticket
+                if (function_exists('crearNotificacion')) {
+                    crearNotificacion(
+                        'tickets',
+                        'ticket_creado',
+                        "Ticket #$folio Registrado",
+                        "Tu requerimiento \"$titulo\" ha sido enviado con éxito a la Dirección de Sistemas.",
+                        'tickets.php?ver=' . $folio,
+                        'bi-ticket-detailed-fill',
+                        'success',
+                        $nuevoId,
+                        $usuarioId,
+                        $pdo
+                    );
+                }
+
                 header("Location: tickets.php?ver=" . $nuevoId . "&creado=1");
                 exit;
             } catch (Throwable $t) {
