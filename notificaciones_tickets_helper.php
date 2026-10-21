@@ -826,6 +826,13 @@ if (!function_exists('notificarMensajeTicket')) {
                     $destinatarios = obtenerEspecialistasAreaTicket($pdo, $area);
                 }
 
+                if (empty($destinatarios)) {
+                    try {
+                        $stmtAdm = $pdo->query("SELECT id, usuario, nombre, email, rol, areas_tickets FROM usuarios WHERE (activo = 1 OR estatus = 1) AND LOWER(rol) IN ('superadmin', 'admin')");
+                        $destinatarios = $stmtAdm ? $stmtAdm->fetchAll(PDO::FETCH_ASSOC) : [];
+                    } catch (Throwable $tAdm) {}
+                }
+
                 $asunto = "[SISTEMAS GH] Mensaje del usuario en Ticket #$folio ($autorNombre)";
                 $html = generarPlantillaCorreoTicket([
                     'folio'              => $folio,

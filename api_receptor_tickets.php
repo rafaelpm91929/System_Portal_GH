@@ -252,9 +252,17 @@ if ($accionReq === 'agregar_mensaje' || $accionReq === 'enviar_contestacion' || 
     }
 
     try {
-        $stmtFind = $pdo->prepare("SELECT id FROM tickets_soporte WHERE " . ($ticketIdReq > 0 ? "id = ?" : "folio = ?"));
-        $stmtFind->execute([$ticketIdReq > 0 ? $ticketIdReq : $folioReq]);
-        $targetId = $stmtFind->fetchColumn();
+        $targetId = null;
+        if (!empty($folioReq)) {
+            $stmtFind = $pdo->prepare("SELECT id FROM tickets_soporte WHERE folio = ? LIMIT 1");
+            $stmtFind->execute([$folioReq]);
+            $targetId = $stmtFind->fetchColumn();
+        }
+        if (!$targetId && $ticketIdReq > 0) {
+            $stmtFind = $pdo->prepare("SELECT id FROM tickets_soporte WHERE id = ? LIMIT 1");
+            $stmtFind->execute([$ticketIdReq]);
+            $targetId = $stmtFind->fetchColumn();
+        }
 
         if (!$targetId) {
             http_response_code(404);
