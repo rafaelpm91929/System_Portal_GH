@@ -1293,7 +1293,9 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
         $usuarioId = $_SESSION['usuario_id'] ?? 0;
     }
     $usuarioId = (int)$usuarioId;
-    $usuarioLogin = strtolower(trim($_SESSION['usuario'] ?? ''));
+    $usuarioLogin = strtolower(trim($_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? '')));
+    $usuarioEmail = strtolower(trim($_SESSION['usuario_email'] ?? ($_SESSION['email'] ?? '')));
+    $usuarioNombre = strtolower(trim($_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? '')));
 
     try {
         $sql = "
@@ -1341,20 +1343,26 @@ function obtenerNotificacionesUsuario($usuarioId = null, $limite = 30, $pdo = nu
                 } elseif ($refTicketId > 0 || !empty($folioEnlace)) {
                     try {
                         if ($refTicketId > 0) {
-                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario FROM tickets_soporte WHERE id = ? LIMIT 1");
+                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE id = ? LIMIT 1");
                             $stmtTk->execute([$refTicketId]);
                         } else {
-                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario FROM tickets_soporte WHERE folio = ? LIMIT 1");
+                            $stmtTk = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre FROM tickets_soporte WHERE folio = ? LIMIT 1");
                             $stmtTk->execute([$folioEnlace]);
                         }
                         $tkInfo = $stmtTk->fetch(PDO::FETCH_ASSOC);
                         if ($tkInfo) {
                             $solId = !empty($tkInfo['solicitante_id']) ? (int)$tkInfo['solicitante_id'] : 0;
                             $solUsr = strtolower(trim($tkInfo['solicitante_usuario'] ?? ''));
+                            $solMail = strtolower(trim($tkInfo['solicitante_email'] ?? ''));
+                            $solNom = strtolower(trim($tkInfo['solicitante_nombre'] ?? ''));
 
                             if ($solId > 0 && $solId === $usuarioId) {
                                 $esCreador = true;
                             } elseif (!empty($solUsr) && !empty($usuarioLogin) && $solUsr === $usuarioLogin) {
+                                $esCreador = true;
+                            } elseif (!empty($solMail) && !empty($usuarioEmail) && $solMail === $usuarioEmail) {
+                                $esCreador = true;
+                            } elseif (!empty($solNom) && !empty($usuarioNombre) && $solNom === $usuarioNombre) {
                                 $esCreador = true;
                             }
                         }

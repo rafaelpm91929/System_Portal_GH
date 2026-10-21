@@ -383,29 +383,42 @@ try {
 
     // Notificar EXCLUSIVAMENTE al usuario que subió el ticket en el portal de agencia
     try {
-        $stmtOwner = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, titulo FROM tickets_soporte WHERE folio = ? LIMIT 1");
+        $stmtOwner = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, solicitante_email, solicitante_nombre, titulo FROM tickets_soporte WHERE folio = ? LIMIT 1");
         $stmtOwner->execute([$folio]);
         $ownerData = $stmtOwner->fetch(PDO::FETCH_ASSOC);
         if ($ownerData) {
             $solId = !empty($ownerData['solicitante_id']) ? (int)$ownerData['solicitante_id'] : 0;
             if ($solId === 0 && !empty($ownerData['solicitante_usuario'])) {
                 $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER(?) LIMIT 1");
-                $stmtU->execute([$ownerData['solicitante_usuario']]);
+                $stmtU->execute([trim($ownerData['solicitante_usuario'])]);
+                $solId = (int)$stmtU->fetchColumn();
+            }
+            if ($solId === 0 && !empty($ownerData['solicitante_email'])) {
+                $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(email) = LOWER(?) LIMIT 1");
+                $stmtU->execute([trim($ownerData['solicitante_email'])]);
+                $solId = (int)$stmtU->fetchColumn();
+            }
+            if ($solId === 0 && !empty($ownerData['solicitante_nombre'])) {
+                $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(nombre) = LOWER(?) LIMIT 1");
+                $stmtU->execute([trim($ownerData['solicitante_nombre'])]);
                 $solId = (int)$stmtU->fetchColumn();
             }
 
-            if ($solId > 0 && function_exists('crearNotificacion')) {
+            // Destinatario específico si se resolvió; si no, null para resolución dinámica por folio en el feed
+            $destUsuarioId = $solId > 0 ? $solId : null;
+
+            if (function_exists('crearNotificacion')) {
                 if (!empty($nuevoMensaje)) {
                     crearNotificacion(
                         'tickets',
                         'mensaje_ticket',
                         "Respuesta en tu Ticket #$folio",
                         "El agente de soporte respondió: \"" . mb_substr($nuevoMensaje, 0, 80) . "\"",
-                        'tickets.php?ver=' . $ownerData['id'],
+                        'tickets.php?ver=' . $folio,
                         'bi-chat-dots-fill',
                         'primary',
                         $ownerData['id'],
-                        $solId,
+                        $destUsuarioId,
                         $pdo
                     );
                 } elseif (!empty($tieneDatosAtencion)) {
@@ -414,11 +427,11 @@ try {
                         'actualizacion_ticket',
                         "Actualización en tu Ticket #$folio",
                         "Tu ticket está ahora en estado: $estado" . (!empty($notasResolucion) ? " - " . mb_substr($notasResolucion, 0, 70) : ""),
-                        'tickets.php?ver=' . $ownerData['id'],
+                        'tickets.php?ver=' . $folio,
                         'bi-arrow-repeat',
                         'info',
                         $ownerData['id'],
-                        $solId,
+                        $destUsuarioId,
                         $pdo
                     );
                 }
