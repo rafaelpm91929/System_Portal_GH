@@ -135,7 +135,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     // Procesar configuración de áreas autorizadas de tickets
                     $areasPost = $_POST['areas_tickets'] ?? [];
                     $areasFinal = 'TODOS';
-                    if (strtolower($rol) === 'superadmin') {
+                    if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
+                        $areasFinal = 'TODOS';
+                    } elseif (!empty($areasPost)) {
+                        $areasFinal = implode(',', array_map('strtoupper', $areasPost));
+                    } elseif (strtolower($rol) === 'superadmin') {
                         $areasFinal = 'TODOS';
                     } elseif (in_array('tickets', $modulosPermitidos)) {
                         if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
@@ -167,7 +171,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     } else {
                         $areasPost = $_POST['areas_tickets'] ?? [];
                         $areasFinal = 'TODOS';
-                        if (strtolower($rol) === 'superadmin') {
+                        if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
+                            $areasFinal = 'TODOS';
+                        } elseif (!empty($areasPost)) {
+                            $areasFinal = implode(',', array_map('strtoupper', $areasPost));
+                        } elseif (strtolower($rol) === 'superadmin') {
                             $areasFinal = 'TODOS';
                         } elseif (in_array('tickets', $modulosPermitidos)) {
                             if (in_array('TODOS', $areasPost) || count($areasPost) >= 6) {
@@ -1585,7 +1593,7 @@ $areasCatalogoSistemas = [
             const areasStr = (u.areas_tickets || 'TODOS').trim().toUpperCase();
             let areasHtml = '';
 
-            if (areasStr === 'TODOS' || areasStr === '*' || rolLower === 'superadmin') {
+            if (areasStr === 'TODOS' || areasStr === '*') {
                 areasHtml = `
                     <div class="d-flex align-items-center gap-2">
                         <span class="badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 rounded-pill px-3 py-2 fs-6">

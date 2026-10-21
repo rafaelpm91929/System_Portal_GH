@@ -312,10 +312,74 @@ HTML;
 /**
  * Obtiene todos los usuarios y especialistas activos asignados al área de un ticket
  */
+if (!function_exists('normalizarAreaSistemas')) {
+    function normalizarAreaSistemas($str) {
+        $str = strtoupper(trim($str ?? ''));
+        // Quitar acentos y diacríticos
+        $str = str_replace(['Á','É','Í','Ó','Ú','Ñ'], ['A','E','I','O','U','N'], $str);
+        // Quitar caracteres especiales
+        $clean = preg_replace('/[^A-Z0-9]/', '', $str);
+
+        // Sinónimos y equivalencias oficiales
+        if ($clean === 'CIBERSEGURIDAD' || $clean === 'CYBERSEGURIDAD') {
+            return 'CYBERSEGURIDAD';
+        }
+        if (strpos($clean, 'DIRECCION') !== false && strpos($clean, 'SISTEMA') !== false) {
+            return 'DIRECCIONSISTEMAS';
+        }
+        if ($clean === 'REDESSOCIALES' || $clean === 'REDES') {
+            return 'REDESSOCIALES';
+        }
+        if ($clean === 'AUDITORIA' || $clean === 'AUDITORIAS') {
+            return 'AUDITORIA';
+        }
+        if (strpos($clean, 'INFRAESTRUCTURA') !== false || $clean === 'SITE' || $clean === 'IDF') {
+            return 'INFRAESTRUCTURA';
+        }
+        if (strpos($clean, 'DESARROLLO') !== false || $clean === 'SOFTWARE') {
+            return 'DESARROLLO';
+        }
+        if ($clean === 'CORPORATIVO' || $clean === 'CORP') {
+            return 'CORPORATIVO';
+        }
+        return $clean;
+    }
+}
+
+if (!function_exists('usuarioTieneAreaAsignada')) {
+    function usuarioTieneAreaAsignada($areasUsuarioStr, $areaTicket) {
+        $areaTicketNorm = normalizarAreaSistemas($areaTicket);
+        if (empty($areaTicketNorm)) return false;
+
+        $areasUsuarioStr = trim($areasUsuarioStr ?? '');
+        if (empty($areasUsuarioStr) || strtoupper($areasUsuarioStr) === 'NINGUNA') {
+            return false;
+        }
+
+        // Si explícitamente tiene 'TODOS' o '*', está asignado a todas las áreas
+        if (strtoupper($areasUsuarioStr) === 'TODOS' || $areasUsuarioStr === '*') {
+            return true;
+        }
+
+        // Revisar cada área asignada en la lista separada por comas
+        $lista = explode(',', $areasUsuarioStr);
+        foreach ($lista as $item) {
+            if (normalizarAreaSistemas($item) === $areaTicketNorm) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+/**
+ * Obtiene todos los usuarios y especialistas activos asignados al área de un ticket.
+ * FILTRADO ESTRICTO: Solo retorna usuarios que tengan asignada esa área específica.
+ * No envía notificaciones por correo de áreas no asignadas.
+ */
 if (!function_exists('obtenerEspecialistasAreaTicket')) {
     function obtenerEspecialistasAreaTicket($pdo, $area) {
         if (!$pdo || empty(trim($area ?? ''))) return [];
-        $areaNorm = strtoupper(trim($area));
 
         try {
             // Compatibilidad total de columna activo / estatus
@@ -332,21 +396,13 @@ if (!function_exists('obtenerEspecialistasAreaTicket')) {
             $asignados = [];
 
             foreach ($todos as $u) {
-                $rol = strtolower(trim($u['rol'] ?? ''));
-                $areasU = strtoupper(trim($u['areas_tickets'] ?? ''));
+                $areasU = trim($u['areas_tickets'] ?? '');
 
-                // 1. SuperAdmin siempre tiene acceso y responsabilidad sobre todas las áreas
-                if ($rol === 'superadmin' || $areasU === 'TODOS' || $areasU === '*') {
+                // FILTRADO ESTRICTO:
+                // Que por correo (y portal), solo le llegue el área que tiene asignada,
+                // NO de otras áreas no asignadas.
+                if (usuarioTieneAreaAsignada($areasU, $area)) {
                     $asignados[] = $u;
-                    continue;
-                }
-
-                // 2. Coincidencia por lista separada por comas (ej. 'INFRAESTRUCTURA,DESARROLLO')
-                if (!empty($areasU) && $areasU !== 'NINGUNA') {
-                    $lista = array_map('trim', explode(',', $areasU));
-                    if (in_array($areaNorm, $lista)) {
-                        $asignados[] = $u;
-                    }
                 }
             }
 
