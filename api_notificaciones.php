@@ -69,6 +69,10 @@ if ($action === 'listar') {
                 $remotoJson = json_decode($raw, true);
                 if (!empty($remotoJson['exito']) && !empty($remotoJson['notificaciones'])) {
                     foreach ($remotoJson['notificaciones'] as $rn) {
+                        // En agencia nunca importar notificaciones genericas de tickets remotos
+                        if (!empty($rn['modulo']) && strtolower(trim($rn['modulo'])) === 'tickets') {
+                            continue;
+                        }
                         $stmtCheck = $pdo->prepare("SELECT id FROM notificaciones WHERE modulo = ? AND tipo = ? AND referencia_id = ?");
                         $stmtCheck->execute([$rn['modulo'], $rn['tipo'], $rn['referencia_id']]);
                         if (!$stmtCheck->fetch()) {

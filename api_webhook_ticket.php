@@ -381,6 +381,51 @@ try {
         }
     }
 
+    // Notificar EXCLUSIVAMENTE al usuario que subió el ticket en el portal de agencia
+    try {
+        $stmtOwner = $pdo->prepare("SELECT id, solicitante_id, solicitante_usuario, titulo FROM tickets_soporte WHERE folio = ? LIMIT 1");
+        $stmtOwner->execute([$folio]);
+        $ownerData = $stmtOwner->fetch(PDO::FETCH_ASSOC);
+        if ($ownerData) {
+            $solId = !empty($ownerData['solicitante_id']) ? (int)$ownerData['solicitante_id'] : 0;
+            if ($solId === 0 && !empty($ownerData['solicitante_usuario'])) {
+                $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(usuario) = LOWER(?) LIMIT 1");
+                $stmtU->execute([$ownerData['solicitante_usuario']]);
+                $solId = (int)$stmtU->fetchColumn();
+            }
+
+            if ($solId > 0 && function_exists('crearNotificacion')) {
+                if (!empty($nuevoMensaje)) {
+                    crearNotificacion(
+                        'tickets',
+                        'mensaje_ticket',
+                        "Respuesta en tu Ticket #$folio",
+                        "El agente de soporte respondió: \"" . mb_substr($nuevoMensaje, 0, 80) . "\"",
+                        'tickets.php?ver=' . $ownerData['id'],
+                        'bi-chat-dots-fill',
+                        'primary',
+                        $ownerData['id'],
+                        $solId,
+                        $pdo
+                    );
+                } elseif (!empty($tieneDatosAtencion)) {
+                    crearNotificacion(
+                        'tickets',
+                        'actualizacion_ticket',
+                        "Actualización en tu Ticket #$folio",
+                        "Tu ticket está ahora en estado: $estado" . (!empty($notasResolucion) ? " - " . mb_substr($notasResolucion, 0, 70) : ""),
+                        'tickets.php?ver=' . $ownerData['id'],
+                        'bi-arrow-repeat',
+                        'info',
+                        $ownerData['id'],
+                        $solId,
+                        $pdo
+                    );
+                }
+            }
+        }
+    } catch (Throwable $eNotifWh) {}
+
     echo json_encode([
         'status'          => 'ok',
         'mensaje'         => 'Ticket actualizado en portal de agencia exitosamente.',
