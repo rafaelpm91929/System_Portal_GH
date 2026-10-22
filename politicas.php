@@ -28,6 +28,23 @@ $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario'
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
+// 1.1 Verificación de Aviso de Privacidad y Términos de Confidencialidad
+$haAceptadoTerminos = false;
+if ($pdo) {
+    try {
+        if (function_exists('asegurarTablaPoliticas')) {
+            asegurarTablaPoliticas($pdo);
+        }
+        $stmtTerm = $pdo->prepare("SELECT id, fecha_aceptacion FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
+        $stmtTerm->execute([$loginUsuario]);
+        $rowTerm = $stmtTerm->fetch(PDO::FETCH_ASSOC);
+        if ($rowTerm) {
+            $haAceptadoTerminos = true;
+        }
+    } catch (Throwable $eTerm) {}
+}
+
+
 // Obtener IP real del usuario para la marca de agua forense
 $ipUsuario = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 if (strpos($ipUsuario, ',') !== false) {
@@ -1143,6 +1160,109 @@ function obtenerIconoArea($nombreArea) {
 <?php endif; ?>
 
 <!-- ========================================================================= -->
+<!-- ========================================================================= -->
+<!-- MODAL OBLIGATORIO: AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ) -->
+<!-- ========================================================================= -->
+<?php if (!$haAceptadoTerminos): ?>
+<div class="modal fade" id="modalAvisoPrivacidadTerminos" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="modalAvisoPrivacidadLabel" aria-hidden="true" style="z-index: 1000000;">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background: #061122; border: 2px solid var(--gold-border); border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.95);">
+            
+            <div class="modal-header border-secondary border-opacity-25 p-4" style="border-bottom: 1px solid var(--gold-border); background: linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(5, 13, 26, 0.95) 100%);">
+                <div class="d-flex align-items-center gap-3">
+                    <img src="uploads/logo_gh.png" alt="Grupo Huerta" style="height: 48px; width: auto; object-fit: contain;">
+                    <div>
+                        <span class="badge bg-warning text-dark font-monospace small px-2.5 py-1 fw-bold mb-1">
+                            <i class="bi bi-shield-lock-fill me-1"></i> PROTOCOLO INSTITUCIONAL OBLIGATORIO
+                        </span>
+                        <h5 class="modal-title fw-bold text-white mb-0" id="modalAvisoPrivacidadLabel" style="letter-spacing: 0.5px;">
+                            Aviso de Privacidad y Términos de Confidencialidad
+                        </h5>
+                        <p class="text-secondary small mb-0 font-monospace" style="font-size: 0.75rem;">
+                            Grupo Huerta • Repositorio Central de Políticas y Normativas
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-body p-4" style="background: rgba(3, 8, 18, 0.85); font-size: 0.88rem; line-height: 1.65; color: #cbd5e1;">
+                
+                <div class="alert alert-dark border border-warning border-opacity-40 rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background: rgba(212, 175, 55, 0.08);">
+                    <i class="bi bi-info-circle-fill text-warning fs-5 flex-shrink-0 mt-0.5"></i>
+                    <div class="small text-light">
+                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas de <strong>Grupo Huerta</strong> y tu agencia (<strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>), es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Uso.
+                    </div>
+                </div>
+
+                <div class="p-3.5 rounded-3 border border-secondary border-opacity-25" style="background: #040a16; max-height: 320px; overflow-y: auto;">
+                    
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-shield-shaded text-warning"></i> I. AVISO DE PRIVACIDAD SIMPLIFICADO
+                    </h6>
+                    <p class="mb-3 small">
+                        <strong>Grupo Huerta</strong>, con domicilio en sus oficinas corporativas y agencias autorizadas, es responsable del tratamiento de los datos personales y de acceso generados durante tu interacción con este sistema. Tus datos de identificación (nombre, usuario, agencia y dirección IP) se emplean estrictamente con fines de autenticación, control de accesos, auditoría de cumplimiento normativo y seguridad de la información, conforme a la legislación aplicable en materia de protección de datos personales.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-file-earmark-lock2-fill text-warning"></i> II. PROPIEDAD INTELECTUAL Y CONFIDENCIALIDAD
+                    </h6>
+                    <p class="mb-3 small">
+                        Toda la documentación, políticas, códigos de conducta, manuales operativos, formatos y anexos contenidos en este repositorio son <strong>PROPIEDAD EXCLUSIVA DE GRUPO HUERTA</strong> y constituyen <strong>SECRETOS INDUSTRIALES Y COMERCIALES</strong>. Su acceso se concede con carácter estrictamente confidencial, personal e intransferible únicamente para el ejercicio de tus funciones laborales dentro de la organización.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-camera-video-off-fill text-warning"></i> III. PROHIBICIONES Y RESTRICCIONES DE SEGURIDAD
+                    </h6>
+                    <p class="mb-2 small">Queda estrictamente prohibido a cualquier colaborador o usuario:</p>
+                    <ul class="small mb-3 ps-3" style="list-style-type: square;">
+                        <li>Reproducir, fotografiar con teléfonos móviles, escanear, imprimir o realizar capturas de pantalla de los documentos.</li>
+                        <li>Descargar, transferir o enviar archivos a correos personales, dispositivos externos (USB), servicios de almacenamiento en la nube o chats de mensajería (WhatsApp, Telegram, etc.).</li>
+                        <li>Suministrar o filtrar la documentación a exempleados, competidores, clientes, proveedores o cualquier tercero no autorizado.</li>
+                        <li>Utilizar herramientas de Inteligencia Artificial (IA), software de OCR o programas de edición para intentar eliminar las marcas de agua institucionales o alterar su contenido.</li>
+                    </ul>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-fingerprint text-warning"></i> IV. TRAZABILIDAD FORENSE DIGITAL ACTIVA
+                    </h6>
+                    <p class="mb-3 small">
+                        El colaborador reconoce que cada lectura es monitoreada en tiempo real. Los visores inyectan de forma dinámica en cada página <strong>marcas de agua con tu nombre, agencia, fecha y hora exacta</strong>, así como <strong>micro-códigos esteganográficos invisibles</strong> integrados en los píxeles del documento. Cualquier divulgación no autorizada permitirá la identificación pericial inmediata del origen de la filtración.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-exclamation-octagon-fill text-danger"></i> V. RESPONSABILIDAD Y SANCIONES LEGALES
+                    </h6>
+                    <p class="mb-0 small">
+                        El incumplimiento de estas disposiciones constituye una violación grave a las obligaciones laborales y de confidencialidad, dando lugar a la <strong>rescisión del contrato individual de trabajo sin responsabilidad para el patrón</strong> conforme al artículo 47 de la <em>Ley Federal del Trabajo</em>, con independencia de las denuncias civiles y penales correspondientes por revelación de secretos industriales y daño patrimonial conforme al <em>Código Penal Federal</em>.
+                    </p>
+                </div>
+
+                <!-- CHECKBOX OBLIGATORIO DE VISTO Y CONFORMIDAD -->
+                <div class="form-check p-3 rounded-3 mt-3" style="background: rgba(212, 175, 55, 0.08); border: 1.5px solid var(--gold-border);">
+                    <input class="form-check-input ms-0 me-2.5" type="checkbox" id="chkAceptoTerminosPoliticas" style="cursor: pointer; transform: scale(1.2); margin-top: 3px;" onchange="toggleBotonAceptarTerminos(this.checked)">
+                    <label class="form-check-label fw-bold text-white small" for="chkAceptoTerminosPoliticas" style="cursor: pointer; line-height: 1.45;">
+                        <span class="text-warning">CONFIRMACIÓN Y ACEPTACIÓN EXPRESA:</span> He leído cuidadosamente, comprendo y acepto en su totalidad el Aviso de Privacidad, los Términos y Condiciones y las Políticas de Confidencialidad Institucional de Grupo Huerta.
+                    </label>
+                </div>
+
+                <div id="msgErrorAceptacion" class="alert alert-danger p-2 small mt-2 d-none"></div>
+
+                <!-- BOTÓN DE CONFIRMACIÓN -->
+                <div class="mt-3">
+                    <button type="button" id="btnAceptarTerminosPoliticas" class="btn btn-warning w-100 fw-bold py-2.5 rounded-3 shadow d-flex align-items-center justify-content-center gap-2" style="font-size: 0.92rem;" disabled onclick="confirmarAceptacionTerminos()">
+                        <i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas
+                    </button>
+                    <div class="text-center text-secondary small font-monospace mt-2" style="font-size: 0.72rem;">
+                        Colaborador: <?php echo htmlspecialchars($nombreUsuario); ?> (<?php echo htmlspecialchars($loginUsuario); ?>) • <?php echo htmlspecialchars($agenciaNombre); ?>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+
 <!-- VISOR BLINDADO FULLSCREEN (MODAL CONTAINER) -->
 <!-- ========================================================================= -->
 <div id="visorModalOverlay">
@@ -1262,6 +1382,101 @@ function obtenerIconoArea($nombreArea) {
     let currentFolioDoc = 'GH-POL';
     const logoGhPreloaded = new Image();
     logoGhPreloaded.src = 'uploads/logo_gh.png';
+
+        // =========================================================================
+    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ)
+    // =========================================================================
+    const HA_ACEPTADO_TERMINOS = <?php echo $haAceptadoTerminos ? 'true' : 'false'; ?>;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (!HA_ACEPTADO_TERMINOS) {
+            const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
+            if (modalTerminosEl) {
+                const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
+                    backdrop: 'static',
+                    keyboard: false
+                });
+                modalTerminos.show();
+            }
+        }
+    });
+
+    function toggleBotonAceptarTerminos(isChecked) {
+        const btn = document.getElementById('btnAceptarTerminosPoliticas');
+        if (btn) btn.disabled = !isChecked;
+    }
+
+    function confirmarAceptacionTerminos() {
+        const chk = document.getElementById('chkAceptoTerminosPoliticas');
+        const btn = document.getElementById('btnAceptarTerminosPoliticas');
+        const msgErr = document.getElementById('msgErrorAceptacion');
+
+        if (!chk || !chk.checked) {
+            if (msgErr) {
+                msgErr.classList.remove('d-none');
+                msgErr.textContent = 'Es obligatorio marcar la casilla de aceptación para continuar.';
+            }
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando aceptación y firma digital...';
+        }
+        if (msgErr) msgErr.classList.add('d-none');
+
+        const formData = new FormData();
+        formData.append('action', 'aceptar_terminos');
+        formData.append('usuario_id', '<?php echo $usuarioId; ?>');
+        formData.append('usuario_nombre', FORENSIC_USER_NAME);
+        formData.append('usuario_login', FORENSIC_USER_LOGIN);
+        formData.append('agencia', FORENSIC_AGENCIA);
+        formData.append('ip', FORENSIC_IP);
+        formData.append('version_terminos', '1.0');
+
+        fetch('api_politicas.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.exito) {
+                const modalEl = document.getElementById('modalAvisoPrivacidadTerminos');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                    modalEl.remove();
+                }
+                const toastBienvenida = document.createElement('div');
+                toastBienvenida.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg rounded-3 text-white border-success d-flex align-items-center gap-2';
+                toastBienvenida.style.zIndex = '9999999';
+                toastBienvenida.style.background = '#0d2818';
+                toastBienvenida.innerHTML = '<i class="bi bi-shield-check fs-5 text-success"></i> <div><strong>Aviso de Privacidad Confirmado:</strong> Acceso autorizado al repositorio institucional.</div>';
+                document.body.appendChild(toastBienvenida);
+                setTimeout(() => toastBienvenida.remove(), 4000);
+            } else {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas';
+                }
+                if (msgErr) {
+                    msgErr.classList.remove('d-none');
+                    msgErr.textContent = data.error || 'Error al registrar la aceptación. Intenta nuevamente.';
+                }
+            }
+        })
+        .catch(err => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas';
+            }
+            if (msgErr) {
+                msgErr.classList.remove('d-none');
+                msgErr.textContent = 'Error de conexión con el servidor: ' + err.message;
+            }
+        });
+    }
+
 
     // =========================================================================
     // BLINDAJE DUAL: ENTRELAZADO DESTRUCTIVO + TRAMPA ESTEGANOGRÁFICA INVISIBLE

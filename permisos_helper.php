@@ -622,6 +622,18 @@ function asegurarTablaPoliticas($pdo = null) {
                     fecha_fin DATETIME NULL,
                     duracion_segundos INTEGER DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS politicas_terminos_aceptados (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    usuario_id INTEGER,
+                    usuario_nombre TEXT NOT NULL,
+                    usuario_login TEXT NOT NULL,
+                    agencia TEXT NOT NULL,
+                    ip TEXT NOT NULL,
+                    origen TEXT DEFAULT 'Portal Agencia',
+                    version_terminos TEXT DEFAULT '1.0',
+                    fecha_aceptacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    user_agent TEXT
+                );
             ");
             // Auto-migración SQLite: Asegurar columnas en caso de tabla preexistente
             $colsSqlite = ['area', 'subarea', 'categoria', 'version', 'fecha_vigencia', 'obligatorio_lectura', 'creado_por', 'estatus'];
@@ -667,6 +679,22 @@ function asegurarTablaPoliticas($pdo = null) {
                     INDEX `idx_politica` (`politica_id`),
                     INDEX `idx_usuario` (`usuario_login`),
                     INDEX `idx_fecha` (`fecha_lectura`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `politicas_terminos_aceptados` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `usuario_id` INT NULL,
+                    `usuario_nombre` VARCHAR(150) NOT NULL,
+                    `usuario_login` VARCHAR(100) NOT NULL,
+                    `agencia` VARCHAR(150) NOT NULL,
+                    `ip` VARCHAR(50) NOT NULL,
+                    `origen` VARCHAR(100) DEFAULT 'Portal Agencia',
+                    `version_terminos` VARCHAR(20) DEFAULT '1.0',
+                    `fecha_aceptacion` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `user_agent` TEXT NULL,
+                    INDEX `idx_terminos_login` (`usuario_login`),
+                    INDEX `idx_terminos_agencia` (`agencia`),
+                    INDEX `idx_terminos_fecha` (`fecha_aceptacion`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
             try { $pdo->exec("ALTER TABLE `politicas_corporativas` ADD COLUMN `area` VARCHAR(100) NULL"); } catch (Throwable $t) {}

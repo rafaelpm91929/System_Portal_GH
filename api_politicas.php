@@ -337,3 +337,105 @@ if ($action === 'obtener_lecturas') {
     echo json_encode(['exito' => false, 'error' => 'Acceso no permitido: La bitácora de auditoría forense únicamente está disponible en el Portal Central GH.', 'lecturas' => []]);
     exit();
 }
+
+
+// =========================================================================
+// REGISTRAR ACEPTACIÓN DE AVISO DE PRIVACIDAD Y TÉRMINOS (AGENCIA Y CENTRAL)
+// =========================================================================
+if ($action === 'aceptar_terminos') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if (!isset($_SESSION['usuario_id'])) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso no autorizado']);
+        exit();
+    }
+
+    $usuarioId = intval($_SESSION['usuario_id'] ?? 0);
+    $usuarioNombre = trim($_POST['usuario_nombre'] ?? ($_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador')));
+    $usuarioLogin = trim($_POST['usuario_login'] ?? ($_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario')));
+    $agencia = trim($_POST['agencia'] ?? ($_SESSION['agencia'] ?? 'Agencia'));
+    $ip = trim($_POST['ip'] ?? ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
+    if (strpos($ip, ',') !== false) {
+        $ip = trim(explode(',', $ip)[0]);
+    }
+    $origen = 'Portal ' . $agencia;
+    $version = trim($_POST['version_terminos'] ?? '1.0');
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'Web Browser';
+
+    date_default_timezone_set('America/Mexico_City');
+    $fechaAhora = date('Y-m-d H:i:s');
+    $localRegId = 0;
+
+    // A. Guardar en base de datos local de la agencia
+    if ($pdo) {
+        try {
+            if (function_exists('asegurarTablaPoliticas')) {
+                asegurarTablaPoliticas($pdo);
+            }
+            $stmtChk = $pdo->prepare("SELECT id FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
+            $stmtChk->execute([$usuarioLogin]);
+            $existenteId = $stmtChk->fetchColumn();
+
+            if ($existenteId) {
+                $stmtUpd = $pdo->prepare("UPDATE politicas_terminos_aceptados SET fecha_aceptacion = ?, ip = ?, agencia = ?, user_agent = ? WHERE id = ?");
+                $stmtUpd->execute([$fechaAhora, $ip, $agencia, $userAgent, $existenteId]);
+                $localRegId = $existenteId;
+            } else {
+                $stmtIns = $pdo->prepare("
+                    INSERT INTO politicas_terminos_aceptados 
+                    (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
+                $localRegId = (int)$pdo->lastInsertId();
+            }
+        } catch (Throwable $eLocal) {}
+    }
+
+    // B. Notificar inmediatamente al Portal Central GH
+    $urlCentralTerminos = 'https://portal.grupohuerta.mx/api_politicas.php?action=aceptar_terminos';
+    $postData = [
+        'token' => 'GH_POLITICAS_SEGURA_2026_CORP',
+        'usuario_id' => $usuarioId,
+        'usuario_nombre' => $usuarioNombre,
+        'usuario_login' => $usuarioLogin,
+        'agencia' => $agencia,
+        'ip' => $ip,
+        'origen' => $origen,
+        'version_terminos' => $version
+    ];
+
+    if (function_exists('curl_init')) {
+        $ch = curl_init($urlCentralTerminos);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => http_build_query($postData),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false
+        ]);
+        @curl_exec($ch);
+        @curl_close($ch);
+    } else {
+        $ctx = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => "Content-type: application/x-www-form-urlencoded\r\n",
+                'content' => http_build_query($postData),
+                'timeout' => 5
+            ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+        ]);
+        @file_get_contents($urlCentralTerminos, false, $ctx);
+    }
+
+    echo json_encode([
+        'exito' => true,
+        'mensaje' => 'Aviso de Privacidad y Términos aceptados correctamente.',
+        'registro_id' => $localRegId,
+        'fecha' => $fechaAhora
+    ]);
+    exit();
+}
