@@ -28,6 +28,23 @@ $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario'
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
+// 1.1 Verificación de Aviso de Privacidad y Términos de Confidencialidad
+$haAceptadoTerminos = false;
+if ($pdo) {
+    try {
+        if (function_exists('asegurarTablaPoliticas')) {
+            asegurarTablaPoliticas($pdo);
+        }
+        $stmtTerm = $pdo->prepare("SELECT id, fecha_aceptacion FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
+        $stmtTerm->execute([$loginUsuario]);
+        $rowTerm = $stmtTerm->fetch(PDO::FETCH_ASSOC);
+        if ($rowTerm) {
+            $haAceptadoTerminos = true;
+        }
+    } catch (Throwable $eTerm) {}
+}
+
+
 // Obtener IP real del usuario para la marca de agua forense
 $ipUsuario = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
 if (strpos($ipUsuario, ',') !== false) {
@@ -1184,6 +1201,11 @@ function obtenerIconoArea($nombreArea) {
                             </button>
                         </li>
                         <li class="nav-item ms-1">
+                            <button class="nav-link btn-sm py-1 px-3 fw-bold" id="tab-terminos-btn" data-bs-toggle="pill" data-bs-target="#tab-terminos-pane" type="button" role="tab" style="color: #6ee7b7; border: 1px solid rgba(16, 185, 129, 0.4);">
+                                <i class="bi bi-patch-check-fill text-success me-1"></i> Avisos Firmados <span class="badge bg-success text-dark ms-1" id="badgeTotalTerminosNav">0</span>
+                            </button>
+                        </li>
+                        <li class="nav-item ms-1">
                             <button class="nav-link btn-sm py-1 px-3 fw-bold" id="tab-detector-btn" data-bs-toggle="pill" data-bs-target="#tab-detector-pane" type="button" role="tab" style="color: var(--gold-accent-light); border: 1px solid var(--gold-border);">
                                 <i class="bi bi-fingerprint text-warning me-1"></i> Detector Anti-IA
                             </button>
@@ -1331,6 +1353,91 @@ function obtenerIconoArea($nombreArea) {
                         </div>
                         <div id="resultadoForenseBox" class="d-none mb-3"></div>
                     </div> <!-- FIN PANEL 2 -->
+
+                    <!-- PANEL 3: AVISOS DE PRIVACIDAD Y TÉRMINOS ACEPTADOS -->
+                    <div class="tab-pane fade" id="tab-terminos-pane" role="tabpanel">
+                        <!-- STATS DE AVISOS -->
+                        <div class="row g-3 mb-3">
+                            <div class="col-6 col-md-4">
+                                <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid rgba(16, 185, 129, 0.4);">
+                                    <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Total Firmas / Aceptaciones</div>
+                                    <div class="fs-4 fw-bold text-success mt-1" id="statTerminosTotal">0</div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                                    <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Agencias Participantes</div>
+                                    <div class="fs-4 fw-bold text-info mt-1" id="statTerminosAgencias">0</div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="p-3 rounded-3" style="background: rgba(14, 38, 70, 0.5); border: 1px solid var(--gold-border);">
+                                    <div class="text-secondary small text-uppercase" style="font-size: 0.72rem;">Última Firma Registrada</div>
+                                    <div class="fs-6 fw-bold text-warning mt-2 font-monospace" id="statTerminosUltima">--</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BARRA DE BÚSQUEDA Y FILTROS DE AVISOS -->
+                        <div class="p-3 mb-3 rounded-3" style="background: rgba(14, 38, 70, 0.45); border: 1px solid var(--gold-border);">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label text-secondary small fw-bold mb-1">
+                                        <i class="bi bi-search text-success me-1"></i> Buscar Colaborador / Usuario / IP
+                                    </label>
+                                    <div class="input-group input-group-sm">
+                                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                                        <input type="text" id="filtroTerminosTexto" class="form-control bg-dark text-white border-secondary" placeholder="Nombre, login, terminal..." oninput="filtrarTablaTerminos()">
+                                        <button class="btn btn-outline-secondary border-secondary text-secondary" type="button" onclick="document.getElementById('filtroTerminosTexto').value=''; filtrarTablaTerminos();" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label text-secondary small fw-bold mb-1">
+                                        <i class="bi bi-building text-info me-1"></i> Agencia
+                                    </label>
+                                    <select id="filtroTerminosAgencia" class="form-select form-select-sm bg-dark text-white border-secondary" onchange="filtrarTablaTerminos()">
+                                        <option value="">Todas las agencias</option>
+                                    </select>
+                                </div>
+                                <div class="col-6 col-md-3 d-flex justify-content-end gap-2">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-2.5 py-1" onclick="exportarTerminosCSV()" title="Descargar reporte en CSV">
+                                        <i class="bi bi-file-earmark-spreadsheet text-success me-1"></i> Exportar CSV
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm text-light rounded-3 px-2.5 py-1" onclick="cargarTerminosAceptadosCentral()" title="Recargar lista">
+                                        <i class="bi bi-arrow-clockwise text-warning me-1"></i> Actualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mt-2 text-secondary small font-monospace" id="lblContadorTerminos">
+                                Mostrando 0 registros
+                            </div>
+                        </div>
+
+                        <!-- TABLA DE AVISOS ACEPTADOS -->
+                        <div class="table-responsive" style="max-height: 440px; overflow-y: auto;">
+                            <table class="table table-dark table-hover align-middle mb-0" style="font-size: 0.82rem; background: transparent;">
+                                <thead class="sticky-top" style="background: #09172c; z-index: 2;">
+                                    <tr class="text-secondary border-secondary">
+                                        <th style="min-width: 140px;">Fecha y Hora Firma</th>
+                                        <th style="min-width: 220px;">Colaborador</th>
+                                        <th style="min-width: 140px;">Agencia</th>
+                                        <th style="min-width: 110px;">Terminal / IP</th>
+                                        <th style="min-width: 100px;">Origen</th>
+                                        <th style="min-width: 90px;">Versión</th>
+                                        <th style="min-width: 130px;">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyTerminosAceptados">
+                                    <tr>
+                                        <td colspan="7" class="text-center py-4 text-secondary">
+                                            <div class="spinner-border spinner-border-sm me-2 text-success"></div>
+                                            Cargando registros de avisos firmados...
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div> <!-- FIN PANEL 3 -->
                 </div> <!-- FIN TAB-CONTENT -->
             </div> <!-- FIN MODAL-BODY -->
             <div class="modal-footer border-secondary border-opacity-25" style="border-top: 1px solid var(--gold-border);">
@@ -1342,6 +1449,109 @@ function obtenerIconoArea($nombreArea) {
 <?php endif; ?>
 
 <!-- ========================================================================= -->
+<!-- ========================================================================= -->
+<!-- MODAL OBLIGATORIO: AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ) -->
+<!-- ========================================================================= -->
+<?php if (!$haAceptadoTerminos): ?>
+<div class="modal fade" id="modalAvisoPrivacidadTerminos" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="modalAvisoPrivacidadLabel" aria-hidden="true" style="z-index: 1000000;">
+    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+        <div class="modal-content text-white" style="background: #061122; border: 2px solid var(--gold-border); border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.95);">
+            
+            <div class="modal-header border-secondary border-opacity-25 p-4" style="border-bottom: 1px solid var(--gold-border); background: linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(5, 13, 26, 0.95) 100%);">
+                <div class="d-flex align-items-center gap-3">
+                    <img src="uploads/logo_gh.png" alt="Grupo Huerta" style="height: 48px; width: auto; object-fit: contain;">
+                    <div>
+                        <span class="badge bg-warning text-dark font-monospace small px-2.5 py-1 fw-bold mb-1">
+                            <i class="bi bi-shield-lock-fill me-1"></i> PROTOCOLO INSTITUCIONAL OBLIGATORIO
+                        </span>
+                        <h5 class="modal-title fw-bold text-white mb-0" id="modalAvisoPrivacidadLabel" style="letter-spacing: 0.5px;">
+                            Aviso de Privacidad y Términos de Confidencialidad
+                        </h5>
+                        <p class="text-secondary small mb-0 font-monospace" style="font-size: 0.75rem;">
+                            Grupo Huerta • Repositorio Central de Políticas y Normativas
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-body p-4" style="background: rgba(3, 8, 18, 0.85); font-size: 0.88rem; line-height: 1.65; color: #cbd5e1;">
+                
+                <div class="alert alert-dark border border-warning border-opacity-40 rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background: rgba(212, 175, 55, 0.08);">
+                    <i class="bi bi-info-circle-fill text-warning fs-5 flex-shrink-0 mt-0.5"></i>
+                    <div class="small text-light">
+                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas de <strong>Grupo Huerta</strong> y tu agencia (<strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>), es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Uso.
+                    </div>
+                </div>
+
+                <div class="p-3.5 rounded-3 border border-secondary border-opacity-25" style="background: #040a16; max-height: 320px; overflow-y: auto;">
+                    
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-shield-shaded text-warning"></i> I. AVISO DE PRIVACIDAD SIMPLIFICADO
+                    </h6>
+                    <p class="mb-3 small">
+                        <strong>Grupo Huerta</strong>, con domicilio en sus oficinas corporativas y agencias autorizadas, es responsable del tratamiento de los datos personales y de acceso generados durante tu interacción con este sistema. Tus datos de identificación (nombre, usuario, agencia y dirección IP) se emplean estrictamente con fines de autenticación, control de accesos, auditoría de cumplimiento normativo y seguridad de la información, conforme a la legislación aplicable en materia de protección de datos personales.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-file-earmark-lock2-fill text-warning"></i> II. PROPIEDAD INTELECTUAL Y CONFIDENCIALIDAD
+                    </h6>
+                    <p class="mb-3 small">
+                        Toda la documentación, políticas, códigos de conducta, manuales operativos, formatos y anexos contenidos en este repositorio son <strong>PROPIEDAD EXCLUSIVA DE GRUPO HUERTA</strong> y constituyen <strong>SECRETOS INDUSTRIALES Y COMERCIALES</strong>. Su acceso se concede con carácter estrictamente confidencial, personal e intransferible únicamente para el ejercicio de tus funciones laborales dentro de la organización.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-camera-video-off-fill text-warning"></i> III. PROHIBICIONES Y RESTRICCIONES DE SEGURIDAD
+                    </h6>
+                    <p class="mb-2 small">Queda estrictamente prohibido a cualquier colaborador o usuario:</p>
+                    <ul class="small mb-3 ps-3" style="list-style-type: square;">
+                        <li>Reproducir, fotografiar con teléfonos móviles, escanear, imprimir o realizar capturas de pantalla de los documentos.</li>
+                        <li>Descargar, transferir o enviar archivos a correos personales, dispositivos externos (USB), servicios de almacenamiento en la nube o chats de mensajería (WhatsApp, Telegram, etc.).</li>
+                        <li>Suministrar o filtrar la documentación a exempleados, competidores, clientes, proveedores o cualquier tercero no autorizado.</li>
+                        <li>Utilizar herramientas de Inteligencia Artificial (IA), software de OCR o programas de edición para intentar eliminar las marcas de agua institucionales o alterar su contenido.</li>
+                    </ul>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-fingerprint text-warning"></i> IV. TRAZABILIDAD FORENSE DIGITAL ACTIVA
+                    </h6>
+                    <p class="mb-3 small">
+                        El colaborador reconoce que cada lectura es monitoreada en tiempo real. Los visores inyectan de forma dinámica en cada página <strong>marcas de agua con tu nombre, agencia, fecha y hora exacta</strong>, así como <strong>micro-códigos esteganográficos invisibles</strong> integrados en los píxeles del documento. Cualquier divulgación no autorizada permitirá la identificación pericial inmediata del origen de la filtración.
+                    </p>
+
+                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                        <i class="bi bi-exclamation-octagon-fill text-danger"></i> V. RESPONSABILIDAD Y SANCIONES LEGALES
+                    </h6>
+                    <p class="mb-0 small">
+                        El incumplimiento de estas disposiciones constituye una violación grave a las obligaciones laborales y de confidencialidad, dando lugar a la <strong>rescisión del contrato individual de trabajo sin responsabilidad para el patrón</strong> conforme al artículo 47 de la <em>Ley Federal del Trabajo</em>, con independencia de las denuncias civiles y penales correspondientes por revelación de secretos industriales y daño patrimonial conforme al <em>Código Penal Federal</em>.
+                    </p>
+                </div>
+
+                <!-- CHECKBOX OBLIGATORIO DE VISTO Y CONFORMIDAD -->
+                <div class="form-check p-3 rounded-3 mt-3" style="background: rgba(212, 175, 55, 0.08); border: 1.5px solid var(--gold-border);">
+                    <input class="form-check-input ms-0 me-2.5" type="checkbox" id="chkAceptoTerminosPoliticas" style="cursor: pointer; transform: scale(1.2); margin-top: 3px;" onchange="toggleBotonAceptarTerminos(this.checked)">
+                    <label class="form-check-label fw-bold text-white small" for="chkAceptoTerminosPoliticas" style="cursor: pointer; line-height: 1.45;">
+                        <span class="text-warning">CONFIRMACIÓN Y ACEPTACIÓN EXPRESA:</span> He leído cuidadosamente, comprendo y acepto en su totalidad el Aviso de Privacidad, los Términos y Condiciones y las Políticas de Confidencialidad Institucional de Grupo Huerta.
+                    </label>
+                </div>
+
+                <div id="msgErrorAceptacion" class="alert alert-danger p-2 small mt-2 d-none"></div>
+
+                <!-- BOTÓN DE CONFIRMACIÓN -->
+                <div class="mt-3">
+                    <button type="button" id="btnAceptarTerminosPoliticas" class="btn btn-warning w-100 fw-bold py-2.5 rounded-3 shadow d-flex align-items-center justify-content-center gap-2" style="font-size: 0.92rem;" disabled onclick="confirmarAceptacionTerminos()">
+                        <i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas
+                    </button>
+                    <div class="text-center text-secondary small font-monospace mt-2" style="font-size: 0.72rem;">
+                        Colaborador: <?php echo htmlspecialchars($nombreUsuario); ?> (<?php echo htmlspecialchars($loginUsuario); ?>) • <?php echo htmlspecialchars($agenciaNombre); ?>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+
 <!-- VISOR BLINDADO FULLSCREEN (MODAL CONTAINER) -->
 <!-- ========================================================================= -->
 <div id="visorModalOverlay">
@@ -1449,6 +1659,101 @@ function obtenerIconoArea($nombreArea) {
     let currentFolioDoc = 'GH-POL';
     const logoGhPreloaded = new Image();
     logoGhPreloaded.src = 'uploads/logo_gh.png';
+
+        // =========================================================================
+    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ)
+    // =========================================================================
+    const HA_ACEPTADO_TERMINOS = <?php echo $haAceptadoTerminos ? 'true' : 'false'; ?>;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        if (!HA_ACEPTADO_TERMINOS) {
+            const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
+            if (modalTerminosEl) {
+                const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
+                    backdrop: 'static',
+                    keyboard: false
+                });
+                modalTerminos.show();
+            }
+        }
+    });
+
+    function toggleBotonAceptarTerminos(isChecked) {
+        const btn = document.getElementById('btnAceptarTerminosPoliticas');
+        if (btn) btn.disabled = !isChecked;
+    }
+
+    function confirmarAceptacionTerminos() {
+        const chk = document.getElementById('chkAceptoTerminosPoliticas');
+        const btn = document.getElementById('btnAceptarTerminosPoliticas');
+        const msgErr = document.getElementById('msgErrorAceptacion');
+
+        if (!chk || !chk.checked) {
+            if (msgErr) {
+                msgErr.classList.remove('d-none');
+                msgErr.textContent = 'Es obligatorio marcar la casilla de aceptación para continuar.';
+            }
+            return;
+        }
+
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Registrando aceptación y firma digital...';
+        }
+        if (msgErr) msgErr.classList.add('d-none');
+
+        const formData = new FormData();
+        formData.append('action', 'aceptar_terminos');
+        formData.append('usuario_id', '<?php echo $usuarioId; ?>');
+        formData.append('usuario_nombre', FORENSIC_USER_NAME);
+        formData.append('usuario_login', FORENSIC_USER_LOGIN);
+        formData.append('agencia', FORENSIC_AGENCIA);
+        formData.append('ip', FORENSIC_IP);
+        formData.append('version_terminos', '1.0');
+
+        fetch('api_politicas.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.exito) {
+                const modalEl = document.getElementById('modalAvisoPrivacidadTerminos');
+                if (modalEl) {
+                    const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                    if (modalInstance) modalInstance.hide();
+                    modalEl.remove();
+                }
+                const toastBienvenida = document.createElement('div');
+                toastBienvenida.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg rounded-3 text-white border-success d-flex align-items-center gap-2';
+                toastBienvenida.style.zIndex = '9999999';
+                toastBienvenida.style.background = '#0d2818';
+                toastBienvenida.innerHTML = '<i class="bi bi-shield-check fs-5 text-success"></i> <div><strong>Aviso de Privacidad Confirmado:</strong> Acceso autorizado al repositorio institucional.</div>';
+                document.body.appendChild(toastBienvenida);
+                setTimeout(() => toastBienvenida.remove(), 4000);
+            } else {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas';
+                }
+                if (msgErr) {
+                    msgErr.classList.remove('d-none');
+                    msgErr.textContent = data.error || 'Error al registrar la aceptación. Intenta nuevamente.';
+                }
+            }
+        })
+        .catch(err => {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas';
+            }
+            if (msgErr) {
+                msgErr.classList.remove('d-none');
+                msgErr.textContent = 'Error de conexión con el servidor: ' + err.message;
+            }
+        });
+    }
+
 
     // =========================================================================
     // BLINDAJE DUAL: ENTRELAZADO DESTRUCTIVO + TRAMPA ESTEGANOGRÁFICA INVISIBLE
@@ -2119,6 +2424,7 @@ function obtenerIconoArea($nombreArea) {
         }
 
         cargarDatosBitacora();
+        cargarTerminosAceptadosCentral();
     }
 
     // Al cerrar el modal de bitácora, finalizar registro
@@ -2390,6 +2696,9 @@ function obtenerIconoArea($nombreArea) {
                             <div>
                                 <span class="fw-semibold text-white">${escapeHtml(l.usuario_nombre)}</span>
                                 <div class="text-secondary small font-monospace">(${escapeHtml(l.usuario_login)})</div>
+                                ${l.fecha_terminos_aceptados 
+                                    ? `<span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 mt-1 d-inline-block font-monospace" style="font-size: 0.68rem;" title="Firmó aviso el ${escapeHtml(l.fecha_terminos_aceptados)}"><i class="bi bi-patch-check-fill me-1"></i>Aviso Aceptado</span>`
+                                    : `<span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50 mt-1 d-inline-block font-monospace" style="font-size: 0.68rem;"><i class="bi bi-clock-history me-1"></i>Aviso Pendiente</span>`}
                             </div>
                         </div>
                     </td>
@@ -2419,6 +2728,199 @@ function obtenerIconoArea($nombreArea) {
         if (selPol) selPol.value = '';
         if (selPer) selPer.value = 'todos';
         filtrarBitacora();
+    }
+
+    
+    // =========================================================================
+    // GESTIÓN Y AUDITORÍA DE AVISOS DE PRIVACIDAD Y TÉRMINOS ACEPTADOS (CENTRAL GH)
+    // =========================================================================
+    let terminosAceptadosGlobal = [];
+
+    function cargarTerminosAceptadosCentral() {
+        const tbody = document.getElementById('tbodyTerminosAceptados');
+        if (!tbody) return;
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-4 text-secondary">
+                    <div class="spinner-border spinner-border-sm me-2 text-success"></div>
+                    Cargando avisos de privacidad y términos firmados...
+                </td>
+            </tr>
+        `;
+
+        fetch('api_politicas.php?action=obtener_terminos_aceptados')
+            .then(res => res.json())
+            .then(data => {
+                if (!data.exito) {
+                    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">${data.error || 'Error al obtener avisos'}</td></tr>`;
+                    return;
+                }
+
+                terminosAceptadosGlobal = data.terminos || [];
+
+                // Actualizar stats
+                const total = (data.stats && data.stats.total_aceptados) ? data.stats.total_aceptados : terminosAceptadosGlobal.length;
+                const agencias = (data.stats && data.stats.agencias_participantes) ? data.stats.agencias_participantes : new Set(terminosAceptadosGlobal.map(t => t.agencia)).size;
+                const ultima = (data.stats && data.stats.ultima_aceptacion) ? data.stats.ultima_aceptacion : (terminosAceptadosGlobal[0]?.fecha_aceptacion || '--');
+
+                const elTotal = document.getElementById('statTerminosTotal');
+                const elAgencias = document.getElementById('statTerminosAgencias');
+                const elUltima = document.getElementById('statTerminosUltima');
+                const elBadgeNav = document.getElementById('badgeTotalTerminosNav');
+
+                if (elTotal) elTotal.textContent = total;
+                if (elBadgeNav) elBadgeNav.textContent = total;
+                if (elAgencias) elAgencias.textContent = agencias;
+                if (elUltima) elUltima.textContent = ultima;
+
+                // Poblar filtro de agencias
+                poblarSelectAgenciasTerminos();
+                filtrarTablaTerminos();
+            })
+            .catch(err => {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-danger">Error de conexión: ${err.message}</td></tr>`;
+            });
+    }
+
+    function poblarSelectAgenciasTerminos() {
+        const sel = document.getElementById('filtroTerminosAgencia');
+        if (!sel) return;
+        const valActual = sel.value;
+        const agenciasSet = new Set();
+        terminosAceptadosGlobal.forEach(t => {
+            if (t.agencia) agenciasSet.add(t.agencia.trim());
+        });
+
+        sel.innerHTML = '<option value="">Todas las agencias</option>';
+        Array.from(agenciasSet).sort().forEach(ag => {
+            const opt = document.createElement('option');
+            opt.value = ag;
+            opt.textContent = ag;
+            sel.appendChild(opt);
+        });
+        sel.value = valActual;
+    }
+
+    function filtrarTablaTerminos() {
+        const txt = (document.getElementById('filtroTerminosTexto')?.value || '').toLowerCase().trim();
+        const agFiltro = document.getElementById('filtroTerminosAgencia')?.value || '';
+        const tbody = document.getElementById('tbodyTerminosAceptados');
+        const lblContador = document.getElementById('lblContadorTerminos');
+        if (!tbody) return;
+
+        const filtrados = terminosAceptadosGlobal.filter(t => {
+            if (txt) {
+                const cadena = [
+                    t.usuario_nombre,
+                    t.usuario_login,
+                    t.agencia,
+                    t.ip,
+                    t.origen,
+                    t.version_terminos,
+                    t.fecha_aceptacion
+                ].join(' ').toLowerCase();
+                if (!cadena.includes(txt)) return false;
+            }
+            if (agFiltro && (t.agencia || '').trim() !== agFiltro) return false;
+            return true;
+        });
+
+        if (lblContador) {
+            lblContador.textContent = `Mostrando ${filtrados.length} de ${terminosAceptadosGlobal.length} registros`;
+        }
+
+        if (filtrados.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center py-5 text-secondary">
+                        <i class="bi bi-search fs-2 d-block mb-2 text-warning opacity-75"></i>
+                        No se encontraron colaboradores que coincidan con la búsqueda.
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        filtrados.forEach(t => {
+            const fh = formatearFechaHora(t.fecha_aceptacion);
+            html += `
+                <tr>
+                    <td>
+                        <div>
+                            <span class="font-monospace text-white fw-bold">
+                                <i class="bi bi-calendar-check text-success me-1"></i>${escapeHtml(fh.hora || t.fecha_aceptacion)}
+                            </span>
+                            <div class="text-secondary small font-monospace">${escapeHtml(fh.fecha)}</div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="d-flex align-items-center gap-1.5">
+                            <i class="bi bi-person-check-fill text-success fs-5"></i>
+                            <div>
+                                <span class="fw-semibold text-white">${escapeHtml(t.usuario_nombre)}</span>
+                                <div class="text-secondary small font-monospace">ID / Login: ${escapeHtml(t.usuario_login)}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-dark border" style="border-color: var(--gold-border) !important; color: var(--gold-accent-light);">
+                            ${escapeHtml(t.agencia)}
+                        </span>
+                    </td>
+                    <td class="font-monospace small text-secondary">${escapeHtml(t.ip)}</td>
+                    <td>
+                        <span class="badge bg-secondary bg-opacity-25 text-light">${escapeHtml(t.origen || 'portal')}</span>
+                    </td>
+                    <td class="font-monospace small text-info">v${escapeHtml(t.version_terminos || '1.0')}</td>
+                    <td>
+                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50 px-2 py-1">
+                            <i class="bi bi-patch-check-fill me-1"></i>Firmado
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html;
+    }
+
+    function exportarTerminosCSV() {
+        if (!terminosAceptadosGlobal || terminosAceptadosGlobal.length === 0) {
+            alert('No hay registros de avisos firmados para exportar.');
+            return;
+        }
+
+        const encabezados = ['ID', 'Colaborador', 'Usuario Login', 'Agencia', 'Dirección IP', 'Origen', 'Versión', 'Fecha y Hora Firma', 'User Agent'];
+        const lineas = [encabezados.join(',')];
+
+        terminosAceptadosGlobal.forEach(t => {
+            const fila = [
+                t.id || '',
+                `"${(t.usuario_nombre || '').replace(/"/g, '""')}"`,
+                `"${(t.usuario_login || '').replace(/"/g, '""')}"`,
+                `"${(t.agencia || '').replace(/"/g, '""')}"`,
+                `"${(t.ip || '').replace(/"/g, '""')}"`,
+                `"${(t.origen || '').replace(/"/g, '""')}"`,
+                `"v${(t.version_terminos || '1.0').replace(/"/g, '""')}"`,
+                `"${(t.fecha_aceptacion || '').replace(/"/g, '""')}"`,
+                `"${(t.user_agent || '').replace(/"/g, '""')}"`
+            ];
+            lineas.push(fila.join(','));
+        });
+
+        const csvContent = '﻿' + lineas.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const fechaHoy = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `Avisos_Privacidad_Terminos_GH_${fechaHoy}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
     }
 
     function exportarBitacoraCSV() {

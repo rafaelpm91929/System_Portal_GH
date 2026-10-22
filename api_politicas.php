@@ -258,8 +258,10 @@ if ($action === 'obtener_lecturas') {
 
     try {
         $filtroPolitica = intval($_GET['politica_id'] ?? 0);
-        $sql = "SELECT id, politica_id, politica_titulo, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, fecha_lectura, fecha_fin, duracion_segundos 
-                FROM politicas_lecturas ";
+        $sql = "SELECT l.id, l.politica_id, l.politica_titulo, l.usuario_id, l.usuario_nombre, l.usuario_login, l.agencia, l.ip, l.origen, l.fecha_lectura, l.fecha_fin, l.duracion_segundos,
+                       t.fecha_aceptacion as fecha_terminos_aceptados
+                FROM politicas_lecturas l
+                LEFT JOIN politicas_terminos_aceptados t ON t.usuario_login = l.usuario_login ";
         $params = [];
         if ($filtroPolitica > 0) {
             $sql .= " WHERE politica_id = ? ";
@@ -291,6 +293,127 @@ if ($action === 'obtener_lecturas') {
         exit();
     } catch (Throwable $e) {
         echo json_encode(['exito' => false, 'error' => $e->getMessage(), 'lecturas' => []]);
+        exit();
+    }
+}
+
+
+// =========================================================================
+// REGISTRAR ACEPTACIÓN DE AVISO DE PRIVACIDAD Y TÉRMINOS (CENTRAL GH)
+// =========================================================================
+if ($action === 'aceptar_terminos') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $token = $_POST['token'] ?? ($_GET['token'] ?? ($_SERVER['HTTP_X_GH_TOKEN'] ?? ''));
+    $esPeticionAgenciaAutorizada = ($token === 'GH_POLITICAS_SEGURA_2026_CORP');
+
+    if (!isset($_SESSION['usuario_id']) && !$esPeticionAgenciaAutorizada) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso no autorizado']);
+        exit();
+    }
+
+    $usuarioId = isset($_SESSION['usuario_id']) ? intval($_SESSION['usuario_id']) : intval($_POST['usuario_id'] ?? 0);
+    $usuarioNombre = trim($_POST['usuario_nombre'] ?? ($_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Colaborador')));
+    $usuarioLogin = trim($_POST['usuario_login'] ?? ($_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario')));
+    $agencia = trim($_POST['agencia'] ?? ($_SESSION['agencia'] ?? 'Grupo Huerta'));
+    $ip = trim($_POST['ip'] ?? ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1'));
+    if (strpos($ip, ',') !== false) {
+        $ip = trim(explode(',', $ip)[0]);
+    }
+    $origen = trim($_POST['origen'] ?? ($esPeticionAgenciaAutorizada ? 'Portal ' . $agencia : 'Portal Central GH'));
+    $version = trim($_POST['version_terminos'] ?? '1.0');
+    $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'Web Browser';
+
+    if ($pdo) {
+        if (function_exists('asegurarTablaPoliticas')) {
+            asegurarTablaPoliticas($pdo);
+        }
+        try {
+            date_default_timezone_set('America/Mexico_City');
+            $fechaAhora = date('Y-m-d H:i:s');
+
+            $stmtChk = $pdo->prepare("SELECT id FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
+            $stmtChk->execute([$usuarioLogin]);
+            $existenteId = $stmtChk->fetchColumn();
+
+            if ($existenteId) {
+                $stmtUpd = $pdo->prepare("UPDATE politicas_terminos_aceptados SET fecha_aceptacion = ?, ip = ?, agencia = ?, user_agent = ?, origen = ? WHERE id = ?");
+                $stmtUpd->execute([$fechaAhora, $ip, $agencia, $userAgent, $origen, $existenteId]);
+                $regId = $existenteId;
+            } else {
+                $stmtIns = $pdo->prepare("
+                    INSERT INTO politicas_terminos_aceptados 
+                    (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
+                $regId = (int)$pdo->lastInsertId();
+            }
+
+            echo json_encode([
+                'exito' => true,
+                'mensaje' => 'Aviso de Privacidad y Términos aceptados en Central GH.',
+                'registro_id' => $regId,
+                'fecha' => $fechaAhora
+            ]);
+            exit();
+        } catch (Throwable $e) {
+            echo json_encode(['exito' => false, 'error' => $e->getMessage()]);
+            exit();
+        }
+    }
+
+    echo json_encode(['exito' => false, 'error' => 'Sin conexión a base de datos']);
+    exit();
+}
+
+// =========================================================================
+// OBTENER LISTADO DE AVISOS DE PRIVACIDAD FIRMADOS (ADMIN CENTRAL GH)
+// =========================================================================
+if ($action === 'obtener_terminos_aceptados') {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? '');
+    if (!in_array($rol, ['superadmin', 'admin'])) {
+        echo json_encode(['exito' => false, 'error' => 'Acceso denegado. Se requieren permisos de administrador.']);
+        exit();
+    }
+
+    if (!$pdo) {
+        echo json_encode(['exito' => false, 'error' => 'Sin conexión a base de datos', 'terminos' => []]);
+        exit();
+    }
+
+    if (function_exists('asegurarTablaPoliticas')) {
+        asegurarTablaPoliticas($pdo);
+    }
+
+    try {
+        $stmt = $pdo->query("
+            SELECT id, usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent
+            FROM politicas_terminos_aceptados
+            ORDER BY fecha_aceptacion DESC
+            LIMIT 1000
+        ");
+        $terminos = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+
+        $stmtStats = $pdo->query("
+            SELECT 
+                COUNT(*) as total_aceptados,
+                COUNT(DISTINCT agencia) as agencias_participantes,
+                MAX(fecha_aceptacion) as ultima_aceptacion
+            FROM politicas_terminos_aceptados
+        ");
+        $stats = $stmtStats ? $stmtStats->fetch(PDO::FETCH_ASSOC) : ['total_aceptados' => 0, 'agencias_participantes' => 0, 'ultima_aceptacion' => null];
+
+        echo json_encode([
+            'exito' => true,
+            'terminos' => $terminos,
+            'stats' => $stats
+        ], JSON_UNESCAPED_UNICODE);
+        exit();
+    } catch (Throwable $e) {
+        echo json_encode(['exito' => false, 'error' => $e->getMessage(), 'terminos' => []]);
         exit();
     }
 }
