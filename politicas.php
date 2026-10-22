@@ -1498,7 +1498,7 @@ function obtenerIconoArea($nombreArea) {
                 <div class="alert alert-dark border border-warning border-opacity-40 rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background: rgba(212, 175, 55, 0.08);">
                     <i class="bi bi-info-circle-fill text-warning fs-5 flex-shrink-0 mt-0.5"></i>
                     <div class="small text-light">
-                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas del <strong>Grupo</strong> y tu agencia (<strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>), es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Confidencialidad.
+                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas del <strong>Grupo</strong> y tu agencia, es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Confidencialidad.
                     </div>
                 </div>
 
