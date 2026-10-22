@@ -28,20 +28,9 @@ $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario'
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
-// 1.1 Verificación de Aviso de Privacidad y Términos de Confidencialidad
-$haAceptadoTerminos = false;
-if ($pdo) {
-    try {
-        if (function_exists('asegurarTablaPoliticas')) {
-            asegurarTablaPoliticas($pdo);
-        }
-        $stmtTerm = $pdo->prepare("SELECT id, fecha_aceptacion FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
-        $stmtTerm->execute([$loginUsuario]);
-        $rowTerm = $stmtTerm->fetch(PDO::FETCH_ASSOC);
-        if ($rowTerm) {
-            $haAceptadoTerminos = true;
-        }
-    } catch (Throwable $eTerm) {}
+// 1.1 Verificación y estructura para Aviso de Privacidad y Términos en cada acceso
+if ($pdo && function_exists('asegurarTablaPoliticas')) {
+    try { asegurarTablaPoliticas($pdo); } catch (Throwable $eTerm) {}
 }
 
 
@@ -1163,7 +1152,6 @@ function obtenerIconoArea($nombreArea) {
 <!-- ========================================================================= -->
 <!-- MODAL OBLIGATORIO: AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ) -->
 <!-- ========================================================================= -->
-<?php if (!$haAceptadoTerminos): ?>
 <div class="modal fade" id="modalAvisoPrivacidadTerminos" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="modalAvisoPrivacidadLabel" aria-hidden="true" style="z-index: 1000000;">
     <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
         <div class="modal-content text-white" style="background: #061122; border: 2px solid var(--gold-border); border-radius: 20px; box-shadow: 0 25px 60px rgba(0,0,0,0.95);">
@@ -1260,7 +1248,6 @@ function obtenerIconoArea($nombreArea) {
         </div>
     </div>
 </div>
-<?php endif; ?>
 
 
 <!-- VISOR BLINDADO FULLSCREEN (MODAL CONTAINER) -->
@@ -1384,20 +1371,16 @@ function obtenerIconoArea($nombreArea) {
     logoGhPreloaded.src = 'uploads/logo_gh.png';
 
         // =========================================================================
-    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (PRIMERA VEZ)
+    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (EN CADA ACCESO)
     // =========================================================================
-    const HA_ACEPTADO_TERMINOS = <?php echo $haAceptadoTerminos ? 'true' : 'false'; ?>;
-
     document.addEventListener('DOMContentLoaded', function() {
-        if (!HA_ACEPTADO_TERMINOS) {
-            const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
-            if (modalTerminosEl) {
-                const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
-                    backdrop: 'static',
-                    keyboard: false
-                });
-                modalTerminos.show();
-            }
+        const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
+        if (modalTerminosEl) {
+            const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
+                backdrop: 'static',
+                keyboard: false
+            });
+            modalTerminos.show();
         }
     });
 

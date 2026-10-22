@@ -372,23 +372,13 @@ if ($action === 'aceptar_terminos') {
             if (function_exists('asegurarTablaPoliticas')) {
                 asegurarTablaPoliticas($pdo);
             }
-            $stmtChk = $pdo->prepare("SELECT id FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
-            $stmtChk->execute([$usuarioLogin]);
-            $existenteId = $stmtChk->fetchColumn();
-
-            if ($existenteId) {
-                $stmtUpd = $pdo->prepare("UPDATE politicas_terminos_aceptados SET fecha_aceptacion = ?, ip = ?, agencia = ?, user_agent = ? WHERE id = ?");
-                $stmtUpd->execute([$fechaAhora, $ip, $agencia, $userAgent, $existenteId]);
-                $localRegId = $existenteId;
-            } else {
-                $stmtIns = $pdo->prepare("
-                    INSERT INTO politicas_terminos_aceptados 
-                    (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
-                $localRegId = (int)$pdo->lastInsertId();
-            }
+            $stmtIns = $pdo->prepare("
+                INSERT INTO politicas_terminos_aceptados 
+                (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
+            $localRegId = (int)$pdo->lastInsertId();
         } catch (Throwable $eLocal) {}
     }
 
