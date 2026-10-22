@@ -259,9 +259,8 @@ if ($action === 'obtener_lecturas') {
     try {
         $filtroPolitica = intval($_GET['politica_id'] ?? 0);
         $sql = "SELECT l.id, l.politica_id, l.politica_titulo, l.usuario_id, l.usuario_nombre, l.usuario_login, l.agencia, l.ip, l.origen, l.fecha_lectura, l.fecha_fin, l.duracion_segundos,
-                       t.fecha_aceptacion as fecha_terminos_aceptados
-                FROM politicas_lecturas l
-                LEFT JOIN politicas_terminos_aceptados t ON t.usuario_login = l.usuario_login ";
+                       (SELECT MAX(t.fecha_aceptacion) FROM politicas_terminos_aceptados t WHERE t.usuario_login = l.usuario_login) as fecha_terminos_aceptados
+                FROM politicas_lecturas l ";
         $params = [];
         if ($filtroPolitica > 0) {
             $sql .= " WHERE politica_id = ? ";
@@ -332,23 +331,13 @@ if ($action === 'aceptar_terminos') {
             date_default_timezone_set('America/Mexico_City');
             $fechaAhora = date('Y-m-d H:i:s');
 
-            $stmtChk = $pdo->prepare("SELECT id FROM politicas_terminos_aceptados WHERE usuario_login = ? LIMIT 1");
-            $stmtChk->execute([$usuarioLogin]);
-            $existenteId = $stmtChk->fetchColumn();
-
-            if ($existenteId) {
-                $stmtUpd = $pdo->prepare("UPDATE politicas_terminos_aceptados SET fecha_aceptacion = ?, ip = ?, agencia = ?, user_agent = ?, origen = ? WHERE id = ?");
-                $stmtUpd->execute([$fechaAhora, $ip, $agencia, $userAgent, $origen, $existenteId]);
-                $regId = $existenteId;
-            } else {
-                $stmtIns = $pdo->prepare("
-                    INSERT INTO politicas_terminos_aceptados 
-                    (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ");
-                $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
-                $regId = (int)$pdo->lastInsertId();
-            }
+            $stmtIns = $pdo->prepare("
+                INSERT INTO politicas_terminos_aceptados 
+                (usuario_id, usuario_nombre, usuario_login, agencia, ip, origen, version_terminos, fecha_aceptacion, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmtIns->execute([$usuarioId ?: null, $usuarioNombre, $usuarioLogin, $agencia, $ip, $origen, $version, $fechaAhora, $userAgent]);
+            $regId = (int)$pdo->lastInsertId();
 
             echo json_encode([
                 'exito' => true,
