@@ -28,9 +28,22 @@ $loginUsuario = $_SESSION['usuario_login'] ?? ($_SESSION['usuario'] ?? 'usuario'
 $rolActual = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 $esAdmin = in_array($rolActual, ['superadmin', 'admin']);
 
-// 1.1 Verificación y estructura para Aviso de Privacidad y Términos en cada acceso
-if ($pdo && function_exists('asegurarTablaPoliticas')) {
-    try { asegurarTablaPoliticas($pdo); } catch (Throwable $eTerm) {}
+// 1.1 Verificación de Aviso de Privacidad y Términos de Confidencialidad
+$haAceptadoTerminos = false;
+$fechaAceptacionTerminos = '';
+if ($pdo) {
+    try {
+        if (function_exists('asegurarTablaPoliticas')) {
+            asegurarTablaPoliticas($pdo);
+        }
+        $stmtTerm = $pdo->prepare("SELECT id, fecha_aceptacion FROM politicas_terminos_aceptados WHERE usuario_login = ? ORDER BY id DESC LIMIT 1");
+        $stmtTerm->execute([$loginUsuario]);
+        $rowTerm = $stmtTerm->fetch(PDO::FETCH_ASSOC);
+        if ($rowTerm && !empty($rowTerm['id'])) {
+            $haAceptadoTerminos = true;
+            $fechaAceptacionTerminos = $rowTerm['fecha_aceptacion'] ?? '';
+        }
+    } catch (Throwable $eTerm) {}
 }
 
 
@@ -1050,6 +1063,23 @@ function obtenerIconoArea($nombreArea) {
                 <?php endif; ?>
             </div>
 
+            <!-- PIE DE PÁGINA: ACCESO AL AVISO DE PRIVACIDAD Y TÉRMINOS -->
+            <footer class="mt-5 pt-4 pb-3 border-top border-secondary border-opacity-25 text-center">
+                <div class="d-flex flex-wrap justify-content-center align-items-center gap-3">
+                    <span class="text-secondary small font-monospace">
+                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Portal de Políticas y Normativas Institucionales
+                    </span>
+                    <span class="text-secondary opacity-50">•</span>
+                    <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 d-inline-flex align-items-center gap-1.5" style="color: var(--gold-accent-light); font-size: 0.82rem;" onclick="abrirAvisoPrivacidadManual()">
+                        <i class="bi bi-file-earmark-lock2-fill text-warning"></i>
+                        <u>Ver Aviso de Privacidad y Términos de Confidencialidad</u>
+                    </button>
+                    <span id="badgeFooterTerminosAceptado" class="<?php echo $haAceptadoTerminos ? '' : 'd-none'; ?> badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 font-monospace" style="font-size: 0.72rem;">
+                        <i class="bi bi-patch-check-fill me-1"></i>Aceptado: <span id="lblFooterFechaAceptado"><?php echo htmlspecialchars($fechaAceptacionTerminos); ?></span>
+                    </span>
+                </div>
+            </footer>
+
         </div>
 
     </div>
@@ -1447,19 +1477,20 @@ function obtenerIconoArea($nombreArea) {
             
             <div class="modal-header border-secondary border-opacity-25 p-4" style="border-bottom: 1px solid var(--gold-border); background: linear-gradient(135deg, rgba(212, 175, 55, 0.12) 0%, rgba(5, 13, 26, 0.95) 100%);">
                 <div class="d-flex align-items-center gap-3">
-                    <img src="uploads/logo_gh.png" alt="Grupo Huerta" style="height: 48px; width: auto; object-fit: contain;">
+                    <img src="uploads/logo_gh.png" alt="Grupo" style="height: 48px; width: auto; object-fit: contain;">
                     <div>
                         <span class="badge bg-warning text-dark font-monospace small px-2.5 py-1 fw-bold mb-1">
-                            <i class="bi bi-shield-lock-fill me-1"></i> PROTOCOLO INSTITUCIONAL OBLIGATORIO
+                            <i class="bi bi-shield-lock-fill me-1"></i> PROTOCOLO INSTITUCIONAL
                         </span>
                         <h5 class="modal-title fw-bold text-white mb-0" id="modalAvisoPrivacidadLabel" style="letter-spacing: 0.5px;">
                             Aviso de Privacidad y Términos de Confidencialidad
                         </h5>
                         <p class="text-secondary small mb-0 font-monospace" style="font-size: 0.75rem;">
-                            Grupo Huerta • Repositorio Central de Políticas y Normativas
+                            Grupo • Repositorio Central de Políticas y Normativas
                         </p>
                     </div>
                 </div>
+                <button type="button" class="btn-close btn-close-white <?php echo $haAceptadoTerminos ? '' : 'd-none'; ?>" id="btnCerrarModalTerminosHeader" data-bs-dismiss="modal" aria-label="Cerrar"></button>
             </div>
 
             <div class="modal-body p-4" style="background: rgba(3, 8, 18, 0.85); font-size: 0.88rem; line-height: 1.65; color: #cbd5e1;">
@@ -1467,7 +1498,7 @@ function obtenerIconoArea($nombreArea) {
                 <div class="alert alert-dark border border-warning border-opacity-40 rounded-3 p-3 mb-3 d-flex align-items-start gap-2.5" style="background: rgba(212, 175, 55, 0.08);">
                     <i class="bi bi-info-circle-fill text-warning fs-5 flex-shrink-0 mt-0.5"></i>
                     <div class="small text-light">
-                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas de <strong>Grupo Huerta</strong> y tu agencia (<strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>), es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Uso.
+                        Bienvenido al portal institucional, <strong><?php echo htmlspecialchars($nombreUsuario); ?></strong>. Para acceder y consultar las normativas del <strong>Grupo</strong> y tu agencia (<strong><?php echo htmlspecialchars($agenciaNombre); ?></strong>), es indispensable leer y confirmar tu conformidad con el presente Aviso de Privacidad y Términos de Confidencialidad.
                     </div>
                 </div>
 
@@ -1477,60 +1508,78 @@ function obtenerIconoArea($nombreArea) {
                         <i class="bi bi-shield-shaded text-warning"></i> I. AVISO DE PRIVACIDAD SIMPLIFICADO
                     </h6>
                     <p class="mb-3 small">
-                        <strong>Grupo Huerta</strong>, con domicilio en sus oficinas corporativas y agencias autorizadas, es responsable del tratamiento de los datos personales y de acceso generados durante tu interacción con este sistema. Tus datos de identificación (nombre, usuario, agencia y dirección IP) se emplean estrictamente con fines de autenticación, control de accesos, auditoría de cumplimiento normativo y seguridad de la información, conforme a la legislación aplicable en materia de protección de datos personales.
+                        <strong>El Grupo</strong>, con domicilio en sus oficinas corporativas y agencias autorizadas, es responsable del tratamiento de los datos personales y de acceso generados durante tu interacción con este sistema. Tus datos de identificación (nombre, usuario, agencia y dirección IP) se emplean estrictamente con fines de autenticación, control de accesos, auditoría de cumplimiento normativo y seguridad de la información.
                     </p>
 
                     <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
-                        <i class="bi bi-file-earmark-lock2-fill text-warning"></i> II. PROPIEDAD INTELECTUAL Y CONFIDENCIALIDAD
+                        <i class="bi bi-file-earmark-lock2 text-warning"></i> II. PROPIEDAD INTELECTUAL Y CONFIDENCIALIDAD
                     </h6>
                     <p class="mb-3 small">
-                        Toda la documentación, políticas, códigos de conducta, manuales operativos, formatos y anexos contenidos en este repositorio son <strong>PROPIEDAD EXCLUSIVA DE GRUPO HUERTA</strong> y constituyen <strong>SECRETOS INDUSTRIALES Y COMERCIALES</strong>. Su acceso se concede con carácter estrictamente confidencial, personal e intransferible únicamente para el ejercicio de tus funciones laborales dentro de la organización.
+                        Todos los documentos, políticas, diagramas, anexos y normativas contenidos en esta plataforma son <strong>PROPIEDAD EXCLUSIVA DEL GRUPO</strong> y constituyen <strong>SECRETO INDUSTRIAL Y COMERCIAL</strong> en los términos de la legislación aplicable. El acceso concedido es de carácter estrictamente personal, temporal, intransferible y limitado al desempeño de tus funciones laborales vigentes.
                     </p>
 
                     <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
-                        <i class="bi bi-camera-video-off-fill text-warning"></i> III. PROHIBICIONES Y RESTRICCIONES DE SEGURIDAD
+                        <i class="bi bi-camera-video-off-fill text-warning"></i> III. PROHIBICIONES ESTRICTAS
                     </h6>
-                    <p class="mb-2 small">Queda estrictamente prohibido a cualquier colaborador o usuario:</p>
-                    <ul class="small mb-3 ps-3" style="list-style-type: square;">
-                        <li>Reproducir, fotografiar con teléfonos móviles, escanear, imprimir o realizar capturas de pantalla de los documentos.</li>
-                        <li>Descargar, transferir o enviar archivos a correos personales, dispositivos externos (USB), servicios de almacenamiento en la nube o chats de mensajería (WhatsApp, Telegram, etc.).</li>
-                        <li>Suministrar o filtrar la documentación a exempleados, competidores, clientes, proveedores o cualquier tercero no autorizado.</li>
-                        <li>Utilizar herramientas de Inteligencia Artificial (IA), software de OCR o programas de edición para intentar eliminar las marcas de agua institucionales o alterar su contenido.</li>
+                    <ul class="mb-3 small ps-3">
+                        <li>Queda terminantemente prohibido <strong>fotografiar, grabar, capturar en pantalla, escanear o transcribir</strong> cualquier fragmento de las políticas mediante teléfonos móviles, cámaras o dispositivos externos.</li>
+                        <li>Queda prohibido <strong>copiar, reproducir, compartir, transmitir, enviar por correo, WhatsApp o cualquier medio</strong> información de este portal a terceros ajenos a la organización.</li>
+                        <li>Queda prohibido <strong>procesar, subir o alimentar estos documentos a herramientas de Inteligencia Artificial (IA)</strong> públicas o privadas externas sin autorización formal por escrito emitida por la Dirección General o el área emisora del Grupo.</li>
                     </ul>
 
                     <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
-                        <i class="bi bi-fingerprint text-warning"></i> IV. TRAZABILIDAD FORENSE DIGITAL ACTIVA
+                        <i class="bi bi-fingerprint text-warning"></i> IV. TRAZABILIDAD FORENSE Y MARCA DE AGUA INVISIBLE
                     </h6>
                     <p class="mb-3 small">
-                        El colaborador reconoce que cada lectura es monitoreada en tiempo real. Los visores inyectan de forma dinámica en cada página <strong>marcas de agua con tu nombre, agencia, fecha y hora exacta</strong>, así como <strong>micro-códigos esteganográficos invisibles</strong> integrados en los píxeles del documento. Cualquier divulgación no autorizada permitirá la identificación pericial inmediata del origen de la filtración.
+                        Cada visualización genera automáticamente un registro auditable e incorpora en cada página una <strong>marca de agua visible y patrones esteganográficos de micro-puntos vinculados al Grupo</strong>, codificando de manera irreversible tu identidad de colaborador, fecha, hora exacta y terminal de acceso. En caso de filtración o difusión indebida, los algoritmos forenses identificarán inequívocamente al responsable.
                     </p>
 
-                    <h6 class="fw-bold text-warning mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
+                    <h6 class="fw-bold text-danger mb-2 d-flex align-items-center gap-1.5" style="font-size: 0.92rem;">
                         <i class="bi bi-exclamation-octagon-fill text-danger"></i> V. RESPONSABILIDAD Y SANCIONES LEGALES
                     </h6>
                     <p class="mb-0 small">
-                        El incumplimiento de estas disposiciones constituye una violación grave a las obligaciones laborales y de confidencialidad, dando lugar a la <strong>rescisión del contrato individual de trabajo sin responsabilidad para el patrón</strong> conforme al artículo 47 de la <em>Ley Federal del Trabajo</em>, con independencia de las denuncias civiles y penales correspondientes por revelación de secretos industriales y daño patrimonial conforme al <em>Código Penal Federal</em>.
+                        El incumplimiento de estas disposiciones constituye una violación grave a las obligaciones laborales y de confidencialidad, dando lugar a una <strong>rescisión del contrato, acta constitutiva o sanciones que el Grupo considere necesarias</strong>.
                     </p>
                 </div>
 
-                <!-- CHECKBOX OBLIGATORIO DE VISTO Y CONFORMIDAD -->
-                <div class="form-check p-3 rounded-3 mt-3" style="background: rgba(212, 175, 55, 0.08); border: 1.5px solid var(--gold-border);">
-                    <input class="form-check-input ms-0 me-2.5" type="checkbox" id="chkAceptoTerminosPoliticas" style="cursor: pointer; transform: scale(1.2); margin-top: 3px;" onchange="toggleBotonAceptarTerminos(this.checked)">
-                    <label class="form-check-label fw-bold text-white small" for="chkAceptoTerminosPoliticas" style="cursor: pointer; line-height: 1.45;">
-                        <span class="text-warning">CONFIRMACIÓN Y ACEPTACIÓN EXPRESA:</span> He leído cuidadosamente, comprendo y acepto en su totalidad el Aviso de Privacidad, los Términos y Condiciones y las Políticas de Confidencialidad Institucional de Grupo Huerta.
-                    </label>
+                <!-- SECCIÓN 1: SI NO HA ACEPTADO (PRIMERA VEZ) -->
+                <div id="seccionAceptacionTerminos" class="<?php echo $haAceptadoTerminos ? 'd-none' : ''; ?>">
+                    <!-- CHECKBOX OBLIGATORIO DE VISTO Y CONFORMIDAD -->
+                    <div class="form-check p-3 rounded-3 mt-3" style="background: rgba(212, 175, 55, 0.08); border: 1.5px solid var(--gold-border);">
+                        <input class="form-check-input ms-0 me-2.5" type="checkbox" id="chkAceptoTerminosPoliticas" style="cursor: pointer; transform: scale(1.2); margin-top: 3px;" onchange="toggleBotonAceptarTerminos(this.checked)">
+                        <label class="form-check-label fw-bold text-white small" for="chkAceptoTerminosPoliticas" style="cursor: pointer; line-height: 1.45;">
+                            <span class="text-warning">CONFIRMACIÓN Y ACEPTACIÓN EXPRESA:</span> He leído cuidadosamente, comprendo y acepto en su totalidad el Aviso de Privacidad, los Términos y Condiciones y las Políticas de Confidencialidad Institucional del Grupo.
+                        </label>
+                    </div>
+
+                    <div id="msgErrorAceptacion" class="alert alert-danger p-2 small mt-2 d-none"></div>
+
+                    <!-- BOTÓN DE CONFIRMACIÓN -->
+                    <div class="mt-3">
+                        <button type="button" id="btnAceptarTerminosPoliticas" class="btn btn-warning w-100 fw-bold py-2.5 rounded-3 shadow d-flex align-items-center justify-content-center gap-2" style="font-size: 0.92rem;" disabled onclick="confirmarAceptacionTerminos()">
+                            <i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas
+                        </button>
+                    </div>
                 </div>
 
-                <div id="msgErrorAceptacion" class="alert alert-danger p-2 small mt-2 d-none"></div>
-
-                <!-- BOTÓN DE CONFIRMACIÓN -->
-                <div class="mt-3">
-                    <button type="button" id="btnAceptarTerminosPoliticas" class="btn btn-warning w-100 fw-bold py-2.5 rounded-3 shadow d-flex align-items-center justify-content-center gap-2" style="font-size: 0.92rem;" disabled onclick="confirmarAceptacionTerminos()">
-                        <i class="bi bi-patch-check-fill fs-5"></i> Aceptar y Continuar al Módulo de Políticas
-                    </button>
-                    <div class="text-center text-secondary small font-monospace mt-2" style="font-size: 0.72rem;">
-                        Colaborador: <?php echo htmlspecialchars($nombreUsuario); ?> (<?php echo htmlspecialchars($loginUsuario); ?>) • <?php echo htmlspecialchars($agenciaNombre); ?>
+                <!-- SECCIÓN 2: SI YA ACEPTÓ (CONSULTA POSTERIOR) -->
+                <div id="seccionYaAceptadoTerminos" class="<?php echo $haAceptadoTerminos ? '' : 'd-none'; ?> mt-3">
+                    <div class="p-3 rounded-3 border border-success border-opacity-30 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(16, 185, 129, 0.08);">
+                        <div class="d-flex align-items-center gap-2 text-success small font-monospace">
+                            <i class="bi bi-patch-check-fill fs-4"></i>
+                            <div>
+                                <strong class="d-block text-white">Documento Aceptado y Firmado Digitalmente</strong>
+                                <span id="txtFechaAceptadoFirma">Registrado el: <?php echo htmlspecialchars($fechaAceptacionTerminos); ?></span>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-outline-secondary btn-sm rounded-3 px-3 text-light" data-bs-dismiss="modal">
+                            <i class="bi bi-x-lg me-1"></i> Cerrar
+                        </button>
                     </div>
+                </div>
+
+                <div class="text-center text-secondary small font-monospace mt-2" style="font-size: 0.72rem;">
+                    Colaborador: <?php echo htmlspecialchars($nombreUsuario); ?> (<?php echo htmlspecialchars($loginUsuario); ?>) • <?php echo htmlspecialchars($agenciaNombre); ?>
                 </div>
 
             </div>
@@ -1647,19 +1696,33 @@ function obtenerIconoArea($nombreArea) {
     const logoGhPreloaded = new Image();
     logoGhPreloaded.src = 'uploads/logo_gh.png';
 
-        // =========================================================================
-    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES (EN CADA ACCESO)
+            // =========================================================================
+    // CONTROL DEL AVISO DE PRIVACIDAD Y TÉRMINOS Y CONDICIONES
     // =========================================================================
+    let HA_ACEPTADO_TERMINOS = <?php echo $haAceptadoTerminos ? 'true' : 'false'; ?>;
+
     document.addEventListener('DOMContentLoaded', function() {
-        const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
-        if (modalTerminosEl) {
-            const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
-                backdrop: 'static',
-                keyboard: false
-            });
-            modalTerminos.show();
+        if (!HA_ACEPTADO_TERMINOS) {
+            const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
+            if (modalTerminosEl) {
+                const modalTerminos = new bootstrap.Modal(modalTerminosEl, {
+                    backdrop: 'static',
+                    keyboard: false
+                });
+                modalTerminos.show();
+            }
         }
     });
+
+    function abrirAvisoPrivacidadManual() {
+        const modalTerminosEl = document.getElementById('modalAvisoPrivacidadTerminos');
+        if (!modalTerminosEl) return;
+        const modalTerminos = bootstrap.Modal.getOrCreateInstance(modalTerminosEl, {
+            backdrop: HA_ACEPTADO_TERMINOS ? true : 'static',
+            keyboard: HA_ACEPTADO_TERMINOS
+        });
+        modalTerminos.show();
+    }
 
     function toggleBotonAceptarTerminos(isChecked) {
         const btn = document.getElementById('btnAceptarTerminosPoliticas');
@@ -1701,12 +1764,31 @@ function obtenerIconoArea($nombreArea) {
         .then(res => res.json())
         .then(data => {
             if (data.exito) {
+                HA_ACEPTADO_TERMINOS = true;
                 const modalEl = document.getElementById('modalAvisoPrivacidadTerminos');
                 if (modalEl) {
                     const modalInstance = bootstrap.Modal.getInstance(modalEl);
                     if (modalInstance) modalInstance.hide();
-                    modalEl.remove();
                 }
+
+                // Habilitar controles de consulta posterior
+                const btnCerrarHeader = document.getElementById('btnCerrarModalTerminosHeader');
+                if (btnCerrarHeader) btnCerrarHeader.classList.remove('d-none');
+                
+                const secAcept = document.getElementById('seccionAceptacionTerminos');
+                const secYa = document.getElementById('seccionYaAceptadoTerminos');
+                if (secAcept) secAcept.classList.add('d-none');
+                if (secYa) secYa.classList.remove('d-none');
+                
+                const txtFecha = document.getElementById('txtFechaAceptadoFirma');
+                const fechaFirma = data.fecha || 'Recientemente';
+                if (txtFecha) txtFecha.textContent = 'Registrado el: ' + fechaFirma;
+
+                const badgeFooter = document.getElementById('badgeFooterTerminosAceptado');
+                const lblFooter = document.getElementById('lblFooterFechaAceptado');
+                if (badgeFooter) badgeFooter.classList.remove('d-none');
+                if (lblFooter) lblFooter.textContent = fechaFirma;
+
                 const toastBienvenida = document.createElement('div');
                 toastBienvenida.className = 'alert alert-success position-fixed top-0 end-0 m-3 shadow-lg rounded-3 text-white border-success d-flex align-items-center gap-2';
                 toastBienvenida.style.zIndex = '9999999';
