@@ -1063,26 +1063,41 @@ function obtenerIconoArea($nombreArea) {
                 <?php endif; ?>
             </div>
 
-            <!-- PIE DE PÁGINA: ACCESO AL AVISO DE PRIVACIDAD Y TÉRMINOS -->
-            <footer class="mt-5 pt-4 pb-3 border-top border-secondary border-opacity-25 text-center">
-                <div class="d-flex flex-wrap justify-content-center align-items-center gap-3">
-                    <span class="text-secondary small font-monospace">
-                        <i class="bi bi-shield-lock-fill text-warning me-1"></i> Portal de Políticas y Normativas Institucionales
-                    </span>
-                    <span class="text-secondary opacity-50">•</span>
-                    <button type="button" class="btn btn-link btn-sm text-decoration-none p-0 d-inline-flex align-items-center gap-1.5" style="color: var(--gold-accent-light); font-size: 0.82rem;" onclick="abrirAvisoPrivacidadManual()">
-                        <i class="bi bi-file-earmark-lock2-fill text-warning"></i>
-                        <u>Ver Aviso de Privacidad y Términos de Confidencialidad</u>
-                    </button>
-                    <span id="badgeFooterTerminosAceptado" class="<?php echo $haAceptadoTerminos ? '' : 'd-none'; ?> badge bg-success bg-opacity-20 text-success border border-success border-opacity-40 font-monospace" style="font-size: 0.72rem;">
-                        <i class="bi bi-patch-check-fill me-1"></i>Aceptado: <span id="lblFooterFechaAceptado"><?php echo htmlspecialchars($fechaAceptacionTerminos); ?></span>
-                    </span>
-                </div>
-            </footer>
-
-        </div>
+                    </div>
 
     </div>
+
+    <!-- PIE DE PÁGINA INSTITUCIONAL: ACCESO AL AVISO DE PRIVACIDAD Y TÉRMINOS (VISIBLE EN TODO EL MÓDULO) -->
+    <footer class="mt-5 pt-4 pb-2 border-top border-secondary border-opacity-25">
+        <div class="p-3 rounded-4 d-flex flex-wrap justify-content-between align-items-center gap-3" style="background: linear-gradient(135deg, rgba(9, 23, 44, 0.8) 0%, rgba(6, 18, 36, 0.95) 100%); border: 1px solid var(--gold-border); box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+            
+            <!-- LADO IZQUIERDO: NOMBRE DEL PORTAL INSTITUCIONAL -->
+            <div class="d-flex align-items-center gap-2.5">
+                <span class="d-inline-flex align-items-center justify-content-center rounded-3 p-2" style="background: rgba(212, 175, 55, 0.15); border: 1px solid var(--gold-border);">
+                    <i class="bi bi-shield-lock-fill text-warning fs-5"></i>
+                </span>
+                <div>
+                    <div class="fw-bold text-white" style="letter-spacing: 0.3px; font-size: 0.92rem;">Portal de Políticas y Normativas Institucionales</div>
+                    <div class="text-secondary small font-monospace" style="font-size: 0.75rem; color: #94a3b8 !important;">Protocolo de Confidencialidad y Cumplimiento Normativo</div>
+                </div>
+            </div>
+
+            <!-- LADO DERECHO: BOTÓN DE CONSULTA Y BADGE DE ACEPTACIÓN -->
+            <div class="d-flex flex-wrap align-items-center gap-2.5">
+                <button type="button" class="btn btn-sm px-3.5 py-2 rounded-pill d-inline-flex align-items-center gap-2 shadow" style="background: linear-gradient(135deg, rgba(212, 175, 55, 0.22) 0%, rgba(212, 175, 55, 0.1) 100%); border: 1.5px solid var(--gold-border-bright); color: #fde047; font-weight: 700; font-size: 0.84rem; transition: all 0.25s;" onmouseover="this.style.background='rgba(212, 175, 55, 0.4)'; this.style.color='#ffffff'; this.style.transform='translateY(-1px)';" onmouseout="this.style.background='linear-gradient(135deg, rgba(212, 175, 55, 0.22) 0%, rgba(212, 175, 55, 0.1) 100%)'; this.style.color='#fde047'; this.style.transform='none';" onclick="abrirAvisoPrivacidadManual()" title="Consultar el Aviso de Privacidad y Términos">
+                    <i class="bi bi-file-earmark-lock2-fill text-warning fs-6"></i>
+                    <span>Ver Aviso de Privacidad y Términos</span>
+                </button>
+
+                <div id="badgeFooterTerminosAceptado" class="<?php echo $haAceptadoTerminos ? '' : 'd-none'; ?> d-inline-flex align-items-center gap-2 px-3 py-2 rounded-pill font-monospace shadow-sm" style="background: rgba(16, 185, 129, 0.18); border: 1.5px solid #10b981; font-size: 0.8rem; font-weight: 600;">
+                    <i class="bi bi-patch-check-fill text-success fs-6"></i>
+                    <span style="color: #6ee7b7;">Aceptado:</span>
+                    <span id="lblFooterFechaAceptado" class="text-white fw-bold"><?php echo htmlspecialchars($fechaAceptacionTerminos); ?></span>
+                </div>
+            </div>
+
+        </div>
+    </footer>
 
 </div>
 
