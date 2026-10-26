@@ -1,0 +1,26 @@
+{
+    "api_url": "https://portal.pirineosmotors.com/api_respaldos.php",
+    "api_token": "COPIAR_TOKEN_AQUI",
+    "timeout_segundos": 45,
+    "verificar_ssl": true,
+    "extensiones_temporales": [
+        ".tmp",
+        ".temp",
+        ".part",
+        ".partial",
+        ".crdownload",
+        ".aria2",
+        "~$"
+    ],
+    "patrones_descarte": [
+        "@recycle",
+        "#snapshot",
+        "@recently-snapshot",
+        ".dropbox.cache",
+        "aquota.user",
+        "aquota.group",
+        "thumbs.db",
+        "desktop.ini",
+        ".ds_store"
+    ]
+}

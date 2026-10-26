@@ -370,6 +370,21 @@ $modulosVisibles = 0;
     </div>
     <?php endif; ?>
 
+    <!-- Módulo: Monitoreo de Respaldos (NAS) -->
+    <?php if (tienePermiso('respaldos', 'puede_ver')): $modulosVisibles++; ?>
+    <div class="module-card" style="border-color: rgba(59, 130, 246, 0.45); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35), 0 0 15px rgba(59, 130, 246, 0.12);">
+        <span class="active-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);"><i class="bi bi-hdd-network-fill me-1"></i> COLECTOR LAN</span>
+        <div class="icon-box" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3);">
+            <i class="bi bi-cloud-arrow-up-fill"></i>
+        </div>
+        <div class="module-title">Monitoreo de Respaldos</div>
+        <div class="module-desc">
+            Vigilancia en tiempo real de respaldos en NAS locales (QNAP, Buffalo, Synology). Semáforo de estado, auditoría y alertas.
+        </div>
+        <a href="respaldos.php" class="btn-ingresar" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); border-color: rgba(59, 130, 246, 0.4);">Ingresar</a>
+    </div>
+    <?php endif; ?>
+
     <?php if ($modulosVisibles === 0): ?>
     <div class="col-12 py-5" style="grid-column: 1 / -1;">
         <div class="p-5 rounded-4 border border-secondary border-opacity-25 text-center shadow" style="background: rgba(13, 30, 54, 0.6); max-width: 650px; margin: 0 auto;">

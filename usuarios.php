@@ -581,8 +581,15 @@ foreach ($usuarios as $u) {
 
 // Estadísticas de Resumen
 $totalUsuarios = count($usuarios);
-$totalConAcceso = count(array_filter($usuarios, fn($u) => (!isset($u['acceso_portal']) || intval($u['acceso_portal']) === 1)));
-$totalSinAcceso = count(array_filter($usuarios, fn($u) => (isset($u['acceso_portal']) && intval($u['acceso_portal']) === 0)));
+$totalConAcceso = 0;
+$totalSinAcceso = 0;
+foreach ($usuarios as $u) {
+    if (!isset($u['acceso_portal']) || intval($u['acceso_portal']) === 1) {
+        $totalConAcceso++;
+    } else {
+        $totalSinAcceso++;
+    }
+}
 $totalEquiposAsignados = array_sum(array_map('count', $equiposPorUsuarioMap));
 ?>
 <!DOCTYPE html>

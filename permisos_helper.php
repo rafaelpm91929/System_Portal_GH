@@ -121,7 +121,8 @@ function asegurarTablasPermisos($pdo) {
             ['reportes_agencia', 'Reportes Agencia',                   'Reportes de la base de datos del servidor local / DMS de la agencia',       'bi-bar-chart-line-fill', 9, 1],
             ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 10, 1],
             ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              11, 1],
-            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                12, 1]
+            ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                12, 1],
+            ['respaldos',        'Monitoreo de Respaldos (NAS)',      'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'bi-cloud-arrow-up-fill',    13, 1]
         ];
 
         foreach ($modulosBase as $m) {
@@ -137,6 +138,7 @@ function asegurarTablasPermisos($pdo) {
         }
 
         asegurarTablasReportesAgencia($pdo);
+        asegurarTablasRespaldos($pdo);
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
     }
@@ -167,7 +169,8 @@ function obtenerCatalogoModulos($pdo = null) {
         ['clave' => 'reportes_agencia', 'nombre' => 'Reportes Agencia',                   'descripcion' => 'Reportes de la base de datos del servidor local / DMS de la agencia',       'icono' => 'bi-bar-chart-line-fill', 'orden' => 9, 'estatus' => 1],
         ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 10, 'estatus' => 1],
         ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 11, 'estatus' => 1],
-        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 12, 'estatus' => 1]
+        ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 12, 'estatus' => 1],
+        ['clave' => 'respaldos',        'nombre' => 'Monitoreo de Respaldos (NAS)',      'descripcion' => 'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'icono' => 'bi-cloud-arrow-up-fill',    'orden' => 13, 'estatus' => 1]
     ];
 }
 
@@ -2033,6 +2036,182 @@ function asegurarTablasInfraestructura($pdo = null) {
 /**
  * Catálogo maestro de paletas y temas obscuros institucionales
  */
+/**
+ * Auto-Instala o asegura la existencia de las tablas del módulo de Respaldos NAS
+ */
+function asegurarTablasRespaldos($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+    try {
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $drvErr) {}
+
+        if ($driver === 'sqlite') {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS respaldos_nas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre TEXT NOT NULL,
+                    ip_ruta_red TEXT NOT NULL,
+                    usuario_smb TEXT,
+                    password_smb TEXT,
+                    marca TEXT DEFAULT 'QNAP',
+                    estatus INTEGER DEFAULT 1,
+                    notas TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS respaldos_carpetas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nas_id INTEGER NOT NULL,
+                    nombre_carpeta TEXT NOT NULL,
+                    ruta_relativa TEXT,
+                    area_nombre TEXT DEFAULT 'General',
+                    monitorear INTEGER DEFAULT 1,
+                    es_sistema INTEGER DEFAULT 0,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS respaldos_equipos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre_equipo TEXT NOT NULL UNIQUE,
+                    usuario_responsable TEXT,
+                    area_nombre TEXT DEFAULT 'General',
+                    nas_id INTEGER,
+                    carpeta_id INTEGER,
+                    ruta_origen TEXT,
+                    ultimo_respaldo DATETIME,
+                    archivo_reciente TEXT,
+                    tamano_bytes INTEGER DEFAULT 0,
+                    estado TEXT DEFAULT 'critico',
+                    dias_sin_respaldo INTEGER DEFAULT 0,
+                    tiene_temporales INTEGER DEFAULT 0,
+                    detalles_temporales TEXT,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS respaldos_historial (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    equipo_id INTEGER,
+                    nombre_equipo TEXT NOT NULL,
+                    nas_id INTEGER,
+                    fecha DATE NOT NULL,
+                    fecha_hora DATETIME NOT NULL,
+                    estado TEXT NOT NULL,
+                    archivo_nombre TEXT,
+                    tamano_bytes INTEGER DEFAULT 0,
+                    duracion_seg INTEGER DEFAULT 0,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS respaldos_config (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    clave TEXT NOT NULL UNIQUE,
+                    valor TEXT NOT NULL,
+                    descripcion TEXT
+                );
+            ");
+        } else {
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `respaldos_nas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `nombre` VARCHAR(100) NOT NULL,
+                    `ip_ruta_red` VARCHAR(255) NOT NULL,
+                    `usuario_smb` VARCHAR(100) NULL,
+                    `password_smb` VARCHAR(255) NULL,
+                    `marca` VARCHAR(50) DEFAULT 'QNAP',
+                    `estatus` TINYINT(1) DEFAULT 1,
+                    `notas` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `respaldos_carpetas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `nas_id` INT NOT NULL,
+                    `nombre_carpeta` VARCHAR(255) NOT NULL,
+                    `ruta_relativa` VARCHAR(255) NULL,
+                    `area_nombre` VARCHAR(100) DEFAULT 'General',
+                    `monitorear` TINYINT(1) DEFAULT 1,
+                    `es_sistema` TINYINT(1) DEFAULT 0,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX `idx_nas_monitorear` (`nas_id`, `monitorear`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `respaldos_equipos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `nombre_equipo` VARCHAR(100) NOT NULL,
+                    `usuario_responsable` VARCHAR(150) NULL,
+                    `area_nombre` VARCHAR(100) DEFAULT 'General',
+                    `nas_id` INT NULL,
+                    `carpeta_id` INT NULL,
+                    `ruta_origen` VARCHAR(255) NULL,
+                    `ultimo_respaldo` DATETIME NULL,
+                    `archivo_reciente` VARCHAR(255) NULL,
+                    `tamano_bytes` BIGINT DEFAULT 0,
+                    `estado` ENUM('exitoso', 'vencido', 'critico', 'incompleto') DEFAULT 'critico',
+                    `dias_sin_respaldo` INT DEFAULT 0,
+                    `tiene_temporales` TINYINT(1) DEFAULT 0,
+                    `detalles_temporales` TEXT NULL,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY `uq_nombre_equipo` (`nombre_equipo`),
+                    INDEX `idx_estado` (`estado`),
+                    INDEX `idx_area` (`area_nombre`),
+                    INDEX `idx_nas` (`nas_id`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `respaldos_historial` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `equipo_id` INT NULL,
+                    `nombre_equipo` VARCHAR(100) NOT NULL,
+                    `nas_id` INT NULL,
+                    `fecha` DATE NOT NULL,
+                    `fecha_hora` DATETIME NOT NULL,
+                    `estado` ENUM('exitoso', 'vencido', 'critico', 'incompleto') NOT NULL,
+                    `archivo_nombre` VARCHAR(255) NULL,
+                    `tamano_bytes` BIGINT DEFAULT 0,
+                    `duracion_seg` INT DEFAULT 0,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX `idx_historial_equipo` (`nombre_equipo`, `fecha`),
+                    INDEX `idx_historial_fecha` (`fecha`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `respaldos_config` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `clave` VARCHAR(50) NOT NULL UNIQUE,
+                    `valor` TEXT NOT NULL,
+                    `descripcion` VARCHAR(255) NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+
+        // Sembrar configuraciones iniciales
+        $tokenDef = bin2hex(random_bytes(24));
+        $configsDef = [
+            'token_api_colector' => [$tokenDef, 'Token secreto Bearer para autenticación de scripts colectores LAN'],
+            'umbral_alerta_horas' => ['24', 'Horas transcurridas para considerar un respaldo como vencido (Amarillo)'],
+            'umbral_critico_horas' => ['48', 'Horas transcurridas para considerar un respaldo como crítico (Rojo)'],
+            'tamano_minimo_valido_mb' => ['1', 'Tamaño mínimo en MB para validar que un archivo no está vacío o corrupto'],
+            'patrones_descarte' => ['@Recycle,#snapshot,@Recently-Snapshot,.dropbox.cache,aquota.user,aquota.group,Thumbs.db,desktop.ini,.DS_Store', 'Carpetas y archivos del sistema a descartar automáticamente']
+        ];
+
+        foreach ($configsDef as $k => $c) {
+            $stC = $pdo->prepare("SELECT id FROM respaldos_config WHERE clave = ?");
+            $stC->execute([$k]);
+            if (!$stC->fetch()) {
+                $stIns = $pdo->prepare("INSERT INTO respaldos_config (clave, valor, descripcion) VALUES (?, ?, ?)");
+                $stIns->execute([$k, $c[0], $c[1]]);
+            }
+        }
+    } catch (Throwable $e) {}
+}
+
 function obtenerCatalogoTemasOscuros() {
     return [
         'azul' => [
