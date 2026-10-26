@@ -907,6 +907,198 @@ switch ($action) {
     /**
      * Top 5 de equipos con más días sin respaldar
      */
+    /**
+     * Matriz Semanal de Cumplimiento con Filtro por Mes (S1, S2, S3, S4, S5)
+     */
+    case 'obtener_matriz_semanal_mes':
+        validarSesionPortal();
+        try {
+            $mesSeleccionado = trim($_GET['mes'] ?? date('Y-m'));
+            if (!preg_match('/^\d{4}-\d{2}$/', $mesSeleccionado)) {
+                $mesSeleccionado = date('Y-m');
+            }
+
+            $timestampMes = strtotime("$mesSeleccionado-01");
+            $totalDiasMes = (int)date('t', $timestampMes);
+            $esMesActual = ($mesSeleccionado === date('Y-m'));
+            $diaHoy = (int)date('d');
+
+            // Definición de las semanas del mes seleccionado
+            $semanasDef = [
+                'S1' => ['id' => 'S1', 'label' => 'Semana 1', 'dias_label' => '1 al 7', 'inicio' => 1, 'fin' => 7],
+                'S2' => ['id' => 'S2', 'label' => 'Semana 2', 'dias_label' => '8 al 14', 'inicio' => 8, 'fin' => 14],
+                'S3' => ['id' => 'S3', 'label' => 'Semana 3', 'dias_label' => '15 al 21', 'inicio' => 15, 'fin' => 21],
+                'S4' => ['id' => 'S4', 'label' => 'Semana 4', 'dias_label' => '22 al 28', 'inicio' => 22, 'fin' => 28]
+            ];
+            if ($totalDiasMes > 28) {
+                $semanasDef['S5'] = ['id' => 'S5', 'label' => 'Semana 5', 'dias_label' => "29 al $totalDiasMes", 'inicio' => 29, 'fin' => $totalDiasMes];
+            }
+
+            $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario_responsable, area_nombre, estado, ultimo_respaldo, dias_sin_respaldo, tiene_temporales FROM respaldos_equipos ORDER BY area_nombre ASC, nombre_equipo ASC");
+            $equipos = $stmtEq->fetchAll(PDO::FETCH_ASSOC);
+
+            // Obtener respaldos históricos del mes seleccionado
+            $inicioMesStr = "$mesSeleccionado-01";
+            $finMesStr = "$mesSeleccionado-$totalDiasMes";
+            $stmtHist = $pdo->prepare("
+                SELECT nombre_equipo, fecha, fecha_hora, estado, archivo_nombre, tamano_bytes
+                FROM respaldos_historial 
+                WHERE fecha BETWEEN ? AND ?
+                ORDER BY fecha DESC, fecha_hora DESC
+            ");
+            $stmtHist->execute([$inicioMesStr, $finMesStr]);
+            $histRows = $stmtHist->fetchAll(PDO::FETCH_ASSOC);
+
+            $histPorEquipo = [];
+            foreach ($histRows as $r) {
+                $k = strtoupper($r['nombre_equipo']);
+                $histPorEquipo[$k][] = $r;
+            }
+
+            // Lista de meses disponibles para el selector (últimos 12 meses)
+            $mesesDisponibles = [];
+            for ($m = 0; $m < 12; $m++) {
+                $ym = date('Y-m', strtotime("-$m months"));
+                $mesesNombres = [
+                    '01' => 'Enero', '02' => 'Febrero', '03' => 'Marzo', '04' => 'Abril',
+                    '05' => 'Mayo', '06' => 'Junio', '07' => 'Julio', '08' => 'Agosto',
+                    '09' => 'Septiembre', '10' => 'Octubre', '11' => 'Noviembre', '12' => 'Diciembre'
+                ];
+                $partesM = explode('-', $ym);
+                $nomL = ($mesesNombres[$partesM[1]] ?? $partesM[1]) . ' ' . $partesM[0];
+                $mesesDisponibles[] = [
+                    'valor' => $ym,
+                    'etiqueta' => $nomL,
+                    'activo' => ($ym === $mesSeleccionado)
+                ];
+            }
+
+            $matriz = [];
+            foreach ($equipos as $eq) {
+                $nomKey = strtoupper($eq['nombre_equipo']);
+                $histEq = $histPorEquipo[$nomKey] ?? [];
+                
+                // Recalcular días de forma confiable
+                $diasSinRespaldo = 99;
+                if (!empty($eq['ultimo_respaldo'])) {
+                    $diasSinRespaldo = (int)(new DateTime(date('Y-m-d')))->diff(new DateTime(date('Y-m-d', strtotime($eq['ultimo_respaldo']))))->days;
+                }
+
+                $semanasRes = [];
+                $cumplidas = 0;
+                $evaluables = 0;
+
+                foreach ($semanasDef as $sId => $sConf) {
+                    $item = [
+                        'id' => $sId,
+                        'label' => $sConf['label'],
+                        'dias' => $sConf['dias_label'],
+                        'estado' => 'sin_respaldo',
+                        'fecha_respaldo' => null,
+                        'fecha_corta' => null,
+                        'archivo' => null
+                    ];
+
+                    $esFuturo = false;
+                    $enCurso = false;
+
+                    if ($esMesActual) {
+                        if ($diaHoy < $sConf['inicio']) {
+                            $esFuturo = true;
+                        } elseif ($diaHoy >= $sConf['inicio'] && $diaHoy <= $sConf['fin']) {
+                            $enCurso = true;
+                        }
+                    } elseif ($mesSeleccionado > date('Y-m')) {
+                        $esFuturo = true;
+                    }
+
+                    // Buscar respaldo que caiga en esta semana
+                    $respaldoEncontrado = null;
+                    foreach ($histEq as $h) {
+                        $dNum = (int)date('d', strtotime($h['fecha']));
+                        if ($dNum >= $sConf['inicio'] && $dNum <= $sConf['fin']) {
+                            $respaldoEncontrado = $h;
+                            break;
+                        }
+                    }
+
+                    // También comprobar si el ultimo_respaldo del equipo cae en esta semana
+                    if (!$respaldoEncontrado && !empty($eq['ultimo_respaldo'])) {
+                        $fUlt = date('Y-m-d', strtotime($eq['ultimo_respaldo']));
+                        if (strpos($fUlt, $mesSeleccionado) === 0) {
+                            $dNum = (int)date('d', strtotime($fUlt));
+                            if ($dNum >= $sConf['inicio'] && $dNum <= $sConf['fin']) {
+                                $respaldoEncontrado = [
+                                    'fecha' => $fUlt,
+                                    'fecha_hora' => $eq['ultimo_respaldo'],
+                                    'archivo_nombre' => $eq['archivo_reciente'] ?? 'Respaldo'
+                                ];
+                            }
+                        }
+                    }
+
+                    if ($respaldoEncontrado) {
+                        $item['estado'] = 'exitoso';
+                        $item['fecha_respaldo'] = $respaldoEncontrado['fecha_hora'];
+                        $item['fecha_corta'] = date('d/m', strtotime($respaldoEncontrado['fecha']));
+                        $item['archivo'] = $respaldoEncontrado['archivo_nombre'] ?? '';
+                        $cumplidas++;
+                        $evaluables++;
+                    } elseif ($esFuturo) {
+                        $item['estado'] = 'futuro';
+                    } elseif ($enCurso && $diasSinRespaldo <= 6) {
+                        $item['estado'] = 'en_curso';
+                        $cumplidas++;
+                        $evaluables++;
+                    } else {
+                        $item['estado'] = 'sin_respaldo';
+                        $evaluables++;
+                    }
+
+                    $semanasRes[$sId] = $item;
+                }
+
+                $porcentaje = ($evaluables > 0) ? round(($cumplidas / $evaluables) * 100) : 0;
+
+                // Estado semáforo en tiempo real
+                $estadoReal = 'critico';
+                if (!empty($eq['tiene_temporales'])) {
+                    $estadoReal = 'incompleto';
+                } elseif ($diasSinRespaldo <= 6) {
+                    $estadoReal = 'exitoso';
+                } elseif ($diasSinRespaldo <= 12) {
+                    $estadoReal = 'vencido';
+                }
+
+                $matriz[] = [
+                    'equipo_id' => $eq['id'],
+                    'nombre_equipo' => $eq['nombre_equipo'],
+                    'usuario_responsable' => $eq['usuario_responsable'],
+                    'area_nombre' => $eq['area_nombre'],
+                    'estado_actual' => $estadoReal,
+                    'dias_sin_respaldo' => $diasSinRespaldo,
+                    'ultimo_respaldo' => $eq['ultimo_respaldo'],
+                    'cumplidas' => $cumplidas,
+                    'total_evaluables' => $evaluables,
+                    'porcentaje' => $porcentaje,
+                    'cumplimiento_porcentaje' => $porcentaje,
+                    'semanas' => $semanasRes
+                ];
+            }
+
+            echo json_encode([
+                'success' => true,
+                'mes_seleccionado' => $mesSeleccionado,
+                'meses_disponibles' => $mesesDisponibles,
+                'semanas_def' => $semanasDef,
+                'semanas_columnas' => array_values($semanasDef),
+                'matriz' => $matriz
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
     case 'obtener_top5_criticos':
         validarSesionPortal();
         try {

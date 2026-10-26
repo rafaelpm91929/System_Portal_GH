@@ -82,6 +82,37 @@ if ($pdo) {
             $areasDisponibles = ['Contabilidad', 'Ventas', 'Sistemas', 'Administración', 'Servicio', 'Refacciones', 'Gerencia', 'Caja', 'General'];
         }
 
+        // Auto-sincronizar estados y días según las reglas semanales SLA:
+        // <= 6 días: Verde (exitoso)
+        // 7 a 12 días: Naranja (vencido)
+        // >= 13 días: Rojo (critico)
+        try {
+            $pdo->exec("
+                UPDATE respaldos_equipos 
+                SET dias_sin_respaldo = CASE 
+                        WHEN ultimo_respaldo IS NOT NULL THEN GREATEST(0, DATEDIFF(CURDATE(), DATE(ultimo_respaldo)))
+                        ELSE 99 
+                    END,
+                    estado = CASE 
+                        WHEN tiene_temporales = 1 THEN 'incompleto'
+                        WHEN ultimo_respaldo IS NULL THEN 'critico'
+                        WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 6 THEN 'exitoso'
+                        WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 12 THEN 'vencido'
+                        ELSE 'critico'
+                    END
+            ");
+
+            // Si hay registros históricos con fecha posterior al último respaldo real, corregir fecha
+            $pdo->exec("
+                UPDATE respaldos_historial h
+                INNER JOIN respaldos_equipos e ON (h.equipo_id = e.id OR h.nombre_equipo = e.nombre_equipo)
+                SET h.fecha = DATE(e.ultimo_respaldo),
+                    h.fecha_hora = e.ultimo_respaldo
+                WHERE e.ultimo_respaldo IS NOT NULL 
+                  AND h.fecha > DATE(e.ultimo_respaldo)
+            ");
+        } catch (Throwable $syncE) {}
+
         // Métricas de equipos
         $stmtMetricas = $pdo->query("
             SELECT 
@@ -143,7 +174,7 @@ if ($pdo) {
 $porcentajeCumplimiento = ($totalEquipos > 0) ? round(($exitosos / $totalEquipos) * 100, 1) : 0;
 $mostrarAsistenteInicial = ($totalNas === 0);
 
-function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99) {
+function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null) {
     $diaHoy = (int)date('d');
     $mesActual = date('Y-m');
 
@@ -187,6 +218,25 @@ function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99) {
             }
         }
     }
+
+    // Si el último respaldo registrado es del mes actual, respaldar en la semana que corresponda
+    if (!empty($ultimoRespaldo)) {
+        $fUlt = date('Y-m-d', strtotime($ultimoRespaldo));
+        if (strpos($fUlt, $mesActual) === 0) {
+            $diaNum = (int)date('d', strtotime($fUlt));
+            $hItem = ['fecha' => $fUlt, 'fecha_hora' => $ultimoRespaldo, 'estado' => 'exitoso'];
+            if ($diaNum >= 1 && $diaNum <= 7 && empty($semanas['S1']['respaldo'])) {
+                $semanas['S1']['respaldo'] = $hItem;
+            } elseif ($diaNum >= 8 && $diaNum <= 14 && empty($semanas['S2']['respaldo'])) {
+                $semanas['S2']['respaldo'] = $hItem;
+            } elseif ($diaNum >= 15 && $diaNum <= 21 && empty($semanas['S3']['respaldo'])) {
+                $semanas['S3']['respaldo'] = $hItem;
+            } elseif ($diaNum >= 22 && empty($semanas['S4']['respaldo'])) {
+                $semanas['S4']['respaldo'] = $hItem;
+            }
+        }
+    }
+
     return $semanas;
 }
 
@@ -489,27 +539,75 @@ function guardarDatosEquipo(e) {
         }
 
         .badge-exitoso {
-            background: rgba(16, 185, 129, 0.15);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.28) 0%, rgba(5, 150, 105, 0.12) 100%);
             color: #34d399;
-            border: 1px solid rgba(16, 185, 129, 0.35);
+            border: 1px solid rgba(52, 211, 153, 0.50);
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.20);
         }
 
         .badge-vencido {
-            background: rgba(245, 158, 11, 0.15);
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.28) 0%, rgba(217, 119, 6, 0.12) 100%);
             color: #fbbf24;
-            border: 1px solid rgba(245, 158, 11, 0.35);
+            border: 1px solid rgba(251, 191, 36, 0.50);
+            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.20);
         }
 
         .badge-critico {
-            background: rgba(239, 68, 68, 0.15);
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.28) 0%, rgba(185, 28, 28, 0.12) 100%);
             color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.35);
+            border: 1px solid rgba(248, 113, 113, 0.50);
+            box-shadow: 0 2px 10px rgba(239, 68, 68, 0.20);
         }
 
         .badge-incompleto {
-            background: rgba(236, 72, 153, 0.15);
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.28) 0%, rgba(190, 24, 93, 0.12) 100%);
             color: #f472b6;
-            border: 1px solid rgba(236, 72, 153, 0.35);
+            border: 1px solid rgba(244, 114, 182, 0.50);
+            box-shadow: 0 2px 10px rgba(236, 72, 153, 0.20);
+        }
+
+        /* Píldoras con degradado moderno para semanas */
+        .badge-semana-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border-radius: 8px;
+            font-size: 0.72rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            white-space: nowrap;
+        }
+        .badge-semana-pill:hover {
+            transform: translateY(-1px);
+        }
+        .badge-semana-exitoso {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.32) 0%, rgba(5, 150, 105, 0.15) 100%);
+            border: 1px solid rgba(52, 211, 153, 0.55);
+            color: #6ee7b7;
+            box-shadow: 0 2px 10px rgba(16, 185, 129, 0.22);
+            text-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+        }
+        .badge-semana-en_curso {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.30) 0%, rgba(217, 119, 6, 0.14) 100%);
+            border: 1px solid rgba(251, 191, 36, 0.55);
+            color: #fde68a;
+            box-shadow: 0 2px 10px rgba(245, 158, 11, 0.22);
+            text-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+        }
+        .badge-semana-sin_respaldo {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.28) 0%, rgba(153, 27, 27, 0.14) 100%);
+            border: 1px solid rgba(248, 113, 113, 0.50);
+            color: #fca5a5;
+            box-shadow: 0 2px 10px rgba(239, 68, 68, 0.22);
+        }
+        .badge-semana-futuro {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.02) 100%);
+            border: 1px dashed rgba(255, 255, 255, 0.18);
+            color: #94a3b8;
         }
 
         .dot-indicator {
@@ -971,8 +1069,8 @@ function guardarDatosEquipo(e) {
             </button>
         </li>
         <li class="nav-item">
-            <button class="nav-link" id="tab-heatmap-link" data-bs-toggle="tab" data-bs-target="#tab-heatmap" type="button" onclick="cargarHeatmap30Dias()">
-                <i class="bi bi-calendar3-range"></i> Historial Calendario (30 Días)
+            <button class="nav-link" id="tab-heatmap-link" data-bs-toggle="tab" data-bs-target="#tab-heatmap" type="button" onclick="cargarMatrizSemanasMes()">
+                <i class="bi bi-calendar3-week"></i> Matriz Semanal por Mes
             </button>
         </li>
         <li class="nav-item">
@@ -1070,19 +1168,28 @@ function guardarDatosEquipo(e) {
                         </tr>
                         <?php else: ?>
                         <?php foreach ($equiposList as $eq): 
+                            $diasCal = 99;
+                            if (!empty($eq['ultimo_respaldo'])) {
+                                $fUlt = date('Y-m-d', strtotime($eq['ultimo_respaldo']));
+                                $diasCal = (int)(new DateTime(date('Y-m-d')))->diff(new DateTime($fUlt))->days;
+                            }
+                            $estadoFinal = 'critico';
+                            if (!empty($eq['tiene_temporales'])) { $estadoFinal = 'incompleto'; }
+                            elseif ($diasCal <= 6) { $estadoFinal = 'exitoso'; }
+                            elseif ($diasCal <= 12) { $estadoFinal = 'vencido'; } 
                             $badgeClass = 'badge-critico';
                             $dotClass = 'dot-critico';
                             $estadoLabel = 'Crítico (≥13d)';
 
-                            if ($eq['estado'] === 'exitoso') {
+                            if ($estadoFinal === 'exitoso') {
                                 $badgeClass = 'badge-exitoso';
                                 $dotClass = 'dot-exitoso';
                                 $estadoLabel = 'Al Día (≤6d)';
-                            } elseif ($eq['estado'] === 'vencido') {
+                            } elseif ($estadoFinal === 'vencido') {
                                 $badgeClass = 'badge-vencido';
                                 $dotClass = 'dot-vencido';
                                 $estadoLabel = 'En Alerta (7-12d)';
-                            } elseif ($eq['estado'] === 'incompleto') {
+                            } elseif ($estadoFinal === 'incompleto') {
                                 $badgeClass = 'badge-incompleto';
                                 $dotClass = 'dot-incompleto';
                                 $estadoLabel = 'Incompleto (.tmp)';
@@ -1093,7 +1200,7 @@ function guardarDatosEquipo(e) {
                             data-usuario="<?php echo strtolower(htmlspecialchars($eq['usuario_responsable'] ?? '')); ?>"
                             data-area="<?php echo htmlspecialchars($eq['area_nombre']); ?>" 
                             data-nas="<?php echo htmlspecialchars($eq['nas_nombre'] ?? ''); ?>" 
-                            data-estado="<?php echo htmlspecialchars($eq['estado']); ?>"
+                            data-estado="<?php echo htmlspecialchars($estadoFinal); ?>"
                             data-archivo="<?php echo strtolower(htmlspecialchars($eq['archivo_reciente'] ?? '')); ?>">
                             <td>
                                 <div class="d-flex align-items-center gap-2">
@@ -1130,25 +1237,25 @@ function guardarDatosEquipo(e) {
                             <td>
                                 <div class="d-flex align-items-center gap-1">
                                     <?php 
-                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? [], (int)$eq['dias_sin_respaldo']);
+                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? [], (int)$diasCal, $eq['ultimo_respaldo'] ?? null);
                                     foreach ($semMap as $sKey => $sVal):
                                         if (!empty($sVal['respaldo'])):
                                             $fDisplay = date('d/m', strtotime($sVal['respaldo']['fecha']));
                                     ?>
-                                        <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): <?php echo $sVal['respaldo']['fecha_hora']; ?>">
+                                        <span class="badge-semana-pill badge-semana-exitoso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): <?php echo $sVal['respaldo']['fecha_hora']; ?>">
                                             <i class="bi bi-check me-0"></i><?php echo $sKey; ?>: <?php echo $fDisplay; ?>
                                         </span>
                                     <?php elseif ($sVal['es_futuro']): ?>
-                                        <span class="badge bg-dark text-secondary border border-secondary border-opacity-25" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Pendiente en el mes">
+                                        <span class="badge-semana-pill badge-semana-futuro" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Pendiente en el mes">
                                             <?php echo $sKey; ?>: -
                                         </span>
                                     <?php elseif ($sVal['en_curso'] && (int)$eq['dias_sin_respaldo'] <= 6): ?>
-                                        <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): En curso (Al día por respaldo reciente)">
+                                        <span class="badge-semana-pill badge-semana-en_curso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): En curso (Al día por respaldo reciente)">
                                             <i class="bi bi-clock me-0"></i><?php echo $sKey; ?>: Vigente
                                         </span>
                                     <?php else: ?>
-                                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Sin respaldo registrado">
-                                            <?php echo $sKey; ?>: ✕
+                                        <span class="badge-semana-pill badge-semana-sin_respaldo" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Sin respaldo registrado">
+                                            <i class="bi bi-x"></i><?php echo $sKey; ?>: Sin copia
                                         </span>
                                     <?php endif; endforeach; ?>
                                 </div>
@@ -1187,39 +1294,63 @@ function guardarDatosEquipo(e) {
         </div>
 
         <!-- =================================================================== -->
-        <!-- PESTAÑA 2: VISTA CALENDARIO / HEATMAP (30 DÍAS)                     -->
+        <!-- PESTAÑA 2: MATRIZ SEMANAL DE CONSTANCIA (FILTRADA POR MES)          -->
         <!-- =================================================================== -->
         <div class="tab-pane fade" id="tab-heatmap" role="tabpanel">
             <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
                     <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-calendar3-range text-info me-2"></i>Matriz de Constancia de Respaldos (Últimos 30 Días)</h5>
-                        <p class="text-secondary small mb-0">Visualiza la regularidad con la que cada equipo genera sus copias de seguridad diarias.</p>
+                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-calendar3-week text-warning me-2"></i>Matriz Semanal de Cumplimiento por Mes</h5>
+                        <p class="text-secondary small mb-0">Monitoreo de 4 a 5 semanas calendario. Filtra por mes para auditar la regularidad de cada equipo.</p>
                     </div>
-                    <!-- Leyenda del Heatmap -->
-                    <div class="d-flex align-items-center gap-3 small">
-                        <span class="d-flex align-items-center gap-1"><span class="heatmap-cell hm-exitoso"></span> Al Día</span>
-                        <span class="d-flex align-items-center gap-1"><span class="heatmap-cell hm-vencido"></span> Vencido</span>
-                        <span class="d-flex align-items-center gap-1"><span class="heatmap-cell hm-critico"></span> Crítico</span>
-                        <span class="d-flex align-items-center gap-1"><span class="heatmap-cell hm-incompleto"></span> Incompleto</span>
-                        <span class="d-flex align-items-center gap-1"><span class="heatmap-cell hm-sin_datos"></span> Sin datos</span>
+                    <!-- Controles: Selector de Mes, Buscador y Leyenda Degradada -->
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <label for="selectMesMatriz" class="text-secondary small fw-semibold text-nowrap"><i class="bi bi-calendar-event text-warning me-1"></i>Mes:</label>
+                            <select id="selectMesMatriz" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-50" style="min-width: 175px;" onchange="cargarMatrizSemanasMes(this.value)">
+                                <option value="">Cargando meses...</option>
+                            </select>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="text" id="filtroMatrizRapido" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50" placeholder="Buscar máquina..." style="width: 160px;" onkeyup="filtrarTablaMatriz()">
+                        </div>
                     </div>
                 </div>
 
-                <div id="heatmapCargando" class="text-center py-5">
+                <!-- Leyenda de Píldoras con Degradado -->
+                <div class="p-2 mb-3 rounded-3 d-flex flex-wrap align-items-center justify-content-between gap-2" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);">
+                    <div class="d-flex flex-wrap align-items-center gap-2 small">
+                        <span class="text-secondary me-1 font-monospace" style="font-size: 0.72rem;">ESTADOS:</span>
+                        <span class="badge-semana-pill badge-semana-exitoso"><i class="bi bi-check-circle-fill"></i> Cumplido (En fecha)</span>
+                        <span class="badge-semana-pill badge-semana-en_curso"><i class="bi bi-clock-history"></i> En curso (≤6 días)</span>
+                        <span class="badge-semana-pill badge-semana-sin_respaldo"><i class="bi bi-x-circle-fill"></i> Sin respaldo (Omitido)</span>
+                        <span class="badge-semana-pill badge-semana-futuro"><i class="bi bi-dash"></i> Programado (Futuro)</span>
+                    </div>
+                    <div class="text-secondary small" id="contadorEquiposMatriz">
+                        Mostrando todos los equipos
+                    </div>
+                </div>
+
+                <div id="matrizCargando" class="text-center py-5">
                     <div class="spinner-border text-primary" role="status"></div>
-                    <div class="text-secondary small mt-2">Construyendo matriz de los últimos 30 días...</div>
+                    <div class="text-secondary small mt-2">Cargando matriz semanal del mes seleccionado...</div>
                 </div>
 
-                <div id="heatmapContenido" class="heatmap-container" style="display: none;">
-                    <table class="table-custom" style="min-width: 900px;">
+                <div id="matrizContenido" class="table-responsive" style="display: none;">
+                    <table class="table-custom" style="min-width: 900px;" id="tablaMatrizSemanal">
                         <thead>
-                            <tr id="heatmapHeaderDias">
-                                <th style="width: 200px;">Equipo / Área</th>
-                                <!-- Columnas de fechas dinámicas -->
+                            <tr id="matrizHeaderSemanas">
+                                <th style="width: 250px;">Equipo / Área / Usuario</th>
+                                <th class="text-center" style="width: 120px;">Semana 1 (1-7)</th>
+                                <th class="text-center" style="width: 120px;">Semana 2 (8-14)</th>
+                                <th class="text-center" style="width: 120px;">Semana 3 (15-21)</th>
+                                <th class="text-center" style="width: 120px;">Semana 4 (22-28)</th>
+                                <th class="text-center" style="width: 120px;">Semana 5 (29+)</th>
+                                <th class="text-center" style="width: 130px;">Cumplimiento</th>
+                                <th class="text-end" style="width: 100px;">Expediente</th>
                             </tr>
                         </thead>
-                        <tbody id="heatmapBody">
+                        <tbody id="matrizBody">
                             <!-- Filas dinámicas generadas vía JS -->
                         </tbody>
                     </table>
@@ -2188,70 +2319,165 @@ function abrirExpedienteEquipo(nombreEquipo, equipoId) {
         });
 }
 
-// 3. VISTA HEATMAP DE 30 DÍAS
-function cargarHeatmap30Dias() {
-    document.getElementById('heatmapCargando').style.display = 'block';
-    document.getElementById('heatmapContenido').style.display = 'none';
+// 3. VISTA MATRIZ SEMANAL CON FILTRO POR MES (S1..S5)
+let cacheMatrizDatos = [];
 
-    fetch('api_respaldos.php?action=obtener_heatmap_30dias')
+function cargarMatrizSemanasMes(mes) {
+    const cargandoEl = document.getElementById('matrizCargando');
+    const contenidoEl = document.getElementById('matrizContenido');
+    if (cargandoEl) cargandoEl.style.display = 'block';
+    if (contenidoEl) contenidoEl.style.display = 'none';
+
+    let url = 'api_respaldos.php?action=obtener_matriz_semanal_mes';
+    if (mes) {
+        url += '&mes=' + encodeURIComponent(mes);
+    }
+
+    fetch(url)
         .then(r => r.json())
         .then(res => {
-            document.getElementById('heatmapCargando').style.display = 'none';
+            if (cargandoEl) cargandoEl.style.display = 'none';
             if (!res.success) {
-                Swal.fire('Error', res.error || 'No se pudo cargar el heatmap', 'error');
+                Swal.fire('Error', res.error || 'No se pudo cargar la matriz semanal', 'error');
                 return;
             }
 
-            document.getElementById('heatmapContenido').style.display = 'block';
+            if (contenidoEl) contenidoEl.style.display = 'block';
 
-            // Cabecera de fechas
-            const trHead = document.getElementById('heatmapHeaderDias');
-            trHead.innerHTML = '<th style="width: 220px;">Equipo / Área</th>';
-            res.rango_fechas.forEach(d => {
-                const diaNum = d.split('-')[2];
-                const mesNum = d.split('-')[1];
-                const th = document.createElement('th');
-                th.className = 'text-center p-1';
-                th.style.fontSize = '0.7rem';
-                th.innerText = `${diaNum}/${mesNum}`;
-                trHead.appendChild(th);
-            });
-
-            // Filas por cada equipo
-            const tbody = document.getElementById('heatmapBody');
-            tbody.innerHTML = '';
-
-            res.matriz.forEach(m => {
-                const tr = document.createElement('tr');
-                let celdasDias = '';
-
-                res.rango_fechas.forEach(d => {
-                    const st = m.dias[d] || 'sin_datos';
-                    let cls = 'hm-sin_datos';
-                    let tit = `${d}: Sin datos`;
-
-                    if (st === 'exitoso') { cls = 'hm-exitoso'; tit = `${d}: Respaldo Exitoso (Al Día)`; }
-                    else if (st === 'vencido') { cls = 'hm-vencido'; tit = `${d}: Respaldo Vencido (24-48h)`; }
-                    else if (st === 'critico') { cls = 'hm-critico'; tit = `${d}: Sin respaldo / Crítico`; }
-                    else if (st === 'incompleto') { cls = 'hm-incompleto'; tit = `${d}: Respaldo Incompleto (.tmp)`; }
-
-                    celdasDias += `<td class="text-center p-1"><span class="heatmap-cell ${cls}" title="${tit}"></span></td>`;
+            // Actualizar selector de meses si no tiene opciones o cambió
+            const selMes = document.getElementById('selectMesMatriz');
+            if (selMes && res.meses_disponibles && (selMes.options.length <= 1 || selMes.value !== res.mes_seleccionado)) {
+                selMes.innerHTML = '';
+                res.meses_disponibles.forEach(m => {
+                    const opt = document.createElement('option');
+                    opt.value = m.valor;
+                    opt.innerText = m.etiqueta;
+                    if (m.activo) opt.selected = true;
+                    selMes.appendChild(opt);
                 });
+            }
 
-                tr.innerHTML = `
-                    <td>
-                        <div class="fw-bold text-white small">${m.nombre_equipo}</div>
-                        <div class="text-secondary" style="font-size: 0.72rem;">${m.area_nombre}</div>
-                    </td>
-                    ${celdasDias}
-                `;
-                tbody.appendChild(tr);
-            });
+            // Construir cabeceras de columnas según semanas del mes (S1..S4 o S5)
+            const trHead = document.getElementById('matrizHeaderSemanas');
+            if (trHead) {
+                let thHtml = '<th style="width: 250px;">Equipo / Área / Usuario</th>';
+                const semanasKeys = Object.keys(res.semanas_def);
+                semanasKeys.forEach(sId => {
+                    const sConf = res.semanas_def[sId];
+                    thHtml += `<th class="text-center" style="width: 120px;">${sConf.label}<br><span class="text-secondary fw-normal" style="font-size: 0.68rem;">(${sConf.dias_label})</span></th>`;
+                });
+                thHtml += '<th class="text-center" style="width: 130px;">Cumplimiento</th>';
+                thHtml += '<th class="text-end" style="width: 100px;">Expediente</th>';
+                trHead.innerHTML = thHtml;
+            }
+
+            cacheMatrizDatos = res.matriz || [];
+            renderizarFilasMatriz(cacheMatrizDatos, res.semanas_def);
         })
         .catch(err => {
-            document.getElementById('heatmapCargando').style.display = 'none';
-            Swal.fire('Error', err.message, 'error');
+            if (cargandoEl) cargandoEl.style.display = 'none';
+            Swal.fire('Error de conexión', err.message, 'error');
         });
+}
+
+function renderizarFilasMatriz(matriz, semanasDef) {
+    const tbody = document.getElementById('matrizBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const contadorEl = document.getElementById('contadorEquiposMatriz');
+    if (contadorEl) {
+        contadorEl.innerText = `Mostrando ${matriz.length} equipos`;
+    }
+
+    if (!matriz || matriz.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4">No hay equipos registrados para mostrar en esta matriz.</td></tr>';
+        return;
+    }
+
+    const semanasKeys = Object.keys(semanasDef);
+
+    matriz.forEach(m => {
+        const tr = document.createElement('tr');
+        tr.className = 'fila-matriz';
+        tr.setAttribute('data-texto', (m.nombre_equipo + ' ' + (m.area_nombre || '') + ' ' + (m.usuario_responsable || '')).toLowerCase());
+
+        let celdasSemanas = '';
+        semanasKeys.forEach(sId => {
+            const sem = m.semanas[sId] || { estado: 'sin_respaldo' };
+            let pillHtml = '';
+
+            if (sem.estado === 'exitoso') {
+                const fShow = sem.fecha_corta || 'Cumplido';
+                const tit = `Respaldo exitoso: ${sem.archivo || ''} (${sem.fecha_respaldo || ''})`;
+                pillHtml = `<span class="badge-semana-pill badge-semana-exitoso" title="${tit}"><i class="bi bi-check-circle-fill"></i> ${fShow}</span>`;
+            } else if (sem.estado === 'en_curso') {
+                pillHtml = `<span class="badge-semana-pill badge-semana-en_curso" title="Semana en curso (al día)"><i class="bi bi-clock-history"></i> En curso</span>`;
+            } else if (sem.estado === 'futuro') {
+                pillHtml = `<span class="badge-semana-pill badge-semana-futuro" title="Semana programada"><i class="bi bi-dash"></i> Futuro</span>`;
+            } else {
+                pillHtml = `<span class="badge-semana-pill badge-semana-sin_respaldo" title="Sin respaldo en esta semana"><i class="bi bi-x-circle-fill"></i> Sin resp.</span>`;
+            }
+
+            celdasSemanas += `<td class="text-center align-middle">${pillHtml}</td>`;
+        });
+
+        // Color de barra de cumplimiento según %
+        const pct = (m.cumplimiento_porcentaje !== undefined ? m.cumplimiento_porcentaje : (m.porcentaje || 0));
+        let barClass = 'bg-danger';
+        let textClass = 'text-danger';
+        if (pct >= 80) {
+            barClass = 'bg-success';
+            textClass = 'text-success';
+        } else if (pct >= 50) {
+            barClass = 'bg-warning';
+            textClass = 'text-warning';
+        }
+
+        tr.innerHTML = `
+            <td class="align-middle">
+                <div class="fw-bold text-white small">${m.nombre_equipo}</div>
+                <div class="text-secondary" style="font-size: 0.72rem;">
+                    <span class="badge bg-secondary bg-opacity-25 text-light px-1 py-0 me-1">${m.area_nombre || 'General'}</span>
+                    ${m.usuario_responsable ? '• ' + m.usuario_responsable : ''}
+                </div>
+            </td>
+            ${celdasSemanas}
+            <td class="text-center align-middle">
+                <div class="d-flex align-items-center justify-content-center gap-2">
+                    <div class="progress flex-grow-1" style="height: 6px; background: rgba(255,255,255,0.08); max-width: 60px;">
+                        <div class="progress-bar ${barClass}" style="width: ${pct}%;"></div>
+                    </div>
+                    <span class="small fw-bold ${textClass}">${pct}%</span>
+                </div>
+            </td>
+            <td class="text-end align-middle">
+                <button class="btn btn-outline-info btn-sm rounded-3 px-2 py-1" onclick="abrirExpedienteEquipo('${m.nombre_equipo}', ${m.equipo_id})" title="Ver expediente">
+                    <i class="bi bi-journal-text"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function filtrarTablaMatriz() {
+    const q = (document.getElementById('filtroMatrizRapido')?.value || '').trim().toLowerCase();
+    const filas = document.querySelectorAll('.fila-matriz');
+    let visibles = 0;
+    filas.forEach(f => {
+        const txt = f.getAttribute('data-texto') || '';
+        if (!q || txt.includes(q)) {
+            f.style.display = '';
+            visibles++;
+        } else {
+            f.style.display = 'none';
+        }
+    });
+    const contadorEl = document.getElementById('contadorEquiposMatriz');
+    if (contadorEl) {
+        contadorEl.innerText = `Mostrando ${visibles} de ${filas.length} equipos`;
+    }
 }
 
 // 4. GESTIÓN DE NAS Y CARPETAS
