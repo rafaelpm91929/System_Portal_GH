@@ -2684,12 +2684,201 @@ function cargarCarpetasPorNas(nasId) {
         });
 }
 
+function toggleDesgloseSubcarpetas(carpetaId) {
+    const fila = document.getElementById(`desgloseSub_${carpetaId}`);
+    const chev = document.getElementById(`chevronCarp_${carpetaId}`);
+    if (!fila) return;
+
+    if (fila.style.display === 'none') {
+        fila.style.display = 'table-row';
+        if (chev) {
+            chev.className = 'bi bi-chevron-down';
+        }
+    } else {
+        fila.style.display = 'none';
+        if (chev) {
+            chev.className = 'bi bi-chevron-right';
+        }
+    }
+}
+
 function toggleMonitorearCarpeta(carpetaId, estado) {
     const fd = new FormData();
     fd.append('id', carpetaId);
     fd.append('monitorear', estado ? 1 : 0);
 
-    fetch('api_respaldos.php?action=guardar_carpeta', { method: 'POST', body: fd });
+    // Sincronizar visualmente los switches de subcarpetas
+    const contenedor = document.getElementById(`desgloseSub_${carpetaId}`);
+    if (contenedor) {
+        const switches = contenedor.querySelectorAll('input[type="checkbox"]');
+        switches.forEach(sw => sw.checked = estado);
+        actualizarContadorCarpetaLocal(carpetaId);
+    }
+
+    fetch('api_respaldos.php?action=toggle_monitorear_carpeta', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo actualizar la carpeta', 'error');
+            return;
+        }
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+        if (typeof cargarMatrizSemanasMes === 'function') {
+            const mesSel = document.getElementById('filtroMesMatriz')?.value;
+            cargarMatrizSemanasMes(mesSel);
+        }
+    })
+    .catch(err => {
+        console.error('Error al toggle carpeta:', err);
+    });
+}
+
+function toggleMonitorearEquipo(equipoId, activo, equipoNombre, carpetaId) {
+    const fd = new FormData();
+    fd.append('id', equipoId);
+    fd.append('monitorear', activo ? 1 : 0);
+
+    fetch('api_respaldos.php?action=toggle_monitorear_equipo', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo guardar la configuración', 'error');
+            const sw = document.querySelector(`input[onchange*="toggleMonitorearEquipo(${equipoId}"]`);
+            if (sw) sw.checked = !activo;
+            return;
+        }
+
+        actualizarContadorCarpetaLocal(carpetaId);
+
+        // Ocultar o mostrar fila en la tabla del Dashboard principal
+        const filaEq = document.querySelector(`#tablaEquipos tr[data-equipo-id="${equipoId}"]`);
+        if (filaEq) {
+            filaEq.style.display = activo ? '' : 'none';
+        }
+
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+
+        if (typeof cargarMatrizSemanasMes === 'function') {
+            const mesSel = document.getElementById('filtroMesMatriz')?.value;
+            cargarMatrizSemanasMes(mesSel);
+        }
+    })
+    .catch(err => {
+        console.error('Error al actualizar monitoreo del equipo:', err);
+        const sw = document.querySelector(`input[onchange*="toggleMonitorearEquipo(${equipoId}"]`);
+        if (sw) sw.checked = !activo;
+    });
+}
+
+function toggleTodasSubcarpetas(carpetaId, activo) {
+    const val = activo ? 1 : 0;
+    const fd = new FormData();
+    fd.append('carpeta_id', carpetaId);
+    fd.append('monitorear', val);
+
+    // Actualizar switches visualmente de inmediato
+    const contenedor = document.getElementById(`desgloseSub_${carpetaId}`);
+    if (contenedor) {
+        const switches = contenedor.querySelectorAll('input[type="checkbox"]');
+        switches.forEach(sw => sw.checked = (val === 1));
+        actualizarContadorCarpetaLocal(carpetaId);
+    }
+
+    fetch('api_respaldos.php?action=toggle_todas_subcarpetas', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo actualizar el grupo de máquinas', 'error');
+            return;
+        }
+
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+
+        if (typeof cargarMatrizSemanasMes === 'function') {
+            const mesSel = document.getElementById('filtroMesMatriz')?.value;
+            cargarMatrizSemanasMes(mesSel);
+        }
+    })
+    .catch(err => {
+        console.error('Error al actualizar todas las subcarpetas:', err);
+    });
+}
+
+function actualizarContadorCarpetaLocal(carpetaId) {
+    const contenedor = document.getElementById(`desgloseSub_${carpetaId}`);
+    const badge = document.getElementById(`contadorSub_${carpetaId}`);
+    if (contenedor && badge) {
+        const switches = contenedor.querySelectorAll('input[type="checkbox"]');
+        let activas = 0;
+        switches.forEach(sw => { if (sw.checked) activas++; });
+        badge.innerText = `${activas} de ${switches.length} máquinas monitoreadas`;
+    }
+}
+
+function actualizarVistasConMetricas(m) {
+    if (!m) return;
+
+    const elTot = document.getElementById('kpiTotalEquipos');
+    if (elTot && m.total_equipos !== undefined) elTot.innerText = m.total_equipos;
+
+    const elSla = document.getElementById('kpiPorcentajeCumplimiento');
+    if (elSla && m.cumplimiento_porcentaje !== undefined) elSla.innerText = m.cumplimiento_porcentaje + '%';
+
+    const elBar = document.getElementById('kpiBarraCumplimiento');
+    if (elBar && m.cumplimiento_porcentaje !== undefined) elBar.style.width = m.cumplimiento_porcentaje + '%';
+
+    const elExit = document.getElementById('kpiExitosos');
+    if (elExit && m.exitosos !== undefined) elExit.innerText = m.exitosos;
+
+    const elVenc = document.getElementById('kpiVencidos');
+    if (elVenc && m.vencidos !== undefined) elVenc.innerText = m.vencidos;
+
+    const elCrit = document.getElementById('kpiCriticos');
+    if (elCrit && m.criticos !== undefined) elCrit.innerText = m.criticos;
+
+    const elIncomp = document.getElementById('kpiIncompletos');
+    if (elIncomp && m.incompletos !== undefined) elIncomp.innerText = m.incompletos;
+
+    if (window.chartInstanciaDona && m.exitosos !== undefined) {
+        window.chartInstanciaDona.data.datasets[0].data = [
+            m.exitosos || 0,
+            m.vencidos || 0,
+            m.criticos || 0,
+            m.incompletos || 0
+        ];
+        window.chartInstanciaDona.update('none');
+    }
+
+    if (window.chartInstanciaAreas && m.conteo_por_area) {
+        window.chartInstanciaAreas.data.labels = Object.keys(m.conteo_por_area);
+        window.chartInstanciaAreas.data.datasets[0].data = Object.values(m.conteo_por_area);
+        window.chartInstanciaAreas.update('none');
+    }
+
+    if (window.chartInstanciaSemanas && m.conteo_por_semana) {
+        window.chartInstanciaSemanas.data.datasets[0].data = [
+            m.conteo_por_semana.S1 || 0,
+            m.conteo_por_semana.S2 || 0,
+            m.conteo_por_semana.S3 || 0,
+            m.conteo_por_semana.S4 || 0
+        ];
+        window.chartInstanciaSemanas.update('none');
+    }
 }
 
 function eliminarCarpeta(carpetaId, nombre) {

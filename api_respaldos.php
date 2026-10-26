@@ -937,6 +937,49 @@ switch ($action) {
         break;
 
     /**
+     * Activa o desactiva el monitoreo de una carpeta completa (y sus subcarpetas asociadas)
+     */
+    case 'toggle_monitorear_carpeta':
+        validarSesionPortal();
+        $carpetaId = (int)($_POST['id'] ?? ($_GET['id'] ?? 0));
+        $monitorear = (int)($_POST['monitorear'] ?? ($_GET['monitorear'] ?? 1));
+
+        if ($carpetaId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'ID de carpeta inválido']);
+            exit();
+        }
+
+        try {
+            $stmt = $pdo->prepare("UPDATE respaldos_carpetas SET monitorear = ? WHERE id = ?");
+            $stmt->execute([$monitorear ? 1 : 0, $carpetaId]);
+
+            // Sincronizar las subcarpetas / máquinas de esta carpeta
+            $stmtC = $pdo->prepare("SELECT nas_id, nombre_carpeta, area_nombre FROM respaldos_carpetas WHERE id = ?");
+            $stmtC->execute([$carpetaId]);
+            $carp = $stmtC->fetch(PDO::FETCH_ASSOC);
+            if ($carp) {
+                $stmtEq = $pdo->prepare("
+                    UPDATE respaldos_equipos 
+                    SET monitorear = ? 
+                    WHERE carpeta_id = ? OR (nas_id = ? AND (ruta_origen LIKE ? OR area_nombre = ?))
+                ");
+                $stmtEq->execute([$monitorear ? 1 : 0, $carpetaId, $carp['nas_id'], '%' . $carp['nombre_carpeta'] . '%', $carp['area_nombre']]);
+            }
+
+            $metricasActuales = obtenerMetricasGlobalesRespaldos($pdo);
+
+            echo json_encode([
+                'success' => true,
+                'carpeta_id' => $carpetaId,
+                'monitorear' => $monitorear ? 1 : 0,
+                'metricas' => $metricasActuales
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
      * Guarda o edita una carpeta individual
      */
     case 'guardar_carpeta':
