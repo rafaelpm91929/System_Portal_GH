@@ -329,6 +329,10 @@ if (empty($conteoPorArea)) {
 // =============================================================================
 // GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO SEMANAL, ÁREAS Y 4 SEMANAS DEL MES)
 // =============================================================================
+var chartInstanciaDona = null;
+var chartInstanciaAreas = null;
+var chartInstanciaSemanas = null;
+
 document.addEventListener('DOMContentLoaded', function() {
     inicializarGraficas();
 });
@@ -339,7 +343,7 @@ function inicializarGraficas() {
     // 1. Gráfica de Dona: Semáforo Semanal (≤6d verde, 7-12d naranja, ≥13d rojo)
     const ctxDona = document.getElementById('chartSemaforoDona');
     if (ctxDona) {
-        new Chart(ctxDona, {
+        chartInstanciaDona = new Chart(ctxDona, {
             type: 'doughnut',
             data: {
                 labels: ['Al Día (≤6d)', 'En Alerta (7-12d)', 'Críticos (≥13d)', 'Incompletos'],
@@ -367,7 +371,7 @@ function inicializarGraficas() {
     // 2. Gráfica de Barras: Equipos por Área
     const ctxAreas = document.getElementById('chartAreasBarras');
     if (ctxAreas) {
-        new Chart(ctxAreas, {
+        chartInstanciaAreas = new Chart(ctxAreas, {
             type: 'bar',
             data: {
                 labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
@@ -397,7 +401,7 @@ function inicializarGraficas() {
     // 3. Gráfica de 4 Semanas del Mes
     const ctxSemanas = document.getElementById('chartSemanasMes');
     if (ctxSemanas) {
-        new Chart(ctxSemanas, {
+        chartInstanciaSemanas = new Chart(ctxSemanas, {
             type: 'line',
             data: {
                 labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
@@ -985,7 +989,7 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-display"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-white"><?php echo $totalEquipos; ?></div>
+                <div class="kpi-number text-white" id="kpiTotalEquipos"><?php echo $totalEquipos; ?></div>
                 <div class="text-secondary small">Monitoreados en red</div>
             </div>
         </div>
@@ -999,9 +1003,9 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-shield-check"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-success"><?php echo $porcentajeCumplimiento; ?>%</div>
+                <div class="kpi-number text-success" id="kpiPorcentajeCumplimiento"><?php echo $porcentajeCumplimiento; ?>%</div>
                 <div class="progress mt-2" style="height: 5px; background: rgba(255,255,255,0.08);">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo $porcentajeCumplimiento; ?>%;"></div>
+                    <div class="progress-bar bg-success" id="kpiBarraCumplimiento" role="progressbar" style="width: <?php echo $porcentajeCumplimiento; ?>%;"></div>
                 </div>
             </div>
         </div>
@@ -1015,7 +1019,7 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-check-circle-fill"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-success"><?php echo $exitosos; ?></div>
+                <div class="kpi-number text-success" id="kpiExitosos"><?php echo $exitosos; ?></div>
                 <div class="text-secondary small">Respaldados esta semana</div>
             </div>
         </div>
@@ -1029,7 +1033,7 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-exclamation-triangle-fill"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-warning"><?php echo $vencidos; ?></div>
+                <div class="kpi-number text-warning" id="kpiVencidos"><?php echo $vencidos; ?></div>
                 <div class="text-secondary small">Próximos a vencer</div>
             </div>
         </div>
@@ -1043,7 +1047,7 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-x-circle-fill"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-danger"><?php echo $criticos; ?></div>
+                <div class="kpi-number text-danger" id="kpiCriticos"><?php echo $criticos; ?></div>
                 <div class="text-secondary small">Sin copia reciente</div>
             </div>
         </div>
@@ -1057,7 +1061,7 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-hourglass-split"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-pink" style="color: #f472b6;"><?php echo $incompletos; ?></div>
+                <div class="kpi-number text-pink" id="kpiIncompletos" style="color: #f472b6;"><?php echo $incompletos; ?></div>
                 <div class="text-secondary small">Archivos .tmp / incompletos</div>
             </div>
         </div>
@@ -2156,13 +2160,17 @@ document.addEventListener('DOMContentLoaded', function() {
     inicializarGraficas();
 });
 
+let chartInstanciaDona = null;
+let chartInstanciaAreas = null;
+let chartInstanciaSemanas = null;
+
 function inicializarGraficas() {
     if (typeof Chart === 'undefined') return;
 
     // 1. Gráfica de Dona: Semáforo Semanal
     const ctxDona = document.getElementById('chartSemaforoDona');
     if (ctxDona) {
-        new Chart(ctxDona, {
+        chartInstanciaDona = new Chart(ctxDona, {
             type: 'doughnut',
             data: {
                 labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
@@ -2190,7 +2198,7 @@ function inicializarGraficas() {
     // 2. Gráfica de Barras: Equipos por Área
     const ctxAreas = document.getElementById('chartAreasBarras');
     if (ctxAreas) {
-        new Chart(ctxAreas, {
+        chartInstanciaAreas = new Chart(ctxAreas, {
             type: 'bar',
             data: {
                 labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
@@ -2220,7 +2228,7 @@ function inicializarGraficas() {
     // 3. Gráfica de 4 Semanas del Mes
     const ctxSemanas = document.getElementById('chartSemanasMes');
     if (ctxSemanas) {
-        new Chart(ctxSemanas, {
+        chartInstanciaSemanas = new Chart(ctxSemanas, {
             type: 'line',
             data: {
                 labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
@@ -3262,13 +3270,17 @@ document.addEventListener('DOMContentLoaded', function() {
     inicializarGraficas();
 });
 
+let chartInstanciaDona = null;
+let chartInstanciaAreas = null;
+let chartInstanciaSemanas = null;
+
 function inicializarGraficas() {
     if (typeof Chart === 'undefined') return;
 
     // 1. Gráfica de Dona: Semáforo Semanal
     const ctxDona = document.getElementById('chartSemaforoDona');
     if (ctxDona) {
-        new Chart(ctxDona, {
+        chartInstanciaDona = new Chart(ctxDona, {
             type: 'doughnut',
             data: {
                 labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
@@ -3296,7 +3308,7 @@ function inicializarGraficas() {
     // 2. Gráfica de Barras: Equipos por Área
     const ctxAreas = document.getElementById('chartAreasBarras');
     if (ctxAreas) {
-        new Chart(ctxAreas, {
+        chartInstanciaAreas = new Chart(ctxAreas, {
             type: 'bar',
             data: {
                 labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
@@ -3326,7 +3338,7 @@ function inicializarGraficas() {
     // 3. Gráfica de 4 Semanas del Mes
     const ctxSemanas = document.getElementById('chartSemanasMes');
     if (ctxSemanas) {
-        new Chart(ctxSemanas, {
+        chartInstanciaSemanas = new Chart(ctxSemanas, {
             type: 'line',
             data: {
                 labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],

@@ -125,6 +125,85 @@ function calcularSemanasCalendarioMes($mes) {
     return $semanas;
 }
 
+/**
+ * Calcula en tiempo real las métricas ejecutivas para actualizar
+ * instantáneamente los KPIs y las gráficas del portal (Dona, Barras, Semanas)
+ */
+function obtenerMetricasGlobalesRespaldos($pdo) {
+    $stmt = $pdo->query("
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
+            SUM(CASE WHEN estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
+            SUM(CASE WHEN estado = 'critico' THEN 1 ELSE 0 END) as criticos,
+            SUM(CASE WHEN estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
+        FROM respaldos_equipos
+        WHERE COALESCE(monitorear, 1) = 1
+    ");
+    $m = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : [];
+    $total = (int)($m['total'] ?? 0);
+    $exitosos = (int)($m['exitosos'] ?? 0);
+    $vencidos = (int)($m['vencidos'] ?? 0);
+    $criticos = (int)($m['criticos'] ?? 0);
+    $incompletos = (int)($m['incompletos'] ?? 0);
+    $pct = ($total > 0) ? round(($exitosos / $total) * 100, 1) : 0;
+
+    // Equipos por área
+    $stmtAreas = $pdo->query("
+        SELECT area_nombre, COUNT(*) as c 
+        FROM respaldos_equipos 
+        WHERE COALESCE(monitorear, 1) = 1
+        GROUP BY area_nombre 
+        ORDER BY c DESC 
+        LIMIT 8
+    ");
+    $conteoPorArea = [];
+    if ($stmtAreas) {
+        while ($r = $stmtAreas->fetch(PDO::FETCH_ASSOC)) {
+            $conteoPorArea[$r['area_nombre']] = (int)$r['c'];
+        }
+    }
+
+    // Cumplimiento de semanas calendario del mes actual
+    $mesActual = date('Y-m');
+    $semanasDef = calcularSemanasCalendarioMes($mesActual);
+    $stmtHist = $pdo->prepare("
+        SELECT h.fecha 
+        FROM respaldos_historial h
+        INNER JOIN respaldos_equipos e ON (h.nombre_equipo = e.nombre_equipo)
+        WHERE h.fecha LIKE ? AND h.estado = 'exitoso' AND COALESCE(e.monitorear, 1) = 1
+    ");
+    $stmtHist->execute(["$mesActual%"]);
+    $histFechas = $stmtHist ? $stmtHist->fetchAll(PDO::FETCH_COLUMN) : [];
+
+    $semanasChartLabels = [];
+    $semanasChartData = [];
+    foreach ($semanasDef as $sId => $sConf) {
+        $semanasChartLabels[] = $sConf['label'];
+        $c = 0;
+        foreach ($histFechas as $f) {
+            $dNum = (int)date('d', strtotime($f));
+            if ($dNum >= $sConf['inicio'] && $dNum <= $sConf['fin']) {
+                $c++;
+            }
+        }
+        $semanasChartData[] = $c;
+    }
+
+    return [
+        'total' => $total,
+        'exitosos' => $exitosos,
+        'vencidos' => $vencidos,
+        'criticos' => $criticos,
+        'incompletos' => $incompletos,
+        'porcentaje' => $pct,
+        'areas_labels' => array_keys($conteoPorArea),
+        'areas_data' => array_values($conteoPorArea),
+        'semanas_labels' => $semanasChartLabels,
+        'semanas_data' => $semanasChartData
+    ];
+}
+
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 switch ($action) {
@@ -775,11 +854,15 @@ switch ($action) {
         try {
             $stmt = $pdo->prepare("UPDATE respaldos_equipos SET monitorear = ? WHERE id = ?");
             $stmt->execute([$monitorear ? 1 : 0, $equipoId]);
+
+            $metricasActuales = obtenerMetricasGlobalesRespaldos($pdo);
+
             echo json_encode([
                 'success' => true,
                 'mensaje' => $monitorear ? 'Equipo activado para monitoreo' : 'Equipo excluido del monitoreo',
                 'equipo_id' => $equipoId,
-                'monitorear' => $monitorear ? 1 : 0
+                'monitorear' => $monitorear ? 1 : 0,
+                'metricas' => $metricasActuales
             ]);
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -813,11 +896,14 @@ switch ($action) {
                 $stmt->execute([$monitorear ? 1 : 0, $carpetaId, $carp['nas_id'], '%' . $carp['nombre_carpeta'] . '%', $carp['area_nombre']]);
             }
 
+            $metricasActuales = obtenerMetricasGlobalesRespaldos($pdo);
+
             echo json_encode([
                 'success' => true,
                 'mensaje' => $monitorear ? 'Todas las subcarpetas activadas' : 'Todas las subcarpetas excluidas',
                 'carpeta_id' => $carpetaId,
-                'monitorear' => $monitorear ? 1 : 0
+                'monitorear' => $monitorear ? 1 : 0,
+                'metricas' => $metricasActuales
             ]);
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
