@@ -436,7 +436,8 @@ def main():
 
     cfg = cargar_configuracion()
 
-    if cfg.get("api_token") == "COPIAR_TOKEN_AQUI":
+    cfg_token = cfg.get("api_token", "")
+    if not cfg_token or cfg_token == "COPIAR_TOKEN_AQUI":
         log("ERROR: Debes configurar 'api_token' con el Bearer Token del portal en colector_config.json", "ERROR")
         sys.exit(1)
 

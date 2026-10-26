@@ -1021,8 +1021,8 @@ switch ($action) {
         $ps1Base = file_exists(__DIR__ . '/colector_respaldos.ps1') ? file_get_contents(__DIR__ . '/colector_respaldos.ps1') : '';
         $pyBase = file_exists(__DIR__ . '/colector_respaldos.py') ? file_get_contents(__DIR__ . '/colector_respaldos.py') : '';
 
-        $ps1Personalizado = str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $ps1Base);
-        $pyPersonalizado = str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $pyBase);
+        $ps1Personalizado = $ps1Base;
+        $pyPersonalizado = $pyBase;
 
         $tmpZip = tempnam(sys_get_temp_dir(), 'colector_zip_');
         $zip = new ZipArchive();
@@ -1082,13 +1082,13 @@ switch ($action) {
             header('Content-Type: text/x-python; charset=utf-8');
             header('Content-Disposition: attachment; filename="colector_respaldos.py"');
             $pyBase = file_exists(__DIR__ . '/colector_respaldos.py') ? file_get_contents(__DIR__ . '/colector_respaldos.py') : '';
-            echo str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $pyBase);
+            echo $pyBase;
             exit();
         } else {
             header('Content-Type: text/plain; charset=utf-8');
             header('Content-Disposition: attachment; filename="colector_respaldos.ps1"');
             $ps1Base = file_exists(__DIR__ . '/colector_respaldos.ps1') ? file_get_contents(__DIR__ . '/colector_respaldos.ps1') : '';
-            echo str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $ps1Base);
+            echo $ps1Base;
             exit();
         }
         break;

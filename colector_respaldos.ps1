@@ -11,8 +11,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$ApiUrl = "https://portal.pirineosmotors.com/api_respaldos.php",
-    [string]$ApiToken = "COPIAR_TOKEN_AQUI",
+    [string]$ApiUrl = "",
+    [string]$ApiToken = "",
     [switch]$Descubrir,
     [switch]$IgnorarSsl
 )
@@ -20,14 +20,18 @@ param(
 $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Cargar configuración desde colector_config.json si existe (solo si no se pasó por parámetro)
+# Cargar configuración desde colector_config.json si existe
 $ConfigFile = Join-Path $PSScriptRoot "colector_config.json"
 if (Test-Path $ConfigFile) {
     try {
         $jsonConf = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
-        if ($jsonConf.api_url -and ($ApiUrl -eq "https://portal.pirineosmotors.com/api_respaldos.php")) { $ApiUrl = $jsonConf.api_url }
-        if ($jsonConf.api_token -and ($ApiToken -eq "COPIAR_TOKEN_AQUI" -or [string]::IsNullOrWhiteSpace($ApiToken))) { $ApiToken = $jsonConf.api_token }
+        if ([string]::IsNullOrWhiteSpace($ApiUrl) -and $jsonConf.api_url) { $ApiUrl = $jsonConf.api_url }
+        if ([string]::IsNullOrWhiteSpace($ApiToken) -and $jsonConf.api_token) { $ApiToken = $jsonConf.api_token }
     } catch {}
+}
+
+if ([string]::IsNullOrWhiteSpace($ApiUrl)) {
+    $ApiUrl = "https://portal.pirineosmotors.com/api_respaldos.php"
 }
 
 function Write-ColectorLog {
@@ -37,7 +41,7 @@ function Write-ColectorLog {
     Write-Host $linea
     try {
         $logPath = Join-Path $PSScriptRoot "colector_respaldos.log"
-        Add-Content -Path $logPath -Value $linea -Encoding UTF8
+        Add-Content -Path $logPath -Value $linea -Encoding UTF8 -ErrorAction SilentlyContinue
     } catch {}
 }
 
@@ -48,7 +52,7 @@ if ($IgnorarSsl) {
 Write-ColectorLog "=== INICIANDO COLECTOR NATIVO DE RESPALDOS SMB/NAS (PowerShell) ==="
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-if ($ApiToken -eq "COPIAR_TOKEN_AQUI" -or [string]::IsNullOrWhiteSpace($ApiToken)) {
+if ([string]::IsNullOrWhiteSpace($ApiToken) -or $ApiToken -eq "COPIAR_TOKEN_AQUI") {
     Write-ColectorLog "ERROR: Falta el Bearer Token del portal cPanel." "ERROR"
     Write-ColectorLog "-> Puedes pasarlo en el comando: .\colector_respaldos.ps1 -ApiToken 'TU_TOKEN' -Descubrir" "WARN"
     Write-ColectorLog "-> O coloca el archivo 'colector_config.json' descargado desde el portal en esta misma carpeta." "WARN"
@@ -56,7 +60,7 @@ if ($ApiToken -eq "COPIAR_TOKEN_AQUI" -or [string]::IsNullOrWhiteSpace($ApiToken
 }
 
 # 1. Consultar rutas a vigilar desde la API
-$urlConsulta = "$ApiUrl?action=obtener_rutas_vigilar"
+$urlConsulta = "${ApiUrl}?action=obtener_rutas_vigilar"
 Write-ColectorLog "Consultando rutas en: $urlConsulta"
 
 $headers = @{
@@ -144,7 +148,7 @@ if ($Descubrir) {
             Write-ColectorLog "Carpetas encontradas en '$nasNombre': $($carpetasEncontradas -join ', ')"
 
             # Enviar lista a cPanel
-            $urlReporteCarpetas = "$ApiUrl?action=reportar_carpetas_detectadas"
+            $urlReporteCarpetas = "${ApiUrl}?action=reportar_carpetas_detectadas"
             $payloadCarpetas = @{
                 nas_id = $nasId
                 carpetas = @($carpetasEncontradas | ForEach-Object { @{ nombre_carpeta = $_ } })
@@ -268,7 +272,7 @@ $duracionSeg = [math]::Round($stopwatch.Elapsed.TotalSeconds, 0)
 Write-ColectorLog "Escaneo terminado. Equipos encontrados: $($resultadosEquipos.Count) en $duracionSeg s."
 
 if ($resultadosEquipos.Count -gt 0) {
-    $urlReporte = "$ApiUrl?action=reportar_respaldo_consolidado"
+    $urlReporte = "${ApiUrl}?action=reportar_respaldo_consolidado"
     Write-ColectorLog "Enviando reporte consolidado a cPanel..."
 
     $payload = @{
