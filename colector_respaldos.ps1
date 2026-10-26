@@ -223,16 +223,24 @@ if ($Descubrir) {
         $rutaLimpia = $ipRuta.TrimEnd("\/")
         if (-not $rutaLimpia.StartsWith("\\")) { $rutaLimpia = "\\$rutaLimpia" }
 
-        # Caso 1: Ruta con recurso UNC directo ej. \\192.168.26.194\AdministraciónVw
+        # Caso 1: Ruta con recurso UNC directo (ej. \\192.168.26.194\AdministraciónVw)
         if (Test-Path $rutaLimpia) {
             try {
+                # Comprobar si la ruta misma contiene NetBakData
+                $subNetbak = Join-Path $rutaLimpia "NetBakData"
+                if (Test-Path $subNetbak) {
+                    $carpetasEncontradas.Add("NetBakData")
+                    Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$rutaLimpia\NetBakData'"
+                }
                 $dirs = Get-ChildItem -Path $rutaLimpia -Directory -ErrorAction SilentlyContinue
                 foreach ($d in $dirs) {
-                    $carpetasEncontradas.Add($d.Name)
                     $subNetbak = Join-Path $d.FullName "NetBakData"
                     if (Test-Path $subNetbak) {
+                        # ¡Solo registrar la subcarpeta NetBakData!
                         $carpetasEncontradas.Add("$($d.Name)\NetBakData")
                         Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$($d.Name)\NetBakData'"
+                    } elseif ($d.Name -ieq "NetBakData") {
+                        $carpetasEncontradas.Add($d.Name)
                     }
                 }
             } catch {}
@@ -251,23 +259,16 @@ if ($Descubrir) {
                         if ($partes.Count -gt 0) {
                             $share = $partes[0].Trim()
                             if (-not $share.EndsWith("$")) {
-                                $carpetasEncontradas.Add($share)
-                                # Inspeccionar dentro del share para detectar NetBakData o subcarpetas
                                 $rutaShare = "\\$servidor\$share"
                                 if (Test-Path $rutaShare) {
                                     $subNetbak = Join-Path $rutaShare "NetBakData"
                                     if (Test-Path $subNetbak) {
+                                        # ¡Solo registrar la subcarpeta NetBakData!
                                         $carpetasEncontradas.Add("$share\NetBakData")
-                                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$share\NetBakData'"
+                                        Write-ColectorLog "  [NetBak] Estructura NetBakData encontrada: '$share\NetBakData'"
+                                    } elseif ($share -ieq "NetBakData") {
+                                        $carpetasEncontradas.Add($share)
                                     }
-                                    try {
-                                        $subDirs = Get-ChildItem -Path $rutaShare -Directory -ErrorAction SilentlyContinue
-                                        foreach ($sd in $subDirs) {
-                                            if ($sd.Name -ne "NetBakData" -and -not ($sd.Name -match '@recycle|#snapshot')) {
-                                                $carpetasEncontradas.Add("$share\$($sd.Name)")
-                                            }
-                                        }
-                                    } catch {}
                                 }
                             }
                         }
@@ -413,12 +414,18 @@ foreach ($nas in $nasList) {
         Write-ColectorLog "Escaneando área: $carpNombre [$areaNombre]..."
 
         # COMPROBACIÓN INTELIGENTE DE ESTRUCTURA NETBAK:
-        # Si la carpeta contiene una subcarpeta 'NetBakData', las máquinas están adentro
-        $dirEquipos = $rutaCarpeta
+        # Solo procesar exclusivamente carpetas NetBak
+        $dirEquipos = $null
         $subNetbakDirecto = Join-Path $rutaCarpeta "NetBakData"
-        if (Test-Path -LiteralPath $subNetbakDirecto) {
-            Write-ColectorLog "  [NetBak] Subcarpeta NetBakData detectada. Escaneando equipos dentro de NetBakData..."
+
+        if ($rutaCarpeta.ToLower().Contains("netbakdata") -or $rutaCarpeta.ToLower().Contains("netbak")) {
+            $dirEquipos = $rutaCarpeta
+        } elseif (Test-Path -LiteralPath $subNetbakDirecto) {
+            Write-ColectorLog "  [NetBak] Subcarpeta NetBakData detectada en '$rutaCarpeta\NetBakData'. Redirigiendo escaneo solo a NetBak..."
             $dirEquipos = $subNetbakDirecto
+        } else {
+            Write-ColectorLog "  [Omitida] '$carpNombre' no contiene estructura NetBak. Omitiendo." "INFO"
+            continue
         }
 
         try {
@@ -463,10 +470,16 @@ foreach ($nas in $nasList) {
                 Sort-Object Name -Descending
 
             if ($carpetasNetbakFecha.Count -eq 0) {
-                # Si no están directamente en la raíz del equipo, buscar hasta 2 niveles de profundidad (ej. disco o perfil)
+                # Buscar hasta 2 niveles de profundidad (ej. perfil o disco dentro de la máquina)
                 $carpetasNetbakFecha = Get-ChildItem -LiteralPath $rutaSub -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue | 
                     Where-Object { $_.Name -match '\d{4}[-_]\d{2}[-_]\d{2}' } | 
                     Sort-Object Name -Descending
+            }
+
+            # Si NO contiene respaldos de fecha NetBak, descartar (solo carpetas NetBak válidas)
+            if ($carpetasNetbakFecha.Count -eq 0) {
+                Write-ColectorLog "  [Omitido] Equipo '$nombreCarpeta' no contiene respaldos NetBak con fecha." "DEBUG"
+                continue
             }
 
             $ultimoArchivo = $null

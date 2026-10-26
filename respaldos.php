@@ -2697,13 +2697,15 @@ function cargarCarpetasPorNas(nasId) {
 
             res.carpetas.forEach(c => {
                 const esSys = parseInt(c.es_sistema) === 1;
+                const esNetbak = c.nombre_carpeta.toLowerCase().includes('netbak');
                 const checkMon = parseInt(c.monitorear) === 1 ? 'checked' : '';
                 const tagSys = esSys ? '<span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 ms-2" style="font-size:0.65rem;">Sistema / Descarte</span>' : '';
+                const tagNetbak = esNetbak ? '<span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 ms-2" style="font-size:0.65rem;"><i class="bi bi-hdd-network me-1"></i>NetBak</span>' : '';
 
                 html += `
-                    <tr>
+                    <tr class="${esNetbak ? 'fila-netbak' : ''}">
                         <td>
-                            <div class="fw-bold text-white"><i class="bi bi-folder2 text-warning me-1"></i> ${c.nombre_carpeta} ${tagSys}</div>
+                            <div class="fw-bold text-white"><i class="bi bi-folder2 text-warning me-1"></i> ${c.nombre_carpeta} ${tagNetbak} ${tagSys}</div>
                         </td>
                         <td>
                             <span class="badge bg-secondary bg-opacity-25 text-light">${c.area_nombre || 'General'}</span>

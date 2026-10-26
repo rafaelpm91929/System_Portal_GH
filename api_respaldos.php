@@ -169,16 +169,59 @@ switch ($action) {
             $stmtNas = $pdo->query("SELECT id, nombre, ip_ruta_red, usuario_smb, password_smb, marca, notas FROM respaldos_nas WHERE estatus = 1 ORDER BY id ASC");
             $nasList = $stmtNas->fetchAll(PDO::FETCH_ASSOC);
 
-            // Cargar carpetas activas de cada NAS
+            // Auto-filtrar para vigilar exclusivamente carpetas NetBak
+            try {
+                // Si existen carpetas con NetBakData, desmarcar las carpetas padre genéricas
+                $pdo->exec("
+                    UPDATE respaldos_carpetas 
+                    SET monitorear = 0 
+                    WHERE nombre_carpeta NOT LIKE '%NetBak%' 
+                      AND nas_id IN (
+                          SELECT DISTINCT nas_id FROM (
+                              SELECT nas_id FROM respaldos_carpetas WHERE nombre_carpeta LIKE '%NetBak%'
+                          ) as t
+                      )
+                ");
+                // Asegurar que las carpetas NetBakData estén activas para monitorear
+                $pdo->exec("
+                    UPDATE respaldos_carpetas 
+                    SET monitorear = 1 
+                    WHERE (nombre_carpeta LIKE '%NetBak%' OR nombre_carpeta LIKE '%netbak%') 
+                      AND es_sistema = 0
+                ");
+                // Limpiar equipos huérfanos que no pertenezcan a NetBak
+                $pdo->exec("
+                    DELETE FROM respaldos_equipos 
+                    WHERE ruta_carpeta IS NOT NULL 
+                      AND ruta_carpeta != '' 
+                      AND ruta_carpeta NOT LIKE '%NetBak%' 
+                      AND ruta_carpeta NOT LIKE '%netbak%'
+                ");
+            } catch (Throwable $eNet) {}
+
+            // Cargar carpetas activas de cada NAS (priorizando NetBak)
             foreach ($nasList as &$nas) {
                 $stmtCarp = $pdo->prepare("
                     SELECT id, nombre_carpeta, ruta_relativa, area_nombre, monitorear 
                     FROM respaldos_carpetas 
                     WHERE nas_id = ? AND monitorear = 1 AND es_sistema = 0 
+                      AND (nombre_carpeta LIKE '%NetBak%' OR nombre_carpeta LIKE '%netbak%')
                     ORDER BY nombre_carpeta ASC
                 ");
                 $stmtCarp->execute([$nas['id']]);
                 $nas['carpetas'] = $stmtCarp->fetchAll(PDO::FETCH_ASSOC);
+
+                // Si aún no hay carpetas específicamente NetBak, traer las activas para descubrimiento inicial
+                if (empty($nas['carpetas'])) {
+                    $stmtCarpAll = $pdo->prepare("
+                        SELECT id, nombre_carpeta, ruta_relativa, area_nombre, monitorear 
+                        FROM respaldos_carpetas 
+                        WHERE nas_id = ? AND monitorear = 1 AND es_sistema = 0 
+                        ORDER BY nombre_carpeta ASC
+                    ");
+                    $stmtCarpAll->execute([$nas['id']]);
+                    $nas['carpetas'] = $stmtCarpAll->fetchAll(PDO::FETCH_ASSOC);
+                }
             }
             unset($nas);
 
@@ -257,7 +300,8 @@ switch ($action) {
                 elseif (strpos($nomLow, 'caja') !== false) $areaInferencia = 'Caja';
                 elseif (!$esSistema) $areaInferencia = ucfirst($nombre);
 
-                $monitorear = $esSistema ? 0 : 1;
+                $esNetbak = (stripos($nombre, 'netbak') !== false);
+                $monitorear = ($esSistema || !$esNetbak) ? 0 : 1;
 
                 $stmtCheck->execute([$nasId, $nombre]);
                 $exist = $stmtCheck->fetch(PDO::FETCH_ASSOC);
