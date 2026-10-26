@@ -114,12 +114,17 @@ if ($Descubrir) {
         $rutaLimpia = $ipRuta.TrimEnd("\/")
         if (-not $rutaLimpia.StartsWith("\\")) { $rutaLimpia = "\\$rutaLimpia" }
 
-        # Caso 1: Ruta con recurso UNC directo ej. \\192.168.1.100\Backups
+        # Caso 1: Ruta con recurso UNC directo ej. \\192.168.26.194\AdministraciónVw
         if (Test-Path $rutaLimpia) {
             try {
                 $dirs = Get-ChildItem -Path $rutaLimpia -Directory -ErrorAction SilentlyContinue
                 foreach ($d in $dirs) {
                     $carpetasEncontradas.Add($d.Name)
+                    $subNetbak = Join-Path $d.FullName "NetBakData"
+                    if (Test-Path $subNetbak) {
+                        $carpetasEncontradas.Add("$($d.Name)\NetBakData")
+                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$($d.Name)\NetBakData'"
+                    }
                 }
             } catch {}
         }
@@ -138,6 +143,23 @@ if ($Descubrir) {
                             $share = $partes[0].Trim()
                             if (-not $share.EndsWith("$")) {
                                 $carpetasEncontradas.Add($share)
+                                # Inspeccionar dentro del share para detectar NetBakData o subcarpetas
+                                $rutaShare = "\\$servidor\$share"
+                                if (Test-Path $rutaShare) {
+                                    $subNetbak = Join-Path $rutaShare "NetBakData"
+                                    if (Test-Path $subNetbak) {
+                                        $carpetasEncontradas.Add("$share\NetBakData")
+                                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$share\NetBakData'"
+                                    }
+                                    try {
+                                        $subDirs = Get-ChildItem -Path $rutaShare -Directory -ErrorAction SilentlyContinue
+                                        foreach ($sd in $subDirs) {
+                                            if ($sd.Name -ne "NetBakData" -and -not ($sd.Name -match '@recycle|#snapshot')) {
+                                                $carpetasEncontradas.Add("$share\$($sd.Name)")
+                                            }
+                                        }
+                                    } catch {}
+                                }
                             }
                         }
                     }
@@ -209,8 +231,17 @@ foreach ($nas in $nasList) {
 
         Write-ColectorLog "Escaneando área: $carpNombre [$areaNombre]..."
 
+        # COMPROBACIÓN INTELIGENTE DE ESTRUCTURA NETBAK:
+        # Si la carpeta contiene una subcarpeta 'NetBakData', las máquinas están adentro
+        $dirEquipos = $rutaCarpeta
+        $subNetbakDirecto = Join-Path $rutaCarpeta "NetBakData"
+        if (Test-Path $subNetbakDirecto) {
+            Write-ColectorLog "  [NetBak] Carpeta NetBakData detectada en '$carpNombre'. Escaneando equipos en subcarpeta..."
+            $dirEquipos = $subNetbakDirecto
+        }
+
         try {
-            $subCarpetas = Get-ChildItem -Path $rutaCarpeta -Directory -ErrorAction SilentlyContinue
+            $subCarpetas = Get-ChildItem -Path $dirEquipos -Directory -ErrorAction SilentlyContinue
         } catch {
             continue
         }
@@ -228,29 +259,73 @@ foreach ($nas in $nasList) {
             $nombreEquipo = $sub.Name.ToUpper()
             $rutaSub = $sub.FullName
 
-            $archivos = Get-ChildItem -Path $rutaSub -Recurse -File -ErrorAction SilentlyContinue
+            # VERIFICAR SI CONTIENE CARPETAS NETBAK DE FECHA (formato: YYYY-MM-DD-HH-mm-ss)
+            $carpetasNetbakFecha = Get-ChildItem -Path $rutaSub -Directory -ErrorAction SilentlyContinue | 
+                Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}' } | 
+                Sort-Object Name -Descending
+
             $ultimoArchivo = $null
             $temporales = [System.Collections.Generic.List[string]]::new()
+            $ultimoFechaStr = $null
+            $ultimoNombreStr = $null
+            $ultimoBytes = 0
 
-            foreach ($f in $archivos) {
-                $esTemp = $false
-                foreach ($ext in $extTemporales) {
-                    if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
-                        $esTemp = $true
-                        $temporales.Add($f.Name)
-                        break
+            if ($carpetasNetbakFecha.Count -gt 0) {
+                # MODO NETBAK REPLICATOR: La carpeta con fecha más reciente
+                $carpetaReciente = $carpetasNetbakFecha[0]
+                $ultimoNombreStr = $carpetaReciente.Name
+
+                # Extraer fecha exacta del formato NetBak: YYYY-MM-DD-HH-mm-ss
+                $partesF = $carpetaReciente.Name -split "-"
+                if ($partesF.Count -ge 6) {
+                    $ultimoFechaStr = "$($partesF[0])-$($partesF[1])-$($partesF[2]) $($partesF[3]):$($partesF[4]):$($partesF[5])"
+                } elseif ($partesF.Count -ge 3) {
+                    $ultimoFechaStr = "$($partesF[0])-$($partesF[1])-$($partesF[2]) 00:00:00"
+                } else {
+                    $ultimoFechaStr = $carpetaReciente.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                }
+
+                # Analizar archivos de la carpeta más reciente para verificar archivos temporales / incompletos
+                $archivosRecientes = Get-ChildItem -Path $carpetaReciente.FullName -Recurse -File -ErrorAction SilentlyContinue
+                foreach ($f in $archivosRecientes) {
+                    $ultimoBytes += $f.Length
+                    $esTemp = $false
+                    foreach ($ext in $extTemporales) {
+                        if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
+                            $esTemp = $true
+                            $temporales.Add($f.Name)
+                            break
+                        }
+                    }
+                    if (-not $esTemp) {
+                        if ($null -eq $ultimoArchivo -or $f.LastWriteTime -gt $ultimoArchivo.LastWriteTime) {
+                            $ultimoArchivo = $f
+                        }
                     }
                 }
-                if ($esTemp) { continue }
+            } else {
+                # MODO ESTÁNDAR (Veeam, Cobian, Windows Backup, etc.)
+                $archivos = Get-ChildItem -Path $rutaSub -Recurse -File -ErrorAction SilentlyContinue
+                foreach ($f in $archivos) {
+                    $esTemp = $false
+                    foreach ($ext in $extTemporales) {
+                        if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
+                            $esTemp = $true
+                            $temporales.Add($f.Name)
+                            break
+                        }
+                    }
+                    if ($esTemp) { continue }
 
-                if ($null -eq $ultimoArchivo -or $f.LastWriteTime -gt $ultimoArchivo.LastWriteTime) {
-                    $ultimoArchivo = $f
+                    if ($null -eq $ultimoArchivo -or $f.LastWriteTime -gt $ultimoArchivo.LastWriteTime) {
+                        $ultimoArchivo = $f
+                    }
                 }
-            }
 
-            $ultimoFechaStr = if ($ultimoArchivo) { $ultimoArchivo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
-            $ultimoNombreStr = if ($ultimoArchivo) { $ultimoArchivo.Name } else { $null }
-            $ultimoBytes = if ($ultimoArchivo) { $ultimoArchivo.Length } else { 0 }
+                $ultimoFechaStr = if ($ultimoArchivo) { $ultimoArchivo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
+                $ultimoNombreStr = if ($ultimoArchivo) { $ultimoArchivo.Name } else { $null }
+                $ultimoBytes = if ($ultimoArchivo) { $ultimoArchivo.Length } else { 0 }
+            }
 
             $resultadosEquipos.Add([PSCustomObject]@{
                 nombre_equipo = $nombreEquipo
@@ -265,6 +340,7 @@ foreach ($nas in $nasList) {
                 tiene_temporales = ($temporales.Count -gt 0)
                 archivos_temporales = $temporales
             })
+            Write-ColectorLog "  [+] Equipo '$nombreEquipo' detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr)"
         }
     }
 }
