@@ -1013,8 +1013,8 @@ switch ($action) {
             'patrones_descarte' => ["@recycle", "#snapshot", "@recently-snapshot", ".dropbox.cache", "aquota.user", "aquota.group", "thumbs.db", "desktop.ini", ".ds_store"]
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        $batDescubrir = "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
-        $batRespaldo = "@echo off\r\ntitle Escaneo Diario de Respaldos\r\necho Ejecutando escaneo de respaldos y enviando semaforo a cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\"\r\necho.\r\npause >nul\r\n";
+        $batDescubrir = "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -ApiUrl \"$apiUrl\" -ApiToken \"$token\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
+        $batRespaldo = "@echo off\r\ntitle Escaneo Diario de Respaldos\r\necho Ejecutando escaneo de respaldos y enviando semaforo a cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -ApiUrl \"$apiUrl\" -ApiToken \"$token\"\r\necho.\r\npause >nul\r\n";
 
         $leeme = "=====================================================================\r\nAGENTE COLECTOR DE RESPALDOS SMB/NAS (RED LOCAL LAN)\r\n=====================================================================\r\n\r\n1. PASO 1 (DETECCION DE CARPETAS NAS):\r\n   Haz doble clic sobre 'ejecutar_deteccion.bat'.\r\n   El script se conectara por SMB a tu NAS local, listara las carpetas\r\n   compartidas reales y las enviara a tu portal en cPanel.\r\n\r\n2. PASO 2 (ESCANEO DIARIO AUTOMATICO):\r\n   Programa en el Administrador de Tareas de Windows (Task Scheduler)\r\n   la ejecucion diaria de 'ejecutar_respaldo_diario.bat' o 'colector_respaldos.ps1'.\r\n\r\nAPI URL configurada: $apiUrl\r\nToken configurado: $token\r\n";
 
@@ -1076,7 +1076,7 @@ switch ($action) {
         } elseif ($tipo === 'bat') {
             header('Content-Type: application/x-bat');
             header('Content-Disposition: attachment; filename="ejecutar_deteccion.bat"');
-            echo "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
+            echo "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -ApiUrl \"$apiUrl\" -ApiToken \"$token\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
             exit();
         } elseif ($tipo === 'py') {
             header('Content-Type: text/x-python; charset=utf-8');
