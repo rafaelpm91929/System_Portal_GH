@@ -268,7 +268,7 @@ foreach ($nas in $nasList) {
                 }
             }
             if ($sharesRealesServidor.Count -gt 0) {
-                Write-ColectorLog "Recursos compartidos detectados en \\$servidor: $($sharesRealesServidor -join ', ')"
+                Write-ColectorLog "Recursos compartidos detectados en \\${servidor} -> $($sharesRealesServidor -join ', ')"
             }
         }
     } catch {}
