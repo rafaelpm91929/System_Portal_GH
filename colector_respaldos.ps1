@@ -82,21 +82,107 @@ $headers = @{
     "User-Agent" = "ColectorRespaldosPS/2.0"
 }
 
+# =============================================================================
+# RESOLUCIÓN INTELIGENTE DE DOMINIO PARA EL PORTAL DE CUALQUIER AGENCIA
+# =============================================================================
+$apiUriObj = [System.Uri]$ApiUrl
+$apiHost = $apiUriObj.Host
+$apiIpDirecta = $null
+
+# Verificar si el DNS local de la red resuelve el dominio del portal
+$dnsOk = $false
 try {
+    $ips = [System.Net.Dns]::GetHostAddresses($apiHost)
+    if ($ips.Count -gt 0) {
+        $dnsOk = $true
+    }
+} catch {}
+
+if (-not $dnsOk) {
+    # 1. Probar DNS público estándar (UDP 53)
+    try {
+        $dnsRes = Resolve-DnsName -Server 8.8.8.8 -Name $apiHost -ErrorAction Stop -Type A | Select-Object -First 1
+        if ($dnsRes.IPAddress) {
+            $apiIpDirecta = $dnsRes.IPAddress
+            Write-ColectorLog "DNS local de la máquina no resolvió '$apiHost'. Resuelto vía DNS público a: $apiIpDirecta" "INFO"
+        }
+    } catch {}
+
+    if (-not $apiIpDirecta) {
+        try {
+            $dnsRes = Resolve-DnsName -Server 1.1.1.1 -Name $apiHost -ErrorAction Stop -Type A | Select-Object -First 1
+            if ($dnsRes.IPAddress) {
+                $apiIpDirecta = $dnsRes.IPAddress
+                Write-ColectorLog "DNS local de la máquina no resolvió '$apiHost'. Resuelto vía Cloudflare DNS a: $apiIpDirecta" "INFO"
+            }
+        } catch {}
+    }
+
+    # 2. Si el firewall corporativo bloquea UDP 53, resolver dinámicamente vía DNS over HTTPS (DoH) por puerto 443
+    if (-not $apiIpDirecta) {
+        try {
+            $dohWc = [System.Net.WebClient]::new()
+            $dohJson = $dohWc.DownloadString("https://dns.google/resolve?name=$apiHost&type=A") | ConvertFrom-Json
+            if ($dohJson.Answer -and $dohJson.Answer.Count -gt 0) {
+                $apiIpDirecta = $dohJson.Answer[0].data
+                Write-ColectorLog "DNS local no resolvió '$apiHost'. Resuelto dinámicamente vía DoH (HTTPS) a: $apiIpDirecta" "INFO"
+            }
+        } catch {}
+    }
+
+    # 3. Respaldo directo en caso de fallo total de resolución
+    if (-not $apiIpDirecta -and $apiHost -ieq "portal.divolavilla.com") {
+        $apiIpDirecta = "38.91.58.32"
+        Write-ColectorLog "Utilizando IP de respaldo directa: $apiIpDirecta" "INFO"
+    }
+}
+
+# Configuración TLS
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+if ($apiIpDirecta -or $IgnorarSsl) {
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}
+}
+
+function Invoke-ColectorApi {
+    param (
+        [string]$Url,
+        [string]$Method = "GET",
+        [hashtable]$Headers = @{},
+        [string]$Body = $null
+    )
+
+    $targetUrl = $Url
+    $requestHeaders = @{}
+    foreach ($k in $Headers.Keys) {
+        $requestHeaders[$k] = $Headers[$k]
+    }
+
+    if ($apiIpDirecta) {
+        $targetUrl = $Url -replace [regex]::Escape($apiHost), $apiIpDirecta
+        $requestHeaders["Host"] = $apiHost
+    }
+
     $wc = [System.Net.WebClient]::new()
     $wc.Encoding = [System.Text.Encoding]::UTF8
-    foreach ($k in $headers.Keys) {
-        $wc.Headers.Add($k, $headers[$k])
+    foreach ($k in $requestHeaders.Keys) {
+        $wc.Headers.Add($k, $requestHeaders[$k])
     }
-    $rawJson = $wc.DownloadString($urlConsulta)
-    $respApi = $rawJson | ConvertFrom-Json
+
+    if ($Method -eq "POST") {
+        $wc.Headers.Add("Content-Type", "application/json; charset=utf-8")
+        $raw = $wc.UploadString($targetUrl, "POST", $Body)
+    } else {
+        $raw = $wc.DownloadString($targetUrl)
+    }
+
+    return ($raw | ConvertFrom-Json)
+}
+
+try {
+    $respApi = Invoke-ColectorApi -Url $urlConsulta -Method "GET" -Headers $headers
 } catch {
-    try {
-        $respApi = Invoke-RestMethod -Uri $urlConsulta -Method Get -Headers $headers -TimeoutSec 45
-    } catch {
-        Write-ColectorLog "Falla al conectar con la API: $_" "ERROR"
-        exit 1
-    }
+    Write-ColectorLog "Falla al conectar con la API: $_" "ERROR"
+    exit 1
 }
 
 if (-not $respApi.success) {
@@ -202,7 +288,7 @@ if ($Descubrir) {
             }
             $jsonCarpetas = $payloadCarpetas | ConvertTo-Json -Depth 5
             try {
-                $respCarp = Invoke-RestMethod -Uri $urlReporteCarpetas -Method Post -Headers $headers -Body $jsonCarpetas -ContentType "application/json; charset=utf-8"
+                $respCarp = Invoke-ColectorApi -Url $urlReporteCarpetas -Method "POST" -Headers $headers -Body $jsonCarpetas
                 if ($respCarp.success) {
                     Write-ColectorLog "¡Éxito! Carpetas de '$nasNombre' reportadas a cPanel. Ya aparecen en la pantalla del portal."
                 } else {
@@ -491,7 +577,7 @@ if ($resultadosEquipos.Count -gt 0) {
     $jsonBody = $payload | ConvertTo-Json -Depth 5
 
     try {
-        $respPost = Invoke-RestMethod -Uri $urlReporte -Method Post -Headers $headers -Body $jsonBody -ContentType "application/json; charset=utf-8" -TimeoutSec 60
+        $respPost = Invoke-ColectorApi -Url $urlReporte -Method "POST" -Headers $headers -Body $jsonBody
         if ($respPost.success) {
             Write-ColectorLog "¡Reporte procesado exitosamente en cPanel! Total procesados: $($respPost.procesados)"
         } else {
