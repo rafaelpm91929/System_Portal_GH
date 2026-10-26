@@ -279,7 +279,7 @@ switch ($action) {
         try {
             // Auto-reparar nombres de carpetas con tildes dañadas en la base de datos (ej. Administración)
             try {
-                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = 'AdministraciónVw' WHERE nombre_carpeta LIKE 'Administraci%nVw' OR nombre_carpeta LIKE '%Administraci%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'AdministracinVw', 'AdministraciónVw'), ruta_relativa = REPLACE(ruta_relativa, 'AdministracinVw', 'AdministraciónVw') WHERE nombre_carpeta LIKE '%AdministracinVw%'");
                 $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã³', 'ó') WHERE nombre_carpeta LIKE '%Ã³%'");
                 $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã¡', 'á') WHERE nombre_carpeta LIKE '%Ã¡%'");
                 $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã©', 'é') WHERE nombre_carpeta LIKE '%Ã©%'");
