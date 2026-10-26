@@ -103,6 +103,17 @@ switch ($action) {
         }
 
         try {
+            // Auto-reparar nombres de carpetas con tildes dañadas en la base de datos (ej. Administración)
+            try {
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = 'AdministraciónVw' WHERE nombre_carpeta LIKE 'Administraci%nVw' OR nombre_carpeta LIKE '%Administraci%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã³', 'ó') WHERE nombre_carpeta LIKE '%Ã³%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã¡', 'á') WHERE nombre_carpeta LIKE '%Ã¡%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã©', 'é') WHERE nombre_carpeta LIKE '%Ã©%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã­', 'í') WHERE nombre_carpeta LIKE '%Ã­%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ãº', 'ú') WHERE nombre_carpeta LIKE '%Ãº%'");
+                $pdo->exec("UPDATE respaldos_carpetas SET nombre_carpeta = REPLACE(nombre_carpeta, 'Ã±', 'ñ') WHERE nombre_carpeta LIKE '%Ã±%'");
+            } catch (Throwable $eRep) {}
+
             // Cargar configuración
             $stmtConf = $pdo->query("SELECT clave, valor FROM respaldos_config");
             $config = [];
@@ -359,20 +370,32 @@ switch ($action) {
                 $tieneTemporales = !empty($eq['tiene_temporales']) ? 1 : 0;
                 $detallesTemp = !empty($eq['archivos_temporales']) ? json_encode($eq['archivos_temporales'], JSON_UNESCAPED_SLASHES) : null;
 
-                // Calcular estado y días sin respaldo
+                // Calcular estado y días sin respaldo según la regla solicitada:
+                // ≤ 6 días: Verde (Al Día / exitoso)
+                // 7 a 12 días: Naranja (En Alerta / vencido)
+                // ≥ 13 o 14 días: Rojo (Crítico / critico)
                 $estado = 'critico';
                 $diasSinRespaldo = 99;
 
                 if (!empty($ultimoFecha)) {
                     $mtime = strtotime($ultimoFecha);
-                    $horasTranscurridas = max(0, ($ahoraTime - $mtime) / 3600);
-                    $diasSinRespaldo = (int)floor($horasTranscurridas / 24);
+                    $fechaUltimoDia = date('Y-m-d', $mtime);
+                    $fechaHoyDia = date('Y-m-d');
+
+                    $dtUltimo = new DateTime($fechaUltimoDia);
+                    $dtHoy = new DateTime($fechaHoyDia);
+
+                    if ($dtHoy < $dtUltimo) {
+                        $diasSinRespaldo = 0;
+                    } else {
+                        $diasSinRespaldo = (int)$dtHoy->diff($dtUltimo)->days;
+                    }
 
                     if ($tieneTemporales) {
                         $estado = 'incompleto';
-                    } elseif ($horasTranscurridas <= $umbralAlerta) {
+                    } elseif ($diasSinRespaldo <= 6) {
                         $estado = 'exitoso';
-                    } elseif ($horasTranscurridas <= $umbralCritico) {
+                    } elseif ($diasSinRespaldo <= 12) {
                         $estado = 'vencido';
                     } else {
                         $estado = 'critico';
@@ -402,21 +425,24 @@ switch ($action) {
                     $equipoId = (int)$pdo->lastInsertId();
                 }
 
-                // Guardar / Actualizar Historial del Día
-                $stmtCheckHist->execute([$nombreEquipo, $fechaDia]);
-                $histId = $stmtCheckHist->fetchColumn();
+                // Guardar en el historial el último respaldo detectado si tiene fecha válida
+                if (!empty($ultimoFecha)) {
+                    $fechaUltimo = date('Y-m-d', strtotime($ultimoFecha));
+                    $stmtCheckHist->execute([$nombreEquipo, $fechaUltimo]);
+                    $histId = $stmtCheckHist->fetchColumn();
 
-                if ($histId) {
-                    $stmtUpdHist->execute([
-                        $fechaReporte, $estado, $ultimoArchivo, $tamanoBytes, $duracionSeg, $nasId, $histId
-                    ]);
-                } else {
-                    $stmtInsHist->execute([
-                        $equipoId, $nombreEquipo, $nasId, $fechaDia, $fechaReporte, $estado, $ultimoArchivo, $tamanoBytes, $duracionSeg
-                    ]);
+                    if ($histId) {
+                        $stmtUpdHist->execute([
+                            $ultimoFecha, 'exitoso', $ultimoArchivo, $tamanoBytes, $duracionSeg, $nasId, $histId
+                        ]);
+                    } else {
+                        $stmtInsHist->execute([
+                            $equipoId, $nombreEquipo, $nasId, $fechaUltimo, $ultimoFecha, 'exitoso', $ultimoArchivo, $tamanoBytes, $duracionSeg
+                        ]);
+                    }
                 }
 
-                // Guardar historial adicional reciente reportado por el agente (las 4 semanas del mes)
+                // Guardar historial completo de respaldos reportado por el agente (hasta 12 semanas)
                 if (!empty($eq['historial_reciente']) && is_array($eq['historial_reciente'])) {
                     foreach ($eq['historial_reciente'] as $h) {
                         $hFechaHora = $h['fecha_hora'] ?? null;

@@ -239,9 +239,10 @@ foreach ($nas in $nasList) {
     Write-ColectorLog "Procesando NAS '$nasNombre' ($ipLimpia)..."
 
     # Mapeo de credenciales en Windows
+    $servidor = ($ipLimpia.TrimStart("\")).Split("\")[0]
+    $sharesRealesServidor = [System.Collections.Generic.List[string]]::new()
     if (![string]::IsNullOrEmpty($usuario) -and ![string]::IsNullOrEmpty($pass)) {
         try {
-            $servidor = ($ipLimpia.TrimStart("\")).Split("\")[0]
             if ($servidor) {
                 net use "\\$servidor" /user:"$usuario" "$pass" /persistent:no | Out-Null
                 Write-ColectorLog "Credenciales SMB verificadas para \\$servidor"
@@ -249,31 +250,73 @@ foreach ($nas in $nasList) {
         } catch {}
     }
 
+    # Enumerar shares reales del servidor usando net view (para resolver tildes o codificaciones)
+    try {
+        if ($servidor) {
+            $nvOut = net view "\\$servidor" 2>$null
+            $enTabla = $false
+            foreach ($linea in $nvOut) {
+                if ($linea -match "---") { $enTabla = $true; continue }
+                if ($enTabla -and -not [string]::IsNullOrWhiteSpace($linea)) {
+                    $p = $linea.Trim() -split "\s{2,}"
+                    if ($p.Count -gt 0) {
+                        $sNombre = ($p[0].Trim() -split "\s+")[0]
+                        if (-not [string]::IsNullOrWhiteSpace($sNombre) -and -not $sNombre.EndsWith("$")) {
+                            $sharesRealesServidor.Add($sNombre)
+                        }
+                    }
+                }
+            }
+            if ($sharesRealesServidor.Count -gt 0) {
+                Write-ColectorLog "Recursos compartidos detectados en \\$servidor: $($sharesRealesServidor -join ', ')"
+            }
+        }
+    } catch {}
+
     foreach ($carp in $nas.carpetas) {
         $carpNombre = $carp.nombre_carpeta.Trim().TrimStart("\/")
         $areaNombre = if ($carp.area_nombre) { $carp.area_nombre } else { "General" }
         $rutaCarpeta = Join-Path $ipLimpia $carpNombre
 
         if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
-            # Búsqueda tolerante en caso de acentos, tildes o variaciones de codificación (ej. Administración vs Administracion)
             $partesCarp = $carpNombre.Split("\")
             $shareBase = $partesCarp[0]
             $subPath = if ($partesCarp.Count -gt 1) { ($partesCarp[1..($partesCarp.Count - 1)]) -join "\" } else { "" }
-            $shareLimpio = (Remove-Diacritics $shareBase).ToLower()
 
-            try {
-                $sharesEnServidor = Get-ChildItem -LiteralPath $ipLimpia -Directory -ErrorAction SilentlyContinue
-                $dirReal = $sharesEnServidor | Where-Object { 
-                    $nom = $_.Name.ToLower()
-                    $nomLimpio = (Remove-Diacritics $_.Name).ToLower()
-                    $nom -eq $shareBase.ToLower() -or $nomLimpio -eq $shareLimpio -or $nom.Contains($shareLimpio) -or $shareLimpio.Contains($nomLimpio)
-                } | Select-Object -First 1
-
-                if ($dirReal) {
-                    $rutaCarpeta = if ($subPath) { Join-Path $dirReal.FullName $subPath } else { $dirReal.FullName }
-                    Write-ColectorLog "  Recurso resuelto con éxito para '$shareBase' -> '$($dirReal.Name)'"
+            # Variaciones comunes de codificación y tildes
+            $variantes = @(
+                $shareBase,
+                ($shareBase -replace '\ufffd', 'ó'),
+                ($shareBase -replace '\ufffd', 'o'),
+                ($shareBase -replace 'Ã³', 'ó'),
+                ($shareBase -replace 'ó', 'o'),
+                (Remove-Diacritics $shareBase)
+            )
+            $shareResuelto = $null
+            foreach ($var in $variantes) {
+                $testPath = Join-Path $ipLimpia $var
+                if (Test-Path -LiteralPath $testPath) {
+                    $shareResuelto = $var
+                    break
                 }
-            } catch {}
+            }
+
+            # Si no resolvió por prueba directa, contrastar con los shares reales de net view
+            if (-not $shareResuelto -and $sharesRealesServidor.Count -gt 0) {
+                $normBase = [regex]::Replace((Remove-Diacritics ($shareBase -replace '\ufffd','o')), '[^a-zA-Z0-9]', '').ToLower()
+                foreach ($sReal in $sharesRealesServidor) {
+                    $normReal = [regex]::Replace((Remove-Diacritics $sReal), '[^a-zA-Z0-9]', '').ToLower()
+                    if ($normReal -eq $normBase -or $normReal.StartsWith($normBase) -or $normBase.StartsWith($normReal)) {
+                        $shareResuelto = $sReal
+                        break
+                    }
+                }
+            }
+
+            if ($shareResuelto) {
+                $rutaCarpeta = if ($subPath) { Join-Path "\\$servidor\$shareResuelto" $subPath } else { "\\$servidor\$shareResuelto" }
+                Write-ColectorLog "  Recurso resuelto con éxito para '$shareBase' -> '$shareResuelto'"
+            }
         }
 
         if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
@@ -288,7 +331,7 @@ foreach ($nas in $nasList) {
         $dirEquipos = $rutaCarpeta
         $subNetbakDirecto = Join-Path $rutaCarpeta "NetBakData"
         if (Test-Path -LiteralPath $subNetbakDirecto) {
-            Write-ColectorLog "  [NetBak] Carpeta NetBakData detectada en '$carpNombre'. Escaneando equipos en subcarpeta..."
+            Write-ColectorLog "  [NetBak] Subcarpeta NetBakData detectada. Escaneando equipos dentro de NetBakData..."
             $dirEquipos = $subNetbakDirecto
         }
 
@@ -328,10 +371,17 @@ foreach ($nas in $nasList) {
                 }
             } catch {}
 
-            # VERIFICAR SI CONTIENE CARPETAS NETBAK DE FECHA (formato: YYYY-MM-DD-HH-mm-ss)
+            # VERIFICAR SI CONTIENE CARPETAS NETBAK DE FECHA (formato: YYYY-MM-DD-HH-mm-ss o similar)
             $carpetasNetbakFecha = Get-ChildItem -LiteralPath $rutaSub -Directory -ErrorAction SilentlyContinue | 
-                Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}' } | 
+                Where-Object { $_.Name -match '\d{4}[-_]\d{2}[-_]\d{2}' } | 
                 Sort-Object Name -Descending
+
+            if ($carpetasNetbakFecha.Count -eq 0) {
+                # Si no están directamente en la raíz del equipo, buscar hasta 2 niveles de profundidad (ej. disco o perfil)
+                $carpetasNetbakFecha = Get-ChildItem -LiteralPath $rutaSub -Directory -Recurse -Depth 2 -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.Name -match '\d{4}[-_]\d{2}[-_]\d{2}' } | 
+                    Sort-Object Name -Descending
+            }
 
             $ultimoArchivo = $null
             $temporales = [System.Collections.Generic.List[string]]::new()
@@ -341,12 +391,17 @@ foreach ($nas in $nasList) {
             $historialRespaldos = [System.Collections.Generic.List[PSObject]]::new()
 
             if ($carpetasNetbakFecha.Count -gt 0) {
-                # MODO NETBAK REPLICATOR: Extraer los últimos respaldos semanales (hasta 8 ejecuciones históricas)
-                foreach ($cf in ($carpetasNetbakFecha | Select-Object -First 8)) {
-                    $p = $cf.Name -split "-"
-                    $fStr = if ($p.Count -ge 6) { "$($p[0])-$($p[1])-$($p[2]) $($p[3]):$($p[4]):$($p[5])" }
-                            elseif ($p.Count -ge 3) { "$($p[0])-$($p[1])-$($p[2]) 00:00:00" }
-                            else { $cf.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") }
+                # MODO NETBAK REPLICATOR: Extraer historial de respaldos (hasta 12 ejecuciones históricas)
+                foreach ($cf in ($carpetasNetbakFecha | Select-Object -First 12)) {
+                    $nom = $cf.Name
+                    $fStr = $null
+                    if ($nom -match '(\d{4})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})[-_](\d{2})') {
+                        $fStr = "$($Matches[1])-$($Matches[2])-$($Matches[3]) $($Matches[4]):$($Matches[5]):$($Matches[6])"
+                    } elseif ($nom -match '(\d{4})[-_](\d{2})[-_](\d{2})') {
+                        $fStr = "$($Matches[1])-$($Matches[2])-$($Matches[3]) 08:00:00"
+                    } else {
+                        $fStr = $cf.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    }
                     $historialRespaldos.Add(@{
                         fecha_hora = $fStr
                         archivo_nombre = $cf.Name
@@ -358,27 +413,25 @@ foreach ($nas in $nasList) {
                 $ultimoNombreStr = $carpetaReciente.Name
                 $ultimoFechaStr = $historialRespaldos[0].fecha_hora
 
-                # Analizar archivos de la carpeta más reciente para verificar archivos temporales / incompletos
-                $archivosRecientes = Get-ChildItem -LiteralPath $carpetaReciente.FullName -Recurse -File -ErrorAction SilentlyContinue
-                foreach ($f in $archivosRecientes) {
-                    $ultimoBytes += $f.Length
-                    $esTemp = $false
-                    foreach ($ext in $extTemporales) {
-                        if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
-                            $esTemp = $true
-                            $temporales.Add($f.Name)
-                            break
+                # Analizar archivos de la carpeta más reciente (inspección rápida controlada en profundidad)
+                try {
+                    $archivosRecientes = Get-ChildItem -LiteralPath $carpetaReciente.FullName -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 200
+                    foreach ($f in $archivosRecientes) {
+                        $ultimoBytes += $f.Length
+                        foreach ($ext in $extTemporales) {
+                            if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
+                                $temporales.Add($f.Name)
+                                break
+                            }
                         }
-                    }
-                    if (-not $esTemp) {
                         if ($null -eq $ultimoArchivo -or $f.LastWriteTime -gt $ultimoArchivo.LastWriteTime) {
                             $ultimoArchivo = $f
                         }
                     }
-                }
+                } catch {}
             } else {
                 # MODO ESTÁNDAR (Veeam, Cobian, Windows Backup, etc.)
-                $archivos = Get-ChildItem -LiteralPath $rutaSub -Recurse -File -ErrorAction SilentlyContinue
+                $archivos = Get-ChildItem -LiteralPath $rutaSub -Recurse -File -Depth 3 -ErrorAction SilentlyContinue
                 foreach ($f in $archivos) {
                     $esTemp = $false
                     foreach ($ext in $extTemporales) {
@@ -414,7 +467,7 @@ foreach ($nas in $nasList) {
                 archivos_temporales = $temporales
                 historial_reciente = $historialRespaldos
             })
-            Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado) detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr)"
+            Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado) detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr) | $($historialRespaldos.Count) respaldos históricos"
         }
     }
 }

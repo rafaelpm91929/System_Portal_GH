@@ -143,26 +143,31 @@ if ($pdo) {
 $porcentajeCumplimiento = ($totalEquipos > 0) ? round(($exitosos / $totalEquipos) * 100, 1) : 0;
 $mostrarAsistenteInicial = ($totalNas === 0);
 
-function calcular4SemanasDelMes($historialEquipo) {
+function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99) {
     $diaHoy = (int)date('d');
     $mesActual = date('Y-m');
 
     $semanas = [
-        'S1' => ['label' => 'Semana 1', 'dias' => '1 al 7', 'respaldo' => null, 'es_futuro' => false],
-        'S2' => ['label' => 'Semana 2', 'dias' => '8 al 14', 'respaldo' => null, 'es_futuro' => false],
-        'S3' => ['label' => 'Semana 3', 'dias' => '15 al 21', 'respaldo' => null, 'es_futuro' => false],
-        'S4' => ['label' => 'Semana 4', 'dias' => '22 al fin', 'respaldo' => null, 'es_futuro' => false],
+        'S1' => ['label' => 'Semana 1', 'dias' => '1 al 7', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
+        'S2' => ['label' => 'Semana 2', 'dias' => '8 al 14', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
+        'S3' => ['label' => 'Semana 3', 'dias' => '15 al 21', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
+        'S4' => ['label' => 'Semana 4', 'dias' => '22 al fin', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
     ];
 
     if ($diaHoy < 8) {
+        $semanas['S1']['en_curso'] = true;
         $semanas['S2']['es_futuro'] = true;
         $semanas['S3']['es_futuro'] = true;
         $semanas['S4']['es_futuro'] = true;
     } elseif ($diaHoy < 15) {
+        $semanas['S2']['en_curso'] = true;
         $semanas['S3']['es_futuro'] = true;
         $semanas['S4']['es_futuro'] = true;
     } elseif ($diaHoy < 22) {
+        $semanas['S3']['en_curso'] = true;
         $semanas['S4']['es_futuro'] = true;
+    } else {
+        $semanas['S4']['en_curso'] = true;
     }
 
     if (!empty($historialEquipo)) {
@@ -237,164 +242,11 @@ if (empty($conteoPorArea)) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
 // =============================================================================
-// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO, ÁREAS Y 4 SEMANAS DEL MES)
-// =============================================================================
-document.addEventListener('DOMContentLoaded', function() {
-    inicializarGraficas();
-});
-
-function inicializarGraficas() {
-    if (typeof Chart === 'undefined') return;
-
-    // 1. Gráfica de Dona: Semáforo Semanal
-    const ctxDona = document.getElementById('chartSemaforoDona');
-    if (ctxDona) {
-        new Chart(ctxDona, {
-            type: 'doughnut',
-            data: {
-                labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
-                datasets: [{
-                    data: [<?php echo $exitosos; ?>, <?php echo $vencidos; ?>, <?php echo $criticos; ?>, <?php echo $incompletos; ?>],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#ec4899'],
-                    borderWidth: 2,
-                    borderColor: '#09172c'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: { color: '#ffffff', boxWidth: 12, font: { size: 10 } }
-                    }
-                },
-                cutout: '70%'
-            }
-        });
-    }
-
-    // 2. Gráfica de Barras: Equipos por Área
-    const ctxAreas = document.getElementById('chartAreasBarras');
-    if (ctxAreas) {
-        new Chart(ctxAreas, {
-            type: 'bar',
-            data: {
-                labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
-                datasets: [{
-                    label: 'Equipos',
-                    data: <?php echo json_encode(array_values($conteoPorArea)); ?>,
-                    backgroundColor: 'rgba(56, 189, 248, 0.6)',
-                    borderColor: '#38bdf8',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-
-    // 3. Gráfica de 4 Semanas del Mes
-    const ctxSemanas = document.getElementById('chartSemanasMes');
-    if (ctxSemanas) {
-        new Chart(ctxSemanas, {
-            type: 'line',
-            data: {
-                labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
-                datasets: [{
-                    label: 'Respaldos cumplidos',
-                    data: [<?php echo $conteoPorSemana['S1']; ?>, <?php echo $conteoPorSemana['S2']; ?>, <?php echo $conteoPorSemana['S3']; ?>, <?php echo $conteoPorSemana['S4']; ?>],
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                    borderColor: '#10b981',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.35,
-                    pointBackgroundColor: '#10b981',
-                    pointRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-}
-
-function abrirModalEditarEquipo(eq) {
-    if (typeof eq === 'string') {
-        try { eq = JSON.parse(eq); } catch (e) { eq = {}; }
-    }
-    document.getElementById('editEquipoId').value = eq.id || 0;
-    document.getElementById('editNombreEquipo').value = eq.nombre_equipo || '';
-    document.getElementById('editUsuarioResponsable').value = eq.usuario_responsable || '';
-    if (eq.area_nombre) {
-        document.getElementById('editAreaNombre').value = eq.area_nombre;
-    }
-    const modal = new bootstrap.Modal(document.getElementById('modalEditarEquipo'));
-    modal.show();
-}
-
-function guardarDatosEquipo(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnGuardarEquipo');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
-
-    const form = document.getElementById('formEditarEquipo');
-    const formData = new FormData(form);
-
-    fetch('api_respaldos.php?action=guardar_equipo', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(res => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        if (res.success) {
-            Swal.fire({
-                icon: 'success',
-                title: '¡Guardado!',
-                text: 'Los datos del equipo fueron actualizados con éxito.',
-                timer: 1500,
-                showConfirmButton: false
-            }).then(() => {
-                location.reload();
-            });
-        } else {
-            Swal.fire('Error', res.error || 'No se pudo guardar', 'error');
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        Swal.fire('Error', 'Falla de conexión al guardar: ' + err.message, 'error');
-    });
-}
-</script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js">
-// =============================================================================
-// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO, ÁREAS Y 4 SEMANAS DEL MES)
+// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO SEMANAL, ÁREAS Y 4 SEMANAS DEL MES)
 // =============================================================================
 document.addEventListener('DOMContentLoaded', function() {
     inicializarGraficas();
@@ -403,13 +255,13 @@ document.addEventListener('DOMContentLoaded', function() {
 function inicializarGraficas() {
     if (typeof Chart === 'undefined') return;
 
-    // 1. Gráfica de Dona: Semáforo Semanal
+    // 1. Gráfica de Dona: Semáforo Semanal (≤6d verde, 7-12d naranja, ≥13d rojo)
     const ctxDona = document.getElementById('chartSemaforoDona');
     if (ctxDona) {
         new Chart(ctxDona, {
             type: 'doughnut',
             data: {
-                labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
+                labels: ['Al Día (≤6d)', 'En Alerta (7-12d)', 'Críticos (≥13d)', 'Incompletos'],
                 datasets: [{
                     data: [<?php echo $exitosos; ?>, <?php echo $vencidos; ?>, <?php echo $criticos; ?>, <?php echo $incompletos; ?>],
                     backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#ec4899'],
@@ -969,7 +821,7 @@ function guardarDatosEquipo(e) {
         <div class="col-6 col-md-4 col-xl-2">
             <div class="card-executive" style="border-color: rgba(16, 185, 129, 0.2);">
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Al Día (&le; 7 días)</span>
+                    <span class="kpi-label">Al Día (&le; 6 días)</span>
                     <div class="kpi-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
                         <i class="bi bi-check-circle-fill"></i>
                     </div>
@@ -983,7 +835,7 @@ function guardarDatosEquipo(e) {
         <div class="col-6 col-md-4 col-xl-2">
             <div class="card-executive" style="border-color: rgba(245, 158, 11, 0.2);">
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Alerta (7-10 días)</span>
+                    <span class="kpi-label">En Alerta (7-12 días)</span>
                     <div class="kpi-icon" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">
                         <i class="bi bi-exclamation-triangle-fill"></i>
                     </div>
@@ -997,7 +849,7 @@ function guardarDatosEquipo(e) {
         <div class="col-6 col-md-4 col-xl-2">
             <div class="card-executive" style="border-color: rgba(239, 68, 68, 0.2);">
                 <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Críticos (&gt; 10 días)</span>
+                    <span class="kpi-label">Críticos (&ge; 13 días)</span>
                     <div class="kpi-icon" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">
                         <i class="bi bi-x-circle-fill"></i>
                     </div>
@@ -1173,9 +1025,9 @@ function guardarDatosEquipo(e) {
                     <div class="col-12 col-md-2">
                         <select id="filtroEstado" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="filtrarTablaEquipos()">
                             <option value="">Todos los Estados</option>
-                            <option value="exitoso">🟢 Al Día (&le; 7 días)</option>
-                            <option value="vencido">🟡 En Alerta (7-10 días)</option>
-                            <option value="critico">🔴 Crítico (&gt; 10 días)</option>
+                            <option value="exitoso">🟢 Al Día (&le; 6 días)</option>
+                            <option value="vencido">🟡 En Alerta (7-12 días)</option>
+                            <option value="critico">🔴 Crítico (&ge; 13 o 14 días)</option>
                             <option value="incompleto">⚠️ Con Temporales</option>
                         </select>
                     </div>
@@ -1220,16 +1072,16 @@ function guardarDatosEquipo(e) {
                         <?php foreach ($equiposList as $eq): 
                             $badgeClass = 'badge-critico';
                             $dotClass = 'dot-critico';
-                            $estadoLabel = 'Crítico (>10d)';
+                            $estadoLabel = 'Crítico (≥13d)';
 
                             if ($eq['estado'] === 'exitoso') {
                                 $badgeClass = 'badge-exitoso';
                                 $dotClass = 'dot-exitoso';
-                                $estadoLabel = 'Al Día (≤7d)';
+                                $estadoLabel = 'Al Día (≤6d)';
                             } elseif ($eq['estado'] === 'vencido') {
                                 $badgeClass = 'badge-vencido';
                                 $dotClass = 'dot-vencido';
-                                $estadoLabel = 'Alerta (7-10d)';
+                                $estadoLabel = 'En Alerta (7-12d)';
                             } elseif ($eq['estado'] === 'incompleto') {
                                 $badgeClass = 'badge-incompleto';
                                 $dotClass = 'dot-incompleto';
@@ -1278,7 +1130,7 @@ function guardarDatosEquipo(e) {
                             <td>
                                 <div class="d-flex align-items-center gap-1">
                                     <?php 
-                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? []);
+                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? [], (int)$eq['dias_sin_respaldo']);
                                     foreach ($semMap as $sKey => $sVal):
                                         if (!empty($sVal['respaldo'])):
                                             $fDisplay = date('d/m', strtotime($sVal['respaldo']['fecha']));
@@ -1289,6 +1141,10 @@ function guardarDatosEquipo(e) {
                                     <?php elseif ($sVal['es_futuro']): ?>
                                         <span class="badge bg-dark text-secondary border border-secondary border-opacity-25" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Pendiente en el mes">
                                             <?php echo $sKey; ?>: -
+                                        </span>
+                                    <?php elseif ($sVal['en_curso'] && (int)$eq['dias_sin_respaldo'] <= 6): ?>
+                                        <span class="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-30" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): En curso (Al día por respaldo reciente)">
+                                            <i class="bi bi-clock me-0"></i><?php echo $sKey; ?>: Vigente
                                         </span>
                                     <?php else: ?>
                                         <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-30" style="font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Sin respaldo registrado">
