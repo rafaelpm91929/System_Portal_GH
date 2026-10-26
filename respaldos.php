@@ -113,15 +113,17 @@ if ($pdo) {
             ");
         } catch (Throwable $syncE) {}
 
-        // Métricas de equipos
+        // Métricas de equipos (solo equipos monitoreados que pertenezcan a una NAS existente)
         $stmtMetricas = $pdo->query("
             SELECT 
                 COUNT(*) as total,
-                SUM(CASE WHEN estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
-                SUM(CASE WHEN estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
-                SUM(CASE WHEN estado = 'critico' THEN 1 ELSE 0 END) as criticos,
-                SUM(CASE WHEN estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
-            FROM respaldos_equipos
+                SUM(CASE WHEN e.estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
+                SUM(CASE WHEN e.estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
+                SUM(CASE WHEN e.estado = 'critico' THEN 1 ELSE 0 END) as criticos,
+                SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
+            FROM respaldos_equipos e
+            JOIN respaldos_nas n ON e.nas_id = n.id
+            WHERE COALESCE(e.monitorear, 1) = 1
         ");
         $metricas = $stmtMetricas ? $stmtMetricas->fetch(PDO::FETCH_ASSOC) : [];
         $totalEquipos = (int)($metricas['total'] ?? 0);
@@ -134,7 +136,7 @@ if ($pdo) {
         $stmtTop5 = $pdo->query("
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
-            LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
+            JOIN respaldos_nas n ON e.nas_id = n.id 
             WHERE e.estado IN ('critico', 'vencido', 'incompleto') AND COALESCE(e.monitorear, 1) = 1 
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
             LIMIT 5
@@ -145,7 +147,7 @@ if ($pdo) {
         $stmtEq = $pdo->query("
             SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca 
             FROM respaldos_equipos e 
-            LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
+            JOIN respaldos_nas n ON e.nas_id = n.id 
             WHERE COALESCE(e.monitorear, 1) = 1 
             ORDER BY e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");

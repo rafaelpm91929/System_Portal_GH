@@ -133,12 +133,13 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
     $stmt = $pdo->query("
         SELECT 
             COUNT(*) as total,
-            SUM(CASE WHEN estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
-            SUM(CASE WHEN estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
-            SUM(CASE WHEN estado = 'critico' THEN 1 ELSE 0 END) as criticos,
-            SUM(CASE WHEN estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
-        FROM respaldos_equipos
-        WHERE COALESCE(monitorear, 1) = 1
+            SUM(CASE WHEN e.estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
+            SUM(CASE WHEN e.estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
+            SUM(CASE WHEN e.estado = 'critico' THEN 1 ELSE 0 END) as criticos,
+            SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
+        FROM respaldos_equipos e
+        JOIN respaldos_nas n ON e.nas_id = n.id
+        WHERE COALESCE(e.monitorear, 1) = 1
     ");
     $m = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : [];
     $total = (int)($m['total'] ?? 0);
@@ -150,10 +151,11 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
 
     // Equipos por área
     $stmtAreas = $pdo->query("
-        SELECT area_nombre, COUNT(*) as c 
-        FROM respaldos_equipos 
-        WHERE COALESCE(monitorear, 1) = 1
-        GROUP BY area_nombre 
+        SELECT e.area_nombre, COUNT(*) as c 
+        FROM respaldos_equipos e 
+        JOIN respaldos_nas n ON e.nas_id = n.id
+        WHERE COALESCE(e.monitorear, 1) = 1
+        GROUP BY e.area_nombre 
         ORDER BY c DESC 
         LIMIT 8
     ");
@@ -171,6 +173,7 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
         SELECT h.fecha 
         FROM respaldos_historial h
         INNER JOIN respaldos_equipos e ON (h.nombre_equipo = e.nombre_equipo)
+        JOIN respaldos_nas n ON e.nas_id = n.id
         WHERE h.fecha LIKE ? AND h.estado = 'exitoso' AND COALESCE(e.monitorear, 1) = 1
     ");
     $stmtHist->execute(["$mesActual%"]);
@@ -385,7 +388,10 @@ switch ($action) {
                 elseif (!$esSistema) $areaInferencia = ucfirst($nombre);
 
                 $esNetbak = (stripos($nombre, 'netbak') !== false);
-                $monitorear = ($esSistema || !$esNetbak) ? 0 : 1;
+                if (!$esNetbak || $esSistema) {
+                    continue; // REGLA ESTRICTA: Omitir cualquier carpeta que no sea de NetBak
+                }
+                $monitorear = 1;
 
                 $stmtCheck->execute([$nasId, $nombre]);
                 $exist = $stmtCheck->fetch(PDO::FETCH_ASSOC);
@@ -407,6 +413,11 @@ switch ($action) {
                     if (empty($nomEq)) continue;
                     $cPadre = trim($subEq['carpeta_padre'] ?? '');
                     $rCarp = trim($subEq['ruta_carpeta'] ?? '');
+
+                    // REGLA ESTRICTA: Solo equipos que pertenezcan a una carpeta NetBak
+                    if (stripos($cPadre, 'netbak') === false && stripos($rCarp, 'netbak') === false) {
+                        continue;
+                    }
 
                     $stmtGetCarpId->execute([$nasId, $cPadre]);
                     $carpInfo = $stmtGetCarpId->fetch(PDO::FETCH_ASSOC);
@@ -780,14 +791,26 @@ switch ($action) {
 
         try {
             $pdo->beginTransaction();
+
+            // 1. Eliminar historial de respaldos de este NAS y de sus equipos
+            $stmtH = $pdo->prepare("DELETE FROM respaldos_historial WHERE nas_id = ? OR equipo_id IN (SELECT id FROM respaldos_equipos WHERE nas_id = ?)");
+            $stmtH->execute([$id, $id]);
+
+            // 2. Eliminar los equipos asociados a este NAS
+            $stmtE = $pdo->prepare("DELETE FROM respaldos_equipos WHERE nas_id = ?");
+            $stmtE->execute([$id]);
+
+            // 3. Eliminar carpetas del NAS
             $stmtC = $pdo->prepare("DELETE FROM respaldos_carpetas WHERE nas_id = ?");
             $stmtC->execute([$id]);
 
+            // 4. Eliminar el NAS
             $stmtN = $pdo->prepare("DELETE FROM respaldos_nas WHERE id = ?");
             $stmtN->execute([$id]);
+
             $pdo->commit();
 
-            echo json_encode(['success' => true, 'mensaje' => 'Dispositivo NAS eliminado con éxito']);
+            echo json_encode(['success' => true, 'mensaje' => 'Dispositivo NAS y todos sus respaldos eliminados con éxito']);
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
@@ -1092,10 +1115,16 @@ switch ($action) {
 
         $id = (int)($_POST['id'] ?? 0);
         try {
+            $pdo->beginTransaction();
+            $stmtE = $pdo->prepare("DELETE FROM respaldos_equipos WHERE carpeta_id = ?");
+            $stmtE->execute([$id]);
+
             $stmt = $pdo->prepare("DELETE FROM respaldos_carpetas WHERE id = ?");
             $stmt->execute([$id]);
-            echo json_encode(['success' => true, 'mensaje' => 'Carpeta eliminada']);
+            $pdo->commit();
+            echo json_encode(['success' => true, 'mensaje' => 'Carpeta y sus equipos eliminados']);
         } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }
         break;
