@@ -1184,6 +1184,33 @@ function tiempoRelativo($fechaStr) {
                             <div class="text-secondary small">Ejecuta el script en una PC de la oficina conectada a la misma red local que la NAS.</div>
                         </div>
 
+                        <!-- Descarga Directa del API y Scripts Listos con Token -->
+                        <div class="p-3 rounded-3 border border-info border-opacity-40 mb-3" style="background: rgba(14, 165, 233, 0.08);">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                                <div>
+                                    <div class="fw-bold text-white small"><i class="bi bi-cloud-arrow-down-fill text-info me-1"></i> Descarga el Agente Colector listo con tu Token configurado</div>
+                                    <div class="text-secondary" style="font-size: 0.75rem;">Guárdalo en tu máquina local de la oficina y dale doble clic para detectar las carpetas del NAS al instante.</div>
+                                </div>
+                                <a href="api_respaldos.php?action=descargar_paquete_zip" class="btn btn-info btn-sm rounded-3 fw-bold text-dark shadow">
+                                    <i class="bi bi-file-earmark-zip-fill me-1"></i> Descargar Paquete ZIP Completo
+                                </a>
+                            </div>
+                            <div class="d-flex flex-wrap gap-2 pt-2 border-top border-secondary border-opacity-20">
+                                <a href="api_respaldos.php?action=descargar_script&tipo=bat" class="btn btn-outline-light btn-sm rounded-2 py-1 px-2" style="font-size: 0.78rem;" title="Lanzador directo: doble clic y detecta las carpetas">
+                                    <i class="bi bi-play-circle-fill text-success me-1"></i> Lanzador Doble-Clic (.bat)
+                                </a>
+                                <a href="api_respaldos.php?action=descargar_script&tipo=ps1" class="btn btn-outline-info btn-sm rounded-2 py-1 px-2" style="font-size: 0.78rem;" title="Script nativo de PowerShell">
+                                    <i class="bi bi-windows me-1"></i> Script PowerShell (.ps1)
+                                </a>
+                                <a href="api_respaldos.php?action=descargar_script&tipo=py" class="btn btn-outline-warning btn-sm rounded-2 py-1 px-2" style="font-size: 0.78rem;" title="Script multiplataforma Python">
+                                    <i class="bi bi-filetype-py me-1"></i> Script Python (.py)
+                                </a>
+                                <a href="api_respaldos.php?action=descargar_script&tipo=json" class="btn btn-outline-secondary btn-sm rounded-2 py-1 px-2 text-white" style="font-size: 0.78rem;" title="Archivo de configuración con Token y API URL">
+                                    <i class="bi bi-file-earmark-code me-1"></i> Configuración (.json)
+                                </a>
+                            </div>
+                        </div>
+
                         <div class="card-executive p-3 mb-3 border-secondary border-opacity-25" style="background: rgba(13, 30, 54, 0.7);">
                             <div class="d-flex justify-content-between align-items-center mb-2">
                                 <span class="small fw-bold text-white"><i class="bi bi-terminal-fill text-info me-1"></i> Comando para Máquina Local (PowerShell):</span>

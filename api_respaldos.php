@@ -991,6 +991,108 @@ switch ($action) {
         }
         break;
 
+    /**
+     * Descarga el paquete ZIP completo con scripts y configuración listos
+     */
+    case 'descargar_paquete_zip':
+        validarSesionPortal();
+
+        $protocolo = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $apiUrl = $protocolo . $host . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . '/api_respaldos.php';
+
+        $stTok = $pdo->query("SELECT valor FROM respaldos_config WHERE clave = 'token_api_colector' LIMIT 1");
+        $token = $stTok ? $stTok->fetchColumn() : 'token_error';
+
+        $jsonConf = json_encode([
+            'api_url' => $apiUrl,
+            'api_token' => $token,
+            'timeout_segundos' => 45,
+            'verificar_ssl' => true,
+            'extensiones_temporales' => [".tmp", ".temp", ".part", ".partial", ".crdownload", ".aria2", "~$"],
+            'patrones_descarte' => ["@recycle", "#snapshot", "@recently-snapshot", ".dropbox.cache", "aquota.user", "aquota.group", "thumbs.db", "desktop.ini", ".ds_store"]
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        $batDescubrir = "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
+        $batRespaldo = "@echo off\r\ntitle Escaneo Diario de Respaldos\r\necho Ejecutando escaneo de respaldos y enviando semaforo a cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\"\r\necho.\r\npause >nul\r\n";
+
+        $leeme = "=====================================================================\r\nAGENTE COLECTOR DE RESPALDOS SMB/NAS (RED LOCAL LAN)\r\n=====================================================================\r\n\r\n1. PASO 1 (DETECCION DE CARPETAS NAS):\r\n   Haz doble clic sobre 'ejecutar_deteccion.bat'.\r\n   El script se conectara por SMB a tu NAS local, listara las carpetas\r\n   compartidas reales y las enviara a tu portal en cPanel.\r\n\r\n2. PASO 2 (ESCANEO DIARIO AUTOMATICO):\r\n   Programa en el Administrador de Tareas de Windows (Task Scheduler)\r\n   la ejecucion diaria de 'ejecutar_respaldo_diario.bat' o 'colector_respaldos.ps1'.\r\n\r\nAPI URL configurada: $apiUrl\r\nToken configurado: $token\r\n";
+
+        $ps1Base = file_exists(__DIR__ . '/colector_respaldos.ps1') ? file_get_contents(__DIR__ . '/colector_respaldos.ps1') : '';
+        $pyBase = file_exists(__DIR__ . '/colector_respaldos.py') ? file_get_contents(__DIR__ . '/colector_respaldos.py') : '';
+
+        $ps1Personalizado = str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $ps1Base);
+        $pyPersonalizado = str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $pyBase);
+
+        $tmpZip = tempnam(sys_get_temp_dir(), 'colector_zip_');
+        $zip = new ZipArchive();
+        if ($zip->open($tmpZip, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
+            $zip->addFromString('colector_config.json', $jsonConf);
+            $zip->addFromString('ejecutar_deteccion.bat', $batDescubrir);
+            $zip->addFromString('ejecutar_respaldo_diario.bat', $batRespaldo);
+            $zip->addFromString('colector_respaldos.ps1', $ps1Personalizado);
+            $zip->addFromString('colector_respaldos.py', $pyPersonalizado);
+            $zip->addFromString('LEEME_INSTRUCCIONES.txt', $leeme);
+            $zip->close();
+
+            header('Content-Type: application/zip');
+            header('Content-Disposition: attachment; filename="Agente_Colector_Respaldos_LAN.zip"');
+            header('Content-Length: ' . filesize($tmpZip));
+            readfile($tmpZip);
+            @unlink($tmpZip);
+            exit();
+        } else {
+            echo json_encode(['success' => false, 'error' => 'No se pudo generar el archivo ZIP']);
+            exit();
+        }
+        break;
+
+    /**
+     * Descarga un archivo individual preconfigurado
+     */
+    case 'descargar_script':
+        validarSesionPortal();
+        $tipo = strtolower(trim($_GET['tipo'] ?? 'ps1'));
+
+        $protocolo = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERVER['SERVER_PORT'] == 443) ? "https://" : "http://";
+        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        $apiUrl = $protocolo . $host . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . '/api_respaldos.php';
+
+        $stTok = $pdo->query("SELECT valor FROM respaldos_config WHERE clave = 'token_api_colector' LIMIT 1");
+        $token = $stTok ? $stTok->fetchColumn() : 'token_error';
+
+        if ($tipo === 'json') {
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="colector_config.json"');
+            echo json_encode([
+                'api_url' => $apiUrl,
+                'api_token' => $token,
+                'timeout_segundos' => 45,
+                'verificar_ssl' => true,
+                'extensiones_temporales' => [".tmp", ".temp", ".part", ".partial", ".crdownload", ".aria2", "~$"],
+                'patrones_descarte' => ["@recycle", "#snapshot", "@recently-snapshot", ".dropbox.cache", "aquota.user", "aquota.group", "thumbs.db", "desktop.ini", ".ds_store"]
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            exit();
+        } elseif ($tipo === 'bat') {
+            header('Content-Type: application/x-bat');
+            header('Content-Disposition: attachment; filename="ejecutar_deteccion.bat"');
+            echo "@echo off\r\ntitle Detectar Carpetas NAS\r\necho Conectando con la NAS local y enviando carpetas al portal cPanel...\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%~dp0colector_respaldos.ps1\" -Descubrir\r\necho.\r\necho Proceso terminado. Presiona cualquier tecla para salir.\r\npause >nul\r\n";
+            exit();
+        } elseif ($tipo === 'py') {
+            header('Content-Type: text/x-python; charset=utf-8');
+            header('Content-Disposition: attachment; filename="colector_respaldos.py"');
+            $pyBase = file_exists(__DIR__ . '/colector_respaldos.py') ? file_get_contents(__DIR__ . '/colector_respaldos.py') : '';
+            echo str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $pyBase);
+            exit();
+        } else {
+            header('Content-Type: text/plain; charset=utf-8');
+            header('Content-Disposition: attachment; filename="colector_respaldos.ps1"');
+            $ps1Base = file_exists(__DIR__ . '/colector_respaldos.ps1') ? file_get_contents(__DIR__ . '/colector_respaldos.ps1') : '';
+            echo str_replace(['COPIAR_TOKEN_AQUI', 'https://portal.pirineosmotors.com/api_respaldos.php'], [$token, $apiUrl], $ps1Base);
+            exit();
+        }
+        break;
+
     default:
         echo json_encode([
             'success' => false,
