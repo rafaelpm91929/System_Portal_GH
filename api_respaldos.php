@@ -146,6 +146,125 @@ switch ($action) {
         break;
 
     /**
+     * Recibe la lista de carpetas compartidas detectadas en la NAS por el colector local
+     */
+    case 'reportar_carpetas_detectadas':
+        if (!validarTokenColector($pdo)) {
+            if (!isset($_SESSION['usuario_id'])) {
+                http_response_code(403);
+                echo json_encode(['success' => false, 'error' => 'Token Bearer no válido']);
+                exit();
+            }
+        }
+
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
+
+        if (!$data || !is_array($data) || empty($data['nas_id'])) {
+            echo json_encode(['success' => false, 'error' => 'nas_id requerido']);
+            exit();
+        }
+
+        $nasId = (int)$data['nas_id'];
+        $carpetas = $data['carpetas'] ?? [];
+
+        $basura = ['@recycle', '#snapshot', '@recently-snapshot', '.dropbox.cache', 'aquota.user', 'aquota.group', 'thumbs.db', 'desktop.ini', '.ds_store'];
+        $nuevas = 0;
+
+        try {
+            $pdo->beginTransaction();
+
+            $stmtCheck = $pdo->prepare("SELECT id, area_nombre, monitorear, es_sistema FROM respaldos_carpetas WHERE nas_id = ? AND nombre_carpeta = ? LIMIT 1");
+            $stmtIns = $pdo->prepare("INSERT INTO respaldos_carpetas (nas_id, nombre_carpeta, ruta_relativa, area_nombre, monitorear, es_sistema) VALUES (?, ?, ?, ?, ?, ?)");
+
+            foreach ($carpetas as $c) {
+                $nombre = is_array($c) ? trim($c['nombre_carpeta'] ?? '') : trim($c);
+                if (empty($nombre)) continue;
+
+                $esSistema = 0;
+                foreach ($basura as $b) {
+                    if (stripos($nombre, $b) !== false) {
+                        $esSistema = 1;
+                        break;
+                    }
+                }
+
+                // Inferencia automática de área según nombre
+                $areaInferencia = 'General';
+                $nomLow = strtolower($nombre);
+                if (strpos($nomLow, 'conta') !== false) $areaInferencia = 'Contabilidad';
+                elseif (strpos($nomLow, 'vent') !== false) $areaInferencia = 'Ventas';
+                elseif (strpos($nomLow, 'sist') !== false || strpos($nomLow, 'ti') !== false) $areaInferencia = 'Sistemas';
+                elseif (strpos($nomLow, 'admin') !== false) $areaInferencia = 'Administración';
+                elseif (strpos($nomLow, 'serv') !== false) $areaInferencia = 'Servicio';
+                elseif (strpos($nomLow, 'refac') !== false) $areaInferencia = 'Refacciones';
+                elseif (strpos($nomLow, 'geren') !== false) $areaInferencia = 'Gerencia';
+                elseif (strpos($nomLow, 'caja') !== false) $areaInferencia = 'Caja';
+                elseif (!$esSistema) $areaInferencia = ucfirst($nombre);
+
+                $monitorear = $esSistema ? 0 : 1;
+
+                $stmtCheck->execute([$nasId, $nombre]);
+                $exist = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+
+                if (!$exist) {
+                    $stmtIns->execute([$nasId, $nombre, $nombre, $areaInferencia, $monitorear, $esSistema]);
+                    $nuevas++;
+                }
+            }
+
+            $pdo->commit();
+
+            // Devolver las carpetas actuales del NAS para el frontend
+            $stmtAll = $pdo->prepare("SELECT * FROM respaldos_carpetas WHERE nas_id = ? ORDER BY es_sistema ASC, nombre_carpeta ASC");
+            $stmtAll->execute([$nasId]);
+            $todasCarpetas = $stmtAll->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'success' => true,
+                'mensaje' => "Detección completada: $nuevas carpetas nuevas registradas",
+                'nuevas' => $nuevas,
+                'total' => count($todasCarpetas),
+                'carpetas' => $todasCarpetas
+            ]);
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Consulta el estado de detección de carpetas de una NAS (para polling del Wizard)
+     */
+    case 'obtener_estado_nas':
+        validarSesionPortal();
+        $nasId = (int)($_GET['nas_id'] ?? ($_POST['nas_id'] ?? 0));
+        if ($nasId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'nas_id inválido']);
+            exit();
+        }
+
+        try {
+            $stmtNas = $pdo->prepare("SELECT id, nombre, ip_ruta_red, marca FROM respaldos_nas WHERE id = ?");
+            $stmtNas->execute([$nasId]);
+            $nas = $stmtNas->fetch(PDO::FETCH_ASSOC);
+
+            $stmtCarp = $pdo->prepare("SELECT * FROM respaldos_carpetas WHERE nas_id = ? ORDER BY es_sistema ASC, nombre_carpeta ASC");
+            $stmtCarp->execute([$nasId]);
+            $carpetas = $stmtCarp->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode([
+                'success' => true,
+                'nas' => $nas,
+                'total_carpetas' => count($carpetas),
+                'carpetas' => $carpetas
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
      * Recibe el reporte consolidado de todas las máquinas en un solo envío HTTPS
      */
     case 'reportar_respaldo_consolidado':

@@ -6,10 +6,12 @@ AGENTE COLECTOR DE RESPALDOS SMB / NAS (RED LOCAL LAN)
 =============================================================================
 Corre en una sola computadora o servidor dentro de la red local de la agencia.
 1. Consulta la API del Portal cPanel para saber qué NAS y carpetas vigilar.
-2. Conecta por SMB local a los dispositivos NAS (QNAP, Buffalo, Synology, etc.).
-3. Escanea las carpetas de las computadoras (evalúa el archivo más reciente en 
+2. Modo Detección (--descubrir): Conecta a la NAS y reporta al portal las
+   carpetas compartidas que existen para que aparezcan en pantalla con checkboxes.
+3. Conecta por SMB local a los dispositivos NAS (QNAP, Buffalo, Synology, etc.).
+4. Escanea las carpetas de las computadoras (evalúa el archivo más reciente en 
    las últimas 24h, detecta archivos temporales o incompletos .tmp / .part).
-4. Envía un reporte JSON consolidado en un solo envío HTTPS a cPanel.
+5. Envía un reporte JSON consolidado en un solo envío HTTPS a cPanel.
 =============================================================================
 """
 
@@ -131,6 +133,98 @@ def es_archivo_temporal(nombre, extensiones):
             return True
     return False
 
+def descubrir_carpetas_nas(nas, cfg):
+    """
+    Se conecta a la NAS especificada por SMB y lista las carpetas compartidas reales,
+    enviándolas al cPanel para que aparezcan en el Asistente del Portal.
+    """
+    nas_id = nas.get("id")
+    nas_nombre = nas.get("nombre", f"NAS_{nas_id}")
+    ip_ruta = nas.get("ip_ruta_red", "").strip()
+    usuario_smb = nas.get("usuario_smb")
+    password_smb = nas.get("password_smb")
+
+    log(f"Iniciando descubrimiento de carpetas en NAS '{nas_nombre}' ({ip_ruta})...")
+
+    if os.name == "nt" and usuario_smb and password_smb:
+        montar_recurso_red_windows(ip_ruta, usuario_smb, password_smb)
+
+    carpetas_encontradas = []
+
+    # Caso 1: La ruta dada ya es un recurso UNC o carpeta accesible
+    ruta_limpia = ip_ruta.rstrip("\\/ ")
+    if not ruta_limpia.startswith("\\\\") and not ruta_limpia.startswith("//"):
+        ruta_limpia = f"\\\\{ruta_limpia}"
+
+    # Si la ruta tiene subrecurso ej. \\192.168.1.100\Backups
+    partes = [p for p in ruta_limpia.replace("/", "\\").split("\\") if p]
+    if len(partes) >= 2 and os.path.exists(ruta_limpia):
+        try:
+            for elem in os.listdir(ruta_limpia):
+                full = os.path.join(ruta_limpia, elem)
+                if os.path.isdir(full):
+                    carpetas_encontradas.append(elem)
+        except Exception as e:
+            log(f"Error al listar '{ruta_limpia}': {e}", "WARN")
+
+    # Caso 2: En Windows, enumerar recursos compartidos del servidor si solo se puso la IP
+    if not carpetas_encontradas and os.name == "nt":
+        servidor = f"\\\\{partes[0]}" if partes else ruta_limpia
+        try:
+            cmd = f'net view "{servidor}"'
+            out = subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL).decode("cp850", errors="ignore")
+            lineas = out.splitlines()
+            en_tabla = False
+            for l in lineas:
+                if "---" in l:
+                    en_tabla = True
+                    continue
+                if en_tabla and l.strip():
+                    partes_l = l.split()
+                    if partes_l:
+                        nombre_share = partes_l[0].strip()
+                        # Omitir shares administrativos ocultos (IPC$, C$, ADMIN$)
+                        if not nombre_share.endswith("$"):
+                            carpetas_encontradas.append(nombre_share)
+        except Exception as e:
+            log(f"net view no pudo listar recursos de '{servidor}': {e}", "WARN")
+
+    if not carpetas_encontradas:
+        log(f"No se detectaron carpetas en '{ip_ruta}'. Verifica que la máquina local tenga acceso de red.", "WARN")
+        return False
+
+    log(f"Carpetas reales encontradas en '{nas_nombre}': {', '.join(carpetas_encontradas)}")
+
+    # Enviar al portal cPanel
+    url = f"{cfg['api_url']}?action=reportar_carpetas_detectadas"
+    payload = {
+        "nas_id": nas_id,
+        "carpetas": [{"nombre_carpeta": c} for c in carpetas_encontradas]
+    }
+    json_data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    req = urllib.request.Request(url, data=json_data, method="POST")
+    req.add_header("Authorization", f"Bearer {cfg['api_token']}")
+    req.add_header("Content-Type", "application/json; charset=utf-8")
+    req.add_header("User-Agent", "ColectorRespaldosLAN/2.0")
+
+    ctx = ssl.create_default_context()
+    if not cfg.get("verificar_ssl", True):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with urllib.request.urlopen(req, timeout=cfg.get("timeout_segundos", 45), context=ctx) as resp:
+            resp_data = json.loads(resp.read().decode("utf-8"))
+            if resp_data.get("success"):
+                log(f"¡Éxito! Carpetas de '{nas_nombre}' sincronizadas con cPanel. Aparecerán de inmediato en el portal.")
+                return True
+            else:
+                log(f"El servidor rechazó las carpetas: {resp_data.get('error')}", "ERROR")
+    except Exception as e:
+        log(f"Error al enviar carpetas detectadas al portal: {e}", "ERROR")
+    return False
+
 def escanear_directorio_equipo(ruta_equipo, extensiones_temp, patrones_descarte):
     """
     Escanea la carpeta de un equipo para encontrar el archivo más reciente
@@ -144,7 +238,6 @@ def escanear_directorio_equipo(ruta_equipo, extensiones_temp, patrones_descarte)
 
     try:
         for root, dirs, files in os.walk(ruta_equipo):
-            # Filtrar carpetas del sistema para no descender en ellas
             dirs[:] = [d for d in dirs if not es_nombre_descartable(d, patrones_descarte)]
 
             for f in files:
@@ -153,7 +246,6 @@ def escanear_directorio_equipo(ruta_equipo, extensiones_temp, patrones_descarte)
 
                 full_path = os.path.join(root, f)
 
-                # Detección de temporales/incompletos
                 if es_archivo_temporal(f, extensiones_temp):
                     archivos_temporales.append(f)
                     continue
@@ -204,6 +296,13 @@ def ejecutar_escaneo(info_api, cfg):
         password_smb = nas.get("password_smb")
         carpetas = nas.get("carpetas", [])
 
+        # Si el NAS aún no tiene carpetas monitoreadas, ejecutar auto-descubrimiento
+        if not carpetas or "--descubrir" in sys.argv or "-d" in sys.argv:
+            log(f"Ejecutando auto-detección de carpetas para '{nas_nombre}'...")
+            descubrir_carpetas_nas(nas, cfg)
+            if "--descubrir" in sys.argv or "-d" in sys.argv:
+                continue
+
         log(f"Procesando NAS '{nas_nombre}' ({ip_ruta}) con {len(carpetas)} carpetas...")
 
         if os.name == "nt" and usuario_smb and password_smb:
@@ -214,7 +313,6 @@ def ejecutar_escaneo(info_api, cfg):
             carp_nombre = carp.get("nombre_carpeta", "")
             area_nombre = carp.get("area_nombre", "General")
 
-            # Construir ruta accesible
             ruta_unc_base = ip_ruta.rstrip("\\/ ")
             sep = "\\" if os.name == "nt" else "/"
             ruta_carpeta = f"{ruta_unc_base}{sep}{carp_nombre}"
@@ -226,7 +324,6 @@ def ejecutar_escaneo(info_api, cfg):
             log(f"Escaneando carpeta de área: '{carp_nombre}' [{area_nombre}]...")
 
             try:
-                # Cada subdirectorio dentro de la carpeta suele corresponder a un equipo o usuario
                 subelementos = os.listdir(ruta_carpeta)
             except Exception as e:
                 log(f"No se pudo listar '{ruta_carpeta}': {e}", "WARN")
@@ -238,7 +335,6 @@ def ejecutar_escaneo(info_api, cfg):
 
                 ruta_elem = os.path.join(ruta_carpeta, elem)
 
-                # Si es un directorio, representa una computadora/equipo
                 if os.path.isdir(ruta_elem):
                     nombre_equipo = elem.upper()
                     datos_escaneo = escanear_directorio_equipo(ruta_elem, extensiones_temp, patrones_descarte)
@@ -257,14 +353,12 @@ def ejecutar_escaneo(info_api, cfg):
                         "archivos_temporales": datos_escaneo["archivos_temporales"]
                     })
                 elif os.path.isfile(ruta_elem):
-                    # Si los archivos de respaldo están directamente en la raíz de la carpeta
                     if es_archivo_temporal(elem, extensiones_temp):
                         continue
 
                     try:
                         stat = os.stat(ruta_elem)
                         mtime_str = datetime.datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-                        # Inferir nombre de equipo del nombre de archivo (ej. PC-01_2026.zip -> PC-01)
                         nom_base = os.path.splitext(elem)[0].split("_")[0].split("-")[0].upper()
                         if len(nom_base) < 3:
                             nom_base = os.path.splitext(elem)[0].upper()
@@ -342,6 +436,13 @@ def main():
     if not info_api:
         log("No se pudo obtener la lista de rutas desde el portal. Abortando escaneo.", "ERROR")
         sys.exit(1)
+
+    if "--descubrir" in sys.argv or "-d" in sys.argv:
+        log("Modo Detección Activo: Buscando carpetas compartidas en las NAS...")
+        for nas in info_api.get("nas_list", []):
+            descubrir_carpetas_nas(nas, cfg)
+        log("=== DETECCIÓN COMPLETADA ===")
+        sys.exit(0)
 
     equipos = ejecutar_escaneo(info_api, cfg)
     t_duracion = time.time() - t_inicio

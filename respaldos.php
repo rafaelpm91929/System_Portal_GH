@@ -465,6 +465,25 @@ function tiempoRelativo($fechaStr) {
             color: #38bdf8;
             word-break: break-all;
         }
+
+        .radar-pulse {
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            background: rgba(56, 189, 248, 0.15);
+            border: 2px solid #38bdf8;
+            animation: pulseRadar 1.8s infinite;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px auto;
+        }
+
+        @keyframes pulseRadar {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.6); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 16px rgba(56, 189, 248, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
     </style>
 </head>
 <body>
@@ -947,9 +966,14 @@ function tiempoRelativo($fechaStr) {
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center pt-2 border-top border-secondary border-opacity-10 small">
                                     <span class="text-secondary">Usuario SMB: <strong class="text-white"><?php echo htmlspecialchars($n['usuario_smb'] ?: 'Sin usuario'); ?></strong></span>
-                                    <button class="btn btn-outline-info btn-sm py-0 px-2 rounded-2" onclick="seleccionarNasCarpetas(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre']); ?>')">
-                                        Ver Carpetas <i class="bi bi-chevron-right ms-1"></i>
-                                    </button>
+                                    <div class="d-flex gap-1">
+                                        <button class="btn btn-outline-warning btn-sm py-0 px-2 rounded-2" onclick="abrirDeteccionNasExistente(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre']); ?>')" title="Detectar carpetas reales desde la máquina local">
+                                            <i class="bi bi-broadcast me-1"></i> Detectar
+                                        </button>
+                                        <button class="btn btn-outline-info btn-sm py-0 px-2 rounded-2" onclick="seleccionarNasCarpetas(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre']); ?>')">
+                                            Ver <i class="bi bi-chevron-right ms-1"></i>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <?php endforeach; ?>
@@ -1101,46 +1125,92 @@ function tiempoRelativo($fechaStr) {
                     </div>
                 </div>
 
-                <!-- PASO 1: Formulario para Agregar NAS -->
+                <!-- PASO 1: Formulario para Agregar NAS y Conexión API -->
                 <div class="wizard-step active" id="wizard-step-1">
-                    <h6 class="fw-bold text-white mb-3">Paso 1: Registra tu dispositivo NAS de almacenamiento</h6>
-                    <form id="formWizardNas" onsubmit="wizardGuardarNas(event)">
-                        <div class="row g-3">
-                            <div class="col-12 col-md-6">
-                                <label class="form-label small text-secondary fw-bold">Nombre Identificador</label>
-                                <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_nombre" placeholder="ej. QNAP Principal Sistemas" required>
+                    <div id="wizPaso1Formulario">
+                        <h6 class="fw-bold text-white mb-2">Paso 1: Registra tu dispositivo NAS de almacenamiento</h6>
+                        <p class="text-secondary small mb-3">Introduce los datos del NAS. Al guardar, se generará la conexión API para que el colector en tu máquina local se conecte y detecte las carpetas reales de inmediato.</p>
+                        <form id="formWizardNas" onsubmit="wizardGuardarNas(event)">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small text-secondary fw-bold">Nombre Identificador</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_nombre" placeholder="ej. QNAP Principal Sistemas" required>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small text-secondary fw-bold">Marca o Tipo de Servidor</label>
+                                    <select class="form-select bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_marca" required>
+                                        <option value="QNAP" selected>QNAP</option>
+                                        <option value="Buffalo">Buffalo</option>
+                                        <option value="Synology">Synology</option>
+                                        <option value="Windows Server">Windows Server (SMB)</option>
+                                        <option value="Linux Samba">Linux Samba</option>
+                                        <option value="Otro">Otro Servidor</option>
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label small text-secondary fw-bold">Ruta de Red Local (UNC) o Dirección IP</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25 font-monospace" id="wiz_nas_ip" placeholder="ej. \\192.168.1.100\Backups  o  192.168.1.100" required>
+                                    <div class="form-text text-secondary" style="font-size: 0.75rem;">Ruta accesible desde la red local (LAN) de la oficina.</div>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small text-secondary fw-bold">Usuario SMB (Lectura)</label>
+                                    <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_user" placeholder="ej. backup_reader o admin">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label small text-secondary fw-bold">Contraseña SMB</label>
+                                    <input type="password" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_pass" placeholder="••••••••">
+                                </div>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label small text-secondary fw-bold">Marca o Tipo de Servidor</label>
-                                <select class="form-select bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_marca" required>
-                                    <option value="QNAP" selected>QNAP</option>
-                                    <option value="Buffalo">Buffalo</option>
-                                    <option value="Synology">Synology</option>
-                                    <option value="Windows Server">Windows Server (SMB)</option>
-                                    <option value="Linux Samba">Linux Samba</option>
-                                    <option value="Otro">Otro Servidor</option>
-                                </select>
+                            <div class="text-end mt-4">
+                                <button type="submit" class="btn btn-primary rounded-3 px-4 shadow">
+                                    Guardar y Generar Conexión API <i class="bi bi-arrow-right ms-1"></i>
+                                </button>
                             </div>
-                            <div class="col-12">
-                                <label class="form-label small text-secondary fw-bold">Ruta de Red Local (UNC) o Dirección IP</label>
-                                <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25 font-monospace" id="wiz_nas_ip" placeholder="ej. \\192.168.1.100\Backups  o  192.168.1.100" required>
-                                <div class="form-text text-secondary" style="font-size: 0.75rem;">Ruta visible dentro de la red local (LAN) de la agencia.</div>
+                        </form>
+                    </div>
+
+                    <!-- Subpantalla de Conexión Local y Detección Automática -->
+                    <div id="wizPaso1ConexionLocal" style="display: none;">
+                        <div class="alert alert-success bg-success bg-opacity-10 border-success border-opacity-25 text-white small mb-3">
+                            <i class="bi bi-check-circle-fill text-success me-2"></i>
+                            <strong>¡NAS guardada en cPanel con éxito!</strong> Ahora ejecuta el colector en tu máquina local de la oficina para conectar y descubrir las carpetas compartidas.
+                        </div>
+
+                        <div class="radar-pulse">
+                            <i class="bi bi-broadcast text-info fs-4"></i>
+                        </div>
+                        <div class="text-center mb-3">
+                            <div class="fw-bold text-white" id="wizStatusDeteccion">Esperando conexión de la máquina local...</div>
+                            <div class="text-secondary small">Ejecuta el script en una PC de la oficina conectada a la misma red local que la NAS.</div>
+                        </div>
+
+                        <div class="card-executive p-3 mb-3 border-secondary border-opacity-25" style="background: rgba(13, 30, 54, 0.7);">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small fw-bold text-white"><i class="bi bi-terminal-fill text-info me-1"></i> Comando para Máquina Local (PowerShell):</span>
+                                <button type="button" class="btn btn-outline-light btn-sm py-0 px-2 rounded-2" onclick="copiarAlPortapapeles('wizComandoPs')">
+                                    <i class="bi bi-clipboard me-1"></i> Copiar
+                                </button>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label small text-secondary fw-bold">Usuario de Lectura SMB (Opcional)</label>
-                                <input type="text" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_user" placeholder="ej. backup_reader">
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label small text-secondary fw-bold">Contraseña SMB (Opcional)</label>
-                                <input type="password" class="form-control bg-dark text-white border-secondary border-opacity-25" id="wiz_nas_pass" placeholder="••••••••">
+                            <div class="code-block" id="wizComandoPs">powershell.exe -ExecutionPolicy Bypass -File .\colector_respaldos.ps1 -Descubrir</div>
+                            <div class="text-secondary mt-2" style="font-size: 0.75rem;">
+                                O si usas Python: <code>python colector_respaldos.py --descubrir</code>
                             </div>
                         </div>
-                        <div class="text-end mt-4">
-                            <button type="submit" class="btn btn-primary rounded-3 px-4 shadow">
-                                Siguiente: Detectar Carpetas <i class="bi bi-arrow-right ms-1"></i>
+
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4">
+                            <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" onclick="wizardReabrirFormularioNas()">
+                                <i class="bi bi-arrow-left me-1"></i> Modificar Datos NAS
                             </button>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-outline-info btn-sm rounded-3" onclick="wizardComprobarCarpetasDetectadas(true)">
+                                    <i class="bi bi-arrow-clockwise me-1"></i> Comprobar Ahora
+                                </button>
+                                <button type="button" class="btn btn-primary btn-sm rounded-3 px-3 shadow" onclick="wizardIrPaso(2)">
+                                    Continuar a Selección de Carpetas <i class="bi bi-arrow-right ms-1"></i>
+                                </button>
+                            </div>
                         </div>
-                    </form>
+                    </div>
                 </div>
 
                 <!-- PASO 2: Detección y Selección de Carpetas -->
@@ -1851,19 +1921,16 @@ function guardarCarpetaModal(e) {
 }
 
 // 6. ASISTENTE WIZARD PASO A PASO
+let wizardPollingInterval = null;
+
 function abrirAsistenteWizard() {
     document.getElementById('formWizardNas').reset();
+    if (wizardPollingInterval) clearInterval(wizardPollingInterval);
+    document.getElementById('wizPaso1Formulario').style.display = 'block';
+    document.getElementById('wizPaso1ConexionLocal').style.display = 'none';
+    wizardNasIdCreado = 0;
+    wizardCarpetasTemp = [];
     wizardIrPaso(1);
-    wizardCarpetasTemp = [
-        { nombre_carpeta: 'Contabilidad', area_nombre: 'Contabilidad', monitorear: 1 },
-        { nombre_carpeta: 'Ventas', area_nombre: 'Ventas', monitorear: 1 },
-        { nombre_carpeta: 'Administracion', area_nombre: 'Administración', monitorear: 1 },
-        { nombre_carpeta: 'Sistemas', area_nombre: 'Sistemas', monitorear: 1 },
-        { nombre_carpeta: 'Servicio', area_nombre: 'Servicio', monitorear: 1 },
-        { nombre_carpeta: 'Refacciones', area_nombre: 'Refacciones', monitorear: 1 },
-        { nombre_carpeta: '@Recycle', area_nombre: 'General', monitorear: 0, es_sistema: 1 },
-        { nombre_carpeta: '#snapshot', area_nombre: 'General', monitorear: 0, es_sistema: 1 }
-    ];
     new bootstrap.Modal(document.getElementById('modalWizard')).show();
 }
 
@@ -1876,7 +1943,13 @@ function wizardIrPaso(paso) {
     if (stepEl) stepEl.classList.add('active');
     if (indEl) indEl.classList.add('active');
 
+    for (let i = 1; i < paso; i++) {
+        const p = document.getElementById(`step-ind-${i}`);
+        if (p) p.classList.add('completed');
+    }
+
     if (paso === 2) {
+        if (wizardPollingInterval) clearInterval(wizardPollingInterval);
         renderizarWizardCarpetasCheckboxes();
     } else if (paso === 3) {
         renderizarWizardMapeoAreas();
@@ -1897,24 +1970,105 @@ function wizardGuardarNas(e) {
         .then(res => {
             if (res.success) {
                 wizardNasIdCreado = res.id;
-                wizardIrPaso(2);
+
+                // Mostrar pantalla de espera y conexión local
+                document.getElementById('wizPaso1Formulario').style.display = 'none';
+                document.getElementById('wizPaso1ConexionLocal').style.display = 'block';
+
+                // Iniciar sondeo automático para detectar cuando el colector reporte
+                iniciarPollingDeteccionNas(wizardNasIdCreado);
             } else {
                 Swal.fire('Error', res.error, 'error');
             }
+        })
+        .catch(err => {
+            Swal.fire('Error', err.message, 'error');
         });
+}
+
+function wizardReabrirFormularioNas() {
+    if (wizardPollingInterval) clearInterval(wizardPollingInterval);
+    document.getElementById('wizPaso1Formulario').style.display = 'block';
+    document.getElementById('wizPaso1ConexionLocal').style.display = 'none';
+}
+
+function iniciarPollingDeteccionNas(nasId) {
+    if (wizardPollingInterval) clearInterval(wizardPollingInterval);
+
+    wizardPollingInterval = setInterval(() => {
+        wizardComprobarCarpetasDetectadas(false);
+    }, 2500);
+}
+
+function wizardComprobarCarpetasDetectadas(manual = false) {
+    if (!wizardNasIdCreado) return;
+
+    fetch(`api_respaldos.php?action=obtener_estado_nas&nas_id=${wizardNasIdCreado}`)
+        .then(r => r.json())
+        .then(res => {
+            if (res.success && res.total_carpetas > 0) {
+                if (wizardPollingInterval) clearInterval(wizardPollingInterval);
+
+                wizardCarpetasTemp = res.carpetas.map(c => ({
+                    nombre_carpeta: c.nombre_carpeta,
+                    area_nombre: c.area_nombre || 'General',
+                    monitorear: parseInt(c.monitorear) === 1 ? 1 : 0,
+                    es_sistema: parseInt(c.es_sistema) === 1 ? 1 : 0
+                }));
+
+                Swal.fire({
+                    icon: 'success',
+                    title: '¡Carpetas Detectadas en la NAS!',
+                    text: `Se recibieron ${res.total_carpetas} carpetas compartidas desde la máquina local.`,
+                    timer: 1600,
+                    showConfirmButton: false
+                }).then(() => {
+                    wizardIrPaso(2);
+                });
+            } else if (manual) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Aún no se detectan carpetas',
+                    text: 'Asegúrate de haber ejecutado el script colector en tu máquina local de la oficina.',
+                    confirmButtonText: 'Entendido'
+                });
+            }
+        });
+}
+
+function abrirDeteccionNasExistente(nasId, nombreNas) {
+    wizardNasIdCreado = nasId;
+    abrirAsistenteWizard();
+    document.getElementById('wizPaso1Formulario').style.display = 'none';
+    document.getElementById('wizPaso1ConexionLocal').style.display = 'block';
+    iniciarPollingDeteccionNas(nasId);
 }
 
 function renderizarWizardCarpetasCheckboxes() {
     const cont = document.getElementById('wizListaCarpetasCheckboxes');
     cont.innerHTML = '';
 
+    if (!wizardCarpetasTemp || wizardCarpetasTemp.length === 0) {
+        wizardCarpetasTemp = [
+            { nombre_carpeta: 'Contabilidad', area_nombre: 'Contabilidad', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: 'Ventas', area_nombre: 'Ventas', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: 'Sistemas', area_nombre: 'Sistemas', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: 'Administracion', area_nombre: 'Administración', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: 'Servicio', area_nombre: 'Servicio', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: 'Refacciones', area_nombre: 'Refacciones', monitorear: 1, es_sistema: 0 },
+            { nombre_carpeta: '@Recycle', area_nombre: 'General', monitorear: 0, es_sistema: 1 },
+            { nombre_carpeta: '#snapshot', area_nombre: 'General', monitorear: 0, es_sistema: 1 }
+        ];
+    }
+
     wizardCarpetasTemp.forEach((c, idx) => {
         const esBasura = c.nombre_carpeta.startsWith('@') || c.nombre_carpeta.startsWith('#') || c.es_sistema;
-        const check = c.monitorear ? 'checked' : '';
-        const badgeBasura = esBasura ? '<span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-2 small">Descarte del Sistema</span>' : '';
+        const check = (c.monitorear && !esBasura) ? 'checked' : '';
+        const badgeBasura = esBasura ? '<span class="badge bg-danger bg-opacity-25 text-danger border border-danger ms-2" style="font-size:0.65rem;">Descarte Automático</span>' : '<span class="badge bg-success bg-opacity-25 text-success border border-success ms-2" style="font-size:0.65rem;">Detectada en NAS</span>';
 
         const div = document.createElement('div');
-        div.className = 'form-check mb-2 d-flex justify-content-between align-items-center';
+        div.className = 'form-check mb-2 d-flex justify-content-between align-items-center p-2 rounded-2';
+        div.style.background = esBasura ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255, 255, 255, 0.02)';
         div.innerHTML = `
             <div>
                 <input class="form-check-input" type="checkbox" id="wiz_chk_${idx}" ${check} onchange="wizardCarpetasTemp[${idx}].monitorear = this.checked ? 1 : 0">
