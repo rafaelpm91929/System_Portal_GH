@@ -135,7 +135,7 @@ if ($pdo) {
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
-            WHERE e.estado IN ('critico', 'vencido', 'incompleto') 
+            WHERE e.estado IN ('critico', 'vencido', 'incompleto') AND COALESCE(e.monitorear, 1) = 1 
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
             LIMIT 5
         ");
@@ -146,6 +146,7 @@ if ($pdo) {
             SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca 
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
+            WHERE COALESCE(e.monitorear, 1) = 1 
             ORDER BY e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");
         $equiposList = $stmtEq ? $stmtEq->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -2686,7 +2687,7 @@ function cargarCarpetasPorNas(nasId) {
                     <table class="table-custom">
                         <thead>
                             <tr>
-                                <th>Carpeta</th>
+                                <th style="min-width: 280px;">Carpeta / Subcarpetas NetBak</th>
                                 <th>Área Asignada</th>
                                 <th>Monitorear</th>
                                 <th class="text-end">Acciones</th>
@@ -2702,23 +2703,98 @@ function cargarCarpetasPorNas(nasId) {
                 const tagSys = esSys ? '<span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50 ms-2" style="font-size:0.65rem;">Sistema / Descarte</span>' : '';
                 const tagNetbak = esNetbak ? '<span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 ms-2" style="font-size:0.65rem;"><i class="bi bi-hdd-network me-1"></i>NetBak</span>' : '';
 
+                const subEquipos = c.subcarpetas_netbak || [];
+                const tieneSubs = subEquipos.length > 0;
+                const totalMon = c.total_monitoreadas !== undefined ? c.total_monitoreadas : subEquipos.filter(s => parseInt(s.monitorear) === 1).length;
+
+                // Generar filas o cards para cada máquina dentro de NetBakData
+                let subHtml = '';
+                if (tieneSubs) {
+                    subEquipos.forEach(eq => {
+                        const eqCheck = parseInt(eq.monitorear) === 1 ? 'checked' : '';
+                        const stBadge = eq.estado === 'exitoso' ? 'text-success' : (eq.estado === 'vencido' ? 'text-warning' : 'text-danger');
+                        const ultStr = eq.ultimo_respaldo ? eq.ultimo_respaldo.substring(0, 16) : 'Sin respaldo';
+
+                        subHtml += `
+                            <div class="col-12 col-md-6 col-xl-4">
+                                <div class="p-2 rounded-2 border border-secondary border-opacity-15 d-flex justify-content-between align-items-center" style="background: rgba(255,255,255,0.03);">
+                                    <div class="overflow-hidden me-2">
+                                        <div class="fw-bold text-white text-truncate small" title="${eq.nombre_equipo}">
+                                            <i class="bi bi-pc-display ${stBadge} me-1"></i> ${eq.nombre_equipo}
+                                        </div>
+                                        <div class="text-secondary" style="font-size: 0.68rem;">
+                                            <i class="bi bi-clock me-1"></i> ${ultStr}
+                                        </div>
+                                    </div>
+                                    <div class="form-check form-switch m-0" title="Activar/Desactivar monitoreo de esta máquina">
+                                        <input class="form-check-input" type="checkbox" ${eqCheck} onchange="toggleMonitorearEquipo(${eq.id}, this.checked, '${eq.nombre_equipo}', ${c.id})">
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    subHtml = `
+                        <div class="col-12">
+                            <div class="text-secondary small py-2 px-3 rounded-2" style="background: rgba(255,255,255,0.02); font-size: 0.75rem;">
+                                <i class="bi bi-info-circle me-1 text-info"></i> No se han registrado máquinas dentro de esta carpeta aún. Se listarán automáticamente al correr <code>colector_respaldos.ps1 -Descubrir</code>.
+                            </div>
+                        </div>
+                    `;
+                }
+
                 html += `
-                    <tr class="${esNetbak ? 'fila-netbak' : ''}">
+                    <tr class="${esNetbak ? 'fila-netbak' : ''}" style="border-top: 1px solid rgba(255,255,255,0.08);">
                         <td>
-                            <div class="fw-bold text-white"><i class="bi bi-folder2 text-warning me-1"></i> ${c.nombre_carpeta} ${tagNetbak} ${tagSys}</div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-sm btn-dark border border-secondary border-opacity-25 px-2 py-0 text-white rounded-2" onclick="toggleDesgloseSubcarpetas(${c.id})" title="Desglosar máquinas de esta carpeta">
+                                    <i class="bi bi-chevron-down" id="chevronCarp_${c.id}"></i>
+                                </button>
+                                <div>
+                                    <div class="fw-bold text-white">
+                                        <i class="bi bi-folder2-open text-warning me-1"></i> ${c.nombre_carpeta} ${tagNetbak} ${tagSys}
+                                    </div>
+                                    <div class="text-secondary" style="font-size: 0.72rem;">
+                                        <i class="bi bi-pc-display text-info me-1"></i> <span id="contadorSub_${c.id}">${totalMon} de ${subEquipos.length} máquinas monitoreadas</span>
+                                    </div>
+                                </div>
+                            </div>
                         </td>
                         <td>
                             <span class="badge bg-secondary bg-opacity-25 text-light">${c.area_nombre || 'General'}</span>
                         </td>
                         <td>
-                            <div class="form-check form-switch">
+                            <div class="form-check form-switch" title="Monitorear toda la carpeta">
                                 <input class="form-check-input" type="checkbox" ${checkMon} onchange="toggleMonitorearCarpeta(${c.id}, this.checked)">
                             </div>
                         </td>
                         <td class="text-end">
-                            <button class="btn btn-outline-danger btn-sm p-1 rounded-2" onclick="eliminarCarpeta(${c.id}, '${c.nombre_carpeta}')">
+                            <button class="btn btn-outline-danger btn-sm p-1 rounded-2" onclick="eliminarCarpeta(${c.id}, '${c.nombre_carpeta}')" title="Eliminar">
                                 <i class="bi bi-trash"></i>
                             </button>
+                        </td>
+                    </tr>
+                    <!-- Fila Expandible con el desglose de subcarpetas dentro de NetBakData -->
+                    <tr id="desgloseSub_${c.id}" class="fila-desglose" style="display: table-row;">
+                        <td colspan="4" class="p-2 border-0" style="background: rgba(2, 9, 20, 0.45);">
+                            <div class="p-3 rounded-3 border border-secondary border-opacity-20" style="background: rgba(9, 23, 44, 0.6); margin-left: 28px;">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 pb-2 border-bottom border-secondary border-opacity-10 gap-2">
+                                    <span class="text-warning small fw-bold">
+                                        <i class="bi bi-diagram-3-fill me-1"></i> Subcarpetas de NetBakData (Selecciona cuáles sí y cuáles no vigilar):
+                                    </span>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-outline-success btn-sm py-0 px-2 rounded-2" style="font-size: 0.72rem;" onclick="toggleTodasSubcarpetas(${c.id}, 1)">
+                                            <i class="bi bi-check-all me-1"></i> Activar Todas
+                                        </button>
+                                        <button class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-2" style="font-size: 0.72rem;" onclick="toggleTodasSubcarpetas(${c.id}, 0)">
+                                            <i class="bi bi-x me-1"></i> Desactivar Todas
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="row g-2">
+                                    ${subHtml}
+                                </div>
+                            </div>
                         </td>
                     </tr>
                 `;

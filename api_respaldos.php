@@ -227,6 +227,10 @@ switch ($action) {
 
             $patronesDescarte = array_map('trim', explode(',', $config['patrones_descarte'] ?? '@Recycle,#snapshot,@Recently-Snapshot,.dropbox.cache,aquota.user,aquota.group,Thumbs.db,desktop.ini,.DS_Store'));
 
+            // Lista de nombres de equipos excluidos por el usuario
+            $stmtExcl = $pdo->query("SELECT nombre_equipo FROM respaldos_equipos WHERE COALESCE(monitorear, 1) = 0");
+            $equiposExcluidos = $stmtExcl ? $stmtExcl->fetchAll(PDO::FETCH_COLUMN) : [];
+
             echo json_encode([
                 'success' => true,
                 'fecha_servidor' => date('Y-m-d H:i:s'),
@@ -235,7 +239,8 @@ switch ($action) {
                     'umbral_alerta_horas' => (int)($config['umbral_alerta_horas'] ?? 24),
                     'umbral_critico_horas' => (int)($config['umbral_critico_horas'] ?? 48),
                     'tamano_minimo_valido_mb' => (float)($config['tamano_minimo_valido_mb'] ?? 1),
-                    'patrones_descarte' => $patronesDescarte
+                    'patrones_descarte' => $patronesDescarte,
+                    'equipos_excluidos' => $equiposExcluidos
                 ]
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         } catch (Throwable $e) {
@@ -309,6 +314,36 @@ switch ($action) {
                 if (!$exist) {
                     $stmtIns->execute([$nasId, $nombre, $nombre, $areaInferencia, $monitorear, $esSistema]);
                     $nuevas++;
+                }
+            }
+
+            // Registrar también las subcarpetas / máquinas dentro de NetBakData si fueron enviadas
+            if (!empty($data['subcarpetas_netbak']) && is_array($data['subcarpetas_netbak'])) {
+                $stmtCheckEq = $pdo->prepare("SELECT id, area_nombre FROM respaldos_equipos WHERE nombre_equipo = ? LIMIT 1");
+                $stmtInsEq = $pdo->prepare("INSERT INTO respaldos_equipos (nombre_equipo, usuario_responsable, area_nombre, nas_id, carpeta_id, ruta_origen, estado, monitorear) VALUES (?, ?, ?, ?, ?, ?, 'critico', 1)");
+                $stmtGetCarpId = $pdo->prepare("SELECT id, area_nombre FROM respaldos_carpetas WHERE nas_id = ? AND nombre_carpeta = ? LIMIT 1");
+
+                foreach ($data['subcarpetas_netbak'] as $subEq) {
+                    $nomEq = trim($subEq['nombre_equipo'] ?? '');
+                    if (empty($nomEq)) continue;
+                    $cPadre = trim($subEq['carpeta_padre'] ?? '');
+                    $rCarp = trim($subEq['ruta_carpeta'] ?? '');
+
+                    $stmtGetCarpId->execute([$nasId, $cPadre]);
+                    $carpInfo = $stmtGetCarpId->fetch(PDO::FETCH_ASSOC);
+                    $cId = $carpInfo ? $carpInfo['id'] : null;
+                    $areaEq = $carpInfo ? $carpInfo['area_nombre'] : 'General';
+
+                    $stmtCheckEq->execute([$nomEq]);
+                    $eqExist = $stmtCheckEq->fetch(PDO::FETCH_ASSOC);
+                    if (!$eqExist) {
+                        $stmtInsEq->execute([$nomEq, $nomEq, $areaEq, $nasId, $cId, $rCarp]);
+                    } else {
+                        if ($cId) {
+                            $pdo->prepare("UPDATE respaldos_equipos SET carpeta_id = COALESCE(carpeta_id, ?), nas_id = COALESCE(nas_id, ?) WHERE id = ?")
+                                ->execute([$cId, $nasId, $eqExist['id']]);
+                        }
+                    }
                 }
             }
 
@@ -700,7 +735,90 @@ switch ($action) {
             $stmt->execute($params);
             $carpetas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+            // Obtener subcarpetas / máquinas pertenecientes a cada carpeta
+            $stmtEq = $pdo->prepare("
+                SELECT id, nombre_equipo, usuario_responsable, area_nombre, nas_id, carpeta_id, ruta_origen, ultimo_respaldo, estado, dias_sin_respaldo, COALESCE(monitorear, 1) as monitorear
+                FROM respaldos_equipos
+                WHERE carpeta_id = ? 
+                   OR (nas_id = ? AND (ruta_origen LIKE ? OR area_nombre = ?))
+                ORDER BY nombre_equipo ASC
+            ");
+
+            foreach ($carpetas as &$carp) {
+                $stmtEq->execute([$carp['id'], $carp['nas_id'], '%' . $carp['nombre_carpeta'] . '%', $carp['area_nombre']]);
+                $subs = $stmtEq->fetchAll(PDO::FETCH_ASSOC);
+                $carp['subcarpetas_netbak'] = $subs;
+                $carp['total_subcarpetas'] = count($subs);
+                $carp['total_monitoreadas'] = count(array_filter($subs, function($s) { return (int)($s['monitorear'] ?? 1) === 1; }));
+            }
+            unset($carp);
+
             echo json_encode(['success' => true, 'carpetas' => $carpetas]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Activa o desactiva el monitoreo de una subcarpeta / máquina individual dentro de NetBakData
+     */
+    case 'toggle_monitorear_equipo':
+        validarSesionPortal();
+        $equipoId = (int)($_POST['id'] ?? ($_GET['id'] ?? 0));
+        $monitorear = (int)($_POST['monitorear'] ?? ($_GET['monitorear'] ?? 1));
+
+        if ($equipoId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'ID de equipo inválido']);
+            exit();
+        }
+
+        try {
+            $stmt = $pdo->prepare("UPDATE respaldos_equipos SET monitorear = ? WHERE id = ?");
+            $stmt->execute([$monitorear ? 1 : 0, $equipoId]);
+            echo json_encode([
+                'success' => true,
+                'mensaje' => $monitorear ? 'Equipo activado para monitoreo' : 'Equipo excluido del monitoreo',
+                'equipo_id' => $equipoId,
+                'monitorear' => $monitorear ? 1 : 0
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Activa o desactiva todas las subcarpetas / máquinas de una carpeta NetBakData
+     */
+    case 'toggle_todas_subcarpetas':
+        validarSesionPortal();
+        $carpetaId = (int)($_POST['carpeta_id'] ?? ($_GET['carpeta_id'] ?? 0));
+        $monitorear = (int)($_POST['monitorear'] ?? ($_GET['monitorear'] ?? 1));
+
+        if ($carpetaId <= 0) {
+            echo json_encode(['success' => false, 'error' => 'ID de carpeta inválido']);
+            exit();
+        }
+
+        try {
+            $stmtC = $pdo->prepare("SELECT nas_id, nombre_carpeta, area_nombre FROM respaldos_carpetas WHERE id = ?");
+            $stmtC->execute([$carpetaId]);
+            $carp = $stmtC->fetch(PDO::FETCH_ASSOC);
+
+            if ($carp) {
+                $stmt = $pdo->prepare("
+                    UPDATE respaldos_equipos 
+                    SET monitorear = ? 
+                    WHERE carpeta_id = ? OR (nas_id = ? AND (ruta_origen LIKE ? OR area_nombre = ?))
+                ");
+                $stmt->execute([$monitorear ? 1 : 0, $carpetaId, $carp['nas_id'], '%' . $carp['nombre_carpeta'] . '%', $carp['area_nombre']]);
+            }
+
+            echo json_encode([
+                'success' => true,
+                'mensaje' => $monitorear ? 'Todas las subcarpetas activadas' : 'Todas las subcarpetas excluidas',
+                'carpeta_id' => $carpetaId,
+                'monitorear' => $monitorear ? 1 : 0
+            ]);
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }
@@ -1014,7 +1132,7 @@ switch ($action) {
             // Definición dinámica de semanas calendario (Domingo a Sábado)
             $semanasDef = calcularSemanasCalendarioMes($mesSeleccionado);
 
-            $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario_responsable, area_nombre, estado, ultimo_respaldo, dias_sin_respaldo, tiene_temporales FROM respaldos_equipos ORDER BY area_nombre ASC, nombre_equipo ASC");
+            $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario_responsable, area_nombre, estado, ultimo_respaldo, dias_sin_respaldo, tiene_temporales FROM respaldos_equipos WHERE COALESCE(monitorear, 1) = 1 ORDER BY area_nombre ASC, nombre_equipo ASC");
             $equipos = $stmtEq->fetchAll(PDO::FETCH_ASSOC);
 
             // Obtener respaldos históricos del mes seleccionado

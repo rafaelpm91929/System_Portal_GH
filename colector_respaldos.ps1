@@ -223,22 +223,47 @@ if ($Descubrir) {
         $rutaLimpia = $ipRuta.TrimEnd("\/")
         if (-not $rutaLimpia.StartsWith("\\")) { $rutaLimpia = "\\$rutaLimpia" }
 
+        $maquinasNetbak = [System.Collections.Generic.List[PSObject]]::new()
+
         # Caso 1: Ruta con recurso UNC directo (ej. \\192.168.26.194\AdministraciónVw)
         if (Test-Path $rutaLimpia) {
             try {
-                # Comprobar si la ruta misma contiene NetBakData
                 $subNetbak = Join-Path $rutaLimpia "NetBakData"
                 if (Test-Path $subNetbak) {
                     $carpetasEncontradas.Add("NetBakData")
                     Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$rutaLimpia\NetBakData'"
+                    try {
+                        $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
+                        foreach ($md in $mDirs) {
+                            if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
+                                $maquinasNetbak.Add(@{
+                                    carpeta_padre = "NetBakData"
+                                    nombre_equipo = $md.Name
+                                    ruta_carpeta = $md.FullName
+                                })
+                            }
+                        }
+                    } catch {}
                 }
                 $dirs = Get-ChildItem -Path $rutaLimpia -Directory -ErrorAction SilentlyContinue
                 foreach ($d in $dirs) {
                     $subNetbak = Join-Path $d.FullName "NetBakData"
                     if (Test-Path $subNetbak) {
-                        # ¡Solo registrar la subcarpeta NetBakData!
-                        $carpetasEncontradas.Add("$($d.Name)\NetBakData")
-                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$($d.Name)\NetBakData'"
+                        $cNombre = "$($d.Name)\NetBakData"
+                        $carpetasEncontradas.Add($cNombre)
+                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$cNombre'"
+                        try {
+                            $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
+                            foreach ($md in $mDirs) {
+                                if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
+                                    $maquinasNetbak.Add(@{
+                                        carpeta_padre = $cNombre
+                                        nombre_equipo = $md.Name
+                                        ruta_carpeta = $md.FullName
+                                    })
+                                }
+                            }
+                        } catch {}
                     } elseif ($d.Name -ieq "NetBakData") {
                         $carpetasEncontradas.Add($d.Name)
                     }
@@ -263,9 +288,21 @@ if ($Descubrir) {
                                 if (Test-Path $rutaShare) {
                                     $subNetbak = Join-Path $rutaShare "NetBakData"
                                     if (Test-Path $subNetbak) {
-                                        # ¡Solo registrar la subcarpeta NetBakData!
-                                        $carpetasEncontradas.Add("$share\NetBakData")
-                                        Write-ColectorLog "  [NetBak] Estructura NetBakData encontrada: '$share\NetBakData'"
+                                        $cNombre = "$share\NetBakData"
+                                        $carpetasEncontradas.Add($cNombre)
+                                        Write-ColectorLog "  [NetBak] Estructura NetBakData encontrada: '$cNombre'"
+                                        try {
+                                            $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
+                                            foreach ($md in $mDirs) {
+                                                if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
+                                                    $maquinasNetbak.Add(@{
+                                                        carpeta_padre = $cNombre
+                                                        nombre_equipo = $md.Name
+                                                        ruta_carpeta = $md.FullName
+                                                    })
+                                                }
+                                            }
+                                        } catch {}
                                     } elseif ($share -ieq "NetBakData") {
                                         $carpetasEncontradas.Add($share)
                                     }
@@ -279,6 +316,9 @@ if ($Descubrir) {
 
         if ($carpetasEncontradas.Count -gt 0) {
             Write-ColectorLog "Carpetas encontradas en '$nasNombre': $($carpetasEncontradas -join ', ')"
+            if ($maquinasNetbak.Count -gt 0) {
+                Write-ColectorLog "  Subcarpetas / máquinas NetBakData detectadas: $($maquinasNetbak.Count)"
+            }
 
             # Enviar lista a cPanel
             $separator = if ($ApiUrl -match '\?') { "&" } else { "?" }
@@ -286,6 +326,7 @@ if ($Descubrir) {
             $payloadCarpetas = @{
                 nas_id = $nasId
                 carpetas = @($carpetasEncontradas | ForEach-Object { @{ nombre_carpeta = $_ } })
+                subcarpetas_netbak = $maquinasNetbak
             }
             $jsonCarpetas = $payloadCarpetas | ConvertTo-Json -Depth 5
             try {
@@ -434,6 +475,8 @@ foreach ($nas in $nasList) {
             continue
         }
 
+        $equiposExcluidos = $respApi.config.equipos_excluidos
+
         foreach ($sub in $subCarpetas) {
             $descartar = $false
             foreach ($p in $patronesDescarte) {
@@ -446,6 +489,12 @@ foreach ($nas in $nasList) {
 
             $nombreCarpeta = $sub.Name
             $nombreEquipo = $nombreCarpeta.ToUpper()
+
+            # Omitir máquinas que el usuario desmarcó en el portal
+            if ($equiposExcluidos -and $equiposExcluidos -contains $nombreEquipo) {
+                Write-ColectorLog "  [Excluido en Portal] Máquina '$nombreEquipo' desmarcada por el usuario. Omitiendo." "INFO"
+                continue
+            }
             $usuarioDetectado = $nombreCarpeta
             $rutaSub = $sub.FullName
 

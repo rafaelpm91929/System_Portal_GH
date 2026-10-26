@@ -390,6 +390,11 @@ function asegurarTablaTickets($pdo = null) {
             ");
         }
 
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
+
         // Migración automática de columna solicitante_usuario
         try {
             $pdo->exec("ALTER TABLE tickets_soporte ADD COLUMN solicitante_usuario VARCHAR(100) NULL;");
@@ -464,6 +469,11 @@ function asegurarTablaTickets($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
         try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_agencia` VARCHAR(100) NULL"); } catch (Throwable $t) {}
         try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_id` INT NULL"); } catch (Throwable $t) {}
         try { $pdo->exec("ALTER TABLE `tickets_mensajes` ADD COLUMN `autor_usuario` VARCHAR(100) NULL"); } catch (Throwable $t) {}
@@ -541,6 +551,11 @@ function asegurarTablaCitas($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
 
         // Auto-migración si la tabla ya existía previamente
         $cols = [];
@@ -827,6 +842,11 @@ function asegurarTablaCompliance($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
 
         try { $pdo->exec("ALTER TABLE compliance_documentos ADD COLUMN imagen_url VARCHAR(255) NULL"); } catch (Throwable $t) {}
         try { $pdo->exec("ALTER TABLE compliance_documentos ADD COLUMN estilo_fondo VARCHAR(50) DEFAULT 'negro_oro'"); } catch (Throwable $t) {}
@@ -1707,6 +1727,11 @@ function asegurarTablasReportesAgencia($pdo = null) {
             ");
         }
 
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
+
         // 3. Generar token por defecto si la agencia no tiene uno
         try {
             $stmtTk = $pdo->query("SELECT id, local_api_token FROM agencias ORDER BY id ASC LIMIT 1");
@@ -2030,6 +2055,11 @@ function asegurarTablasInfraestructura($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
     } catch (Throwable $e) {}
 }
 
@@ -2190,6 +2220,11 @@ function asegurarTablasRespaldos($pdo = null) {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
+
+        // Asegurar que la columna monitorear exista en respaldos_equipos
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
+        } catch (Throwable $eMon) {}
 
         // Sembrar configuraciones iniciales
         $tokenDef = bin2hex(random_bytes(24));
