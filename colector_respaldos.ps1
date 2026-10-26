@@ -47,6 +47,69 @@ function Remove-Diacritics {
     return $sb.ToString().Normalize([System.Text.NormalizationForm]::FormC)
 }
 
+function Obtener-SharesNetView {
+    param([string]$Servidor)
+    $shares = [System.Collections.Generic.List[string]]::new()
+    try {
+        $p = [System.Diagnostics.Process]::new()
+        $p.StartInfo.FileName = "net.exe"
+        $p.StartInfo.Arguments = "view \\$Servidor"
+        $p.StartInfo.UseShellExecute = $false
+        $p.StartInfo.RedirectStandardOutput = $true
+        # Codificación OEM CP850 para decodificar con precisión caracteres con tilde como AdministraciónVw
+        $p.StartInfo.StandardOutputEncoding = [System.Text.Encoding]::GetEncoding(850)
+        $p.Start() | Out-Null
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $p.WaitForExit()
+
+        $enTabla = $false
+        foreach ($linea in ($stdout -split "`r?`n")) {
+            if ($linea -match "---") { $enTabla = $true; continue }
+            if ($enTabla -and -not [string]::IsNullOrWhiteSpace($linea)) {
+                $partes = $linea.Trim() -split "\s{2,}"
+                if ($partes.Count -gt 0) {
+                    $share = $partes[0].Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($share) -and -not $share.EndsWith("$")) {
+                        $shares.Add($share)
+                    }
+                }
+            }
+        }
+    } catch {
+        Write-ColectorLog "Error al ejecutar net view: $_" "WARN"
+    }
+    return $shares
+}
+
+function Obtener-AreaDesdeRuta {
+    param([string]$RutaOShare)
+    if ([string]::IsNullOrWhiteSpace($RutaOShare)) { return "General" }
+    $limpio = $RutaOShare -replace '[\\/]NetBakData.*$', ''
+    $limpio = $limpio.Trim("\/ ")
+    if ($limpio.Contains("\")) {
+        $limpio = $limpio.Split("\")[-1]
+    }
+    if ($limpio -match '^(.*?)(?:Vw)$') {
+        $area = $Matches[1]
+    } else {
+        $area = $limpio
+    }
+    switch ($area.ToUpper()) {
+        'ADMINISTRACION'       { return 'Administración' }
+        'ADMINISTRACIÓN'       { return 'Administración' }
+        'CRM'                  { return 'CRM' }
+        'HYP'                  { return 'HyP' }
+        'REFACCIONES'          { return 'Refacciones' }
+        'SEMINUEVOS'           { return 'Seminuevos' }
+        'SERVICIOSFINANCIEROS' { return 'Servicios Financieros' }
+        'SERVICIO'             { return 'Servicio' }
+        'SISTEMAS'             { return 'Sistemas' }
+        'VENTAS'               { return 'Ventas' }
+        'PLD'                  { return 'PLD' }
+        default                { return $area }
+    }
+}
+
 function Write-ColectorLog {
     param([string]$Mensaje, [string]$Nivel = "INFO")
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -224,94 +287,47 @@ if ($Descubrir) {
         if (-not $rutaLimpia.StartsWith("\\")) { $rutaLimpia = "\\$rutaLimpia" }
 
         $maquinasNetbak = [System.Collections.Generic.List[PSObject]]::new()
+        $servidor = (($rutaLimpia.TrimStart("\")).Split("\"))[0]
 
-        # Caso 1: Ruta con recurso UNC directo (ej. \\192.168.26.194\AdministraciónVw)
-        if (Test-Path $rutaLimpia) {
-            try {
-                $subNetbak = Join-Path $rutaLimpia "NetBakData"
-                if (Test-Path $subNetbak) {
-                    $carpetasEncontradas.Add("NetBakData")
-                    Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$rutaLimpia\NetBakData'"
+        # 1. Obtener los recursos compartidos reales del servidor con codificación CP850 (soporte tildes como AdministraciónVw)
+        $sharesReales = Obtener-SharesNetView $servidor
+
+        # Si no hubo shares con net view, intentar listar directorios de la ruta directa
+        if ($sharesReales.Count -eq 0 -and (Test-Path -LiteralPath $rutaLimpia)) {
+            $directShares = Get-ChildItem -LiteralPath $rutaLimpia -Directory -ErrorAction SilentlyContinue
+            foreach ($ds in $directShares) {
+                $sharesReales.Add($ds.Name)
+            }
+        }
+
+        # 2. Explorar cada recurso compartido buscando NetBakData
+        foreach ($share in $sharesReales) {
+            $rutaShare = "\\$servidor\$share"
+            if (Test-Path -LiteralPath $rutaShare) {
+                $subNetbak = Join-Path $rutaShare "NetBakData"
+                if (Test-Path -LiteralPath $subNetbak) {
+                    $cNombre = "$share\NetBakData"
+                    $areaShare = Obtener-AreaDesdeRuta $share
+                    $carpetasEncontradas.Add($cNombre)
+                    Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$cNombre' -> Área: $areaShare"
                     try {
                         $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
                         foreach ($md in $mDirs) {
-                            if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
+                            # REGLA ESTRICTA: Descartar cualquier carpeta que contenga '@' o sea de sistema
+                            if ($md.Name -notmatch '@recycle|#snapshot|\.dropbox|@') {
                                 $maquinasNetbak.Add(@{
-                                    carpeta_padre = "NetBakData"
+                                    carpeta_padre = $cNombre
                                     nombre_equipo = $md.Name
                                     ruta_carpeta = $md.FullName
+                                    area_nombre = $areaShare
                                 })
+                            } else {
+                                Write-ColectorLog "    [Omitido] Carpeta descartada (contiene '@' o es del sistema): '$($md.Name)'" "DEBUG"
                             }
                         }
                     } catch {}
                 }
-                $dirs = Get-ChildItem -Path $rutaLimpia -Directory -ErrorAction SilentlyContinue
-                foreach ($d in $dirs) {
-                    $subNetbak = Join-Path $d.FullName "NetBakData"
-                    if (Test-Path $subNetbak) {
-                        $cNombre = "$($d.Name)\NetBakData"
-                        $carpetasEncontradas.Add($cNombre)
-                        Write-ColectorLog "  [NetBak] Estructura NetBakData detectada en '$cNombre'"
-                        try {
-                            $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
-                            foreach ($md in $mDirs) {
-                                if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
-                                    $maquinasNetbak.Add(@{
-                                        carpeta_padre = $cNombre
-                                        nombre_equipo = $md.Name
-                                        ruta_carpeta = $md.FullName
-                                    })
-                                }
-                            }
-                        } catch {}
-                    } elseif ($d.Name -ieq "NetBakData") {
-                        $carpetasEncontradas.Add($d.Name)
-                    }
-                }
-            } catch {}
-        }
-
-        # Caso 2: Enumerar recursos compartidos del servidor con 'net view' si es solo IP
-        if ($carpetasEncontradas.Count -eq 0) {
-            try {
-                $servidor = ($rutaLimpia.TrimStart("\")).Split("\")[0]
-                $nvOut = net view "\\$servidor" 2>$null
-                $enTabla = $false
-                foreach ($linea in $nvOut) {
-                    if ($linea -match "---") { $enTabla = $true; continue }
-                    if ($enTabla -and -not [string]::IsNullOrWhiteSpace($linea)) {
-                        $partes = $linea.Trim() -split "\s+"
-                        if ($partes.Count -gt 0) {
-                            $share = $partes[0].Trim()
-                            if (-not $share.EndsWith("$")) {
-                                $rutaShare = "\\$servidor\$share"
-                                if (Test-Path $rutaShare) {
-                                    $subNetbak = Join-Path $rutaShare "NetBakData"
-                                    if (Test-Path $subNetbak) {
-                                        $cNombre = "$share\NetBakData"
-                                        $carpetasEncontradas.Add($cNombre)
-                                        Write-ColectorLog "  [NetBak] Estructura NetBakData encontrada: '$cNombre'"
-                                        try {
-                                            $mDirs = Get-ChildItem -LiteralPath $subNetbak -Directory -ErrorAction SilentlyContinue
-                                            foreach ($md in $mDirs) {
-                                                if (-not ($md.Name -match '@recycle|#snapshot|\.dropbox')) {
-                                                    $maquinasNetbak.Add(@{
-                                                        carpeta_padre = $cNombre
-                                                        nombre_equipo = $md.Name
-                                                        ruta_carpeta = $md.FullName
-                                                    })
-                                                }
-                                            }
-                                        } catch {}
-                                    } elseif ($share -ieq "NetBakData") {
-                                        $carpetasEncontradas.Add($share)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch {}
+            }
         }
 
         if ($carpetasEncontradas.Count -gt 0) {
@@ -378,32 +394,18 @@ foreach ($nas in $nasList) {
         } catch {}
     }
 
-    # Enumerar shares reales del servidor usando net view (para resolver tildes o codificaciones)
-    try {
-        if ($servidor) {
-            $nvOut = net view "\\$servidor" 2>$null
-            $enTabla = $false
-            foreach ($linea in $nvOut) {
-                if ($linea -match "---") { $enTabla = $true; continue }
-                if ($enTabla -and -not [string]::IsNullOrWhiteSpace($linea)) {
-                    $p = $linea.Trim() -split "\s{2,}"
-                    if ($p.Count -gt 0) {
-                        $sNombre = ($p[0].Trim() -split "\s+")[0]
-                        if (-not [string]::IsNullOrWhiteSpace($sNombre) -and -not $sNombre.EndsWith("$")) {
-                            $sharesRealesServidor.Add($sNombre)
-                        }
-                    }
-                }
-            }
-            if ($sharesRealesServidor.Count -gt 0) {
-                Write-ColectorLog "Recursos compartidos detectados en \\${servidor} -> $($sharesRealesServidor -join ', ')"
-            }
+    # Enumerar shares reales del servidor usando net view con codificación CP850 (para resolver tildes como AdministraciónVw)
+    if ($servidor) {
+        $sharesRealesServidor = Obtener-SharesNetView $servidor
+        if ($sharesRealesServidor.Count -gt 0) {
+            Write-ColectorLog "Recursos compartidos detectados en \\${servidor} -> $($sharesRealesServidor -join ', ')"
         }
-    } catch {}
+    }
 
     foreach ($carp in $nas.carpetas) {
         $carpNombre = $carp.nombre_carpeta.Trim().TrimStart("\/")
-        $areaNombre = if ($carp.area_nombre) { $carp.area_nombre } else { "General" }
+        # Inferencia precisa del Área desde la ruta/share (ej. CRMVw\NetBakData -> CRM)
+        $areaNombre = Obtener-AreaDesdeRuta $carpNombre
         $rutaCarpeta = Join-Path $ipLimpia $carpNombre
 
         if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
@@ -478,6 +480,11 @@ foreach ($nas in $nasList) {
         $equiposExcluidos = $respApi.config.equipos_excluidos
 
         foreach ($sub in $subCarpetas) {
+            # REGLA ESTRICTA: Descartar si el nombre de la carpeta contiene '@' (ej. usuario@maquina)
+            if ($sub.Name.Contains('@')) {
+                continue
+            }
+
             $descartar = $false
             foreach ($p in $patronesDescarte) {
                 if ($sub.Name.ToLower().Contains($p.ToLower())) {

@@ -2258,6 +2258,38 @@ function asegurarTablasRespaldos($pdo = null) {
             $pdo->exec("DELETE FROM respaldos_carpetas WHERE LOWER(nombre_carpeta) NOT LIKE '%netbak%' AND LOWER(ruta_relativa) NOT LIKE '%netbak%'");
             $pdo->exec("DELETE FROM respaldos_equipos WHERE LOWER(ruta_origen) NOT LIKE '%netbak%' AND ruta_origen IS NOT NULL AND ruta_origen != ''");
         } catch (Throwable $eClean2) {}
+
+        // 3. REGLA ESTRICTA: Eliminar carpetas o equipos que contengan '@' (ej. usuario@equipo)
+        try {
+            $pdo->exec("DELETE FROM respaldos_historial WHERE nombre_equipo LIKE '%@%'");
+            $pdo->exec("DELETE FROM respaldos_equipos WHERE nombre_equipo LIKE '%@%' OR ruta_origen LIKE '%@%'");
+            $pdo->exec("DELETE FROM respaldos_carpetas WHERE nombre_carpeta LIKE '%@%'");
+        } catch (Throwable $eCleanAt) {}
+
+        // 4. Estandarizar nombres de Áreas según la ruta UNC compartida (ej. CRMVw -> CRM, HyPVw -> HyP)
+        try {
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'CRM' WHERE (ruta_origen LIKE '%CRMVw%' OR ruta_origen LIKE '%\\CRM%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'HyP' WHERE (ruta_origen LIKE '%HyPVw%' OR ruta_origen LIKE '%\\HyP%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Administración' WHERE (ruta_origen LIKE '%Administra%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Ventas' WHERE (ruta_origen LIKE '%Ventas%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Servicio' WHERE (ruta_origen LIKE '%ServicioVw%' OR ruta_origen LIKE '%\\Servicio\\%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Refacciones' WHERE (ruta_origen LIKE '%Refacciones%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Sistemas' WHERE (ruta_origen LIKE '%Sistemas%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Seminuevos' WHERE (ruta_origen LIKE '%Seminuevos%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'Servicios Financieros' WHERE (ruta_origen LIKE '%ServiciosFinancieros%')");
+            $pdo->exec("UPDATE respaldos_equipos SET area_nombre = 'PLD' WHERE (ruta_origen LIKE '%\\PLD%')");
+
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'CRM' WHERE nombre_carpeta LIKE '%CRM%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'HyP' WHERE nombre_carpeta LIKE '%HyP%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Administración' WHERE nombre_carpeta LIKE '%Administra%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Ventas' WHERE nombre_carpeta LIKE '%Ventas%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Servicio' WHERE nombre_carpeta LIKE '%ServicioVw%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Refacciones' WHERE nombre_carpeta LIKE '%Refacciones%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Sistemas' WHERE nombre_carpeta LIKE '%Sistemas%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Seminuevos' WHERE nombre_carpeta LIKE '%Seminuevos%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Servicios Financieros' WHERE nombre_carpeta LIKE '%ServiciosFinancieros%'");
+            $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'PLD' WHERE nombre_carpeta LIKE '%PLD%'");
+        } catch (Throwable $eAreas) {}
     } catch (Throwable $e) {}
 }
 

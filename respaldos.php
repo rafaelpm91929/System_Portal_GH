@@ -113,7 +113,7 @@ if ($pdo) {
             ");
         } catch (Throwable $syncE) {}
 
-        // Métricas de equipos (solo equipos monitoreados que pertenezcan a una NAS existente)
+        // Métricas de equipos (solo equipos monitoreados que pertenezcan a una NAS existente y sin '@')
         $stmtMetricas = $pdo->query("
             SELECT 
                 COUNT(*) as total,
@@ -123,7 +123,7 @@ if ($pdo) {
                 SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
             FROM respaldos_equipos e
             JOIN respaldos_nas n ON e.nas_id = n.id
-            WHERE COALESCE(e.monitorear, 1) = 1
+            WHERE COALESCE(e.monitorear, 1) = 1 AND e.nombre_equipo NOT LIKE '%@%'
         ");
         $metricas = $stmtMetricas ? $stmtMetricas->fetch(PDO::FETCH_ASSOC) : [];
         $totalEquipos = (int)($metricas['total'] ?? 0);
@@ -137,7 +137,9 @@ if ($pdo) {
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
             JOIN respaldos_nas n ON e.nas_id = n.id 
-            WHERE e.estado IN ('critico', 'vencido', 'incompleto') AND COALESCE(e.monitorear, 1) = 1 
+            WHERE e.estado IN ('critico', 'vencido', 'incompleto') 
+              AND COALESCE(e.monitorear, 1) = 1 
+              AND e.nombre_equipo NOT LIKE '%@%'
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
             LIMIT 5
         ");
@@ -149,6 +151,7 @@ if ($pdo) {
             FROM respaldos_equipos e 
             JOIN respaldos_nas n ON e.nas_id = n.id 
             WHERE COALESCE(e.monitorear, 1) = 1 
+              AND e.nombre_equipo NOT LIKE '%@%'
             ORDER BY e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");
         $equiposList = $stmtEq ? $stmtEq->fetchAll(PDO::FETCH_ASSOC) : [];

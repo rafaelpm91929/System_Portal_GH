@@ -126,6 +126,54 @@ function calcularSemanasCalendarioMes($mes) {
 }
 
 /**
+ * Infiere el Área correspondiente a partir del nombre de la carpeta o recurso compartido UNC
+ * Ejemplo: 'CRMVw\NetBakData' -> 'CRM', 'HyPVw\NetBakData' -> 'HyP', 'AdministraciónVw' -> 'Administración'
+ */
+function inferirAreaDesdeRutaOFolder($nombre) {
+    if (empty($nombre)) return 'General';
+    // Quitar \NetBakData o /NetBakData
+    $limpio = preg_replace('/[\\\\\/]?NetBakData.*$/i', '', $nombre);
+    $limpio = trim($limpio, "\\/ ");
+    if (strpos($limpio, '\\') !== false) {
+        $parts = explode('\\', $limpio);
+        $limpio = end($parts);
+    }
+    // Si termina en Vw o VW (ej. CRMVw -> CRM, HyPVw -> HyP)
+    if (preg_match('/^(.*?)(?:Vw)$/i', $limpio, $m) && !empty($m[1])) {
+        $area = trim($m[1]);
+    } else {
+        $area = $limpio;
+    }
+
+    $upper = mb_strtoupper($area, 'UTF-8');
+    switch ($upper) {
+        case 'ADMINISTRACION':
+        case 'ADMINISTRACIÓN':
+            return 'Administración';
+        case 'CRM':
+            return 'CRM';
+        case 'HYP':
+            return 'HyP';
+        case 'REFACCIONES':
+            return 'Refacciones';
+        case 'SEMINUEVOS':
+            return 'Seminuevos';
+        case 'SERVICIOSFINANCIEROS':
+            return 'Servicios Financieros';
+        case 'SERVICIO':
+            return 'Servicio';
+        case 'SISTEMAS':
+            return 'Sistemas';
+        case 'VENTAS':
+            return 'Ventas';
+        case 'PLD':
+            return 'PLD';
+        default:
+            return !empty($area) ? $area : 'General';
+    }
+}
+
+/**
  * Calcula en tiempo real las métricas ejecutivas para actualizar
  * instantáneamente los KPIs y las gráficas del portal (Dona, Barras, Semanas)
  */
@@ -366,6 +414,11 @@ switch ($action) {
                 $nombre = is_array($c) ? trim($c['nombre_carpeta'] ?? '') : trim($c);
                 if (empty($nombre)) continue;
 
+                // REGLA ESTRICTA: Descartar si contiene '@' o no pertenece a NetBak
+                if (strpos($nombre, '@') !== false || stripos($nombre, 'netbak') === false) {
+                    continue;
+                }
+
                 $esSistema = 0;
                 foreach ($basura as $b) {
                     if (stripos($nombre, $b) !== false) {
@@ -373,24 +426,10 @@ switch ($action) {
                         break;
                     }
                 }
+                if ($esSistema) continue;
 
-                // Inferencia automática de área según nombre
-                $areaInferencia = 'General';
-                $nomLow = strtolower($nombre);
-                if (strpos($nomLow, 'conta') !== false) $areaInferencia = 'Contabilidad';
-                elseif (strpos($nomLow, 'vent') !== false) $areaInferencia = 'Ventas';
-                elseif (strpos($nomLow, 'sist') !== false || strpos($nomLow, 'ti') !== false) $areaInferencia = 'Sistemas';
-                elseif (strpos($nomLow, 'admin') !== false) $areaInferencia = 'Administración';
-                elseif (strpos($nomLow, 'serv') !== false) $areaInferencia = 'Servicio';
-                elseif (strpos($nomLow, 'refac') !== false) $areaInferencia = 'Refacciones';
-                elseif (strpos($nomLow, 'geren') !== false) $areaInferencia = 'Gerencia';
-                elseif (strpos($nomLow, 'caja') !== false) $areaInferencia = 'Caja';
-                elseif (!$esSistema) $areaInferencia = ucfirst($nombre);
-
-                $esNetbak = (stripos($nombre, 'netbak') !== false);
-                if (!$esNetbak || $esSistema) {
-                    continue; // REGLA ESTRICTA: Omitir cualquier carpeta que no sea de NetBak
-                }
+                // Inferencia automática precisa de área según la ruta o share (ej. CRMVw\NetBakData -> CRM)
+                $areaInferencia = inferirAreaDesdeRutaOFolder($nombre);
                 $monitorear = 1;
 
                 $stmtCheck->execute([$nasId, $nombre]);
@@ -399,6 +438,9 @@ switch ($action) {
                 if (!$exist) {
                     $stmtIns->execute([$nasId, $nombre, $nombre, $areaInferencia, $monitorear, $esSistema]);
                     $nuevas++;
+                } else {
+                    $pdo->prepare("UPDATE respaldos_carpetas SET area_nombre = ? WHERE id = ?")
+                        ->execute([$areaInferencia, $exist['id']]);
                 }
             }
 
@@ -411,28 +453,30 @@ switch ($action) {
                 foreach ($data['subcarpetas_netbak'] as $subEq) {
                     $nomEq = trim($subEq['nombre_equipo'] ?? '');
                     if (empty($nomEq)) continue;
+
+                    // REGLA ESTRICTA: Descartar máquinas o carpetas que contengan '@' (ej. usuario@maquina)
+                    if (strpos($nomEq, '@') !== false) continue;
+
                     $cPadre = trim($subEq['carpeta_padre'] ?? '');
                     $rCarp = trim($subEq['ruta_carpeta'] ?? '');
 
-                    // REGLA ESTRICTA: Solo equipos que pertenezcan a una carpeta NetBak
-                    if (stripos($cPadre, 'netbak') === false && stripos($rCarp, 'netbak') === false) {
+                    // REGLA ESTRICTA: Solo equipos dentro de NetBak y sin '@' en ruta
+                    if ((stripos($cPadre, 'netbak') === false && stripos($rCarp, 'netbak') === false) || strpos($rCarp, '@') !== false) {
                         continue;
                     }
 
                     $stmtGetCarpId->execute([$nasId, $cPadre]);
                     $carpInfo = $stmtGetCarpId->fetch(PDO::FETCH_ASSOC);
                     $cId = $carpInfo ? $carpInfo['id'] : null;
-                    $areaEq = $carpInfo ? $carpInfo['area_nombre'] : 'General';
+                    $areaEq = !empty($subEq['area_nombre']) ? trim($subEq['area_nombre']) : ($carpInfo ? $carpInfo['area_nombre'] : inferirAreaDesdeRutaOFolder($cPadre));
 
                     $stmtCheckEq->execute([$nomEq]);
                     $eqExist = $stmtCheckEq->fetch(PDO::FETCH_ASSOC);
                     if (!$eqExist) {
                         $stmtInsEq->execute([$nomEq, $nomEq, $areaEq, $nasId, $cId, $rCarp]);
                     } else {
-                        if ($cId) {
-                            $pdo->prepare("UPDATE respaldos_equipos SET carpeta_id = COALESCE(carpeta_id, ?), nas_id = COALESCE(nas_id, ?) WHERE id = ?")
-                                ->execute([$cId, $nasId, $eqExist['id']]);
-                        }
+                        $pdo->prepare("UPDATE respaldos_equipos SET area_nombre = ?, carpeta_id = COALESCE(?, carpeta_id), nas_id = COALESCE(?, nas_id), ruta_origen = ? WHERE id = ?")
+                            ->execute([$areaEq, $cId, $nasId, $rCarp, $eqExist['id']]);
                     }
                 }
             }
@@ -572,11 +616,15 @@ switch ($action) {
                 $nombreEquipo = strtoupper(trim($eq['nombre_equipo'] ?? ''));
                 if (empty($nombreEquipo)) continue;
 
-                $usuarioResp = !empty($eq['usuario_responsable']) ? trim($eq['usuario_responsable']) : null;
-                $areaNombre = !empty($eq['area_nombre']) ? trim($eq['area_nombre']) : 'General';
-                $nasId = !empty($eq['nas_id']) ? (int)$eq['nas_id'] : null;
-                $carpetaId = !empty($eq['carpeta_id']) ? (int)$eq['carpeta_id'] : null;
+                // REGLA ESTRICTA: Descartar máquinas o carpetas que contengan '@' (ej. usuario@maquina)
+                if (strpos($nombreEquipo, '@') !== false) continue;
                 $rutaOrigen = $eq['ruta_carpeta'] ?? ($eq['ruta_origen'] ?? '');
+                if (strpos($rutaOrigen, '@') !== false) continue;
+
+                $usuarioResp = !empty($eq['usuario_responsable']) ? trim($eq['usuario_responsable']) : null;
+                $areaNombre = (!empty($eq['area_nombre']) && $eq['area_nombre'] !== 'General') 
+                    ? trim($eq['area_nombre']) 
+                    : inferirAreaDesdeRutaOFolder($rutaOrigen);
                 $ultimoArchivo = $eq['ultimo_archivo_nombre'] ?? ($eq['archivo_reciente'] ?? null);
                 $ultimoFecha = !empty($eq['ultimo_archivo_fecha']) ? $eq['ultimo_archivo_fecha'] : null;
                 $tamanoBytes = (float)($eq['tamano_bytes'] ?? 0);
