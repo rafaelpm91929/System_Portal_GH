@@ -207,24 +207,45 @@ foreach ($nas in $nasList) {
     $usuario = $nas.usuario_smb
     $pass = $nas.password_smb
 
-    Write-ColectorLog "Procesando NAS '$nasNombre' ($ipRuta)..."
+    # Asegurar formato UNC de red Windows (\\IP_O_SERVIDOR)
+    $ipLimpia = $ipRuta.Trim().TrimEnd("\/")
+    if (-not $ipLimpia.StartsWith("\\")) {
+        $ipLimpia = "\\$ipLimpia"
+    }
+
+    Write-ColectorLog "Procesando NAS '$nasNombre' ($ipLimpia)..."
 
     # Mapeo de credenciales en Windows
     if (![string]::IsNullOrEmpty($usuario) -and ![string]::IsNullOrEmpty($pass)) {
         try {
-            $servidor = ($ipRuta -replace "/", "\").Split("\") | Where-Object { $_ } | Select-Object -First 1
+            $servidor = ($ipLimpia.TrimStart("\")).Split("\")[0]
             if ($servidor) {
                 net use "\\$servidor" /user:"$usuario" "$pass" /persistent:no | Out-Null
+                Write-ColectorLog "Credenciales SMB verificadas para \\$servidor"
             }
         } catch {}
     }
 
     foreach ($carp in $nas.carpetas) {
-        $carpNombre = $carp.nombre_carpeta
+        $carpNombre = $carp.nombre_carpeta.Trim().TrimStart("\/")
         $areaNombre = if ($carp.area_nombre) { $carp.area_nombre } else { "General" }
-        $rutaCarpeta = Join-Path $ipRuta $carpNombre
+        $rutaCarpeta = Join-Path $ipLimpia $carpNombre
 
-        if (-not (Test-Path $rutaCarpeta)) {
+        if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
+            # Búsqueda tolerante en caso de acentos o variaciones de codificación en el nombre del recurso
+            $shareBase = $carpNombre.Split("\")[0]
+            $subPath = if ($carpNombre.Contains("\")) { $carpNombre.Substring($shareBase.Length + 1) } else { "" }
+            try {
+                $dirReal = Get-ChildItem -LiteralPath $ipLimpia -Directory -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.Name -like "*$shareBase*" -or $shareBase -like "*$($_.Name)*" } | 
+                    Select-Object -First 1
+                if ($dirReal) {
+                    $rutaCarpeta = if ($subPath) { Join-Path $dirReal.FullName $subPath } else { $dirReal.FullName }
+                }
+            } catch {}
+        }
+
+        if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
             Write-ColectorLog "Ruta inaccesible: $rutaCarpeta" "WARN"
             continue
         }
@@ -235,13 +256,13 @@ foreach ($nas in $nasList) {
         # Si la carpeta contiene una subcarpeta 'NetBakData', las máquinas están adentro
         $dirEquipos = $rutaCarpeta
         $subNetbakDirecto = Join-Path $rutaCarpeta "NetBakData"
-        if (Test-Path $subNetbakDirecto) {
+        if (Test-Path -LiteralPath $subNetbakDirecto) {
             Write-ColectorLog "  [NetBak] Carpeta NetBakData detectada en '$carpNombre'. Escaneando equipos en subcarpeta..."
             $dirEquipos = $subNetbakDirecto
         }
 
         try {
-            $subCarpetas = Get-ChildItem -Path $dirEquipos -Directory -ErrorAction SilentlyContinue
+            $subCarpetas = Get-ChildItem -LiteralPath $dirEquipos -Directory -ErrorAction SilentlyContinue
         } catch {
             continue
         }
@@ -256,11 +277,28 @@ foreach ($nas in $nasList) {
             }
             if ($descartar) { continue }
 
-            $nombreEquipo = $sub.Name.ToUpper()
+            $nombreCarpeta = $sub.Name
+            $nombreEquipo = $nombreCarpeta.ToUpper()
+            $usuarioDetectado = $nombreCarpeta
             $rutaSub = $sub.FullName
 
+            # Intentar detectar el usuario real de Windows si NetBak respaldó la carpeta Users
+            try {
+                $usersDir = Get-ChildItem -LiteralPath $rutaSub -Directory -Recurse -Depth 4 -ErrorAction SilentlyContinue | 
+                    Where-Object { $_.Name -ieq "Users" -or $_.Name -ieq "Usuarios" } | 
+                    Select-Object -First 1
+                if ($usersDir) {
+                    $primerUsuario = Get-ChildItem -LiteralPath $usersDir.FullName -Directory -ErrorAction SilentlyContinue | 
+                        Where-Object { $_.Name -notmatch 'Public|Default|All Users|Todos los usuarios' } | 
+                        Select-Object -First 1
+                    if ($primerUsuario) {
+                        $usuarioDetectado = $primerUsuario.Name
+                    }
+                }
+            } catch {}
+
             # VERIFICAR SI CONTIENE CARPETAS NETBAK DE FECHA (formato: YYYY-MM-DD-HH-mm-ss)
-            $carpetasNetbakFecha = Get-ChildItem -Path $rutaSub -Directory -ErrorAction SilentlyContinue | 
+            $carpetasNetbakFecha = Get-ChildItem -LiteralPath $rutaSub -Directory -ErrorAction SilentlyContinue | 
                 Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}' } | 
                 Sort-Object Name -Descending
 
@@ -286,7 +324,7 @@ foreach ($nas in $nasList) {
                 }
 
                 # Analizar archivos de la carpeta más reciente para verificar archivos temporales / incompletos
-                $archivosRecientes = Get-ChildItem -Path $carpetaReciente.FullName -Recurse -File -ErrorAction SilentlyContinue
+                $archivosRecientes = Get-ChildItem -LiteralPath $carpetaReciente.FullName -Recurse -File -ErrorAction SilentlyContinue
                 foreach ($f in $archivosRecientes) {
                     $ultimoBytes += $f.Length
                     $esTemp = $false
@@ -305,7 +343,7 @@ foreach ($nas in $nasList) {
                 }
             } else {
                 # MODO ESTÁNDAR (Veeam, Cobian, Windows Backup, etc.)
-                $archivos = Get-ChildItem -Path $rutaSub -Recurse -File -ErrorAction SilentlyContinue
+                $archivos = Get-ChildItem -LiteralPath $rutaSub -Recurse -File -ErrorAction SilentlyContinue
                 foreach ($f in $archivos) {
                     $esTemp = $false
                     foreach ($ext in $extTemporales) {
@@ -329,7 +367,7 @@ foreach ($nas in $nasList) {
 
             $resultadosEquipos.Add([PSCustomObject]@{
                 nombre_equipo = $nombreEquipo
-                usuario_responsable = $sub.Name
+                usuario_responsable = $usuarioDetectado
                 area_nombre = $areaNombre
                 nas_id = $nas.id
                 carpeta_id = $carp.id
@@ -340,7 +378,7 @@ foreach ($nas in $nasList) {
                 tiene_temporales = ($temporales.Count -gt 0)
                 archivos_temporales = $temporales
             })
-            Write-ColectorLog "  [+] Equipo '$nombreEquipo' detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr)"
+            Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado) detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr)"
         }
     }
 }

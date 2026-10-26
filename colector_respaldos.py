@@ -324,6 +324,8 @@ def ejecutar_escaneo(info_api, cfg):
             area_nombre = carp.get("area_nombre", "General")
 
             ruta_unc_base = ip_ruta.rstrip("\\/ ")
+            if os.name == "nt" and not ruta_unc_base.startswith("\\\\"):
+                ruta_unc_base = f"\\\\{ruta_unc_base}"
             sep = "\\" if os.name == "nt" else "/"
             ruta_carpeta = f"{ruta_unc_base}{sep}{carp_nombre}"
 
