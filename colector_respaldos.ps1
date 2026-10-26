@@ -60,7 +60,8 @@ if ([string]::IsNullOrWhiteSpace($ApiToken) -or $ApiToken -eq "COPIAR_TOKEN_AQUI
 }
 
 # 1. Consultar rutas a vigilar desde la API
-$urlConsulta = "${ApiUrl}?action=obtener_rutas_vigilar"
+$separator = if ($ApiUrl -match '\?') { "&" } else { "?" }
+$urlConsulta = "${ApiUrl}${separator}action=obtener_rutas_vigilar&token=$ApiToken"
 Write-ColectorLog "Consultando rutas en: $urlConsulta"
 
 $headers = @{
@@ -148,7 +149,8 @@ if ($Descubrir) {
             Write-ColectorLog "Carpetas encontradas en '$nasNombre': $($carpetasEncontradas -join ', ')"
 
             # Enviar lista a cPanel
-            $urlReporteCarpetas = "${ApiUrl}?action=reportar_carpetas_detectadas"
+            $separator = if ($ApiUrl -match '\?') { "&" } else { "?" }
+            $urlReporteCarpetas = "${ApiUrl}${separator}action=reportar_carpetas_detectadas&token=$ApiToken"
             $payloadCarpetas = @{
                 nas_id = $nasId
                 carpetas = @($carpetasEncontradas | ForEach-Object { @{ nombre_carpeta = $_ } })
@@ -272,7 +274,8 @@ $duracionSeg = [math]::Round($stopwatch.Elapsed.TotalSeconds, 0)
 Write-ColectorLog "Escaneo terminado. Equipos encontrados: $($resultadosEquipos.Count) en $duracionSeg s."
 
 if ($resultadosEquipos.Count -gt 0) {
-    $urlReporte = "${ApiUrl}?action=reportar_respaldo_consolidado"
+    $separator = if ($ApiUrl -match '\?') { "&" } else { "?" }
+    $urlReporte = "${ApiUrl}${separator}action=reportar_respaldo_consolidado&token=$ApiToken"
     Write-ColectorLog "Enviando reporte consolidado a cPanel..."
 
     $payload = @{

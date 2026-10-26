@@ -102,7 +102,8 @@ def consultar_rutas_api(cfg):
     """
     Consulta a la API del portal las NAS y carpetas a vigilar
     """
-    url = f"{cfg['api_url']}?action=obtener_rutas_vigilar"
+    sep = "&" if "?" in cfg['api_url'] else "?"
+    url = f"{cfg['api_url']}{sep}action=obtener_rutas_vigilar&token={cfg.get('api_token', '')}"
     log(f"Consultando rutas y configuración en: {url}")
 
     req = urllib.request.Request(url)
@@ -204,7 +205,8 @@ def descubrir_carpetas_nas(nas, cfg):
     log(f"Carpetas reales encontradas en '{nas_nombre}': {', '.join(carpetas_encontradas)}")
 
     # Enviar al portal cPanel
-    url = f"{cfg['api_url']}?action=reportar_carpetas_detectadas"
+    sep = "&" if "?" in cfg['api_url'] else "?"
+    url = f"{cfg['api_url']}{sep}action=reportar_carpetas_detectadas&token={cfg.get('api_token', '')}"
     payload = {
         "nas_id": nas_id,
         "carpetas": [{"nombre_carpeta": c} for c in carpetas_encontradas]
@@ -394,7 +396,8 @@ def enviar_reporte_consolidado(equipos, duracion_seg, cfg):
     """
     Envía en un solo POST HTTPS el reporte JSON consolidado a cPanel
     """
-    url = f"{cfg['api_url']}?action=reportar_respaldo_consolidado"
+    sep = "&" if "?" in cfg['api_url'] else "?"
+    url = f"{cfg['api_url']}{sep}action=reportar_respaldo_consolidado&token={cfg.get('api_token', '')}"
     log(f"Enviando reporte consolidado ({len(equipos)} equipos) a: {url}")
 
     payload = {
