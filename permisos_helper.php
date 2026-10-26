@@ -2195,8 +2195,8 @@ function asegurarTablasRespaldos($pdo = null) {
         $tokenDef = bin2hex(random_bytes(24));
         $configsDef = [
             'token_api_colector' => [$tokenDef, 'Token secreto Bearer para autenticación de scripts colectores LAN'],
-            'umbral_alerta_horas' => ['24', 'Horas transcurridas para considerar un respaldo como vencido (Amarillo)'],
-            'umbral_critico_horas' => ['48', 'Horas transcurridas para considerar un respaldo como crítico (Rojo)'],
+            'umbral_alerta_horas' => ['168', 'Horas transcurridas para considerar un respaldo semanal como en alerta (7 días / Amarillo)'],
+            'umbral_critico_horas' => ['240', 'Horas transcurridas para considerar un respaldo semanal como crítico (10 días / Rojo)'],
             'tamano_minimo_valido_mb' => ['1', 'Tamaño mínimo en MB para validar que un archivo no está vacío o corrupto'],
             'patrones_descarte' => ['@Recycle,#snapshot,@Recently-Snapshot,.dropbox.cache,aquota.user,aquota.group,Thumbs.db,desktop.ini,.DS_Store', 'Carpetas y archivos del sistema a descartar automáticamente']
         ];

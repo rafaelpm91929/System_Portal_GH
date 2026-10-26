@@ -290,11 +290,11 @@ switch ($action) {
         $fechaReporte = $data['fecha_escaneo'] ?? date('Y-m-d H:i:s');
         $fechaDia = date('Y-m-d', strtotime($fechaReporte));
 
-        // Obtener umbrales
+        // Obtener umbrales de SLA Semanal (168h = 7 días, 240h = 10 días)
         $stmtConf = $pdo->query("SELECT clave, valor FROM respaldos_config WHERE clave IN ('umbral_alerta_horas', 'umbral_critico_horas')");
         $confMap = $stmtConf->fetchAll(PDO::FETCH_KEY_PAIR);
-        $umbralAlerta = (int)($confMap['umbral_alerta_horas'] ?? 24);
-        $umbralCritico = (int)($confMap['umbral_critico_horas'] ?? 48);
+        $umbralAlerta = (int)($confMap['umbral_alerta_horas'] ?? 168);
+        $umbralCritico = (int)($confMap['umbral_critico_horas'] ?? 240);
 
         $procesados = 0;
         $ahoraTime = time();
@@ -305,7 +305,11 @@ switch ($action) {
             $stmtCheckEq = $pdo->prepare("SELECT id FROM respaldos_equipos WHERE nombre_equipo = ? LIMIT 1");
             $stmtUpdEq = $pdo->prepare("
                 UPDATE respaldos_equipos 
-                SET usuario_responsable = COALESCE(?, usuario_responsable),
+                SET usuario_responsable = CASE 
+                        WHEN usuario_responsable IS NULL OR usuario_responsable = '' OR usuario_responsable = nombre_equipo 
+                        THEN COALESCE(?, usuario_responsable) 
+                        ELSE usuario_responsable 
+                    END,
                     area_nombre = COALESCE(?, area_nombre),
                     nas_id = ?,
                     carpeta_id = ?,
@@ -410,6 +414,29 @@ switch ($action) {
                     $stmtInsHist->execute([
                         $equipoId, $nombreEquipo, $nasId, $fechaDia, $fechaReporte, $estado, $ultimoArchivo, $tamanoBytes, $duracionSeg
                     ]);
+                }
+
+                // Guardar historial adicional reciente reportado por el agente (las 4 semanas del mes)
+                if (!empty($eq['historial_reciente']) && is_array($eq['historial_reciente'])) {
+                    foreach ($eq['historial_reciente'] as $h) {
+                        $hFechaHora = $h['fecha_hora'] ?? null;
+                        if (empty($hFechaHora)) continue;
+                        $hFecha = date('Y-m-d', strtotime($hFechaHora));
+                        $hNombre = $h['archivo_nombre'] ?? $hFecha;
+                        $hBytes = (float)($h['tamano_bytes'] ?? 0);
+
+                        $stmtCheckHist->execute([$nombreEquipo, $hFecha]);
+                        $hId = $stmtCheckHist->fetchColumn();
+                        if ($hId) {
+                            $stmtUpdHist->execute([
+                                $hFechaHora, 'exitoso', $hNombre, $hBytes, 0, $nasId, $hId
+                            ]);
+                        } else {
+                            $stmtInsHist->execute([
+                                $equipoId, $nombreEquipo, $nasId, $hFecha, $hFechaHora, 'exitoso', $hNombre, $hBytes, 0
+                            ]);
+                        }
+                    }
                 }
 
                 $procesados++;
@@ -560,6 +587,32 @@ switch ($action) {
             $carpetas = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             echo json_encode(['success' => true, 'carpetas' => $carpetas]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Guarda o edita un equipo (Nombre/Alias, Usuario Responsable, Área)
+     */
+    case 'guardar_equipo':
+        validarSesionPortal();
+        requerirPermiso('respaldos', 'puede_editar');
+
+        $id = (int)($_POST['id'] ?? 0);
+        $nombre = strtoupper(trim($_POST['nombre_equipo'] ?? ''));
+        $usuario = trim($_POST['usuario_responsable'] ?? '');
+        $area = trim($_POST['area_nombre'] ?? 'General');
+
+        if ($id <= 0 || empty($nombre)) {
+            echo json_encode(['success' => false, 'error' => 'ID y Nombre de Equipo son obligatorios']);
+            exit();
+        }
+
+        try {
+            $stmt = $pdo->prepare("UPDATE respaldos_equipos SET nombre_equipo = ?, usuario_responsable = ?, area_nombre = ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?");
+            $stmt->execute([$nombre, $usuario, $area, $id]);
+            echo json_encode(['success' => true, 'mensaje' => 'Equipo actualizado con éxito']);
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
         }

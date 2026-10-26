@@ -34,6 +34,19 @@ if ([string]::IsNullOrWhiteSpace($ApiUrl)) {
     $ApiUrl = "https://portal.pirineosmotors.com/api_respaldos.php"
 }
 
+function Remove-Diacritics {
+    param([string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return "" }
+    $normalized = $Text.Normalize([System.Text.NormalizationForm]::FormD)
+    $sb = [System.Text.StringBuilder]::new()
+    foreach ($c in $normalized.ToCharArray()) {
+        if ([System.Globalization.CharUnicodeInfo]::GetUnicodeCategory($c) -ne [System.Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$sb.Append($c)
+        }
+    }
+    return $sb.ToString().Normalize([System.Text.NormalizationForm]::FormC)
+}
+
 function Write-ColectorLog {
     param([string]$Mensaje, [string]$Nivel = "INFO")
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -70,10 +83,20 @@ $headers = @{
 }
 
 try {
-    $respApi = Invoke-RestMethod -Uri $urlConsulta -Method Get -Headers $headers -TimeoutSec 45
+    $wc = [System.Net.WebClient]::new()
+    $wc.Encoding = [System.Text.Encoding]::UTF8
+    foreach ($k in $headers.Keys) {
+        $wc.Headers.Add($k, $headers[$k])
+    }
+    $rawJson = $wc.DownloadString($urlConsulta)
+    $respApi = $rawJson | ConvertFrom-Json
 } catch {
-    Write-ColectorLog "Falla al conectar con la API: $_" "ERROR"
-    exit 1
+    try {
+        $respApi = Invoke-RestMethod -Uri $urlConsulta -Method Get -Headers $headers -TimeoutSec 45
+    } catch {
+        Write-ColectorLog "Falla al conectar con la API: $_" "ERROR"
+        exit 1
+    }
 }
 
 if (-not $respApi.success) {
@@ -232,15 +255,23 @@ foreach ($nas in $nasList) {
         $rutaCarpeta = Join-Path $ipLimpia $carpNombre
 
         if (-not (Test-Path -LiteralPath $rutaCarpeta)) {
-            # Búsqueda tolerante en caso de acentos o variaciones de codificación en el nombre del recurso
-            $shareBase = $carpNombre.Split("\")[0]
-            $subPath = if ($carpNombre.Contains("\")) { $carpNombre.Substring($shareBase.Length + 1) } else { "" }
+            # Búsqueda tolerante en caso de acentos, tildes o variaciones de codificación (ej. Administración vs Administracion)
+            $partesCarp = $carpNombre.Split("\")
+            $shareBase = $partesCarp[0]
+            $subPath = if ($partesCarp.Count -gt 1) { ($partesCarp[1..($partesCarp.Count - 1)]) -join "\" } else { "" }
+            $shareLimpio = (Remove-Diacritics $shareBase).ToLower()
+
             try {
-                $dirReal = Get-ChildItem -LiteralPath $ipLimpia -Directory -ErrorAction SilentlyContinue | 
-                    Where-Object { $_.Name -like "*$shareBase*" -or $shareBase -like "*$($_.Name)*" } | 
-                    Select-Object -First 1
+                $sharesEnServidor = Get-ChildItem -LiteralPath $ipLimpia -Directory -ErrorAction SilentlyContinue
+                $dirReal = $sharesEnServidor | Where-Object { 
+                    $nom = $_.Name.ToLower()
+                    $nomLimpio = (Remove-Diacritics $_.Name).ToLower()
+                    $nom -eq $shareBase.ToLower() -or $nomLimpio -eq $shareLimpio -or $nom.Contains($shareLimpio) -or $shareLimpio.Contains($nomLimpio)
+                } | Select-Object -First 1
+
                 if ($dirReal) {
                     $rutaCarpeta = if ($subPath) { Join-Path $dirReal.FullName $subPath } else { $dirReal.FullName }
+                    Write-ColectorLog "  Recurso resuelto con éxito para '$shareBase' -> '$($dirReal.Name)'"
                 }
             } catch {}
         }
@@ -307,21 +338,25 @@ foreach ($nas in $nasList) {
             $ultimoFechaStr = $null
             $ultimoNombreStr = $null
             $ultimoBytes = 0
+            $historialRespaldos = [System.Collections.Generic.List[PSObject]]::new()
 
             if ($carpetasNetbakFecha.Count -gt 0) {
-                # MODO NETBAK REPLICATOR: La carpeta con fecha más reciente
+                # MODO NETBAK REPLICATOR: Extraer los últimos respaldos semanales (hasta 8 ejecuciones históricas)
+                foreach ($cf in ($carpetasNetbakFecha | Select-Object -First 8)) {
+                    $p = $cf.Name -split "-"
+                    $fStr = if ($p.Count -ge 6) { "$($p[0])-$($p[1])-$($p[2]) $($p[3]):$($p[4]):$($p[5])" }
+                            elseif ($p.Count -ge 3) { "$($p[0])-$($p[1])-$($p[2]) 00:00:00" }
+                            else { $cf.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") }
+                    $historialRespaldos.Add(@{
+                        fecha_hora = $fStr
+                        archivo_nombre = $cf.Name
+                        tamano_bytes = 0
+                    })
+                }
+
                 $carpetaReciente = $carpetasNetbakFecha[0]
                 $ultimoNombreStr = $carpetaReciente.Name
-
-                # Extraer fecha exacta del formato NetBak: YYYY-MM-DD-HH-mm-ss
-                $partesF = $carpetaReciente.Name -split "-"
-                if ($partesF.Count -ge 6) {
-                    $ultimoFechaStr = "$($partesF[0])-$($partesF[1])-$($partesF[2]) $($partesF[3]):$($partesF[4]):$($partesF[5])"
-                } elseif ($partesF.Count -ge 3) {
-                    $ultimoFechaStr = "$($partesF[0])-$($partesF[1])-$($partesF[2]) 00:00:00"
-                } else {
-                    $ultimoFechaStr = $carpetaReciente.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
-                }
+                $ultimoFechaStr = $historialRespaldos[0].fecha_hora
 
                 # Analizar archivos de la carpeta más reciente para verificar archivos temporales / incompletos
                 $archivosRecientes = Get-ChildItem -LiteralPath $carpetaReciente.FullName -Recurse -File -ErrorAction SilentlyContinue
@@ -377,6 +412,7 @@ foreach ($nas in $nasList) {
                 tamano_bytes = $ultimoBytes
                 tiene_temporales = ($temporales.Count -gt 0)
                 archivos_temporales = $temporales
+                historial_reciente = $historialRespaldos
             })
             Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado) detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr)"
         }
