@@ -1486,13 +1486,13 @@ function guardarDatosEquipo(e) {
                             </div>
                             <?php else: ?>
                             <?php foreach ($nasCatalogo as $n): ?>
-                            <div class="p-3 rounded-3 border border-secondary border-opacity-25" style="background: rgba(13, 30, 54, 0.5);">
+                            <div id="cardNas_<?php echo $n['id']; ?>" class="p-3 rounded-3 border border-secondary border-opacity-25 card-nas-item" style="background: rgba(13, 30, 54, 0.5); cursor: pointer; transition: all 0.2s;" onclick="seleccionarNasCarpetas(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre'], ENT_QUOTES); ?>')">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <div>
                                         <div class="fw-bold text-white"><?php echo htmlspecialchars($n['nombre']); ?></div>
                                         <div class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-50 small"><?php echo htmlspecialchars($n['marca']); ?></div>
                                     </div>
-                                    <div class="d-flex gap-1">
+                                    <div class="d-flex gap-1" onclick="event.stopPropagation()">
                                         <?php if ($puedeEditar): ?>
                                         <button class="btn btn-outline-light btn-sm p-1 rounded-2" onclick="editarNas(<?php echo htmlspecialchars(json_encode($n)); ?>)" title="Editar">
                                             <i class="bi bi-pencil"></i>
@@ -1510,11 +1510,11 @@ function guardarDatosEquipo(e) {
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center pt-2 border-top border-secondary border-opacity-10 small">
                                     <span class="text-secondary">Usuario SMB: <strong class="text-white"><?php echo htmlspecialchars($n['usuario_smb'] ?: 'Sin usuario'); ?></strong></span>
-                                    <div class="d-flex gap-1">
+                                    <div class="d-flex gap-1" onclick="event.stopPropagation()">
                                         <button class="btn btn-outline-warning btn-sm py-0 px-2 rounded-2" onclick="abrirDeteccionNasExistente(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre']); ?>')" title="Detectar carpetas reales desde la máquina local">
                                             <i class="bi bi-broadcast me-1"></i> Detectar
                                         </button>
-                                        <button class="btn btn-outline-info btn-sm py-0 px-2 rounded-2" onclick="seleccionarNasCarpetas(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre']); ?>')">
+                                        <button class="btn btn-outline-info btn-sm py-0 px-2 rounded-2" onclick="seleccionarNasCarpetas(<?php echo $n['id']; ?>, '<?php echo htmlspecialchars($n['nombre'], ENT_QUOTES); ?>')">
                                             Ver <i class="bi bi-chevron-right ms-1"></i>
                                         </button>
                                     </div>
@@ -2152,165 +2152,7 @@ function guardarDatosEquipo(e) {
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js">
-// =============================================================================
-// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO, ÁREAS Y 4 SEMANAS DEL MES)
-// =============================================================================
-document.addEventListener('DOMContentLoaded', function() {
-    inicializarGraficas();
-});
-
-let chartInstanciaDona = null;
-let chartInstanciaAreas = null;
-let chartInstanciaSemanas = null;
-
-function inicializarGraficas() {
-    if (typeof Chart === 'undefined') return;
-
-    // 1. Gráfica de Dona: Semáforo Semanal
-    const ctxDona = document.getElementById('chartSemaforoDona');
-    if (ctxDona) {
-        chartInstanciaDona = new Chart(ctxDona, {
-            type: 'doughnut',
-            data: {
-                labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
-                datasets: [{
-                    data: [<?php echo $exitosos; ?>, <?php echo $vencidos; ?>, <?php echo $criticos; ?>, <?php echo $incompletos; ?>],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#ec4899'],
-                    borderWidth: 2,
-                    borderColor: '#09172c'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: { color: '#ffffff', boxWidth: 12, font: { size: 10 } }
-                    }
-                },
-                cutout: '70%'
-            }
-        });
-    }
-
-    // 2. Gráfica de Barras: Equipos por Área
-    const ctxAreas = document.getElementById('chartAreasBarras');
-    if (ctxAreas) {
-        chartInstanciaAreas = new Chart(ctxAreas, {
-            type: 'bar',
-            data: {
-                labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
-                datasets: [{
-                    label: 'Equipos',
-                    data: <?php echo json_encode(array_values($conteoPorArea)); ?>,
-                    backgroundColor: 'rgba(56, 189, 248, 0.6)',
-                    borderColor: '#38bdf8',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-
-    // 3. Gráfica de 4 Semanas del Mes
-    const ctxSemanas = document.getElementById('chartSemanasMes');
-    if (ctxSemanas) {
-        chartInstanciaSemanas = new Chart(ctxSemanas, {
-            type: 'line',
-            data: {
-                labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
-                datasets: [{
-                    label: 'Respaldos cumplidos',
-                    data: [<?php echo $conteoPorSemana['S1']; ?>, <?php echo $conteoPorSemana['S2']; ?>, <?php echo $conteoPorSemana['S3']; ?>, <?php echo $conteoPorSemana['S4']; ?>],
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                    borderColor: '#10b981',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.35,
-                    pointBackgroundColor: '#10b981',
-                    pointRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-}
-
-function abrirModalEditarEquipo(eq) {
-    if (typeof eq === 'string') {
-        try { eq = JSON.parse(eq); } catch (e) { eq = {}; }
-    }
-    document.getElementById('editEquipoId').value = eq.id || 0;
-    document.getElementById('editNombreEquipo').value = eq.nombre_equipo || '';
-    document.getElementById('editUsuarioResponsable').value = eq.usuario_responsable || '';
-    if (eq.area_nombre) {
-        document.getElementById('editAreaNombre').value = eq.area_nombre;
-    }
-    const modal = new bootstrap.Modal(document.getElementById('modalEditarEquipo'));
-    modal.show();
-}
-
-function guardarDatosEquipo(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnGuardarEquipo');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
-
-    const form = document.getElementById('formEditarEquipo');
-    const formData = new FormData(form);
-
-    fetch('api_respaldos.php?action=guardar_equipo', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(res => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        if (res.success) {
-            Swal.fire({
-                icon: 'success',
-                title: '¡Guardado!',
-                text: 'Los datos del equipo fueron actualizados con éxito.',
-                timer: 1500,
-                showConfirmButton: false
-            }).then(() => {
-                location.reload();
-            });
-        } else {
-            Swal.fire('Error', res.error || 'No se pudo guardar', 'error');
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        Swal.fire('Error', 'Falla de conexión al guardar: ' + err.message, 'error');
-    });
-}
-</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <?php include_once 'pwa_body.php'; ?>
 
 <script>
@@ -2655,13 +2497,39 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('tab-heatmap-link')?.addEventListener('shown.bs.tab', () => {
         sincronizarScrollDoble('scrollMatrizTop', 'matrizContenido', 'scrollMatrizInnerTop', 'tablaMatrizSemanal');
     });
+    document.getElementById('tab-nas-link')?.addEventListener('shown.bs.tab', () => {
+        cargarCatalogoNas();
+    });
 });
 
 // 4. GESTIÓN DE NAS Y CARPETAS
+function cargarCatalogoNas() {
+    if (nasSeleccionadoActual > 0) {
+        cargarCarpetasPorNas(nasSeleccionadoActual);
+    } else {
+        const primerNasCard = document.querySelector('.card-nas-item');
+        if (primerNasCard) {
+            primerNasCard.click();
+        }
+    }
+}
+
 function seleccionarNasCarpetas(nasId, nasNombre) {
     nasSeleccionadoActual = nasId;
-    document.getElementById('tituloCarpetasNas').innerText = `Carpetas de: ${nasNombre}`;
-    document.getElementById('subtituloCarpetasNas').innerText = `Mapeo por área y exclusión de carpetas del sistema`;
+    const tit = document.getElementById('tituloCarpetasNas');
+    if (tit) tit.innerText = `Carpetas de: ${nasNombre}`;
+    const sub = document.getElementById('subtituloCarpetasNas');
+    if (sub) sub.innerText = `Mapeo por área y exclusión de carpetas del sistema`;
+
+    document.querySelectorAll('.card-nas-item').forEach(el => {
+        el.style.borderColor = 'rgba(255,255,255,0.15)';
+        el.style.background = 'rgba(13, 30, 54, 0.5)';
+    });
+    const cardActiva = document.getElementById(`cardNas_${nasId}`);
+    if (cardActiva) {
+        cardActiva.style.borderColor = '#38bdf8';
+        cardActiva.style.background = 'rgba(56, 189, 248, 0.1)';
+    }
 
     cargarCarpetasPorNas(nasId);
 }
@@ -2722,6 +2590,7 @@ function cargarCarpetasPorNas(nasId) {
                         const eqCheck = parseInt(eq.monitorear) === 1 ? 'checked' : '';
                         const stBadge = eq.estado === 'exitoso' ? 'text-success' : (eq.estado === 'vencido' ? 'text-warning' : 'text-danger');
                         const ultStr = eq.ultimo_respaldo ? eq.ultimo_respaldo.substring(0, 16) : 'Sin respaldo';
+                        const eqNombreEsc = (eq.nombre_equipo || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
                         subHtml += `
                             <div class="col-12 col-md-6 col-xl-4">
@@ -2735,7 +2604,7 @@ function cargarCarpetasPorNas(nasId) {
                                         </div>
                                     </div>
                                     <div class="form-check form-switch m-0" title="Activar/Desactivar monitoreo de esta máquina">
-                                        <input class="form-check-input" type="checkbox" ${eqCheck} onchange="toggleMonitorearEquipo(${eq.id}, this.checked, '${eq.nombre_equipo}', ${c.id})">
+                                        <input class="form-check-input" type="checkbox" ${eqCheck} onchange="toggleMonitorearEquipo(${eq.id}, this.checked, '${eqNombreEsc}', ${c.id})">
                                     </div>
                                 </div>
                             </div>
@@ -2750,6 +2619,8 @@ function cargarCarpetasPorNas(nasId) {
                         </div>
                     `;
                 }
+
+                const carpNombreEsc = (c.nombre_carpeta || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
                 html += `
                     <tr class="${esNetbak ? 'fila-netbak' : ''}" style="border-top: 1px solid rgba(255,255,255,0.08);">
@@ -2777,7 +2648,7 @@ function cargarCarpetasPorNas(nasId) {
                             </div>
                         </td>
                         <td class="text-end">
-                            <button class="btn btn-outline-danger btn-sm p-1 rounded-2" onclick="eliminarCarpeta(${c.id}, '${c.nombre_carpeta}')" title="Eliminar">
+                            <button class="btn btn-outline-danger btn-sm p-1 rounded-2" onclick="eliminarCarpeta(${c.id}, '${carpNombreEsc}')" title="Eliminar">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </td>
@@ -3259,167 +3130,9 @@ function copiarAlPortapapeles(idElemento) {
 // Inicializar carpetas del primer NAS si existe
 <?php if (!empty($nasCatalogo[0]['id'])): ?>
 document.addEventListener('DOMContentLoaded', () => {
-    seleccionarNasCarpetas(<?php echo $nasCatalogo[0]['id']; ?>, '<?php echo htmlspecialchars($nasCatalogo[0]['nombre']); ?>');
+    seleccionarNasCarpetas(<?php echo (int)$nasCatalogo[0]['id']; ?>, '<?php echo addslashes($nasCatalogo[0]['nombre']); ?>');
 });
 <?php endif; ?>
-
-// =============================================================================
-// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO, ÁREAS Y 4 SEMANAS DEL MES)
-// =============================================================================
-document.addEventListener('DOMContentLoaded', function() {
-    inicializarGraficas();
-});
-
-let chartInstanciaDona = null;
-let chartInstanciaAreas = null;
-let chartInstanciaSemanas = null;
-
-function inicializarGraficas() {
-    if (typeof Chart === 'undefined') return;
-
-    // 1. Gráfica de Dona: Semáforo Semanal
-    const ctxDona = document.getElementById('chartSemaforoDona');
-    if (ctxDona) {
-        chartInstanciaDona = new Chart(ctxDona, {
-            type: 'doughnut',
-            data: {
-                labels: ['Al Día (≤7d)', 'En Alerta (7-10d)', 'Críticos (>10d)', 'Incompletos'],
-                datasets: [{
-                    data: [<?php echo $exitosos; ?>, <?php echo $vencidos; ?>, <?php echo $criticos; ?>, <?php echo $incompletos; ?>],
-                    backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#ec4899'],
-                    borderWidth: 2,
-                    borderColor: '#09172c'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'right',
-                        labels: { color: '#ffffff', boxWidth: 12, font: { size: 10 } }
-                    }
-                },
-                cutout: '70%'
-            }
-        });
-    }
-
-    // 2. Gráfica de Barras: Equipos por Área
-    const ctxAreas = document.getElementById('chartAreasBarras');
-    if (ctxAreas) {
-        chartInstanciaAreas = new Chart(ctxAreas, {
-            type: 'bar',
-            data: {
-                labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
-                datasets: [{
-                    label: 'Equipos',
-                    data: <?php echo json_encode(array_values($conteoPorArea)); ?>,
-                    backgroundColor: 'rgba(56, 189, 248, 0.6)',
-                    borderColor: '#38bdf8',
-                    borderWidth: 1,
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-
-    // 3. Gráfica de 4 Semanas del Mes
-    const ctxSemanas = document.getElementById('chartSemanasMes');
-    if (ctxSemanas) {
-        chartInstanciaSemanas = new Chart(ctxSemanas, {
-            type: 'line',
-            data: {
-                labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
-                datasets: [{
-                    label: 'Respaldos cumplidos',
-                    data: [<?php echo $conteoPorSemana['S1']; ?>, <?php echo $conteoPorSemana['S2']; ?>, <?php echo $conteoPorSemana['S3']; ?>, <?php echo $conteoPorSemana['S4']; ?>],
-                    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-                    borderColor: '#10b981',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.35,
-                    pointBackgroundColor: '#10b981',
-                    pointRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false }
-                },
-                scales: {
-                    x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { display: false } },
-                    y: { ticks: { color: '#94a3b8', precision: 0 }, grid: { color: 'rgba(255,255,255,0.05)' } }
-                }
-            }
-        });
-    }
-}
-
-function abrirModalEditarEquipo(eq) {
-    if (typeof eq === 'string') {
-        try { eq = JSON.parse(eq); } catch (e) { eq = {}; }
-    }
-    document.getElementById('editEquipoId').value = eq.id || 0;
-    document.getElementById('editNombreEquipo').value = eq.nombre_equipo || '';
-    document.getElementById('editUsuarioResponsable').value = eq.usuario_responsable || '';
-    if (eq.area_nombre) {
-        document.getElementById('editAreaNombre').value = eq.area_nombre;
-    }
-    const modal = new bootstrap.Modal(document.getElementById('modalEditarEquipo'));
-    modal.show();
-}
-
-function guardarDatosEquipo(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnGuardarEquipo');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
-
-    const form = document.getElementById('formEditarEquipo');
-    const formData = new FormData(form);
-
-    fetch('api_respaldos.php?action=guardar_equipo', {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(res => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        if (res.success) {
-            Swal.fire({
-                icon: 'success',
-                title: '¡Guardado!',
-                text: 'Los datos del equipo fueron actualizados con éxito.',
-                timer: 1500,
-                showConfirmButton: false
-            }).then(() => {
-                location.reload();
-            });
-        } else {
-            Swal.fire('Error', res.error || 'No se pudo guardar', 'error');
-        }
-    })
-    .catch(err => {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i> Guardar Cambios';
-        Swal.fire('Error', 'Falla de conexión al guardar: ' + err.message, 'error');
-    });
-}
 </script>
 </body>
 </html>
