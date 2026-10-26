@@ -1218,9 +1218,9 @@ function tiempoRelativo($fechaStr) {
                                     <i class="bi bi-clipboard me-1"></i> Copiar
                                 </button>
                             </div>
-                            <div class="code-block" id="wizComandoPs">powershell.exe -ExecutionPolicy Bypass -File .\colector_respaldos.ps1 -Descubrir</div>
+                            <div class="code-block" id="wizComandoPs">powershell.exe -ExecutionPolicy Bypass -File .\colector_respaldos.ps1 -ApiToken "<?php echo htmlspecialchars($apiToken); ?>" -Descubrir</div>
                             <div class="text-secondary mt-2" style="font-size: 0.75rem;">
-                                O si usas Python: <code>python colector_respaldos.py --descubrir</code>
+                                O en Python: <code>python colector_respaldos.py --token "<?php echo htmlspecialchars($apiToken); ?>" --descubrir</code>
                             </div>
                         </div>
 

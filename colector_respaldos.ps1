@@ -20,13 +20,13 @@ param(
 $ErrorActionPreference = "Continue"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Cargar configuración desde colector_config.json si existe
+# Cargar configuración desde colector_config.json si existe (solo si no se pasó por parámetro)
 $ConfigFile = Join-Path $PSScriptRoot "colector_config.json"
 if (Test-Path $ConfigFile) {
     try {
         $jsonConf = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
-        if ($jsonConf.api_url) { $ApiUrl = $jsonConf.api_url }
-        if ($jsonConf.api_token) { $ApiToken = $jsonConf.api_token }
+        if ($jsonConf.api_url -and ($ApiUrl -eq "https://portal.pirineosmotors.com/api_respaldos.php")) { $ApiUrl = $jsonConf.api_url }
+        if ($jsonConf.api_token -and ($ApiToken -eq "COPIAR_TOKEN_AQUI" -or [string]::IsNullOrWhiteSpace($ApiToken))) { $ApiToken = $jsonConf.api_token }
     } catch {}
 }
 
@@ -49,7 +49,9 @@ Write-ColectorLog "=== INICIANDO COLECTOR NATIVO DE RESPALDOS SMB/NAS (PowerShel
 $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
 if ($ApiToken -eq "COPIAR_TOKEN_AQUI" -or [string]::IsNullOrWhiteSpace($ApiToken)) {
-    Write-ColectorLog "ERROR: Debes proporcionar el Bearer Token en `$ApiToken o en colector_config.json" "ERROR"
+    Write-ColectorLog "ERROR: Falta el Bearer Token del portal cPanel." "ERROR"
+    Write-ColectorLog "-> Puedes pasarlo en el comando: .\colector_respaldos.ps1 -ApiToken 'TU_TOKEN' -Descubrir" "WARN"
+    Write-ColectorLog "-> O coloca el archivo 'colector_config.json' descargado desde el portal en esta misma carpeta." "WARN"
     exit 1
 }
 

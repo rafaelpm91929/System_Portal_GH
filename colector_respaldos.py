@@ -67,6 +67,14 @@ def cargar_configuracion():
                 log(f"Archivo de configuración inicial generado: '{CONFIG_FILE}'")
         except Exception as e:
             log(f"No se pudo crear '{CONFIG_FILE}': {e}", "WARN")
+
+    # Sobreescribir con parámetros de línea de comandos si se proporcionan
+    for i, arg in enumerate(sys.argv):
+        if arg in ["--token", "-t"] and i + 1 < len(sys.argv):
+            cfg["api_token"] = sys.argv[i + 1]
+        elif arg in ["--url", "-u"] and i + 1 < len(sys.argv):
+            cfg["api_url"] = sys.argv[i + 1]
+
     return cfg
 
 def montar_recurso_red_windows(ruta_unc, usuario=None, password=None):
