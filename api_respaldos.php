@@ -81,6 +81,50 @@ function validarSesionPortal() {
     }
 }
 
+/**
+ * Calcula las semanas calendario de un mes (de Domingo a Sábado).
+ * La Semana 1 inicia el día 1 del mes y concluye el primer sábado.
+ * Las siguientes semanas van de domingo a sábado.
+ * La última semana concluye el último día del mes.
+ */
+function calcularSemanasCalendarioMes($mes) {
+    $diasEnMes = (int)date('t', strtotime("$mes-01"));
+    $semanas = [];
+    $semanaNum = 1;
+    $diaActual = 1;
+    $nombresDias = [0 => 'Dom', 1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb'];
+
+    while ($diaActual <= $diasEnMes) {
+        $fechaInicioStr = sprintf('%s-%02d', $mes, $diaActual);
+        $wInicio = (int)date('w', strtotime($fechaInicioStr)); // 0=Dom, 6=Sáb
+        
+        // La semana concluye el sábado (w = 6) o el último día del mes
+        $diasHastaSabado = 6 - $wInicio;
+        $diaFin = min($diaActual + $diasHastaSabado, $diasEnMes);
+        $fechaFinStr = sprintf('%s-%02d', $mes, $diaFin);
+        $wFin = (int)date('w', strtotime($fechaFinStr));
+
+        $sId = "S$semanaNum";
+        $diasLabel = ($diaActual === $diaFin) 
+            ? "{$nombresDias[$wInicio]} $diaActual" 
+            : "{$nombresDias[$wInicio]} $diaActual al {$nombresDias[$wFin]} $diaFin";
+
+        $semanas[$sId] = [
+            'id' => $sId,
+            'label' => "Semana $semanaNum",
+            'dias_label' => $diasLabel,
+            'inicio' => $diaActual,
+            'fin' => $diaFin,
+            'dias_count' => ($diaFin - $diaActual + 1)
+        ];
+
+        $diaActual = $diaFin + 1;
+        $semanaNum++;
+    }
+
+    return $semanas;
+}
+
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 
 switch ($action) {
@@ -923,16 +967,8 @@ switch ($action) {
             $esMesActual = ($mesSeleccionado === date('Y-m'));
             $diaHoy = (int)date('d');
 
-            // Definición de las semanas del mes seleccionado
-            $semanasDef = [
-                'S1' => ['id' => 'S1', 'label' => 'Semana 1', 'dias_label' => '1 al 7', 'inicio' => 1, 'fin' => 7],
-                'S2' => ['id' => 'S2', 'label' => 'Semana 2', 'dias_label' => '8 al 14', 'inicio' => 8, 'fin' => 14],
-                'S3' => ['id' => 'S3', 'label' => 'Semana 3', 'dias_label' => '15 al 21', 'inicio' => 15, 'fin' => 21],
-                'S4' => ['id' => 'S4', 'label' => 'Semana 4', 'dias_label' => '22 al 28', 'inicio' => 22, 'fin' => 28]
-            ];
-            if ($totalDiasMes > 28) {
-                $semanasDef['S5'] = ['id' => 'S5', 'label' => 'Semana 5', 'dias_label' => "29 al $totalDiasMes", 'inicio' => 29, 'fin' => $totalDiasMes];
-            }
+            // Definición dinámica de semanas calendario (Domingo a Sábado)
+            $semanasDef = calcularSemanasCalendarioMes($mesSeleccionado);
 
             $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario_responsable, area_nombre, estado, ultimo_respaldo, dias_sin_respaldo, tiene_temporales FROM respaldos_equipos ORDER BY area_nombre ASC, nombre_equipo ASC");
             $equipos = $stmtEq->fetchAll(PDO::FETCH_ASSOC);

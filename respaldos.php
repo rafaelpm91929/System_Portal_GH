@@ -174,66 +174,96 @@ if ($pdo) {
 $porcentajeCumplimiento = ($totalEquipos > 0) ? round(($exitosos / $totalEquipos) * 100, 1) : 0;
 $mostrarAsistenteInicial = ($totalNas === 0);
 
-function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null) {
-    $diaHoy = (int)date('d');
-    $mesActual = date('Y-m');
+function calcularSemanasCalendarioMes($mes) {
+    $diasEnMes = (int)date('t', strtotime("$mes-01"));
+    $semanas = [];
+    $semanaNum = 1;
+    $diaActual = 1;
+    $nombresDias = [0 => 'Dom', 1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb'];
 
-    $semanas = [
-        'S1' => ['label' => 'Semana 1', 'dias' => '1 al 7', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
-        'S2' => ['label' => 'Semana 2', 'dias' => '8 al 14', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
-        'S3' => ['label' => 'Semana 3', 'dias' => '15 al 21', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
-        'S4' => ['label' => 'Semana 4', 'dias' => '22 al fin', 'respaldo' => null, 'es_futuro' => false, 'en_curso' => false],
-    ];
+    while ($diaActual <= $diasEnMes) {
+        $fechaInicioStr = sprintf('%s-%02d', $mes, $diaActual);
+        $wInicio = (int)date('w', strtotime($fechaInicioStr));
+        
+        $diasHastaSabado = 6 - $wInicio;
+        $diaFin = min($diaActual + $diasHastaSabado, $diasEnMes);
+        $fechaFinStr = sprintf('%s-%02d', $mes, $diaFin);
+        $wFin = (int)date('w', strtotime($fechaFinStr));
 
-    if ($diaHoy < 8) {
-        $semanas['S1']['en_curso'] = true;
-        $semanas['S2']['es_futuro'] = true;
-        $semanas['S3']['es_futuro'] = true;
-        $semanas['S4']['es_futuro'] = true;
-    } elseif ($diaHoy < 15) {
-        $semanas['S2']['en_curso'] = true;
-        $semanas['S3']['es_futuro'] = true;
-        $semanas['S4']['es_futuro'] = true;
-    } elseif ($diaHoy < 22) {
-        $semanas['S3']['en_curso'] = true;
-        $semanas['S4']['es_futuro'] = true;
-    } else {
-        $semanas['S4']['en_curso'] = true;
+        $sId = "S$semanaNum";
+        $diasLabel = ($diaActual === $diaFin) 
+            ? "{$nombresDias[$wInicio]} $diaActual" 
+            : "{$nombresDias[$wInicio]} $diaActual al {$nombresDias[$wFin]} $diaFin";
+
+        $semanas[$sId] = [
+            'id' => $sId,
+            'label' => "Semana $semanaNum",
+            'dias_label' => $diasLabel,
+            'inicio' => $diaActual,
+            'fin' => $diaFin,
+            'dias_count' => ($diaFin - $diaActual + 1),
+            'respaldo' => null,
+            'es_futuro' => false,
+            'en_curso' => false
+        ];
+
+        $diaActual = $diaFin + 1;
+        $semanaNum++;
     }
+
+    return $semanas;
+}
+
+function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null, $mes = null) {
+    if (!$mes) {
+        $mes = date('Y-m');
+    }
+    $diaHoy = (int)date('d');
+    $esMesActual = ($mes === date('Y-m'));
+
+    $semanas = calcularSemanasCalendarioMes($mes);
+
+    foreach ($semanas as $sId => &$sConf) {
+        if ($esMesActual) {
+            if ($diaHoy < $sConf['inicio']) {
+                $sConf['es_futuro'] = true;
+            } elseif ($diaHoy >= $sConf['inicio'] && $diaHoy <= $sConf['fin']) {
+                $sConf['en_curso'] = true;
+            }
+        } elseif ($mes > date('Y-m')) {
+            $sConf['es_futuro'] = true;
+        }
+    }
+    unset($sConf);
 
     if (!empty($historialEquipo)) {
         foreach ($historialEquipo as $h) {
             $fechaH = $h['fecha'];
-            if (strpos($fechaH, $mesActual) === 0) {
+            if (strpos($fechaH, $mes) === 0) {
                 $diaNum = (int)date('d', strtotime($fechaH));
-                if ($diaNum >= 1 && $diaNum <= 7 && empty($semanas['S1']['respaldo'])) {
-                    $semanas['S1']['respaldo'] = $h;
-                } elseif ($diaNum >= 8 && $diaNum <= 14 && empty($semanas['S2']['respaldo'])) {
-                    $semanas['S2']['respaldo'] = $h;
-                } elseif ($diaNum >= 15 && $diaNum <= 21 && empty($semanas['S3']['respaldo'])) {
-                    $semanas['S3']['respaldo'] = $h;
-                } elseif ($diaNum >= 22 && empty($semanas['S4']['respaldo'])) {
-                    $semanas['S4']['respaldo'] = $h;
+                foreach ($semanas as $sId => &$sConf) {
+                    if ($diaNum >= $sConf['inicio'] && $diaNum <= $sConf['fin'] && empty($sConf['respaldo'])) {
+                        $sConf['respaldo'] = $h;
+                        break;
+                    }
                 }
+                unset($sConf);
             }
         }
     }
 
-    // Si el último respaldo registrado es del mes actual, respaldar en la semana que corresponda
     if (!empty($ultimoRespaldo)) {
         $fUlt = date('Y-m-d', strtotime($ultimoRespaldo));
-        if (strpos($fUlt, $mesActual) === 0) {
+        if (strpos($fUlt, $mes) === 0) {
             $diaNum = (int)date('d', strtotime($fUlt));
             $hItem = ['fecha' => $fUlt, 'fecha_hora' => $ultimoRespaldo, 'estado' => 'exitoso'];
-            if ($diaNum >= 1 && $diaNum <= 7 && empty($semanas['S1']['respaldo'])) {
-                $semanas['S1']['respaldo'] = $hItem;
-            } elseif ($diaNum >= 8 && $diaNum <= 14 && empty($semanas['S2']['respaldo'])) {
-                $semanas['S2']['respaldo'] = $hItem;
-            } elseif ($diaNum >= 15 && $diaNum <= 21 && empty($semanas['S3']['respaldo'])) {
-                $semanas['S3']['respaldo'] = $hItem;
-            } elseif ($diaNum >= 22 && empty($semanas['S4']['respaldo'])) {
-                $semanas['S4']['respaldo'] = $hItem;
+            foreach ($semanas as $sId => &$sConf) {
+                if ($diaNum >= $sConf['inicio'] && $diaNum <= $sConf['fin'] && empty($sConf['respaldo'])) {
+                    $sConf['respaldo'] = $hItem;
+                    break;
+                }
             }
+            unset($sConf);
         }
     }
 
@@ -620,6 +650,66 @@ function guardarDatosEquipo(e) {
         .dot-vencido { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
         .dot-critico { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
         .dot-incompleto { background: #ec4899; box-shadow: 0 0 8px #ec4899; }
+
+        /* Scrollbar superior sincronizado y mejoras de tabla */
+        .table-scroll-sync-top {
+            overflow-x: auto;
+            overflow-y: hidden;
+            height: 12px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+        }
+        .table-scroll-sync-top::-webkit-scrollbar,
+        .table-scroll-sync-bottom::-webkit-scrollbar {
+            height: 8px;
+        }
+        .table-scroll-sync-top::-webkit-scrollbar-track,
+        .table-scroll-sync-bottom::-webkit-scrollbar-track {
+            background: rgba(4, 13, 26, 0.75);
+            border-radius: 6px;
+        }
+        .table-scroll-sync-top::-webkit-scrollbar-thumb,
+        .table-scroll-sync-bottom::-webkit-scrollbar-thumb {
+            background: rgba(212, 175, 55, 0.45);
+            border-radius: 6px;
+            transition: background 0.2s ease;
+        }
+        .table-scroll-sync-top::-webkit-scrollbar-thumb:hover,
+        .table-scroll-sync-bottom::-webkit-scrollbar-thumb:hover {
+            background: rgba(212, 175, 55, 0.85);
+            box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+        }
+        .table-scroll-sync-inner {
+            height: 1px;
+        }
+
+        /* Columna fija (Sticky First Column) para scrolling horizontal suave */
+        .table-sticky-col th.th-sticky-first,
+        .table-sticky-col td.td-sticky-first {
+            position: sticky;
+            left: 0;
+            z-index: 4;
+            background: #09172c;
+            box-shadow: 4px 0 12px rgba(0, 0, 0, 0.45);
+        }
+        .table-sticky-col tbody tr:hover td.td-sticky-first {
+            background: #0e2440;
+        }
+
+        /* Estilo elegante para el rango de fechas debajo del nombre de semana */
+        .badge-semana-rango {
+            display: inline-block;
+            font-size: 0.68rem;
+            font-weight: 500;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            padding: 2px 7px;
+            border-radius: 10px;
+            letter-spacing: 0;
+            text-transform: none;
+            white-space: nowrap;
+        }
 
         /* Tabla de Equipos */
         .table-custom {
@@ -1142,12 +1232,16 @@ function guardarDatosEquipo(e) {
                 </span>
             </div>
 
+            <!-- Scroll superior sincronizado -->
+            <div class="table-scroll-sync-top" id="scrollDashboardTop">
+                <div class="table-scroll-sync-inner" id="scrollDashboardInnerTop"></div>
+            </div>
             <!-- Tabla de Equipos -->
-            <div class="table-responsive">
-                <table class="table-custom" id="tablaEquipos">
+            <div class="table-responsive table-scroll-sync-bottom" id="dashboardContenido">
+                <table class="table-custom table-sticky-col" id="tablaEquipos">
                     <thead>
                         <tr>
-                            <th>Nombre del Equipo</th>
+                            <th class="th-sticky-first">Nombre del Equipo</th>
                             <th>Área / Departamento</th>
                             <th>NAS Destino</th>
                             <th>Último Respaldo</th>
@@ -1202,7 +1296,7 @@ function guardarDatosEquipo(e) {
                             data-nas="<?php echo htmlspecialchars($eq['nas_nombre'] ?? ''); ?>" 
                             data-estado="<?php echo htmlspecialchars($estadoFinal); ?>"
                             data-archivo="<?php echo strtolower(htmlspecialchars($eq['archivo_reciente'] ?? '')); ?>">
-                            <td>
+                            <td class="td-sticky-first">
                                 <div class="d-flex align-items-center gap-2">
                                     <div class="rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px; background: rgba(255,255,255,0.06);">
                                         <i class="bi bi-pc-display text-info"></i>
@@ -1242,19 +1336,19 @@ function guardarDatosEquipo(e) {
                                         if (!empty($sVal['respaldo'])):
                                             $fDisplay = date('d/m', strtotime($sVal['respaldo']['fecha']));
                                     ?>
-                                        <span class="badge-semana-pill badge-semana-exitoso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): <?php echo $sVal['respaldo']['fecha_hora']; ?>">
+                                        <span class="badge-semana-pill badge-semana-exitoso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): <?php echo $sVal['respaldo']['fecha_hora']; ?>">
                                             <i class="bi bi-check me-0"></i><?php echo $sKey; ?>: <?php echo $fDisplay; ?>
                                         </span>
                                     <?php elseif ($sVal['es_futuro']): ?>
-                                        <span class="badge-semana-pill badge-semana-futuro" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Pendiente en el mes">
+                                        <span class="badge-semana-pill badge-semana-futuro" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): Pendiente en el mes">
                                             <?php echo $sKey; ?>: -
                                         </span>
-                                    <?php elseif ($sVal['en_curso'] && (int)$eq['dias_sin_respaldo'] <= 6): ?>
-                                        <span class="badge-semana-pill badge-semana-en_curso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): En curso (Al día por respaldo reciente)">
+                                    <?php elseif ($sVal['en_curso'] && (int)$diasCal <= 6): ?>
+                                        <span class="badge-semana-pill badge-semana-en_curso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): En curso (Al día por respaldo reciente)">
                                             <i class="bi bi-clock me-0"></i><?php echo $sKey; ?>: Vigente
                                         </span>
                                     <?php else: ?>
-                                        <span class="badge-semana-pill badge-semana-sin_respaldo" title="<?php echo $sKey; ?> (<?php echo $sVal['dias']; ?>): Sin respaldo registrado">
+                                        <span class="badge-semana-pill badge-semana-sin_respaldo" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): Sin respaldo registrado">
                                             <i class="bi bi-x"></i><?php echo $sKey; ?>: Sin copia
                                         </span>
                                     <?php endif; endforeach; ?>
@@ -1336,8 +1430,12 @@ function guardarDatosEquipo(e) {
                     <div class="text-secondary small mt-2">Cargando matriz semanal del mes seleccionado...</div>
                 </div>
 
-                <div id="matrizContenido" class="table-responsive" style="display: none;">
-                    <table class="table-custom" style="min-width: 900px;" id="tablaMatrizSemanal">
+                <!-- Scroll superior sincronizado -->
+                <div class="table-scroll-sync-top" id="scrollMatrizTop" style="display: none;">
+                    <div class="table-scroll-sync-inner" id="scrollMatrizInnerTop"></div>
+                </div>
+                <div id="matrizContenido" class="table-responsive table-scroll-sync-bottom" style="display: none;">
+                    <table class="table-custom table-sticky-col" style="min-width: 960px;" id="tablaMatrizSemanal">
                         <thead>
                             <tr id="matrizHeaderSemanas">
                                 <th style="width: 250px;">Equipo / Área / Usuario</th>
@@ -2357,22 +2455,33 @@ function cargarMatrizSemanasMes(mes) {
                 });
             }
 
-            // Construir cabeceras de columnas según semanas del mes (S1..S4 o S5)
+            // Construir cabeceras de columnas según semanas calendario del mes (Domingo a Sábado)
             const trHead = document.getElementById('matrizHeaderSemanas');
             if (trHead) {
-                let thHtml = '<th style="width: 250px;">Equipo / Área / Usuario</th>';
+                let thHtml = '<th style="min-width: 250px;" class="th-sticky-first">Equipo / Área / Usuario</th>';
                 const semanasKeys = Object.keys(res.semanas_def);
                 semanasKeys.forEach(sId => {
                     const sConf = res.semanas_def[sId];
-                    thHtml += `<th class="text-center" style="width: 120px;">${sConf.label}<br><span class="text-secondary fw-normal" style="font-size: 0.68rem;">(${sConf.dias_label})</span></th>`;
+                    thHtml += `
+                        <th class="text-center" style="min-width: 140px;">
+                            <div class="fw-bold text-white text-uppercase" style="letter-spacing: 0.5px; font-size: 0.78rem;">${sConf.label}</div>
+                            <div class="badge-semana-rango mt-1">${sConf.dias_label}</div>
+                        </th>`;
                 });
-                thHtml += '<th class="text-center" style="width: 130px;">Cumplimiento</th>';
-                thHtml += '<th class="text-end" style="width: 100px;">Expediente</th>';
+                thHtml += '<th class="text-center" style="min-width: 130px;">Cumplimiento</th>';
+                thHtml += '<th class="text-end" style="min-width: 90px;">Expediente</th>';
                 trHead.innerHTML = thHtml;
             }
 
             cacheMatrizDatos = res.matriz || [];
             renderizarFilasMatriz(cacheMatrizDatos, res.semanas_def);
+            
+            // Sincronizar scroll superior
+            const topScrollEl = document.getElementById('scrollMatrizTop');
+            if (topScrollEl) topScrollEl.style.display = 'block';
+            setTimeout(() => {
+                sincronizarScrollDoble('scrollMatrizTop', 'matrizContenido', 'scrollMatrizInnerTop', 'tablaMatrizSemanal');
+            }, 100);
         })
         .catch(err => {
             if (cargandoEl) cargandoEl.style.display = 'none';
@@ -2435,7 +2544,7 @@ function renderizarFilasMatriz(matriz, semanasDef) {
         }
 
         tr.innerHTML = `
-            <td class="align-middle">
+            <td class="align-middle td-sticky-first">
                 <div class="fw-bold text-white small">${m.nombre_equipo}</div>
                 <div class="text-secondary" style="font-size: 0.72rem;">
                     <span class="badge bg-secondary bg-opacity-25 text-light px-1 py-0 me-1">${m.area_nombre || 'General'}</span>
@@ -2479,6 +2588,65 @@ function filtrarTablaMatriz() {
         contadorEl.innerText = `Mostrando ${visibles} de ${filas.length} equipos`;
     }
 }
+
+// =============================================================================
+// FUNCIÓN DE DOBLE SCROLLBAR SINCRONIZADO (SUPERIOR E INFERIOR)
+// =============================================================================
+function sincronizarScrollDoble(topId, bottomId, innerId, tablaId) {
+    const topEl = document.getElementById(topId);
+    const bottomEl = document.getElementById(bottomId);
+    const innerEl = document.getElementById(innerId);
+    const tablaEl = document.getElementById(tablaId);
+
+    if (!topEl || !bottomEl || !innerEl || !tablaEl) return;
+
+    const actualizarAncho = () => {
+        const anchoTotal = tablaEl.scrollWidth;
+        innerEl.style.width = anchoTotal + 'px';
+        if (anchoTotal <= bottomEl.clientWidth + 10) {
+            topEl.style.display = 'none';
+        } else {
+            topEl.style.display = 'block';
+        }
+    };
+
+    actualizarAncho();
+    window.removeEventListener('resize', actualizarAncho);
+    window.addEventListener('resize', actualizarAncho);
+
+    let syncingTop = false;
+    let syncingBottom = false;
+
+    topEl.onscroll = () => {
+        if (!syncingTop) {
+            syncingBottom = true;
+            bottomEl.scrollLeft = topEl.scrollLeft;
+        }
+        syncingTop = false;
+    };
+
+    bottomEl.onscroll = () => {
+        if (!syncingBottom) {
+            syncingTop = true;
+            topEl.scrollLeft = bottomEl.scrollLeft;
+        }
+        syncingBottom = false;
+    };
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+        sincronizarScrollDoble('scrollDashboardTop', 'dashboardContenido', 'scrollDashboardInnerTop', 'tablaEquipos');
+    }, 250);
+
+    // Eventos al cambiar entre pestañas
+    document.getElementById('tab-dashboard-link')?.addEventListener('shown.bs.tab', () => {
+        sincronizarScrollDoble('scrollDashboardTop', 'dashboardContenido', 'scrollDashboardInnerTop', 'tablaEquipos');
+    });
+    document.getElementById('tab-heatmap-link')?.addEventListener('shown.bs.tab', () => {
+        sincronizarScrollDoble('scrollMatrizTop', 'matrizContenido', 'scrollMatrizInnerTop', 'tablaMatrizSemanal');
+    });
+});
 
 // 4. GESTIÓN DE NAS Y CARPETAS
 function seleccionarNasCarpetas(nasId, nasNombre) {
