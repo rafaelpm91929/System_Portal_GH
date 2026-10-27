@@ -2152,6 +2152,7 @@ function asegurarTablasRespaldos($pdo = null) {
                     dias_programados TEXT DEFAULT 'Vie',
                     frecuencia TEXT DEFAULT 'semanal',
                     aplica_esta_semana INTEGER DEFAULT 1,
+                    semanas_mes_aplica TEXT DEFAULT 'S1,S2,S3,S4,S5',
                     motivo_exencion TEXT,
                     notas TEXT,
                     creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2237,6 +2238,7 @@ function asegurarTablasRespaldos($pdo = null) {
                     `dias_programados` VARCHAR(150) DEFAULT 'Vie',
                     `frecuencia` VARCHAR(50) DEFAULT 'semanal',
                     `aplica_esta_semana` TINYINT(1) DEFAULT 1,
+                    `semanas_mes_aplica` VARCHAR(100) DEFAULT 'S1,S2,S3,S4,S5',
                     `motivo_exencion` VARCHAR(255) NULL,
                     `notas` TEXT NULL,
                     `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -2246,10 +2248,14 @@ function asegurarTablasRespaldos($pdo = null) {
             ");
         }
 
-        // Asegurar que la columna monitorear exista en respaldos_equipos
+        // Asegurar columnas requeridas en tablas
         try {
             $pdo->exec("ALTER TABLE `respaldos_equipos` ADD COLUMN `monitorear` TINYINT(1) DEFAULT 1 AFTER `area_nombre`");
         } catch (Throwable $eMon) {}
+
+        try {
+            $pdo->exec("ALTER TABLE `respaldos_areas_politicas` ADD COLUMN `semanas_mes_aplica` VARCHAR(100) DEFAULT 'S1,S2,S3,S4,S5' AFTER `aplica_esta_semana`");
+        } catch (Throwable $eSem) {}
 
         // Sembrar configuraciones iniciales
         $tokenDef = bin2hex(random_bytes(24));
@@ -2327,7 +2333,7 @@ function asegurarTablasRespaldos($pdo = null) {
             ");
             $distAreas = $stmtDistAreas ? $stmtDistAreas->fetchAll(PDO::FETCH_COLUMN) : [];
             $stmtCheckPol = $pdo->prepare("SELECT id FROM respaldos_areas_politicas WHERE area_nombre = ? LIMIT 1");
-            $stmtInsPol = $pdo->prepare("INSERT INTO respaldos_areas_politicas (area_nombre, dias_programados, frecuencia, aplica_esta_semana) VALUES (?, 'Vie', 'semanal', 1)");
+            $stmtInsPol = $pdo->prepare("INSERT INTO respaldos_areas_politicas (area_nombre, dias_programados, frecuencia, aplica_esta_semana, semanas_mes_aplica) VALUES (?, 'Vie', 'semanal', 1, 'S1,S2,S3,S4,S5')");
             foreach ($distAreas as $dA) {
                 $dA = trim($dA);
                 if (empty($dA)) continue;

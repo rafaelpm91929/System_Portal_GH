@@ -56,6 +56,65 @@ $protocolo = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' || $_SERV
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $apiUrlCompleta = $protocolo . $host . rtrim(dirname($_SERVER['PHP_SELF']), '/\\') . '/api_respaldos.php';
 
+if (!function_exists('calcularSemanasCalendarioMes')) {
+    function calcularSemanasCalendarioMes($mes) {
+        $diasEnMes = (int)date('t', strtotime("$mes-01"));
+        $semanas = [];
+        $semanaNum = 1;
+        $diaActual = 1;
+        $nombresDias = [0 => 'Dom', 1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb'];
+
+        while ($diaActual <= $diasEnMes) {
+            $fechaInicioStr = sprintf('%s-%02d', $mes, $diaActual);
+            $wInicio = (int)date('w', strtotime($fechaInicioStr));
+            
+            $diasHastaSabado = 6 - $wInicio;
+            $diaFin = min($diaActual + $diasHastaSabado, $diasEnMes);
+            $fechaFinStr = sprintf('%s-%02d', $mes, $diaFin);
+            $wFin = (int)date('w', strtotime($fechaFinStr));
+
+            $sId = "S$semanaNum";
+            $diasLabel = ($diaActual === $diaFin) 
+                ? "{$nombresDias[$wInicio]} $diaActual" 
+                : "{$nombresDias[$wInicio]} $diaActual al {$nombresDias[$wFin]} $diaFin";
+
+            $semanas[$sId] = [
+                'id' => $sId,
+                'label' => "Semana $semanaNum",
+                'dias_label' => $diasLabel,
+                'inicio' => $diaActual,
+                'fin' => $diaFin,
+                'dias_count' => ($diaFin - $diaActual + 1),
+                'respaldo' => null,
+                'es_futuro' => false,
+                'en_curso' => false,
+                'es_exento' => false,
+                'programado_proximo' => false,
+                'prog_label' => ''
+            ];
+
+            $diaActual = $diaFin + 1;
+            $semanaNum++;
+        }
+
+        return $semanas;
+    }
+}
+
+if (!function_exists('obtenerSemanaActualMes')) {
+    function obtenerSemanaActualMes($mes = null) {
+        if (!$mes) $mes = date('Y-m');
+        $diaHoy = (int)date('d');
+        $semanas = calcularSemanasCalendarioMes($mes);
+        foreach ($semanas as $sId => $sConf) {
+            if ($diaHoy >= $sConf['inicio'] && $diaHoy <= $sConf['fin']) {
+                return $sId;
+            }
+        }
+        return 'S1';
+    }
+}
+
 // 3. Consultar estadísticas generales y conteo de NAS
 $totalNas = 0;
 $nasCatalogo = [];
@@ -129,15 +188,18 @@ if ($pdo) {
             }
         } catch (Throwable $e) {}
 
+        $semanaActualId = obtenerSemanaActualMes();
+        $patternSem = '%' . $semanaActualId . '%';
+
         // Métricas de equipos (solo equipos monitoreados que pertenezcan a una NAS existente y sin '@')
-        $stmtMetricas = $pdo->query("
+        $stmtMetricas = $pdo->prepare("
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN e.estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
-                SUM(CASE WHEN e.estado = 'vencido' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as vencidos,
-                SUM(CASE WHEN e.estado = 'critico' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as criticos,
+                SUM(CASE WHEN e.estado = 'vencido' AND (COALESCE(p.aplica_esta_semana, 1) = 1 AND (p.semanas_mes_aplica IS NULL OR p.semanas_mes_aplica = '' OR p.semanas_mes_aplica LIKE ?)) THEN 1 ELSE 0 END) as vencidos,
+                SUM(CASE WHEN e.estado = 'critico' AND (COALESCE(p.aplica_esta_semana, 1) = 1 AND (p.semanas_mes_aplica IS NULL OR p.semanas_mes_aplica = '' OR p.semanas_mes_aplica LIKE ?)) THEN 1 ELSE 0 END) as criticos,
                 SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos,
-                SUM(CASE WHEN COALESCE(p.aplica_esta_semana, 1) = 0 THEN 1 ELSE 0 END) as exentos
+                SUM(CASE WHEN (COALESCE(p.aplica_esta_semana, 1) = 0 OR (p.semanas_mes_aplica IS NOT NULL AND p.semanas_mes_aplica != '' AND p.semanas_mes_aplica NOT LIKE ?)) THEN 1 ELSE 0 END) as exentos
             FROM respaldos_equipos e
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id
             LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
@@ -145,6 +207,7 @@ if ($pdo) {
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
         ");
+        $stmtMetricas->execute([$patternSem, $patternSem, $patternSem]);
         $metricas = $stmtMetricas ? $stmtMetricas->fetch(PDO::FETCH_ASSOC) : [];
         $totalEquipos = (int)($metricas['total'] ?? 0);
         $exitosos = (int)($metricas['exitosos'] ?? 0);
@@ -154,19 +217,20 @@ if ($pdo) {
         $exentos = (int)($metricas['exentos'] ?? 0);
 
         // Top 5 Equipos con más días sin respaldar (excluyendo exentos)
-        $stmtTop5 = $pdo->query("
+        $stmtTop5 = $pdo->prepare("
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
             LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
             WHERE e.estado IN ('critico', 'vencido', 'incompleto') 
               AND COALESCE(e.monitorear, 1) = 1 
-              AND COALESCE(p.aplica_esta_semana, 1) = 1
+              AND (COALESCE(p.aplica_esta_semana, 1) = 1 AND (p.semanas_mes_aplica IS NULL OR p.semanas_mes_aplica = '' OR p.semanas_mes_aplica LIKE ?))
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
             LIMIT 5
         ");
+        $stmtTop5->execute([$patternSem]);
         $top5Criticos = $stmtTop5 ? $stmtTop5->fetchAll(PDO::FETCH_ASSOC) : [];
 
         // Listado completo de equipos para la tabla
@@ -174,6 +238,7 @@ if ($pdo) {
             SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca,
                    COALESCE(p.dias_programados, 'Vie') as dias_programados,
                    COALESCE(p.aplica_esta_semana, 1) as aplica_esta_semana,
+                   COALESCE(p.semanas_mes_aplica, 'S1,S2,S3,S4,S5') as semanas_mes_aplica,
                    p.motivo_exencion
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
@@ -182,7 +247,7 @@ if ($pdo) {
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
             ORDER BY 
-              CASE WHEN COALESCE(p.aplica_esta_semana, 1) = 0 THEN 2 ELSE 1 END ASC,
+              CASE WHEN (COALESCE(p.aplica_esta_semana, 1) = 0 OR (p.semanas_mes_aplica IS NOT NULL AND p.semanas_mes_aplica != '' AND p.semanas_mes_aplica NOT LIKE '$patternSem')) THEN 2 ELSE 1 END ASC,
               e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");
         $equiposList = $stmtEq ? $stmtEq->fetchAll(PDO::FETCH_ASSOC) : [];
@@ -212,49 +277,6 @@ $totalAplicables = max(0, $totalEquipos - $exentos);
 $porcentajeCumplimiento = ($totalAplicables > 0) ? round(($exitosos / $totalAplicables) * 100, 1) : (($totalEquipos > 0 && $exentos == $totalEquipos) ? 100 : 0);
 $mostrarAsistenteInicial = ($totalNas === 0);
 
-function calcularSemanasCalendarioMes($mes) {
-    $diasEnMes = (int)date('t', strtotime("$mes-01"));
-    $semanas = [];
-    $semanaNum = 1;
-    $diaActual = 1;
-    $nombresDias = [0 => 'Dom', 1 => 'Lun', 2 => 'Mar', 3 => 'Mié', 4 => 'Jue', 5 => 'Vie', 6 => 'Sáb'];
-
-    while ($diaActual <= $diasEnMes) {
-        $fechaInicioStr = sprintf('%s-%02d', $mes, $diaActual);
-        $wInicio = (int)date('w', strtotime($fechaInicioStr));
-        
-        $diasHastaSabado = 6 - $wInicio;
-        $diaFin = min($diaActual + $diasHastaSabado, $diasEnMes);
-        $fechaFinStr = sprintf('%s-%02d', $mes, $diaFin);
-        $wFin = (int)date('w', strtotime($fechaFinStr));
-
-        $sId = "S$semanaNum";
-        $diasLabel = ($diaActual === $diaFin) 
-            ? "{$nombresDias[$wInicio]} $diaActual" 
-            : "{$nombresDias[$wInicio]} $diaActual al {$nombresDias[$wFin]} $diaFin";
-
-        $semanas[$sId] = [
-            'id' => $sId,
-            'label' => "Semana $semanaNum",
-            'dias_label' => $diasLabel,
-            'inicio' => $diaActual,
-            'fin' => $diaFin,
-            'dias_count' => ($diaFin - $diaActual + 1),
-            'respaldo' => null,
-            'es_futuro' => false,
-            'en_curso' => false,
-            'es_exento' => false,
-            'programado_proximo' => false,
-            'prog_label' => ''
-        ];
-
-        $diaActual = $diaFin + 1;
-        $semanaNum++;
-    }
-
-    return $semanas;
-}
-
 function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null, $mes = null, $politicaArea = null) {
     if (!$mes) {
         $mes = date('Y-m');
@@ -266,6 +288,10 @@ function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimo
 
     $aplicaEstaSemana = isset($politicaArea['aplica_esta_semana']) ? (int)$politicaArea['aplica_esta_semana'] : 1;
     $diasProgramados = $politicaArea['dias_programados'] ?? 'Vie';
+    $semanasMesAplica = trim($politicaArea['semanas_mes_aplica'] ?? 'S1,S2,S3,S4,S5');
+    $semanasAplicaArr = ($semanasMesAplica !== '')
+        ? array_values(array_filter(array_map('trim', explode(',', strtoupper($semanasMesAplica)))))
+        : ['S1', 'S2', 'S3', 'S4', 'S5'];
 
     foreach ($semanas as $sId => &$sConf) {
         if ($esMesActual) {
@@ -311,25 +337,25 @@ function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimo
         }
     }
 
-    // Evaluar estado para semanas en curso sin respaldo
+    // Evaluar cada semana según la política de semanas activas del área
     foreach ($semanas as $sId => &$sConf) {
-        if ($sConf['en_curso'] && empty($sConf['respaldo'])) {
-            if ($aplicaEstaSemana === 0) {
-                $sConf['es_exento'] = true;
-            } else {
-                $mapDias = ['DOM' => 0, 'LUN' => 1, 'MAR' => 2, 'MIÉ' => 3, 'MIE' => 3, 'JUE' => 4, 'VIE' => 5, 'SÁB' => 6, 'SAB' => 6];
-                $diasProgArr = array_map('trim', explode(',', strtoupper($diasProgramados)));
-                $diasProgNums = [];
-                foreach ($diasProgArr as $dp) {
-                    if (isset($mapDias[$dp])) $diasProgNums[] = $mapDias[$dp];
-                }
-                $maxDiaProg = !empty($diasProgNums) ? max($diasProgNums) : 5;
-                $diaSemanaHoy = (int)date('w');
+        $estaSemanaAplica = in_array(strtoupper($sId), $semanasAplicaArr) && ($aplicaEstaSemana === 1);
 
-                if ($diaSemanaHoy < $maxDiaProg && (int)$diasSinRespaldo > 6) {
-                    $sConf['programado_proximo'] = true;
-                    $sConf['prog_label'] = $diasProgramados;
-                }
+        if (!$estaSemanaAplica) {
+            $sConf['es_exento'] = true;
+        } elseif ($sConf['en_curso'] && empty($sConf['respaldo'])) {
+            $mapDias = ['DOM' => 0, 'LUN' => 1, 'MAR' => 2, 'MIÉ' => 3, 'MIE' => 3, 'JUE' => 4, 'VIE' => 5, 'SÁB' => 6, 'SAB' => 6];
+            $diasProgArr = array_map('trim', explode(',', strtoupper($diasProgramados)));
+            $diasProgNums = [];
+            foreach ($diasProgArr as $dp) {
+                if (isset($mapDias[$dp])) $diasProgNums[] = $mapDias[$dp];
+            }
+            $maxDiaProg = !empty($diasProgNums) ? max($diasProgNums) : 5;
+            $diaSemanaHoy = (int)date('w');
+
+            if ($diaSemanaHoy < $maxDiaProg && (int)$diasSinRespaldo > 6) {
+                $sConf['programado_proximo'] = true;
+                $sConf['prog_label'] = $diasProgramados;
             }
         }
     }
@@ -1542,10 +1568,15 @@ function guardarDatosEquipo(e) {
                                 <span class="text-white fw-semibold"><?php echo formatearTamanoBytes($eq['tamano_bytes']); ?></span>
                             </td>
                             <td>
-                                <?php if (isset($eq['aplica_esta_semana']) && (int)$eq['aplica_esta_semana'] === 0): ?>
-                                <span class="badge-semaforo badge-exento" title="<?php echo htmlspecialchars($eq['motivo_exencion'] ?: 'Exento esta semana por política de área'); ?>">
+                                <?php 
+                                $semanasMesAplica = trim($eq['semanas_mes_aplica'] ?? 'S1,S2,S3,S4,S5');
+                                $semanasAplicaArr = ($semanasMesAplica !== '') ? array_values(array_filter(array_map('trim', explode(',', strtoupper($semanasMesAplica))))) : ['S1','S2','S3','S4','S5'];
+                                $esSemanaActualAplicable = in_array(strtoupper($semanaActualId), $semanasAplicaArr) && ((int)($eq['aplica_esta_semana'] ?? 1) === 1);
+                                if (!$esSemanaActualAplicable): 
+                                ?>
+                                <span class="badge-semaforo badge-exento" title="<?php echo htmlspecialchars($eq['motivo_exencion'] ?: "Esta semana ($semanaActualId) no aplica según la programación del área"); ?>">
                                     <span class="dot-indicator dot-exento"></span>
-                                    No Aplica
+                                    No Aplica (<?php echo $semanaActualId; ?>)
                                 </span>
                                 <?php else: ?>
                                 <span class="badge-semaforo <?php echo $badgeClass; ?>">
@@ -1693,16 +1724,17 @@ function guardarDatosEquipo(e) {
                             <tr>
                                 <th style="min-width: 200px;">Área / Departamento</th>
                                 <th style="min-width: 140px;">Equipos</th>
-                                <th style="min-width: 260px;">Días Programados</th>
+                                <th style="min-width: 240px;">Días Programados</th>
+                                <th style="min-width: 220px;">Semanas que Aplica (Mes)</th>
                                 <th style="min-width: 120px;">Frecuencia</th>
-                                <th style="min-width: 190px;" class="text-center">¿Aplica esta semana?</th>
-                                <th style="min-width: 220px;">Motivo Exención</th>
+                                <th style="min-width: 170px;" class="text-center">¿Aplica esta semana?</th>
+                                <th style="min-width: 200px;">Motivo Exención</th>
                                 <th class="text-end" style="min-width: 120px;">Acciones</th>
                             </tr>
                         </thead>
                         <tbody id="tbodyPoliticasAreas">
                             <tr>
-                                <td colspan="7" class="text-center py-4 text-secondary">
+                                <td colspan="8" class="text-center py-4 text-secondary">
                                     <div class="spinner-border spinner-border-sm text-primary me-2"></div> Cargando áreas y programación SLA...
                                 </td>
                             </tr>
@@ -2458,6 +2490,36 @@ function guardarDatosEquipo(e) {
                         </div>
                         <div class="form-text text-secondary" style="font-size: 0.75rem;">
                             Los días antes del programado no se marcarán como "sin copia" en la semana en curso.
+                        </div>
+                    </div>
+
+                    <!-- Semanas del Mes que Aplica -->
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small fw-bold d-block">
+                            Semanas del Mes en que Aplica Respaldo
+                            <span class="text-muted fw-normal float-end" style="font-size: 0.75rem;">(Selecciona las semanas activas)</span>
+                        </label>
+                        <div class="d-flex flex-wrap gap-2 pt-1" id="contenedorSemanasMesCheckboxes">
+                            <?php 
+                            $semanasNombres = [
+                                'S1' => 'Semana 1 (1-7)',
+                                'S2' => 'Semana 2 (8-14)',
+                                'S3' => 'Semana 3 (15-21)',
+                                'S4' => 'Semana 4 (22-28)',
+                                'S5' => 'Semana 5 (29-31)'
+                            ];
+                            foreach ($semanasNombres as $sKey => $sNom):
+                            ?>
+                            <div class="form-check form-check-inline m-0">
+                                <input class="btn-check check-semana-mes-prog" type="checkbox" id="checkSemanaMes_<?php echo $sKey; ?>" value="<?php echo $sKey; ?>" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary btn-sm px-2 rounded-3" for="checkSemanaMes_<?php echo $sKey; ?>">
+                                    <i class="bi bi-calendar-check me-1"></i><?php echo $sNom; ?>
+                                </label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="form-text text-secondary" style="font-size: 0.75rem;">
+                            Las semanas no seleccionadas se mostrarán en <strong class="text-white">GRIS (No aplica)</strong> y no contarán como omisiones ni afectarán las gráficas o semáforos.
                         </div>
                     </div>
 
@@ -3770,12 +3832,13 @@ function renderizarTablaPoliticasAreas(areas) {
     if (!tbody) return;
 
     if (!areas || areas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-secondary">No se detectaron áreas configuradas aún.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-secondary">No se detectaron áreas configuradas aún.</td></tr>';
         return;
     }
 
     let html = '';
     const todosDias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    const todasSemanas = ['S1', 'S2', 'S3', 'S4', 'S5'];
 
     areas.forEach(a => {
         const id = a.id;
@@ -3790,6 +3853,10 @@ function renderizarTablaPoliticasAreas(areas) {
         const eqAlerta = parseInt(a.equipos_alerta || 0);
         const eqCrit = parseInt(a.equipos_criticos || 0);
 
+        // Semanas del mes que aplican para esta área (S1 a S5)
+        const semanasMesAplicaStr = a.semanas_mes_aplica || 'S1,S2,S3,S4,S5';
+        const semActivasArr = semanasMesAplicaStr.split(',').map(s => s.trim().toUpperCase());
+
         // Generar badges visuales para los días de la semana
         let diasBadgesHtml = '<div class="d-flex flex-wrap gap-1">';
         todosDias.forEach(d => {
@@ -3801,6 +3868,30 @@ function renderizarTablaPoliticasAreas(areas) {
             }
         });
         diasBadgesHtml += '</div>';
+
+        // Generar botones interactivos para Semanas del Mes (S1 a S5)
+        let semanasMesBadgesHtml = '<div class="d-flex flex-wrap gap-1">';
+        todasSemanas.forEach(sCod => {
+            const isActiva = semActivasArr.includes(sCod);
+            if (isActiva) {
+                semanasMesBadgesHtml += `
+                    <button type="button" class="btn btn-sm py-0 px-2 rounded-2 fw-bold shadow-sm" 
+                            style="font-size: 0.72rem; background: rgba(56, 189, 248, 0.22); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.55);" 
+                            onclick="toggleSemanaMesArea(${id}, '${sCod}')" 
+                            title="${sCod} Aplica respaldo (Clic para pausar / poner en gris esta semana)">
+                        ${sCod} <i class="bi bi-check2"></i>
+                    </button>`;
+            } else {
+                semanasMesBadgesHtml += `
+                    <button type="button" class="btn btn-sm py-0 px-2 rounded-2" 
+                            style="font-size: 0.72rem; background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px dashed rgba(148, 163, 184, 0.45);" 
+                            onclick="toggleSemanaMesArea(${id}, '${sCod}')" 
+                            title="${sCod} No Aplica / Exento (Gris) - Clic para activar">
+                        ${sCod} <i class="bi bi-x"></i>
+                    </button>`;
+            }
+        });
+        semanasMesBadgesHtml += '</div>';
 
         // Badge de equipos en área
         const badgeEquipos = `<span class="fw-bold text-white">${eqTotal}</span> <span class="text-secondary small">(${eqAlDia} <i class="bi bi-check-circle text-success"></i>, ${eqAlerta + eqCrit} <i class="bi bi-exclamation-circle text-danger"></i>)</span>`;
@@ -3833,6 +3924,7 @@ function renderizarTablaPoliticasAreas(areas) {
                 </td>
                 <td class="align-middle">${badgeEquipos}</td>
                 <td class="align-middle">${diasBadgesHtml}</td>
+                <td class="align-middle">${semanasMesBadgesHtml}</td>
                 <td class="align-middle">
                     <span class="badge bg-dark border border-secondary border-opacity-25 text-capitalize text-light">${frec}</span>
                 </td>
@@ -3850,6 +3942,49 @@ function renderizarTablaPoliticasAreas(areas) {
     });
 
     tbody.innerHTML = html;
+}
+
+function toggleSemanaMesArea(areaId, semana) {
+    const formData = new FormData();
+    formData.append('id', areaId);
+    formData.append('semana', semana);
+
+    fetch('api_respaldos.php?action=toggle_semana_mes_area', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo actualizar la semana', 'error');
+            return;
+        }
+
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-bg-dark border border-info border-opacity-50 position-fixed bottom-0 end-0 m-3';
+        toastEl.style.zIndex = '99999';
+        toastEl.innerHTML = `<div class="d-flex"><div class="toast-body"><i class="bi bi-calendar-check text-info me-2"></i>${res.mensaje}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+        document.body.appendChild(toastEl);
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 2500 });
+        bsToast.show();
+        toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+
+        // Actualizar caché y re-renderizar tabla de áreas
+        if (politicasAreasCache && politicasAreasCache.length) {
+            const idx = politicasAreasCache.findIndex(p => parseInt(p.id) === parseInt(areaId));
+            if (idx !== -1) {
+                politicasAreasCache[idx].semanas_mes_aplica = res.semanas_mes_aplica;
+                renderizarTablaPoliticasAreas(politicasAreasCache);
+            }
+        }
+    })
+    .catch(err => {
+        console.error('Error al alternar semana del área:', err);
+    });
 }
 
 function toggleAplicaAreaSemana(areaId, nuevoEstado) {
@@ -3924,6 +4059,14 @@ function abrirModalEditarAreaPolitica(area) {
         if (ch) ch.checked = true;
     });
 
+    // Marcar/desmarcar semanas del mes que aplican
+    document.querySelectorAll('.check-semana-mes-prog').forEach(ch => { ch.checked = false; });
+    const semMes = (area.semanas_mes_aplica || 'S1,S2,S3,S4,S5').split(',').map(s => s.trim().toUpperCase());
+    semMes.forEach(s => {
+        const ch = document.getElementById(`checkSemanaMes_${s}`);
+        if (ch) ch.checked = true;
+    });
+
     document.getElementById('areaPol_frecuencia').value = area.frecuencia || 'semanal';
     const aplicaSw = document.getElementById('areaPol_aplica_semana');
     if (aplicaSw) {
@@ -3965,10 +4108,16 @@ function guardarAreaPolitica(e) {
         return;
     }
 
+    const semanasMesSeleccionadas = [];
+    document.querySelectorAll('.check-semana-mes-prog:checked').forEach(ch => {
+        semanasMesSeleccionadas.push(ch.value);
+    });
+
     const formData = new FormData();
     formData.append('id', id);
     formData.append('area_nombre', nombre);
     formData.append('dias_programados', diasSeleccionados.join(','));
+    formData.append('semanas_mes_aplica', semanasMesSeleccionadas.join(','));
     formData.append('frecuencia', frecuencia);
     formData.append('aplica_esta_semana', aplica);
     formData.append('motivo_exencion', motivo);

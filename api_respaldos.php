@@ -125,6 +125,18 @@ function calcularSemanasCalendarioMes($mes) {
     return $semanas;
 }
 
+function obtenerSemanaActualMes($mes = null) {
+    if (!$mes) $mes = date('Y-m');
+    $diaHoy = (int)date('d');
+    $semanas = calcularSemanasCalendarioMes($mes);
+    foreach ($semanas as $sId => $sConf) {
+        if ($diaHoy >= $sConf['inicio'] && $diaHoy <= $sConf['fin']) {
+            return $sId;
+        }
+    }
+    return 'S1';
+}
+
 /**
  * Infiere el Área correspondiente a partir del nombre de la carpeta o recurso compartido UNC
  * Ejemplo: 'CRMVw\NetBakData' -> 'CRM', 'HyPVw\NetBakData' -> 'HyP', 'AdministraciónVw' -> 'Administración'
@@ -197,14 +209,17 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
         ");
     } catch (Throwable $eSync) {}
 
-    $stmt = $pdo->query("
+    $semanaActualId = obtenerSemanaActualMes();
+    $patternSem = '%' . $semanaActualId . '%';
+
+    $stmt = $pdo->prepare("
         SELECT 
             COUNT(*) as total,
             SUM(CASE WHEN e.estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
-            SUM(CASE WHEN e.estado = 'vencido' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as vencidos,
-            SUM(CASE WHEN e.estado = 'critico' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as criticos,
+            SUM(CASE WHEN e.estado = 'vencido' AND (COALESCE(p.aplica_esta_semana, 1) = 1 AND (p.semanas_mes_aplica IS NULL OR p.semanas_mes_aplica = '' OR p.semanas_mes_aplica LIKE ?)) THEN 1 ELSE 0 END) as vencidos,
+            SUM(CASE WHEN e.estado = 'critico' AND (COALESCE(p.aplica_esta_semana, 1) = 1 AND (p.semanas_mes_aplica IS NULL OR p.semanas_mes_aplica = '' OR p.semanas_mes_aplica LIKE ?)) THEN 1 ELSE 0 END) as criticos,
             SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos,
-            SUM(CASE WHEN COALESCE(p.aplica_esta_semana, 1) = 0 THEN 1 ELSE 0 END) as exentos
+            SUM(CASE WHEN (COALESCE(p.aplica_esta_semana, 1) = 0 OR (p.semanas_mes_aplica IS NOT NULL AND p.semanas_mes_aplica != '' AND p.semanas_mes_aplica NOT LIKE ?)) THEN 1 ELSE 0 END) as exentos
         FROM respaldos_equipos e
         LEFT JOIN respaldos_nas n ON e.nas_id = n.id
         LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
@@ -212,6 +227,7 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
           AND e.nombre_equipo NOT LIKE '%@%'
           AND (e.nas_id IS NULL OR n.id IS NOT NULL)
     ");
+    $stmt->execute([$patternSem, $patternSem, $patternSem]);
     $m = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : [];
     $total = (int)($m['total'] ?? 0);
     $exitosos = (int)($m['exitosos'] ?? 0);
@@ -1297,6 +1313,7 @@ switch ($action) {
         $diasProgramados = trim($_POST['dias_programados'] ?? 'Vie');
         $frecuencia = trim($_POST['frecuencia'] ?? 'semanal');
         $aplicaEstaSemana = isset($_POST['aplica_esta_semana']) ? (int)$_POST['aplica_esta_semana'] : 1;
+        $semanasMesAplica = trim($_POST['semanas_mes_aplica'] ?? 'S1,S2,S3,S4,S5');
         $motivoExencion = trim($_POST['motivo_exencion'] ?? '');
         $notas = trim($_POST['notas'] ?? '');
 
@@ -1309,17 +1326,17 @@ switch ($action) {
             if ($id > 0) {
                 $stmt = $pdo->prepare("
                     UPDATE respaldos_areas_politicas 
-                    SET dias_programados = ?, frecuencia = ?, aplica_esta_semana = ?, motivo_exencion = ?, notas = ?, actualizado_en = CURRENT_TIMESTAMP
+                    SET dias_programados = ?, frecuencia = ?, aplica_esta_semana = ?, semanas_mes_aplica = ?, motivo_exencion = ?, notas = ?, actualizado_en = CURRENT_TIMESTAMP
                     WHERE id = ?
                 ");
-                $stmt->execute([$diasProgramados, $frecuencia, $aplicaEstaSemana, $motivoExencion, $notas, $id]);
+                $stmt->execute([$diasProgramados, $frecuencia, $aplicaEstaSemana, $semanasMesAplica, $motivoExencion, $notas, $id]);
             } else {
                 $stmt = $pdo->prepare("
-                    INSERT INTO respaldos_areas_politicas (area_nombre, dias_programados, frecuencia, aplica_esta_semana, motivo_exencion, notas)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                    ON DUPLICATE KEY UPDATE dias_programados = VALUES(dias_programados), frecuencia = VALUES(frecuencia), aplica_esta_semana = VALUES(aplica_esta_semana), motivo_exencion = VALUES(motivo_exencion), notas = VALUES(notas)
+                    INSERT INTO respaldos_areas_politicas (area_nombre, dias_programados, frecuencia, aplica_esta_semana, semanas_mes_aplica, motivo_exencion, notas)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE dias_programados = VALUES(dias_programados), frecuencia = VALUES(frecuencia), aplica_esta_semana = VALUES(aplica_esta_semana), semanas_mes_aplica = VALUES(semanas_mes_aplica), motivo_exencion = VALUES(motivo_exencion), notas = VALUES(notas)
                 ");
-                $stmt->execute([$areaNombre, $diasProgramados, $frecuencia, $aplicaEstaSemana, $motivoExencion, $notas]);
+                $stmt->execute([$areaNombre, $diasProgramados, $frecuencia, $aplicaEstaSemana, $semanasMesAplica, $motivoExencion, $notas]);
             }
 
             $metricas = obtenerMetricasGlobalesRespaldos($pdo);
@@ -1327,6 +1344,66 @@ switch ($action) {
             echo json_encode([
                 'success' => true,
                 'mensaje' => "Política del área '$areaNombre' guardada con éxito",
+                'metricas' => $metricas
+            ]);
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Alterna rápidamente si una semana específica del mes (S1 a S5) aplica para un área
+     */
+    case 'toggle_semana_mes_area':
+        validarSesionPortal();
+        requerirPermiso('respaldos', 'puede_editar');
+
+        $id = (int)($_POST['id'] ?? ($_GET['id'] ?? 0));
+        $semana = strtoupper(trim($_POST['semana'] ?? ($_GET['semana'] ?? '')));
+
+        if ($id <= 0 || !preg_match('/^S[1-5]$/', $semana)) {
+            echo json_encode(['success' => false, 'error' => 'Parámetros inválidos']);
+            exit();
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT semanas_mes_aplica, area_nombre FROM respaldos_areas_politicas WHERE id = ?");
+            $stmt->execute([$id]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$row) {
+                echo json_encode(['success' => false, 'error' => 'Área no encontrada']);
+                exit();
+            }
+
+            $raw = trim($row['semanas_mes_aplica'] ?? '');
+            $semanasAct = ($raw !== '') 
+                ? array_values(array_filter(array_map('trim', explode(',', strtoupper($raw)))))
+                : ['S1', 'S2', 'S3', 'S4', 'S5'];
+
+            $activo = in_array($semana, $semanasAct);
+            if ($activo) {
+                $semanasAct = array_values(array_diff($semanasAct, [$semana]));
+                $nuevoEstado = false;
+            } else {
+                $semanasAct[] = $semana;
+                sort($semanasAct);
+                $nuevoEstado = true;
+            }
+
+            $nuevoString = implode(',', $semanasAct);
+            $stmtUp = $pdo->prepare("UPDATE respaldos_areas_politicas SET semanas_mes_aplica = ?, actualizado_en = CURRENT_TIMESTAMP WHERE id = ?");
+            $stmtUp->execute([$nuevoString, $id]);
+
+            $metricas = obtenerMetricasGlobalesRespaldos($pdo);
+
+            echo json_encode([
+                'success' => true,
+                'id' => $id,
+                'area_nombre' => $row['area_nombre'],
+                'semana' => $semana,
+                'activo' => $nuevoEstado,
+                'semanas_mes_aplica' => $nuevoString,
+                'mensaje' => $nuevoEstado ? "Semana $semana activada para {$row['area_nombre']}" : "Semana $semana exenta (gris) para {$row['area_nombre']}",
                 'metricas' => $metricas
             ]);
         } catch (Throwable $e) {
@@ -1537,6 +1614,7 @@ switch ($action) {
                 SELECT e.id, e.nombre_equipo, e.usuario_responsable, e.area_nombre, e.estado, e.ultimo_respaldo, e.dias_sin_respaldo, e.tiene_temporales,
                        COALESCE(p.dias_programados, 'Vie') as dias_programados,
                        COALESCE(p.aplica_esta_semana, 1) as aplica_esta_semana,
+                       COALESCE(p.semanas_mes_aplica, 'S1,S2,S3,S4,S5') as semanas_mes_aplica,
                        p.motivo_exencion
                 FROM respaldos_equipos e
                 LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
@@ -1648,8 +1726,17 @@ switch ($action) {
 
                     $aplicaEstaSemana = (int)($eq['aplica_esta_semana'] ?? 1);
                     $diasProg = trim($eq['dias_programados'] ?? 'Vie');
+                    $semanasMesAplica = trim($eq['semanas_mes_aplica'] ?? 'S1,S2,S3,S4,S5');
+                    $semanasAplicaArr = ($semanasMesAplica !== '') 
+                        ? array_values(array_filter(array_map('trim', explode(',', strtoupper($semanasMesAplica)))))
+                        : ['S1', 'S2', 'S3', 'S4', 'S5'];
 
-                    if ($respaldoEncontrado) {
+                    $estaSemanaAplica = in_array(strtoupper($sId), $semanasAplicaArr) && ($aplicaEstaSemana === 1);
+
+                    if (!$estaSemanaAplica) {
+                        $item['estado'] = 'exento';
+                        $item['label_extra'] = 'No aplica';
+                    } elseif ($respaldoEncontrado) {
                         $item['estado'] = 'exitoso';
                         $item['fecha_respaldo'] = $respaldoEncontrado['fecha_hora'];
                         $item['fecha_corta'] = date('d/m', strtotime($respaldoEncontrado['fecha']));
@@ -1658,9 +1745,6 @@ switch ($action) {
                         $evaluables++;
                     } elseif ($esFuturo) {
                         $item['estado'] = 'futuro';
-                    } elseif ($enCurso && $aplicaEstaSemana === 0) {
-                        $item['estado'] = 'exento';
-                        $item['label_extra'] = 'No aplica';
                     } elseif ($enCurso) {
                         // Comprobar si hoy es previo al día programado
                         $mapDias = ['DOM' => 0, 'LUN' => 1, 'MAR' => 2, 'MIÉ' => 3, 'MIE' => 3, 'JUE' => 4, 'VIE' => 5, 'SÁB' => 6, 'SAB' => 6];
@@ -1691,13 +1775,16 @@ switch ($action) {
                     $semanasRes[$sId] = $item;
                 }
 
-                $porcentaje = ($evaluables > 0) ? round(($cumplidas / $evaluables) * 100) : (($aplicaEstaSemana === 0) ? 100 : 0);
+                $porcentaje = ($evaluables > 0) ? round(($cumplidas / $evaluables) * 100) : (($aplicaEstaSemana === 0 || empty($semanasAplicaArr)) ? 100 : 0);
 
-                // Estado semáforo en tiempo real
+                // Estado semáforo en tiempo real (según si la semana actual aplica o no)
+                $semanaActualId = obtenerSemanaActualMes();
+                $esSemanaActualAplicable = in_array(strtoupper($semanaActualId), $semanasAplicaArr) && ($aplicaEstaSemana === 1);
+
                 $estadoReal = 'critico';
                 if (!empty($eq['tiene_temporales'])) {
                     $estadoReal = 'incompleto';
-                } elseif ($aplicaEstaSemana === 0) {
+                } elseif (!$esSemanaActualAplicable) {
                     $estadoReal = 'exento';
                 } elseif ($diasSinRespaldo <= 6) {
                     $estadoReal = 'exitoso';
