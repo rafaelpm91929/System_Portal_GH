@@ -1330,7 +1330,13 @@ function guardarDatosEquipo(e) {
                             $diasCal = 99;
                             if (!empty($eq['ultimo_respaldo'])) {
                                 $fUlt = date('Y-m-d', strtotime($eq['ultimo_respaldo']));
-                                $diasCal = (int)(new DateTime(date('Y-m-d')))->diff(new DateTime($fUlt))->days;
+                                $dtHoy = new DateTime(date('Y-m-d'));
+                                $dtUlt = new DateTime($fUlt);
+                                if ($dtHoy <= $dtUlt) {
+                                    $diasCal = 0;
+                                } else {
+                                    $diasCal = (int)$dtHoy->diff($dtUlt)->days;
+                                }
                             }
                             $estadoFinal = 'critico';
                             if (!empty($eq['tiene_temporales'])) { $estadoFinal = 'incompleto'; }

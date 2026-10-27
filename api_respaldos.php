@@ -178,6 +178,25 @@ function inferirAreaDesdeRutaOFolder($nombre) {
  * instantáneamente los KPIs y las gráficas del portal (Dona, Barras, Semanas)
  */
 function obtenerMetricasGlobalesRespaldos($pdo) {
+    // Sincronizar estados y semáforo relativo a la fecha actual
+    try {
+        $pdo->exec("
+            UPDATE respaldos_equipos 
+            SET dias_sin_respaldo = CASE 
+                    WHEN ultimo_respaldo IS NOT NULL THEN GREATEST(0, DATEDIFF(CURDATE(), DATE(ultimo_respaldo)))
+                    ELSE 99 
+                END,
+                estado = CASE 
+                    WHEN tiene_temporales = 1 THEN 'incompleto'
+                    WHEN ultimo_respaldo IS NULL THEN 'critico'
+                    WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 6 THEN 'exitoso'
+                    WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 12 THEN 'vencido'
+                    ELSE 'critico'
+                END
+            WHERE COALESCE(monitorear, 1) = 1
+        ");
+    } catch (Throwable $eSync) {}
+
     $stmt = $pdo->query("
         SELECT 
             COUNT(*) as total,
@@ -732,6 +751,25 @@ switch ($action) {
 
                 $procesados++;
             }
+
+            // Sincronizar automáticamente días sin respaldo y estado semáforo de todos los equipos según la regla SLA
+            try {
+                $pdo->exec("
+                    UPDATE respaldos_equipos 
+                    SET dias_sin_respaldo = CASE 
+                            WHEN ultimo_respaldo IS NOT NULL THEN GREATEST(0, DATEDIFF(CURDATE(), DATE(ultimo_respaldo)))
+                            ELSE 99 
+                        END,
+                        estado = CASE 
+                            WHEN tiene_temporales = 1 THEN 'incompleto'
+                            WHEN ultimo_respaldo IS NULL THEN 'critico'
+                            WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 6 THEN 'exitoso'
+                            WHEN DATEDIFF(CURDATE(), DATE(ultimo_respaldo)) <= 12 THEN 'vencido'
+                            ELSE 'critico'
+                        END
+                    WHERE COALESCE(monitorear, 1) = 1
+                ");
+            } catch (Throwable $eSync) {}
 
             $pdo->commit();
 
