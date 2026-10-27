@@ -243,15 +243,19 @@ function obtenerMetricasGlobalesRespaldos($pdo) {
 
     return [
         'total' => $total,
+        'total_equipos' => $total,
         'exitosos' => $exitosos,
         'vencidos' => $vencidos,
         'criticos' => $criticos,
         'incompletos' => $incompletos,
         'porcentaje' => $pct,
+        'cumplimiento_porcentaje' => $pct,
         'areas_labels' => array_keys($conteoPorArea),
         'areas_data' => array_values($conteoPorArea),
+        'conteo_por_area' => $conteoPorArea,
         'semanas_labels' => $semanasChartLabels,
-        'semanas_data' => $semanasChartData
+        'semanas_data' => $semanasChartData,
+        'conteo_por_semana' => (!empty($semanasChartLabels) && count($semanasChartLabels) === count($semanasChartData)) ? array_combine($semanasChartLabels, $semanasChartData) : []
     ];
 }
 

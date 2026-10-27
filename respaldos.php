@@ -298,16 +298,28 @@ function tiempoRelativo($fechaStr) {
 
 // Conteo para las gráficas ejecutivas
 $conteoPorArea = [];
-$conteoPorSemana = ['S1' => 0, 'S2' => 0, 'S3' => 0, 'S4' => 0];
+$conteoPorSemana = [];
+
+$mesActualGrafica = date('Y-m');
+$semanasMesConf = calcularSemanasCalendarioMes($mesActualGrafica);
+foreach ($semanasMesConf as $sId => $sConf) {
+    $conteoPorSemana[$sId] = 0;
+}
 
 foreach ($equiposList as $eqItem) {
-    $ar = !empty($eqItem['area_nombre']) ? $eqItem['area_nombre'] : 'General';
+    $ar = !empty($eqItem['area_nombre']) ? trim($eqItem['area_nombre']) : 'General';
     if (!isset($conteoPorArea[$ar])) $conteoPorArea[$ar] = 0;
     $conteoPorArea[$ar]++;
 
-    $sem = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eqItem['nombre_equipo'])] ?? []);
+    $sem = calcular4SemanasDelMes(
+        $historialPorEquipo[strtoupper($eqItem['nombre_equipo'])] ?? [],
+        $eqItem['dias_sin_respaldo'] ?? 99,
+        $eqItem['ultimo_respaldo'] ?? null,
+        $mesActualGrafica
+    );
     foreach ($sem as $k => $v) {
         if (!empty($v['respaldo'])) {
+            if (!isset($conteoPorSemana[$k])) $conteoPorSemana[$k] = 0;
             $conteoPorSemana[$k]++;
         }
     }
@@ -315,6 +327,30 @@ foreach ($equiposList as $eqItem) {
 if (empty($conteoPorArea)) {
     $conteoPorArea = ['General' => 0];
 }
+
+// Limpiar codificación de áreas para json_encode seguro
+$conteoPorAreaLimpio = [];
+foreach ($conteoPorArea as $areaK => $areaV) {
+    $areaKClean = mb_convert_encoding($areaK, 'UTF-8', 'UTF-8');
+    if ($areaKClean === false || $areaKClean === '') {
+        $areaKClean = utf8_encode($areaK);
+    }
+    $conteoPorAreaLimpio[$areaKClean] = (int)$areaV;
+}
+
+$labelsSemanasChart = [];
+$dataSemanasChart = [];
+foreach ($semanasMesConf as $sId => $sConf) {
+    $labelsSemanasChart[] = $sConf['label'];
+    $dataSemanasChart[] = (int)($conteoPorSemana[$sId] ?? 0);
+}
+
+$datosSemaforoDona = [
+    (int)$exitosos,
+    (int)$vencidos,
+    (int)$criticos,
+    (int)$incompletos
+];
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -329,31 +365,33 @@ if (empty($conteoPorArea)) {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
 // =============================================================================
-// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO SEMANAL, ÁREAS Y 4 SEMANAS DEL MES)
+// GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO SEMANAL, ÁREAS Y SEMANAS DEL MES)
 // =============================================================================
 var chartInstanciaDona = null;
 var chartInstanciaAreas = null;
 var chartInstanciaSemanas = null;
 
-document.addEventListener('DOMContentLoaded', function() {
-    inicializarGraficas();
-});
-
 function inicializarGraficas() {
-    if (typeof Chart === 'undefined') return;
+    if (typeof Chart === 'undefined') {
+        setTimeout(inicializarGraficas, 200);
+        return;
+    }
 
     // 1. Gráfica de Dona: Semáforo Semanal (≤6d verde, 7-12d naranja, ≥13d rojo)
     const ctxDona = document.getElementById('chartSemaforoDona');
     if (ctxDona) {
-        chartInstanciaDona = new Chart(ctxDona, {
+        if (window.chartInstanciaDona) {
+            try { window.chartInstanciaDona.destroy(); } catch(e){}
+        }
+        window.chartInstanciaDona = new Chart(ctxDona, {
             type: 'doughnut',
             data: {
                 labels: ['Al Día (≤6d)', 'En Alerta (7-12d)', 'Críticos (≥13d)', 'Incompletos'],
                 datasets: [{
-                    data: [<?php echo $exitosos; ?>, <?php echo $vencidos; ?>, <?php echo $criticos; ?>, <?php echo $incompletos; ?>],
+                    data: <?php echo json_encode($datosSemaforoDona); ?>,
                     backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#ec4899'],
                     borderWidth: 2,
                     borderColor: '#09172c'
@@ -376,13 +414,16 @@ function inicializarGraficas() {
     // 2. Gráfica de Barras: Equipos por Área
     const ctxAreas = document.getElementById('chartAreasBarras');
     if (ctxAreas) {
-        chartInstanciaAreas = new Chart(ctxAreas, {
+        if (window.chartInstanciaAreas) {
+            try { window.chartInstanciaAreas.destroy(); } catch(e){}
+        }
+        window.chartInstanciaAreas = new Chart(ctxAreas, {
             type: 'bar',
             data: {
-                labels: <?php echo json_encode(array_keys($conteoPorArea)); ?>,
+                labels: <?php echo json_encode(array_keys($conteoPorAreaLimpio), JSON_UNESCAPED_UNICODE) ?: '[]'; ?>,
                 datasets: [{
                     label: 'Equipos',
-                    data: <?php echo json_encode(array_values($conteoPorArea)); ?>,
+                    data: <?php echo json_encode(array_values($conteoPorAreaLimpio)) ?: '[]'; ?>,
                     backgroundColor: 'rgba(56, 189, 248, 0.6)',
                     borderColor: '#38bdf8',
                     borderWidth: 1,
@@ -403,16 +444,19 @@ function inicializarGraficas() {
         });
     }
 
-    // 3. Gráfica de 4 Semanas del Mes
+    // 3. Gráfica de Semanas del Mes
     const ctxSemanas = document.getElementById('chartSemanasMes');
     if (ctxSemanas) {
-        chartInstanciaSemanas = new Chart(ctxSemanas, {
+        if (window.chartInstanciaSemanas) {
+            try { window.chartInstanciaSemanas.destroy(); } catch(e){}
+        }
+        window.chartInstanciaSemanas = new Chart(ctxSemanas, {
             type: 'line',
             data: {
-                labels: ['Semana 1 (1-7)', 'Semana 2 (8-14)', 'Semana 3 (15-21)', 'Semana 4 (22+)'],
+                labels: <?php echo json_encode($labelsSemanasChart, JSON_UNESCAPED_UNICODE) ?: '[]'; ?>,
                 datasets: [{
                     label: 'Respaldos cumplidos',
-                    data: [<?php echo $conteoPorSemana['S1']; ?>, <?php echo $conteoPorSemana['S2']; ?>, <?php echo $conteoPorSemana['S3']; ?>, <?php echo $conteoPorSemana['S4']; ?>],
+                    data: <?php echo json_encode($dataSemanasChart) ?: '[]'; ?>,
                     backgroundColor: 'rgba(16, 185, 129, 0.2)',
                     borderColor: '#10b981',
                     borderWidth: 2,
@@ -436,6 +480,17 @@ function inicializarGraficas() {
         });
     }
 }
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', inicializarGraficas);
+} else {
+    inicializarGraficas();
+}
+window.addEventListener('load', function() {
+    if (!window.chartInstanciaDona || !window.chartInstanciaAreas || !window.chartInstanciaSemanas) {
+        inicializarGraficas();
+    }
+});
 
 function abrirModalEditarEquipo(eq) {
     if (typeof eq === 'string') {
@@ -2838,27 +2893,38 @@ function actualizarContadorCarpetaLocal(carpetaId) {
 function actualizarVistasConMetricas(m) {
     if (!m) return;
 
-    const elTot = document.getElementById('kpiTotalEquipos');
-    if (elTot && m.total_equipos !== undefined) elTot.innerText = m.total_equipos;
+    const totalVal = (m.total !== undefined) ? m.total : m.total_equipos;
+    if (totalVal !== undefined) {
+        const elTot = document.getElementById('kpiTotalEquipos');
+        if (elTot) elTot.innerText = totalVal;
+    }
 
-    const elSla = document.getElementById('kpiPorcentajeCumplimiento');
-    if (elSla && m.cumplimiento_porcentaje !== undefined) elSla.innerText = m.cumplimiento_porcentaje + '%';
+    const pctVal = (m.porcentaje !== undefined) ? m.porcentaje : m.cumplimiento_porcentaje;
+    if (pctVal !== undefined) {
+        const elSla = document.getElementById('kpiPorcentajeCumplimiento');
+        if (elSla) elSla.innerText = pctVal + '%';
+        const elBar = document.getElementById('kpiBarraCumplimiento');
+        if (elBar) elBar.style.width = pctVal + '%';
+    }
 
-    const elBar = document.getElementById('kpiBarraCumplimiento');
-    if (elBar && m.cumplimiento_porcentaje !== undefined) elBar.style.width = m.cumplimiento_porcentaje + '%';
+    if (m.exitosos !== undefined) {
+        const elExit = document.getElementById('kpiExitosos');
+        if (elExit) elExit.innerText = m.exitosos;
+    }
+    if (m.vencidos !== undefined) {
+        const elVenc = document.getElementById('kpiVencidos');
+        if (elVenc) elVenc.innerText = m.vencidos;
+    }
+    if (m.criticos !== undefined) {
+        const elCrit = document.getElementById('kpiCriticos');
+        if (elCrit) elCrit.innerText = m.criticos;
+    }
+    if (m.incompletos !== undefined) {
+        const elIncomp = document.getElementById('kpiIncompletos');
+        if (elIncomp) elIncomp.innerText = m.incompletos;
+    }
 
-    const elExit = document.getElementById('kpiExitosos');
-    if (elExit && m.exitosos !== undefined) elExit.innerText = m.exitosos;
-
-    const elVenc = document.getElementById('kpiVencidos');
-    if (elVenc && m.vencidos !== undefined) elVenc.innerText = m.vencidos;
-
-    const elCrit = document.getElementById('kpiCriticos');
-    if (elCrit && m.criticos !== undefined) elCrit.innerText = m.criticos;
-
-    const elIncomp = document.getElementById('kpiIncompletos');
-    if (elIncomp && m.incompletos !== undefined) elIncomp.innerText = m.incompletos;
-
+    // 1. Gráfica Dona
     if (window.chartInstanciaDona && m.exitosos !== undefined) {
         window.chartInstanciaDona.data.datasets[0].data = [
             m.exitosos || 0,
@@ -2866,23 +2932,33 @@ function actualizarVistasConMetricas(m) {
             m.criticos || 0,
             m.incompletos || 0
         ];
-        window.chartInstanciaDona.update('none');
+        window.chartInstanciaDona.update();
     }
 
-    if (window.chartInstanciaAreas && m.conteo_por_area) {
-        window.chartInstanciaAreas.data.labels = Object.keys(m.conteo_por_area);
-        window.chartInstanciaAreas.data.datasets[0].data = Object.values(m.conteo_por_area);
-        window.chartInstanciaAreas.update('none');
+    // 2. Gráfica Áreas
+    if (window.chartInstanciaAreas) {
+        let labels = m.areas_labels || (m.conteo_por_area ? Object.keys(m.conteo_por_area) : null);
+        let data = m.areas_data || (m.conteo_por_area ? Object.values(m.conteo_por_area) : null);
+        if (labels && data) {
+            window.chartInstanciaAreas.data.labels = labels;
+            window.chartInstanciaAreas.data.datasets[0].data = data;
+            window.chartInstanciaAreas.update();
+        }
     }
 
-    if (window.chartInstanciaSemanas && m.conteo_por_semana) {
-        window.chartInstanciaSemanas.data.datasets[0].data = [
-            m.conteo_por_semana.S1 || 0,
-            m.conteo_por_semana.S2 || 0,
-            m.conteo_por_semana.S3 || 0,
-            m.conteo_por_semana.S4 || 0
-        ];
-        window.chartInstanciaSemanas.update('none');
+    // 3. Gráfica Semanas
+    if (window.chartInstanciaSemanas) {
+        let semData = m.semanas_data;
+        let semLabels = m.semanas_labels;
+        if (!semData && m.conteo_por_semana) {
+            semLabels = Object.keys(m.conteo_por_semana);
+            semData = Object.values(m.conteo_por_semana);
+        }
+        if (semData) {
+            if (semLabels) window.chartInstanciaSemanas.data.labels = semLabels;
+            window.chartInstanciaSemanas.data.datasets[0].data = semData;
+            window.chartInstanciaSemanas.update();
+        }
     }
 }
 
