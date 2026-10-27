@@ -89,6 +89,11 @@ if ($pdo) {
         try {
             $pdo->exec("
                 UPDATE respaldos_equipos 
+                SET nas_id = (SELECT id FROM respaldos_nas WHERE estatus = 1 ORDER BY id ASC LIMIT 1) 
+                WHERE nas_id IS NULL OR nas_id = 0
+            ");
+            $pdo->exec("
+                UPDATE respaldos_equipos 
                 SET dias_sin_respaldo = CASE 
                         WHEN ultimo_respaldo IS NOT NULL THEN GREATEST(0, DATEDIFF(CURDATE(), DATE(ultimo_respaldo)))
                         ELSE 99 
@@ -122,8 +127,10 @@ if ($pdo) {
                 SUM(CASE WHEN e.estado = 'critico' THEN 1 ELSE 0 END) as criticos,
                 SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
             FROM respaldos_equipos e
-            JOIN respaldos_nas n ON e.nas_id = n.id
-            WHERE COALESCE(e.monitorear, 1) = 1 AND e.nombre_equipo NOT LIKE '%@%'
+            LEFT JOIN respaldos_nas n ON e.nas_id = n.id
+            WHERE COALESCE(e.monitorear, 1) = 1 
+              AND e.nombre_equipo NOT LIKE '%@%'
+              AND (e.nas_id IS NULL OR n.id IS NOT NULL)
         ");
         $metricas = $stmtMetricas ? $stmtMetricas->fetch(PDO::FETCH_ASSOC) : [];
         $totalEquipos = (int)($metricas['total'] ?? 0);
@@ -136,10 +143,11 @@ if ($pdo) {
         $stmtTop5 = $pdo->query("
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
-            JOIN respaldos_nas n ON e.nas_id = n.id 
+            LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
             WHERE e.estado IN ('critico', 'vencido', 'incompleto') 
               AND COALESCE(e.monitorear, 1) = 1 
               AND e.nombre_equipo NOT LIKE '%@%'
+              AND (e.nas_id IS NULL OR n.id IS NOT NULL)
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
             LIMIT 5
         ");
@@ -149,9 +157,10 @@ if ($pdo) {
         $stmtEq = $pdo->query("
             SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca 
             FROM respaldos_equipos e 
-            JOIN respaldos_nas n ON e.nas_id = n.id 
+            LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
             WHERE COALESCE(e.monitorear, 1) = 1 
               AND e.nombre_equipo NOT LIKE '%@%'
+              AND (e.nas_id IS NULL OR n.id IS NOT NULL)
             ORDER BY e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");
         $equiposList = $stmtEq ? $stmtEq->fetchAll(PDO::FETCH_ASSOC) : [];

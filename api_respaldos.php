@@ -602,8 +602,8 @@ switch ($action) {
                         ELSE usuario_responsable 
                     END,
                     area_nombre = COALESCE(?, area_nombre),
-                    nas_id = ?,
-                    carpeta_id = ?,
+                    nas_id = COALESCE(?, nas_id),
+                    carpeta_id = COALESCE(?, carpeta_id),
                     ruta_origen = ?,
                     ultimo_respaldo = ?,
                     archivo_reciente = ?,
@@ -643,6 +643,12 @@ switch ($action) {
                 if (strpos($nombreEquipo, '@') !== false) continue;
                 $rutaOrigen = $eq['ruta_carpeta'] ?? ($eq['ruta_origen'] ?? '');
                 if (strpos($rutaOrigen, '@') !== false) continue;
+
+                $nasId = !empty($eq['nas_id']) ? (int)$eq['nas_id'] : null;
+                $carpetaId = !empty($eq['carpeta_id']) ? (int)$eq['carpeta_id'] : null;
+                if (!$nasId) {
+                    $nasId = (int)($pdo->query("SELECT id FROM respaldos_nas WHERE estatus = 1 ORDER BY id ASC LIMIT 1")->fetchColumn() ?: 10);
+                }
 
                 $usuarioResp = !empty($eq['usuario_responsable']) ? trim($eq['usuario_responsable']) : null;
                 $areaNombre = (!empty($eq['area_nombre']) && $eq['area_nombre'] !== 'General') 
@@ -754,6 +760,11 @@ switch ($action) {
 
             // Sincronizar automáticamente días sin respaldo y estado semáforo de todos los equipos según la regla SLA
             try {
+                $pdo->exec("
+                    UPDATE respaldos_equipos 
+                    SET nas_id = (SELECT id FROM respaldos_nas WHERE estatus = 1 ORDER BY id ASC LIMIT 1) 
+                    WHERE nas_id IS NULL OR nas_id = 0
+                ");
                 $pdo->exec("
                     UPDATE respaldos_equipos 
                     SET dias_sin_respaldo = CASE 

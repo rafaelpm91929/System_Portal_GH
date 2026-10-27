@@ -2246,11 +2246,13 @@ function asegurarTablasRespaldos($pdo = null) {
         }
 
         // Mantenimiento y limpieza automática:
-        // 1. Eliminar registros de equipos e historiales huérfanos cuya NAS ya no exista
+        // 1. Limpieza de respaldos y reparación automática de NAS IDs huérfanos
         try {
-            $pdo->exec("DELETE FROM respaldos_historial WHERE nas_id NOT IN (SELECT id FROM respaldos_nas) AND nas_id IS NOT NULL");
-            $pdo->exec("DELETE FROM respaldos_equipos WHERE nas_id NOT IN (SELECT id FROM respaldos_nas) OR nas_id IS NULL");
-            $pdo->exec("DELETE FROM respaldos_carpetas WHERE nas_id NOT IN (SELECT id FROM respaldos_nas)");
+            $nasActivoId = $pdo->query("SELECT id FROM respaldos_nas WHERE estatus = 1 ORDER BY id ASC LIMIT 1")->fetchColumn();
+            if ($nasActivoId) {
+                $pdo->exec("UPDATE respaldos_equipos SET nas_id = $nasActivoId WHERE nas_id IS NULL OR nas_id NOT IN (SELECT id FROM respaldos_nas)");
+                $pdo->exec("UPDATE respaldos_carpetas SET nas_id = $nasActivoId WHERE nas_id IS NULL OR nas_id NOT IN (SELECT id FROM respaldos_nas)");
+            }
         } catch (Throwable $eClean1) {}
 
         // 2. Descartar cualquier carpeta o equipo detectado que NO pertenezca a NetBak
