@@ -118,16 +118,29 @@ if ($pdo) {
             ");
         } catch (Throwable $syncE) {}
 
+        // Políticas SLA de respaldo por Área
+        $areasPoliticas = [];
+        try {
+            $stmtAP = $pdo->query("SELECT * FROM respaldos_areas_politicas ORDER BY area_nombre ASC");
+            if ($stmtAP) {
+                while ($apRow = $stmtAP->fetch(PDO::FETCH_ASSOC)) {
+                    $areasPoliticas[$apRow['area_nombre']] = $apRow;
+                }
+            }
+        } catch (Throwable $e) {}
+
         // Métricas de equipos (solo equipos monitoreados que pertenezcan a una NAS existente y sin '@')
         $stmtMetricas = $pdo->query("
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN e.estado = 'exitoso' THEN 1 ELSE 0 END) as exitosos,
-                SUM(CASE WHEN e.estado = 'vencido' THEN 1 ELSE 0 END) as vencidos,
-                SUM(CASE WHEN e.estado = 'critico' THEN 1 ELSE 0 END) as criticos,
-                SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos
+                SUM(CASE WHEN e.estado = 'vencido' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as vencidos,
+                SUM(CASE WHEN e.estado = 'critico' AND COALESCE(p.aplica_esta_semana, 1) = 1 THEN 1 ELSE 0 END) as criticos,
+                SUM(CASE WHEN e.estado = 'incompleto' THEN 1 ELSE 0 END) as incompletos,
+                SUM(CASE WHEN COALESCE(p.aplica_esta_semana, 1) = 0 THEN 1 ELSE 0 END) as exentos
             FROM respaldos_equipos e
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id
+            LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
             WHERE COALESCE(e.monitorear, 1) = 1 
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
@@ -138,14 +151,17 @@ if ($pdo) {
         $vencidos = (int)($metricas['vencidos'] ?? 0);
         $criticos = (int)($metricas['criticos'] ?? 0);
         $incompletos = (int)($metricas['incompletos'] ?? 0);
+        $exentos = (int)($metricas['exentos'] ?? 0);
 
-        // Top 5 Equipos con más días sin respaldar
+        // Top 5 Equipos con más días sin respaldar (excluyendo exentos)
         $stmtTop5 = $pdo->query("
             SELECT e.*, n.nombre as nas_nombre 
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
+            LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
             WHERE e.estado IN ('critico', 'vencido', 'incompleto') 
               AND COALESCE(e.monitorear, 1) = 1 
+              AND COALESCE(p.aplica_esta_semana, 1) = 1
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
             ORDER BY e.dias_sin_respaldo DESC, e.ultimo_respaldo ASC 
@@ -155,13 +171,19 @@ if ($pdo) {
 
         // Listado completo de equipos para la tabla
         $stmtEq = $pdo->query("
-            SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca 
+            SELECT e.*, n.nombre as nas_nombre, n.marca as nas_marca,
+                   COALESCE(p.dias_programados, 'Vie') as dias_programados,
+                   COALESCE(p.aplica_esta_semana, 1) as aplica_esta_semana,
+                   p.motivo_exencion
             FROM respaldos_equipos e 
             LEFT JOIN respaldos_nas n ON e.nas_id = n.id 
+            LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
             WHERE COALESCE(e.monitorear, 1) = 1 
               AND e.nombre_equipo NOT LIKE '%@%'
               AND (e.nas_id IS NULL OR n.id IS NOT NULL)
-            ORDER BY e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
+            ORDER BY 
+              CASE WHEN COALESCE(p.aplica_esta_semana, 1) = 0 THEN 2 ELSE 1 END ASC,
+              e.estado DESC, e.dias_sin_respaldo DESC, e.nombre_equipo ASC
         ");
         $equiposList = $stmtEq ? $stmtEq->fetchAll(PDO::FETCH_ASSOC) : [];
 
@@ -186,7 +208,8 @@ if ($pdo) {
     } catch (Throwable $e) {}
 }
 
-$porcentajeCumplimiento = ($totalEquipos > 0) ? round(($exitosos / $totalEquipos) * 100, 1) : 0;
+$totalAplicables = max(0, $totalEquipos - $exentos);
+$porcentajeCumplimiento = ($totalAplicables > 0) ? round(($exitosos / $totalAplicables) * 100, 1) : (($totalEquipos > 0 && $exentos == $totalEquipos) ? 100 : 0);
 $mostrarAsistenteInicial = ($totalNas === 0);
 
 function calcularSemanasCalendarioMes($mes) {
@@ -219,7 +242,10 @@ function calcularSemanasCalendarioMes($mes) {
             'dias_count' => ($diaFin - $diaActual + 1),
             'respaldo' => null,
             'es_futuro' => false,
-            'en_curso' => false
+            'en_curso' => false,
+            'es_exento' => false,
+            'programado_proximo' => false,
+            'prog_label' => ''
         ];
 
         $diaActual = $diaFin + 1;
@@ -229,7 +255,7 @@ function calcularSemanasCalendarioMes($mes) {
     return $semanas;
 }
 
-function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null, $mes = null) {
+function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimoRespaldo = null, $mes = null, $politicaArea = null) {
     if (!$mes) {
         $mes = date('Y-m');
     }
@@ -237,6 +263,9 @@ function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimo
     $esMesActual = ($mes === date('Y-m'));
 
     $semanas = calcularSemanasCalendarioMes($mes);
+
+    $aplicaEstaSemana = isset($politicaArea['aplica_esta_semana']) ? (int)$politicaArea['aplica_esta_semana'] : 1;
+    $diasProgramados = $politicaArea['dias_programados'] ?? 'Vie';
 
     foreach ($semanas as $sId => &$sConf) {
         if ($esMesActual) {
@@ -281,6 +310,30 @@ function calcular4SemanasDelMes($historialEquipo, $diasSinRespaldo = 99, $ultimo
             unset($sConf);
         }
     }
+
+    // Evaluar estado para semanas en curso sin respaldo
+    foreach ($semanas as $sId => &$sConf) {
+        if ($sConf['en_curso'] && empty($sConf['respaldo'])) {
+            if ($aplicaEstaSemana === 0) {
+                $sConf['es_exento'] = true;
+            } else {
+                $mapDias = ['DOM' => 0, 'LUN' => 1, 'MAR' => 2, 'MIÉ' => 3, 'MIE' => 3, 'JUE' => 4, 'VIE' => 5, 'SÁB' => 6, 'SAB' => 6];
+                $diasProgArr = array_map('trim', explode(',', strtoupper($diasProgramados)));
+                $diasProgNums = [];
+                foreach ($diasProgArr as $dp) {
+                    if (isset($mapDias[$dp])) $diasProgNums[] = $mapDias[$dp];
+                }
+                $maxDiaProg = !empty($diasProgNums) ? max($diasProgNums) : 5;
+                $diaSemanaHoy = (int)date('w');
+
+                if ($diaSemanaHoy < $maxDiaProg && (int)$diasSinRespaldo > 6) {
+                    $sConf['programado_proximo'] = true;
+                    $sConf['prog_label'] = $diasProgramados;
+                }
+            }
+        }
+    }
+    unset($sConf);
 
     return $semanas;
 }
@@ -670,6 +723,13 @@ function guardarDatosEquipo(e) {
             box-shadow: 0 2px 10px rgba(236, 72, 153, 0.20);
         }
 
+        .badge-exento {
+            background: linear-gradient(135deg, rgba(148, 163, 184, 0.25) 0%, rgba(100, 116, 139, 0.12) 100%);
+            color: #cbd5e1;
+            border: 1px solid rgba(148, 163, 184, 0.45);
+            box-shadow: 0 2px 8px rgba(148, 163, 184, 0.15);
+        }
+
         /* Píldoras con degradado moderno para semanas */
         .badge-semana-pill {
             display: inline-flex;
@@ -713,6 +773,17 @@ function guardarDatosEquipo(e) {
             border: 1px dashed rgba(255, 255, 255, 0.18);
             color: #94a3b8;
         }
+        .badge-semana-exento {
+            background: linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0%, rgba(100, 116, 139, 0.10) 100%);
+            border: 1px dashed rgba(148, 163, 184, 0.45);
+            color: #94a3b8;
+        }
+        .badge-semana-programado {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(14, 165, 233, 0.10) 100%);
+            border: 1px solid rgba(56, 189, 248, 0.50);
+            color: #7dd3fc;
+            box-shadow: 0 2px 10px rgba(56, 189, 248, 0.18);
+        }
 
         .dot-indicator {
             width: 8px;
@@ -724,6 +795,7 @@ function guardarDatosEquipo(e) {
         .dot-vencido { background: #f59e0b; box-shadow: 0 0 8px #f59e0b; }
         .dot-critico { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
         .dot-incompleto { background: #ec4899; box-shadow: 0 0 8px #ec4899; }
+        .dot-exento { background: #94a3b8; box-shadow: 0 0 8px #94a3b8; }
 
         /* Scrollbar superior sincronizado y mejoras de tabla */
         .table-scroll-sync-top {
@@ -1072,7 +1144,16 @@ function guardarDatosEquipo(e) {
                         <i class="bi bi-shield-check"></i>
                     </div>
                 </div>
-                <div class="kpi-number text-success" id="kpiPorcentajeCumplimiento"><?php echo $porcentajeCumplimiento; ?>%</div>
+                <div class="d-flex align-items-baseline gap-2">
+                    <div class="kpi-number text-success" id="kpiPorcentajeCumplimiento"><?php echo $porcentajeCumplimiento; ?>%</div>
+                    <?php if (!empty($exentos) && $exentos > 0): ?>
+                    <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50 small" id="kpiExentosBadge" title="<?php echo $exentos; ?> equipos exentos esta semana">
+                        <?php echo $exentos; ?> exentos
+                    </span>
+                    <?php else: ?>
+                    <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50 small d-none" id="kpiExentosBadge">0 exentos</span>
+                    <?php endif; ?>
+                </div>
                 <div class="progress mt-2" style="height: 5px; background: rgba(255,255,255,0.08);">
                     <div class="progress-bar bg-success" id="kpiBarraCumplimiento" role="progressbar" style="width: <?php echo $porcentajeCumplimiento; ?>%;"></div>
                 </div>
@@ -1235,6 +1316,11 @@ function guardarDatosEquipo(e) {
         <li class="nav-item">
             <button class="nav-link" id="tab-heatmap-link" data-bs-toggle="tab" data-bs-target="#tab-heatmap" type="button" onclick="cargarMatrizSemanasMes()">
                 <i class="bi bi-calendar3-week"></i> Matriz Semanal por Mes
+            </button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" id="tab-areas-link" data-bs-toggle="tab" data-bs-target="#tab-areas" type="button" onclick="cargarPoliticasAreas()">
+                <i class="bi bi-calendar2-check"></i> Días de Respaldo por Área
             </button>
         </li>
         <li class="nav-item">
@@ -1411,13 +1497,21 @@ function guardarDatosEquipo(e) {
                             <td>
                                 <div class="d-flex align-items-center gap-1">
                                     <?php 
-                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? [], (int)$diasCal, $eq['ultimo_respaldo'] ?? null);
+                                    $semMap = calcular4SemanasDelMes($historialPorEquipo[strtoupper($eq['nombre_equipo'])] ?? [], (int)$diasCal, $eq['ultimo_respaldo'] ?? null, null, $eq);
                                     foreach ($semMap as $sKey => $sVal):
                                         if (!empty($sVal['respaldo'])):
                                             $fDisplay = date('d/m', strtotime($sVal['respaldo']['fecha']));
                                     ?>
                                         <span class="badge-semana-pill badge-semana-exitoso" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): <?php echo $sVal['respaldo']['fecha_hora']; ?>">
                                             <i class="bi bi-check me-0"></i><?php echo $sKey; ?>: <?php echo $fDisplay; ?>
+                                        </span>
+                                    <?php elseif (!empty($sVal['es_exento'])): ?>
+                                        <span class="badge-semana-pill badge-semana-exento" title="<?php echo $sKey; ?>: Área exenta esta semana (no aplica)">
+                                            <i class="bi bi-pause me-0"></i><?php echo $sKey; ?>: No aplica
+                                        </span>
+                                    <?php elseif (!empty($sVal['programado_proximo'])): ?>
+                                        <span class="badge-semana-pill badge-semana-programado" title="<?php echo $sKey; ?>: Respaldo programado para <?php echo htmlspecialchars($sVal['prog_label'] ?? 'Vie'); ?>">
+                                            <i class="bi bi-calendar-event me-0"></i><?php echo $sKey; ?>: Prog (<?php echo htmlspecialchars($sVal['prog_label'] ?? 'Vie'); ?>)
                                         </span>
                                     <?php elseif ($sVal['es_futuro']): ?>
                                         <span class="badge-semana-pill badge-semana-futuro" title="<?php echo $sKey; ?> (<?php echo $sVal['dias_label'] ?? $sVal['dias']; ?>): Pendiente en el mes">
@@ -1448,10 +1542,17 @@ function guardarDatosEquipo(e) {
                                 <span class="text-white fw-semibold"><?php echo formatearTamanoBytes($eq['tamano_bytes']); ?></span>
                             </td>
                             <td>
+                                <?php if (isset($eq['aplica_esta_semana']) && (int)$eq['aplica_esta_semana'] === 0): ?>
+                                <span class="badge-semaforo badge-exento" title="<?php echo htmlspecialchars($eq['motivo_exencion'] ?: 'Exento esta semana por política de área'); ?>">
+                                    <span class="dot-indicator dot-exento"></span>
+                                    No Aplica
+                                </span>
+                                <?php else: ?>
                                 <span class="badge-semaforo <?php echo $badgeClass; ?>">
                                     <span class="dot-indicator <?php echo $dotClass; ?>"></span>
                                     <?php echo $estadoLabel; ?>
                                 </span>
+                                <?php endif; ?>
                             </td>
                             <td class="text-end">
                                 <button class="btn btn-outline-warning btn-sm rounded-3 px-2 py-1 me-1" onclick='abrirModalEditarEquipo(<?php echo json_encode($eq, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)' title="Editar datos del equipo y usuario asignado"><i class="bi bi-pencil-square"></i></button><button class="btn btn-outline-info btn-sm rounded-3 px-2 py-1" onclick="abrirExpedienteEquipo('<?php echo htmlspecialchars($eq['nombre_equipo']); ?>', <?php echo $eq['id']; ?>)" title="Ver expediente e historial de 90 días">
@@ -1537,7 +1638,82 @@ function guardarDatosEquipo(e) {
         </div>
 
         <!-- =================================================================== -->
-        <!-- PESTAÑA 3: CATÁLOGO MULTI-NAS Y GESTIÓN DE CARPETAS                -->
+        <!-- PESTAÑA 3: PROGRAMACIÓN DE DÍAS Y POLÍTICAS POR ÁREA                 -->
+        <!-- =================================================================== -->
+        <div class="tab-pane fade" id="tab-areas" role="tabpanel">
+            <div class="card-executive p-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+                    <div>
+                        <h5 class="fw-bold text-white mb-1">
+                            <i class="bi bi-calendar2-check text-primary me-2"></i>Programación de Respaldos y Exención Semanal por Área
+                        </h5>
+                        <p class="text-secondary small mb-0">
+                            Configura qué días de la semana le corresponde respaldo a cada departamento. Si un área no respaldará esta semana (por mantenimiento, inventario o descanso), desactívala aquí para evitar penalizaciones injustas en el SLA semanal.
+                        </p>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <button class="btn btn-outline-info btn-sm rounded-3 px-3" onclick="cargarPoliticasAreas()">
+                            <i class="bi bi-arrow-repeat me-1"></i> Actualizar Áreas
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Mini KPIs de Políticas de Áreas -->
+                <div class="row g-3 mb-4" id="resumenKpisAreas">
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 rounded-3 border border-secondary border-opacity-25" style="background: rgba(13, 30, 54, 0.4);">
+                            <div class="text-secondary small text-uppercase fw-semibold mb-1">Total Áreas</div>
+                            <div class="fs-4 fw-bold text-white" id="kpiAreasTotal">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 rounded-3 border border-success border-opacity-25" style="background: rgba(16, 185, 129, 0.08);">
+                            <div class="text-success small text-uppercase fw-semibold mb-1">Áreas Activas</div>
+                            <div class="fs-4 fw-bold text-success" id="kpiAreasActivas">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 rounded-3 border border-warning border-opacity-25" style="background: rgba(245, 158, 11, 0.08);">
+                            <div class="text-warning small text-uppercase fw-semibold mb-1">Áreas Exentas esta Sem.</div>
+                            <div class="fs-4 fw-bold text-warning" id="kpiAreasExentas">0</div>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <div class="p-3 rounded-3 border border-info border-opacity-25" style="background: rgba(56, 189, 248, 0.08);">
+                            <div class="text-info small text-uppercase fw-semibold mb-1">Equipos en Áreas</div>
+                            <div class="fs-4 fw-bold text-info" id="kpiAreasEquipos">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabla de Áreas -->
+                <div class="table-responsive">
+                    <table class="table-custom" id="tablaPoliticasAreas">
+                        <thead>
+                            <tr>
+                                <th style="min-width: 200px;">Área / Departamento</th>
+                                <th style="min-width: 140px;">Equipos</th>
+                                <th style="min-width: 260px;">Días Programados</th>
+                                <th style="min-width: 120px;">Frecuencia</th>
+                                <th style="min-width: 190px;" class="text-center">¿Aplica esta semana?</th>
+                                <th style="min-width: 220px;">Motivo Exención</th>
+                                <th class="text-end" style="min-width: 120px;">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbodyPoliticasAreas">
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-secondary">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2"></div> Cargando áreas y programación SLA...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 4: CATÁLOGO MULTI-NAS Y GESTIÓN DE CARPETAS                -->
         <!-- =================================================================== -->
         <div class="tab-pane fade" id="tab-nas" role="tabpanel">
             <div class="row g-4">
@@ -2054,6 +2230,10 @@ function guardarDatosEquipo(e) {
         </div>
     </div>
 </div>
+
+<!-- ======================================================================= -->
+<!-- MODAL: AGENTE COLECTOR LAN (INSTRUCCIONES Y SCRIPTS)                   -->
+<!-- ======================================================================= -->
 <div class="modal fade" id="modalColectorLan" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content border-secondary border-opacity-50" style="background: #09172c; color: #fff;">
@@ -2221,6 +2401,111 @@ function guardarDatosEquipo(e) {
                 <div class="modal-footer border-secondary border-opacity-25">
                     <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-primary btn-sm px-3">Guardar Carpeta</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- MODAL: PROGRAMAR DÍAS Y POLÍTICA DE EXENCIÓN POR ÁREA                  -->
+<!-- ======================================================================= -->
+<div class="modal fade" id="modalEditarAreaPolitica" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-secondary border-opacity-50" style="background: #09172c; color: #fff;">
+            <div class="modal-header border-secondary border-opacity-25">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-primary bg-opacity-25 text-primary border border-primary p-2 rounded-circle">
+                        <i class="bi bi-calendar2-week fs-5"></i>
+                    </span>
+                    <div>
+                        <h5 class="modal-title fw-bold text-white mb-0" id="tituloModalAreaPolitica">Programar Respaldo de Área</h5>
+                        <small class="text-secondary">Días de ejecución y política semanal de SLA</small>
+                    </div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formAreaPolitica" onsubmit="guardarAreaPolitica(event)">
+                <input type="hidden" id="areaPol_id" name="id" value="">
+                <input type="hidden" id="areaPol_nombre" name="area_nombre" value="">
+                
+                <div class="modal-body p-4">
+                    <!-- Nombre de Área -->
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small fw-bold">Departamento / Área</label>
+                        <div class="p-2 rounded-3 border border-secondary border-opacity-25 bg-dark d-flex align-items-center gap-2">
+                            <i class="bi bi-building text-primary fs-5"></i>
+                            <span class="fw-bold text-white" id="displayAreaPolNombre">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Días de la Semana -->
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small fw-bold d-block">
+                            Días de Respaldo Programados
+                            <span class="text-muted fw-normal float-end" style="font-size: 0.75rem;">(Selecciona uno o varios)</span>
+                        </label>
+                        <div class="d-flex flex-wrap gap-2 pt-1" id="contenedorDiasSemanaCheckboxes">
+                            <?php 
+                            $diasSem = ['Lun' => 'Lunes', 'Mar' => 'Martes', 'Mié' => 'Miércoles', 'Jue' => 'Jueves', 'Vie' => 'Viernes', 'Sáb' => 'Sábado', 'Dom' => 'Domingo'];
+                            foreach ($diasSem as $cod => $nom):
+                            ?>
+                            <div class="form-check form-check-inline m-0">
+                                <input class="btn-check check-dia-prog" type="checkbox" id="checkDia_<?php echo $cod; ?>" value="<?php echo $cod; ?>" autocomplete="off">
+                                <label class="btn btn-outline-info btn-sm px-3 rounded-3" for="checkDia_<?php echo $cod; ?>"><?php echo $cod; ?></label>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="form-text text-secondary" style="font-size: 0.75rem;">
+                            Los días antes del programado no se marcarán como "sin copia" en la semana en curso.
+                        </div>
+                    </div>
+
+                    <!-- Frecuencia -->
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small fw-bold">Frecuencia de Evaluación</label>
+                        <select class="form-select bg-dark text-white border-secondary border-opacity-25" id="areaPol_frecuencia" name="frecuencia">
+                            <option value="semanal" selected>Semanal (Predeterminado)</option>
+                            <option value="quincenal">Quincenal</option>
+                            <option value="mensual">Mensual</option>
+                            <option value="diario">Diario</option>
+                        </select>
+                    </div>
+
+                    <!-- Switch: ¿Aplica esta semana? -->
+                    <div class="p-3 rounded-3 border border-secondary border-opacity-25 mb-3" style="background: rgba(13, 30, 54, 0.4);">
+                        <div class="form-check form-switch d-flex justify-content-between align-items-center ps-0 mb-2">
+                            <label class="form-check-label fw-bold text-white mb-0" for="areaPol_aplica_semana">
+                                <i class="bi bi-check2-circle text-success me-1"></i> ¿Aplica respaldo esta semana?
+                            </label>
+                            <input class="form-check-input ms-0" type="checkbox" role="switch" id="areaPol_aplica_semana" name="aplica_esta_semana" value="1" checked onchange="toggleMotivoExencionInput()">
+                        </div>
+                        <div class="text-secondary small" style="font-size: 0.78rem;">
+                            Si se desmarca, ningún equipo de esta área penalizará el porcentaje de SLA de la semana actual.
+                        </div>
+                    </div>
+
+                    <!-- Motivo de Exención -->
+                    <div class="mb-3" id="grupoMotivoExencion" style="display: none;">
+                        <label class="form-label text-warning small fw-bold">
+                            <i class="bi bi-info-circle me-1"></i> Motivo de Exención (opcional)
+                        </label>
+                        <input type="text" class="form-control bg-dark text-white border-warning border-opacity-50" id="areaPol_motivo" name="motivo_exencion" placeholder="Ej: Semana de inventario, vacaciones, mantenimiento">
+                        <div class="form-text text-secondary" style="font-size: 0.75rem;">Quedará visible como justificación en el semáforo y auditoría.</div>
+                    </div>
+
+                    <!-- Notas -->
+                    <div class="mb-2">
+                        <label class="form-label text-secondary small fw-bold">Notas Internas</label>
+                        <textarea class="form-control bg-dark text-white border-secondary border-opacity-25" id="areaPol_notas" name="notas" rows="2" placeholder="Observaciones adicionales sobre esta área..."></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer border-secondary border-opacity-25">
+                    <button type="button" class="btn btn-outline-secondary btn-sm rounded-3" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary btn-sm rounded-3 px-4">
+                        <i class="bi bi-save me-1"></i> Guardar Programación
+                    </button>
                 </div>
             </form>
         </div>
@@ -2446,6 +2731,10 @@ function renderizarFilasMatriz(matriz, semanasDef) {
                 const fShow = sem.fecha_corta || 'Cumplido';
                 const tit = `Respaldo exitoso: ${sem.archivo || ''} (${sem.fecha_respaldo || ''})`;
                 pillHtml = `<span class="badge-semana-pill badge-semana-exitoso" title="${tit}"><i class="bi bi-check-circle-fill"></i> ${fShow}</span>`;
+            } else if (sem.estado === 'exento') {
+                pillHtml = `<span class="badge-semana-pill badge-semana-exento" title="Área exenta esta semana (no aplica)"><i class="bi bi-pause-circle"></i> No aplica</span>`;
+            } else if (sem.estado === 'programado') {
+                pillHtml = `<span class="badge-semana-pill badge-semana-programado" title="Programado para ${sem.label_extra || 'esta semana'}"><i class="bi bi-calendar-event"></i> ${sem.label_extra || 'Programado'}</span>`;
             } else if (sem.estado === 'en_curso') {
                 pillHtml = `<span class="badge-semana-pill badge-semana-en_curso" title="Semana en curso (al día)"><i class="bi bi-clock-history"></i> En curso</span>`;
             } else if (sem.estado === 'futuro') {
@@ -2571,6 +2860,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     document.getElementById('tab-heatmap-link')?.addEventListener('shown.bs.tab', () => {
         sincronizarScrollDoble('scrollMatrizTop', 'matrizContenido', 'scrollMatrizInnerTop', 'tablaMatrizSemanal');
+    });
+    document.getElementById('tab-areas-link')?.addEventListener('shown.bs.tab', () => {
+        cargarPoliticasAreas();
     });
     document.getElementById('tab-nas-link')?.addEventListener('shown.bs.tab', () => {
         cargarCatalogoNas();
@@ -2937,6 +3229,17 @@ function actualizarVistasConMetricas(m) {
     if (m.incompletos !== undefined) {
         const elIncomp = document.getElementById('kpiIncompletos');
         if (elIncomp) elIncomp.innerText = m.incompletos;
+    }
+    if (m.exentos !== undefined) {
+        const elEx = document.getElementById('kpiExentosBadge');
+        if (elEx) {
+            if (m.exentos > 0) {
+                elEx.innerText = `${m.exentos} exentos`;
+                elEx.classList.remove('d-none');
+            } else {
+                elEx.classList.add('d-none');
+            }
+        }
     }
 
     // 1. Gráfica Dona
@@ -3409,6 +3712,298 @@ function copiarAlPortapapeles(idElemento) {
             timer: 1500,
             showConfirmButton: false
         });
+    });
+}
+
+// =============================================================================
+// GESTIÓN DE POLÍTICAS Y PROGRAMACIÓN DE RESPALDOS POR ÁREA
+// =============================================================================
+let politicasAreasCache = [];
+
+function cargarPoliticasAreas() {
+    const tbody = document.getElementById('tbodyPoliticasAreas');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-secondary"><div class="spinner-border spinner-border-sm text-primary me-2"></div> Cargando áreas y programación SLA...</td></tr>';
+
+    fetch('api_respaldos.php?action=listar_areas_politicas')
+        .then(r => r.json())
+        .then(res => {
+            if (!res.success) {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-danger py-4 text-center">${res.error || 'Error al cargar áreas'}</td></tr>`;
+                return;
+            }
+
+            politicasAreasCache = res.areas || [];
+            actualizarResumenKpisAreas(politicasAreasCache);
+            renderizarTablaPoliticasAreas(politicasAreasCache);
+        })
+        .catch(err => {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-danger py-4 text-center">Error de conexión: ${err.message}</td></tr>`;
+        });
+}
+
+function actualizarResumenKpisAreas(areas) {
+    const elTot = document.getElementById('kpiAreasTotal');
+    const elAct = document.getElementById('kpiAreasActivas');
+    const elExe = document.getElementById('kpiAreasExentas');
+    const elEq = document.getElementById('kpiAreasEquipos');
+
+    let total = areas.length;
+    let activas = 0;
+    let exentas = 0;
+    let totalEq = 0;
+
+    areas.forEach(a => {
+        if (parseInt(a.aplica_esta_semana) === 1) activas++;
+        else exentas++;
+        totalEq += parseInt(a.total_equipos || 0);
+    });
+
+    if (elTot) elTot.innerText = total;
+    if (elAct) elAct.innerText = activas;
+    if (elExe) elExe.innerText = exentas;
+    if (elEq) elEq.innerText = totalEq;
+}
+
+function renderizarTablaPoliticasAreas(areas) {
+    const tbody = document.getElementById('tbodyPoliticasAreas');
+    if (!tbody) return;
+
+    if (!areas || areas.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-secondary">No se detectaron áreas configuradas aún.</td></tr>';
+        return;
+    }
+
+    let html = '';
+    const todosDias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+    areas.forEach(a => {
+        const id = a.id;
+        const nombre = a.area_nombre || 'General';
+        const aplica = parseInt(a.aplica_esta_semana) === 1;
+        const diasStr = a.dias_programados || 'Vie';
+        const diasArr = diasStr.split(',').map(d => d.trim());
+        const frec = a.frecuencia || 'semanal';
+        const motivo = a.motivo_exencion || '';
+        const eqTotal = parseInt(a.total_equipos || 0);
+        const eqAlDia = parseInt(a.equipos_al_dia || 0);
+        const eqAlerta = parseInt(a.equipos_alerta || 0);
+        const eqCrit = parseInt(a.equipos_criticos || 0);
+
+        // Generar badges visuales para los días de la semana
+        let diasBadgesHtml = '<div class="d-flex flex-wrap gap-1">';
+        todosDias.forEach(d => {
+            const activo = diasArr.includes(d);
+            if (activo) {
+                diasBadgesHtml += `<span class="badge bg-info bg-opacity-25 text-info border border-info border-opacity-50 py-1 px-2 fw-bold" style="font-size: 0.72rem;">${d}</span>`;
+            } else {
+                diasBadgesHtml += `<span class="badge text-secondary border border-secondary border-opacity-10 py-1 px-2" style="font-size: 0.72rem; opacity: 0.4;">${d}</span>`;
+            }
+        });
+        diasBadgesHtml += '</div>';
+
+        // Badge de equipos en área
+        const badgeEquipos = `<span class="fw-bold text-white">${eqTotal}</span> <span class="text-secondary small">(${eqAlDia} <i class="bi bi-check-circle text-success"></i>, ${eqAlerta + eqCrit} <i class="bi bi-exclamation-circle text-danger"></i>)</span>`;
+
+        // Switch de "Aplica esta semana"
+        const switchId = `switchAplicaArea_${id}`;
+        const switchHtml = `
+            <div class="form-check form-switch d-inline-flex align-items-center gap-2 justify-content-center">
+                <input class="form-check-input" type="checkbox" role="switch" id="${switchId}" ${aplica ? 'checked' : ''} onchange="toggleAplicaAreaSemana(${id}, this.checked)">
+                <label class="form-check-label small ${aplica ? 'text-success fw-bold' : 'text-secondary'}" for="${switchId}" id="lblSwitch_${id}">
+                    ${aplica ? '<i class="bi bi-check-circle me-1"></i>Aplica' : '<i class="bi bi-pause-circle me-1"></i>Exento'}
+                </label>
+            </div>
+        `;
+
+        const jsonArea = JSON.stringify(a).replace(/'/g, '&apos;').replace(/"/g, '&quot;');
+
+        html += `
+            <tr id="filaAreaPol_${id}" style="${!aplica ? 'opacity: 0.75; background: rgba(148, 163, 184, 0.03);' : ''}">
+                <td class="align-middle">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-50 p-2 rounded-3">
+                            <i class="bi bi-folder2"></i>
+                        </span>
+                        <div>
+                            <div class="fw-bold text-white">${nombre}</div>
+                            <div class="text-secondary" style="font-size: 0.72rem;">${a.notas ? a.notas : 'Área corporativa'}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="align-middle">${badgeEquipos}</td>
+                <td class="align-middle">${diasBadgesHtml}</td>
+                <td class="align-middle">
+                    <span class="badge bg-dark border border-secondary border-opacity-25 text-capitalize text-light">${frec}</span>
+                </td>
+                <td class="align-middle text-center">${switchHtml}</td>
+                <td class="align-middle">
+                    ${motivo ? `<span class="badge bg-warning bg-opacity-15 text-warning border border-warning border-opacity-25 text-truncate d-inline-block" style="max-width: 200px;" title="${motivo}"><i class="bi bi-info-circle me-1"></i>${motivo}</span>` : '<span class="text-secondary small fst-italic">--</span>'}
+                </td>
+                <td class="align-middle text-end">
+                    <button class="btn btn-outline-primary btn-sm rounded-3 px-2 py-1" onclick="abrirModalEditarAreaPolitica(${jsonArea})" title="Modificar días programados y regla de SLA">
+                        <i class="bi bi-pencil-square me-1"></i> Programar
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+function toggleAplicaAreaSemana(areaId, nuevoEstado) {
+    let motivo = '';
+    const label = document.getElementById(`lblSwitch_${areaId}`);
+    if (label) {
+        label.innerHTML = nuevoEstado ? '<i class="bi bi-check-circle me-1"></i>Aplica' : '<i class="bi bi-pause-circle me-1"></i>Exento';
+        label.className = `form-check-label small ${nuevoEstado ? 'text-success fw-bold' : 'text-secondary'}`;
+    }
+
+    const fila = document.getElementById(`filaAreaPol_${areaId}`);
+    if (fila) {
+        fila.style.opacity = nuevoEstado ? '1' : '0.75';
+    }
+
+    const formData = new FormData();
+    formData.append('id', areaId);
+    formData.append('aplica', nuevoEstado ? 1 : 0);
+    formData.append('motivo', motivo);
+
+    fetch('api_respaldos.php?action=toggle_aplica_area_semana', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo actualizar el estado', 'error');
+            cargarPoliticasAreas();
+            return;
+        }
+
+        const toastEl = document.createElement('div');
+        toastEl.className = 'toast align-items-center text-bg-dark border border-primary border-opacity-50 position-fixed bottom-0 end-0 m-3';
+        toastEl.style.zIndex = '99999';
+        toastEl.innerHTML = `<div class="d-flex"><div class="toast-body"><i class="bi bi-check-circle text-success me-2"></i>${res.mensaje}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+        document.body.appendChild(toastEl);
+        const bsToast = new bootstrap.Toast(toastEl, { delay: 2500 });
+        bsToast.show();
+        toastEl.addEventListener('hidden.bs.toast', () => toastEl.remove());
+
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+
+        // Actualizar mini KPIs de la pestaña
+        if (politicasAreasCache && politicasAreasCache.length) {
+            const idx = politicasAreasCache.findIndex(p => parseInt(p.id) === parseInt(areaId));
+            if (idx !== -1) {
+                politicasAreasCache[idx].aplica_esta_semana = nuevoEstado ? 1 : 0;
+                actualizarResumenKpisAreas(politicasAreasCache);
+            }
+        }
+    })
+    .catch(err => {
+        console.error('Error al conmutar área:', err);
+    });
+}
+
+function abrirModalEditarAreaPolitica(area) {
+    if (!area) return;
+    document.getElementById('areaPol_id').value = area.id || '';
+    document.getElementById('areaPol_nombre').value = area.area_nombre || '';
+    document.getElementById('displayAreaPolNombre').innerText = area.area_nombre || 'General';
+    document.getElementById('tituloModalAreaPolitica').innerText = `Programar: ${area.area_nombre}`;
+
+    // Desmarcar todos los checks de días
+    document.querySelectorAll('.check-dia-prog').forEach(ch => { ch.checked = false; });
+    const dias = (area.dias_programados || 'Vie').split(',').map(d => d.trim());
+    dias.forEach(d => {
+        const ch = document.getElementById(`checkDia_${d}`);
+        if (ch) ch.checked = true;
+    });
+
+    document.getElementById('areaPol_frecuencia').value = area.frecuencia || 'semanal';
+    const aplicaSw = document.getElementById('areaPol_aplica_semana');
+    if (aplicaSw) {
+        aplicaSw.checked = (parseInt(area.aplica_esta_semana) === 1);
+    }
+    document.getElementById('areaPol_motivo').value = area.motivo_exencion || '';
+    document.getElementById('areaPol_notas').value = area.notas || '';
+
+    toggleMotivoExencionInput();
+
+    const m = new bootstrap.Modal(document.getElementById('modalEditarAreaPolitica'));
+    m.show();
+}
+
+function toggleMotivoExencionInput() {
+    const sw = document.getElementById('areaPol_aplica_semana');
+    const grp = document.getElementById('grupoMotivoExencion');
+    if (sw && grp) {
+        grp.style.display = sw.checked ? 'none' : 'block';
+    }
+}
+
+function guardarAreaPolitica(e) {
+    e.preventDefault();
+    const id = document.getElementById('areaPol_id').value;
+    const nombre = document.getElementById('areaPol_nombre').value;
+    const frecuencia = document.getElementById('areaPol_frecuencia').value;
+    const aplica = document.getElementById('areaPol_aplica_semana').checked ? 1 : 0;
+    const motivo = document.getElementById('areaPol_motivo').value;
+    const notas = document.getElementById('areaPol_notas').value;
+
+    const diasSeleccionados = [];
+    document.querySelectorAll('.check-dia-prog:checked').forEach(ch => {
+        diasSeleccionados.push(ch.value);
+    });
+
+    if (diasSeleccionados.length === 0) {
+        Swal.fire('Atención', 'Selecciona al menos un día de la semana para el respaldo de esta área.', 'warning');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('id', id);
+    formData.append('area_nombre', nombre);
+    formData.append('dias_programados', diasSeleccionados.join(','));
+    formData.append('frecuencia', frecuencia);
+    formData.append('aplica_esta_semana', aplica);
+    formData.append('motivo_exencion', motivo);
+    formData.append('notas', notas);
+
+    fetch('api_respaldos.php?action=guardar_area_politica', {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        if (!res.success) {
+            Swal.fire('Error', res.error || 'No se pudo guardar la programación', 'error');
+            return;
+        }
+
+        const modalEl = document.getElementById('modalEditarAreaPolitica');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+
+        Swal.fire({
+            title: '¡Programación Guardada!',
+            text: res.mensaje || 'Política y días actualizados correctamente',
+            icon: 'success',
+            timer: 1800,
+            showConfirmButton: false
+        });
+
+        cargarPoliticasAreas();
+        if (res.metricas) {
+            actualizarVistasConMetricas(res.metricas);
+        }
+    })
+    .catch(err => {
+        Swal.fire('Error', err.message, 'error');
     });
 }
 

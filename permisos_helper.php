@@ -2145,6 +2145,18 @@ function asegurarTablasRespaldos($pdo = null) {
                     valor TEXT NOT NULL,
                     descripcion TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS respaldos_areas_politicas (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    area_nombre TEXT NOT NULL UNIQUE,
+                    dias_programados TEXT DEFAULT 'Vie',
+                    frecuencia TEXT DEFAULT 'semanal',
+                    aplica_esta_semana INTEGER DEFAULT 1,
+                    motivo_exencion TEXT,
+                    notas TEXT,
+                    creado_en DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             ");
         } else {
             $pdo->exec("
@@ -2217,6 +2229,19 @@ function asegurarTablasRespaldos($pdo = null) {
                     `clave` VARCHAR(50) NOT NULL UNIQUE,
                     `valor` TEXT NOT NULL,
                     `descripcion` VARCHAR(255) NULL
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `respaldos_areas_politicas` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `area_nombre` VARCHAR(100) NOT NULL UNIQUE,
+                    `dias_programados` VARCHAR(150) DEFAULT 'Vie',
+                    `frecuencia` VARCHAR(50) DEFAULT 'semanal',
+                    `aplica_esta_semana` TINYINT(1) DEFAULT 1,
+                    `motivo_exencion` VARCHAR(255) NULL,
+                    `notas` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX `idx_area_nombre` (`area_nombre`)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
             ");
         }
@@ -2292,6 +2317,26 @@ function asegurarTablasRespaldos($pdo = null) {
             $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'Servicios Financieros' WHERE nombre_carpeta LIKE '%ServiciosFinancieros%'");
             $pdo->exec("UPDATE respaldos_carpetas SET area_nombre = 'PLD' WHERE nombre_carpeta LIKE '%PLD%'");
         } catch (Throwable $eAreas) {}
+
+        // 5. Registrar y sincronizar automáticamente las áreas en respaldos_areas_politicas
+        try {
+            $stmtDistAreas = $pdo->query("
+                SELECT DISTINCT area_nombre FROM respaldos_carpetas WHERE area_nombre IS NOT NULL AND area_nombre != ''
+                UNION 
+                SELECT DISTINCT area_nombre FROM respaldos_equipos WHERE area_nombre IS NOT NULL AND area_nombre != ''
+            ");
+            $distAreas = $stmtDistAreas ? $stmtDistAreas->fetchAll(PDO::FETCH_COLUMN) : [];
+            $stmtCheckPol = $pdo->prepare("SELECT id FROM respaldos_areas_politicas WHERE area_nombre = ? LIMIT 1");
+            $stmtInsPol = $pdo->prepare("INSERT INTO respaldos_areas_politicas (area_nombre, dias_programados, frecuencia, aplica_esta_semana) VALUES (?, 'Vie', 'semanal', 1)");
+            foreach ($distAreas as $dA) {
+                $dA = trim($dA);
+                if (empty($dA)) continue;
+                $stmtCheckPol->execute([$dA]);
+                if (!$stmtCheckPol->fetchColumn()) {
+                    $stmtInsPol->execute([$dA]);
+                }
+            }
+        } catch (Throwable $eSyncPol) {}
     } catch (Throwable $e) {}
 }
 
