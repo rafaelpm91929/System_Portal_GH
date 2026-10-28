@@ -110,6 +110,51 @@ function Obtener-AreaDesdeRuta {
     }
 }
 
+function Obtener-TamanoCarpetaNetbak {
+    param (
+        [string]$RutaCarpeta,
+        [string[]]$ExtTemporales = @(".tmp", ".temp", ".part", ".partial", ".crdownload", ".aria2")
+    )
+    $res = [PSCustomObject]@{
+        Bytes = [int64]0
+        Archivos = 0
+        Temporales = [System.Collections.Generic.List[string]]::new()
+        UltimoArchivo = $null
+    }
+    if ([string]::IsNullOrWhiteSpace($RutaCarpeta) -or -not (Test-Path -LiteralPath $RutaCarpeta)) {
+        return $res
+    }
+
+    try {
+        $dir = [System.IO.DirectoryInfo]::new($RutaCarpeta)
+        foreach ($f in $dir.EnumerateFiles('*', [System.IO.SearchOption]::AllDirectories)) {
+            $res.Bytes += $f.Length
+            $res.Archivos++
+
+            $ext = $f.Extension.ToLower()
+            foreach ($tempExt in $ExtTemporales) {
+                if ($ext -eq $tempExt -or $f.Name.StartsWith("~$")) {
+                    $res.Temporales.Add($f.Name)
+                    break
+                }
+            }
+
+            if ($null -eq $res.UltimoArchivo -or $f.LastWriteTime -gt $res.UltimoArchivo.LastWriteTime) {
+                $res.UltimoArchivo = $f
+            }
+        }
+    } catch {
+        # Fallback con FSO en caso de excepción durante la enumeración
+        try {
+            $fso = New-Object -ComObject Scripting.FileSystemObject
+            $fld = $fso.GetFolder($RutaCarpeta)
+            $res.Bytes = [int64]$fld.Size
+        } catch {}
+    }
+
+    return $res
+}
+
 function Write-ColectorLog {
     param([string]$Mensaje, [string]$Nivel = "INFO")
     $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -568,25 +613,19 @@ foreach ($nas in $nasList) {
                 $ultimoNombreStr = $carpetaReciente.Name
                 $ultimoFechaStr = $historialRespaldos[0].fecha_hora
 
-                # Analizar archivos de la carpeta más reciente (inspección rápida controlada en profundidad)
-                try {
-                    $archivosRecientes = Get-ChildItem -LiteralPath $carpetaReciente.FullName -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 200
-                    foreach ($f in $archivosRecientes) {
-                        $ultimoBytes += $f.Length
-                        foreach ($ext in $extTemporales) {
-                            if ($f.Extension.ToLower() -eq $ext -or $f.Name.StartsWith("~$")) {
-                                $temporales.Add($f.Name)
-                                break
-                            }
-                        }
-                        if ($null -eq $ultimoArchivo -or $f.LastWriteTime -gt $ultimoArchivo.LastWriteTime) {
-                            $ultimoArchivo = $f
-                        }
-                    }
-                } catch {}
+                # Analizar archivos de la carpeta más reciente con cálculo recursivo de tamaño real
+                $infoCarpeta = Obtener-TamanoCarpetaNetbak -RutaCarpeta $carpetaReciente.FullName -ExtTemporales $extTemporales
+                $ultimoBytes = $infoCarpeta.Bytes
+                $temporales = $infoCarpeta.Temporales
+                if ($infoCarpeta.UltimoArchivo) {
+                    $ultimoArchivo = $infoCarpeta.UltimoArchivo
+                }
+                if ($historialRespaldos.Count -gt 0) {
+                    $historialRespaldos[0].tamano_bytes = $ultimoBytes
+                }
             } else {
                 # MODO ESTÁNDAR (Veeam, Cobian, Windows Backup, etc.)
-                $archivos = Get-ChildItem -LiteralPath $rutaSub -Recurse -File -Depth 3 -ErrorAction SilentlyContinue
+                $archivos = Get-ChildItem -LiteralPath $rutaSub -Recurse -File -Depth 4 -ErrorAction SilentlyContinue
                 foreach ($f in $archivos) {
                     $esTemp = $false
                     foreach ($ext in $extTemporales) {
@@ -605,7 +644,7 @@ foreach ($nas in $nasList) {
 
                 $ultimoFechaStr = if ($ultimoArchivo) { $ultimoArchivo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") } else { $null }
                 $ultimoNombreStr = if ($ultimoArchivo) { $ultimoArchivo.Name } else { $null }
-                $ultimoBytes = if ($ultimoArchivo) { $ultimoArchivo.Length } else { 0 }
+                $ultimoBytes = if ($ultimoArchivo) { [int64]$ultimoArchivo.Length } else { 0 }
             }
 
             $resultadosEquipos.Add([PSCustomObject]@{
@@ -622,7 +661,10 @@ foreach ($nas in $nasList) {
                 archivos_temporales = $temporales
                 historial_reciente = $historialRespaldos
             })
-            Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado) detectado: Ultimo respaldo = $ultimoFechaStr ($ultimoNombreStr) | $($historialRespaldos.Count) respaldos históricos"
+            $tamanoGb = [math]::Round($ultimoBytes / 1GB, 2)
+            $tamanoMb = [math]::Round($ultimoBytes / 1MB, 2)
+            $tamanoTexto = if ($tamanoGb -ge 1) { "$tamanoGb GB" } else { "$tamanoMb MB" }
+            Write-ColectorLog "  [+] Equipo '$nombreEquipo' ($usuarioDetectado): Ultimo = $ultimoFechaStr ($ultimoNombreStr) | Tamaño = $tamanoTexto | $($historialRespaldos.Count) respaldos históricos"
         }
     }
 }
