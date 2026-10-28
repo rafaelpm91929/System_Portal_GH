@@ -11,6 +11,7 @@ if (!isset($_SESSION['usuario_id'])) {
 
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
+require_once __DIR__ . '/excel_helper.php';
 
 // Asegurar existencia de tablas del módulo de respaldos
 if ($pdo) {
@@ -454,6 +455,13 @@ $datosSemaforoDona = [
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <script>
+    window.DATOS_AGENCIA_EXCEL = <?php 
+        $agenciaExcelData = obtenerDatosAgenciaExcel($pdo ?? null, $agenciaNombre);
+        echo json_encode($agenciaExcelData, JSON_UNESCAPED_UNICODE); 
+    ?>;
+    </script>
     <script>
 // =============================================================================
 // GRÁFICAS EJECUTIVAS CHART.JS (SEMÁFORO SEMANAL, ÁREAS Y SEMANAS DEL MES)
@@ -1108,9 +1116,44 @@ function guardarDatosEquipo(e) {
     </div>
     <div class="d-flex align-items-center gap-2">
         <?php if ($puedeExportar): ?>
-        <a href="api_respaldos.php?action=exportar_csv" class="btn btn-outline-success btn-sm rounded-3">
-            <i class="bi bi-file-earmark-excel me-1"></i> Exportar Auditoría (Excel)
-        </a>
+        <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-success rounded-3 fw-semibold shadow-sm" onclick="exportarAuditoriaExcelAvanzado()" title="Exportar Libro Excel Ejecutivo (2 Hojas: Resumen + Gráficas y Matriz Semanal por Área)">
+                <i class="bi bi-file-earmark-spreadsheet-fill me-1 text-success"></i> Exportar Auditoría (Excel)
+            </button>
+            <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split rounded-end-3" data-bs-toggle="dropdown" aria-expanded="false" title="Más opciones de exportación">
+                <span class="visually-hidden">Opciones de exportación</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow border-secondary border-opacity-50">
+                <li>
+                    <a class="dropdown-item py-2" href="javascript:void(0)" onclick="exportarAuditoriaExcelAvanzado()">
+                        <i class="bi bi-file-earmark-excel-fill text-success me-2"></i>
+                        <div>
+                            <div class="fw-semibold">Libro Excel Oficial (.xlsx)</div>
+                            <small class="text-secondary">2 Hojas: KPIs + Gráficas y Matriz por Área</small>
+                        </div>
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item py-2" href="api_respaldos.php?action=exportar_excel">
+                        <i class="bi bi-file-earmark-spreadsheet text-warning me-2"></i>
+                        <div>
+                            <div class="fw-semibold">Reporte Rápido Membretado (.xls)</div>
+                            <small class="text-secondary">Descarga directa desde servidor</small>
+                        </div>
+                    </a>
+                </li>
+                <li><hr class="dropdown-divider border-secondary border-opacity-25"></li>
+                <li>
+                    <a class="dropdown-item py-2" href="api_respaldos.php?action=exportar_csv">
+                        <i class="bi bi-filetype-csv text-info me-2"></i>
+                        <div>
+                            <div class="fw-semibold">Reporte Plano (.csv)</div>
+                            <small class="text-secondary">Datos tabulares para importar en otros sistemas</small>
+                        </div>
+                    </a>
+                </li>
+            </ul>
+        </div>
         <?php endif; ?>
 
         <button type="button" class="btn btn-outline-primary btn-sm rounded-3" data-bs-toggle="modal" data-bs-target="#modalColectorLan">
@@ -1620,6 +1663,11 @@ function guardarDatosEquipo(e) {
                         <div class="d-flex align-items-center gap-2">
                             <input type="text" id="filtroMatrizRapido" class="form-control form-control-sm bg-dark text-white border-secondary border-opacity-50" placeholder="Buscar máquina..." style="width: 160px;" onkeyup="filtrarTablaMatriz()">
                         </div>
+                        <?php if ($puedeExportar): ?>
+                        <button type="button" class="btn btn-outline-success btn-sm rounded-3 fw-semibold shadow-sm text-nowrap" onclick="exportarAuditoriaExcelAvanzado()" title="Descargar libro Excel oficial de 2 hojas">
+                            <i class="bi bi-file-earmark-excel-fill me-1"></i> Exportar a Excel
+                        </button>
+                        <?php endif; ?>
                     </div>
                 </div>
 
@@ -4162,6 +4210,686 @@ document.addEventListener('DOMContentLoaded', () => {
     seleccionarNasCarpetas(<?php echo (int)$nasCatalogo[0]['id']; ?>, '<?php echo addslashes($nasCatalogo[0]['nombre']); ?>');
 });
 <?php endif; ?>
+
+// =============================================================================
+// EXPORTADOR AVANZADO A MICROSOFT EXCEL (.XLSX) MULTI-HOJA CON GRÁFICAS Y MATRIZ
+// =============================================================================
+async function exportarAuditoriaExcelAvanzado() {
+    if (typeof ExcelJS === 'undefined') {
+        Swal.fire({
+            title: 'Librería Excel no lista',
+            text: 'Descargando motor de hojas de cálculo de alta precisión, espere un momento...',
+            icon: 'info',
+            timer: 2000,
+            showConfirmButton: false
+        });
+        return;
+    }
+
+    // 1. Obtener filtros activos en la pantalla
+    const mesSel = document.getElementById('selectMesMatriz')?.value || '<?php echo date('Y-m'); ?>';
+    const areaSel = document.getElementById('filtroArea')?.value || '';
+    const nasSel = document.getElementById('filtroNas')?.value || '';
+    const estadoSel = document.getElementById('filtroEstado')?.value || '';
+    const busqueda = (document.getElementById('buscadorEquipos')?.value || document.getElementById('filtroMatrizRapido')?.value || '').toLowerCase().trim();
+
+    // 2. Mostrar indicador de progreso
+    Swal.fire({
+        title: 'Generando Reporte de Auditoría...',
+        html: `
+            <div class="py-2 text-start small">
+                <div class="mb-1"><i class="bi bi-gear-wide-connected text-primary me-2"></i> Procesando datos del mes <strong>${mesSel}</strong>...</div>
+                <div class="mb-1"><i class="bi bi-funnel-fill text-warning me-2"></i> Aplicando filtros de Área, NAS y Semáforo...</div>
+                <div class="mb-1"><i class="bi bi-bar-chart-fill text-info me-2"></i> Renderizando gráficas ejecutivas en alta resolución...</div>
+                <div><i class="bi bi-file-earmark-spreadsheet-fill text-success me-2"></i> Estructurando Libro de 2 Hojas (Resumen + Matriz Semanal)...</div>
+            </div>
+        `,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    try {
+        // 3. Consultar la matriz semanal completa para el mes seleccionado
+        let url = 'api_respaldos.php?action=obtener_matriz_semanal_mes&mes=' + encodeURIComponent(mesSel);
+        const resp = await fetch(url);
+        const res = await resp.json();
+
+        if (!res.success) {
+            throw new Error(res.error || 'No se pudieron recuperar los datos de la matriz mensual');
+        }
+
+        // 4. Filtrar equipos según los filtros activos de la interfaz
+        let equiposFiltrados = res.matriz || [];
+        if (areaSel) {
+            equiposFiltrados = equiposFiltrados.filter(e => e.area_nombre === areaSel);
+        }
+        if (nasSel) {
+            equiposFiltrados = equiposFiltrados.filter(e => {
+                const nasNom = e.nas_nombre || '';
+                const nasMrc = e.nas_marca || '';
+                return nasNom === nasSel || nasSel.includes(nasNom) || (nasMrc && nasSel.includes(nasMrc));
+            });
+        }
+        if (estadoSel) {
+            equiposFiltrados = equiposFiltrados.filter(e => e.estado_actual === estadoSel);
+        }
+        if (busqueda) {
+            equiposFiltrados = equiposFiltrados.filter(e => {
+                const str = ((e.nombre_equipo || '') + ' ' + (e.usuario_responsable || '') + ' ' + (e.area_nombre || '') + ' ' + (e.archivo_reciente || '')).toLowerCase();
+                return str.includes(busqueda);
+            });
+        }
+
+        if (equiposFiltrados.length === 0) {
+            Swal.fire({
+                title: 'Sin Registros',
+                text: 'No hay equipos que coincidan con los filtros seleccionados actualmente. Ajusta los filtros para exportar.',
+                icon: 'warning'
+            });
+            return;
+        }
+
+        // 5. Calcular KPIs sobre los equipos filtrados
+        const totalEquipos = equiposFiltrados.length;
+        const exitosos = equiposFiltrados.filter(e => e.estado_actual === 'exitoso').length;
+        const vencidos = equiposFiltrados.filter(e => e.estado_actual === 'vencido').length;
+        const criticos = equiposFiltrados.filter(e => e.estado_actual === 'critico').length;
+        const incompletos = equiposFiltrados.filter(e => e.tiene_temporales || e.estado_actual === 'incompleto').length;
+        const exentos = equiposFiltrados.filter(e => e.estado_actual === 'exento').length;
+        const aplicables = Math.max(0, totalEquipos - exentos);
+        const cumplimientoSLA = aplicables > 0 
+            ? ((exitosos / aplicables) * 100).toFixed(1) 
+            : (totalEquipos > 0 && exentos === totalEquipos ? '100.0' : '0.0');
+
+        // 6. Agrupar equipos por Área
+        const areasMap = {};
+        equiposFiltrados.forEach(eq => {
+            const ar = (eq.area_nombre || 'General').trim();
+            if (!areasMap[ar]) areasMap[ar] = [];
+            areasMap[ar].push(eq);
+        });
+
+        // 7. Extraer imágenes de las gráficas de Chart.js
+        let imgDona = null;
+        let imgAreas = null;
+        try {
+            if (window.chartInstanciaDona && typeof window.chartInstanciaDona.toBase64Image === 'function') {
+                imgDona = window.chartInstanciaDona.toBase64Image();
+            }
+            if (window.chartInstanciaAreas && typeof window.chartInstanciaAreas.toBase64Image === 'function') {
+                imgAreas = window.chartInstanciaAreas.toBase64Image();
+            }
+        } catch (e) {
+            console.warn('No se pudieron extraer imágenes de Chart.js:', e);
+        }
+
+        // 8. Datos de Agencia
+        const agencia = window.DATOS_AGENCIA_EXCEL || {
+            nombre: 'GRUPO HUERTA',
+            razon_social: 'Distribuidora de Vehículos de Oriente SAPI de CV',
+            rfc: 'XAXX010101000',
+            direccion: 'Av. Ferrocarril Hidalgo 883, CDMX',
+            encargado_sistemas: 'Departamento de Sistemas'
+        };
+
+        const now = new Date();
+        const fechaHoy = now.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        const horaHoy = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+
+        // Helper para formatear bytes a texto legible
+        const formatBytes = (bytes) => {
+            if (!bytes || isNaN(bytes) || bytes <= 0) return '0.00 MB';
+            const unids = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const idx = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, idx)).toFixed(2) + ' ' + (unids[idx] || 'MB');
+        };
+
+        // =====================================================================
+        // CREACIÓN DEL LIBRO DE TRABAJO (WORKBOOK)
+        // =====================================================================
+        const wb = new ExcelJS.Workbook();
+        wb.creator = 'Portal de Sistemas - ' + (agencia.nombre || 'Grupo Huerta');
+        wb.lastModifiedBy = agencia.encargado_sistemas || 'Sistemas';
+        wb.created = now;
+        wb.modified = now;
+
+        // Estilos reutilizables
+        const borderThin = {
+            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+
+        const fontHeader = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        const fillHeaderDark = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        const fillHeaderBlue = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+
+        // =====================================================================
+        // HOJA 1: RESUMEN EJECUTIVO Y EQUIPOS
+        // =====================================================================
+        const ws1 = wb.addWorksheet('Resumen y Auditoría', {
+            views: [{ showGridLines: true }]
+        });
+
+        ws1.columns = [
+            { key: 'margen', width: 3 },
+            { key: 'equipo', width: 22 },
+            { key: 'usuario', width: 25 },
+            { key: 'area', width: 22 },
+            { key: 'nas', width: 18 },
+            { key: 'ultimo', width: 20 },
+            { key: 'dias', width: 16 },
+            { key: 'tamano', width: 16 },
+            { key: 'estado', width: 22 },
+            { key: 'archivo', width: 34 },
+            { key: 'tmp', width: 16 }
+        ];
+
+        // 1. Membrete oficial
+        ws1.mergeCells('B2:K2');
+        const cTitle1 = ws1.getCell('B2');
+        cTitle1.value = (agencia.nombre || 'SISTEMAS GRUPO HUERTA').toUpperCase();
+        cTitle1.font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: 'FF0F172A' } };
+        cTitle1.alignment = { vertical: 'middle' };
+
+        ws1.mergeCells('B3:K3');
+        const cSub1 = ws1.getCell('B3');
+        cSub1.value = 'AUDITORÍA DE RESPALDOS Y MONITOREO DE CONTINUIDAD (NAS)';
+        cSub1.font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF0284C7' } };
+        cSub1.alignment = { vertical: 'middle' };
+
+        ws1.mergeCells('B4:K4');
+        const cMeta1 = ws1.getCell('B4');
+        cMeta1.value = `Razón Social: ${agencia.razon_social || 'N/A'}  |  RFC: ${agencia.rfc || 'N/A'}  |  Dirección: ${agencia.direccion || 'N/A'}`;
+        cMeta1.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF475569' } };
+        cMeta1.alignment = { vertical: 'middle' };
+
+        ws1.mergeCells('B5:K5');
+        const cMeta2 = ws1.getCell('B5');
+        const filtroAreaTxt = areaSel ? `Área [${areaSel}]` : 'Áreas [Todas]';
+        const filtroNasTxt = nasSel ? `NAS [${nasSel}]` : 'NAS [Todas]';
+        const filtroEstadoTxt = estadoSel ? `Estado [${estadoSel}]` : 'Estados [Todos]';
+        const filtroBusqTxt = busqueda ? `Búsqueda ["${busqueda}"]` : '';
+        const filtrosAplicadosStr = [filtroAreaTxt, filtroNasTxt, filtroEstadoTxt, filtroBusqTxt].filter(Boolean).join(' | ');
+        cMeta2.value = `Fecha de Emisión: ${fechaHoy} ${horaHoy} hrs  |  Control: ${agencia.encargado_sistemas || 'Sistemas'}  |  Filtros Activos: ${filtrosAplicadosStr}`;
+        cMeta2.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF0369A1' } };
+        cMeta2.alignment = { vertical: 'middle' };
+
+        // 2. Tarjetas de Indicadores Clave (KPIs)
+        const kpis = [
+            { col: 'B', label: 'CUMPLIMIENTO SLA', val: `${cumplimientoSLA}%`, bg: 'FF0F172A', fg: 'FF10B981' },
+            { col: 'C', label: 'TOTAL EQUIPOS', val: totalEquipos, bg: 'FF1E293B', fg: 'FFFFFFFF' },
+            { col: 'D', label: 'AL DÍA (≤6D)', val: exitosos, bg: 'FF064E3B', fg: 'FF34D399' },
+            { col: 'E', label: 'EN ALERTA (7-12D)', val: vencidos, bg: 'FF78350F', fg: 'FFFBBF24' },
+            { col: 'F', label: 'CRÍTICOS (≥13D)', val: criticos, bg: 'FF7F1D1D', fg: 'FFF87171' },
+            { col: 'G', label: 'CON TEMPORALES', val: incompletos, bg: 'FF701A75', fg: 'FFF472B6' },
+            { col: 'H', label: 'EXENTOS', val: exentos, bg: 'FF334155', fg: 'FFE2E8F0' }
+        ];
+
+        ws1.getRow(7).height = 18;
+        ws1.getRow(8).height = 32;
+
+        kpis.forEach(k => {
+            const cellLbl = ws1.getCell(`${k.col}7`);
+            cellLbl.value = k.label;
+            cellLbl.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FFFFFFFF' } };
+            cellLbl.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: k.bg } };
+            cellLbl.alignment = { horizontal: 'center', vertical: 'middle' };
+            cellLbl.border = borderThin;
+
+            const cellVal = ws1.getCell(`${k.col}8`);
+            cellVal.value = k.val;
+            cellVal.font = { name: 'Segoe UI', size: 16, bold: true, color: { argb: k.fg } };
+            cellVal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: k.bg } };
+            cellVal.alignment = { horizontal: 'center', vertical: 'middle' };
+            cellVal.border = borderThin;
+        });
+
+        // 3. Incrustar Gráficas de Chart.js si están disponibles
+        let filaInicioTabla = 10;
+        if (imgDona || imgAreas) {
+            // Título de la sección de gráficas
+            ws1.mergeCells('B10:K10');
+            const cGTitle = ws1.getCell('B10');
+            cGTitle.value = 'VISUALIZACIÓN GRÁFICA DE SEMÁFORO Y DISTRIBUCIÓN POR ÁREA';
+            cGTitle.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF0284C7' } };
+            cGTitle.alignment = { vertical: 'middle' };
+
+            if (imgDona) {
+                const donaId = wb.addImage({
+                    base64: imgDona,
+                    extension: 'png'
+                });
+                ws1.addImage(donaId, {
+                    tl: { col: 1, row: 11 },
+                    ext: { width: 360, height: 185 }
+                });
+            }
+
+            if (imgAreas) {
+                const areasId = wb.addImage({
+                    base64: imgAreas,
+                    extension: 'png'
+                });
+                ws1.addImage(areasId, {
+                    tl: { col: 5, row: 11 },
+                    ext: { width: 440, height: 185 }
+                });
+            }
+
+            filaInicioTabla = 23;
+        }
+
+        // 4. Encabezado de la Tabla de Equipos
+        ws1.mergeCells(`B${filaInicioTabla}:K${filaInicioTabla}`);
+        const cTblTitle = ws1.getCell(`B${filaInicioTabla}`);
+        cTblTitle.value = `DETALLE DE EQUIPOS AUDITADOS (${totalEquipos} máquinas)`;
+        cTblTitle.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0F172A' } };
+        cTblTitle.alignment = { vertical: 'middle' };
+
+        const headerRowIdx = filaInicioTabla + 1;
+        const hRow = ws1.getRow(headerRowIdx);
+        hRow.height = 26;
+
+        const headersTbl1 = [
+            { col: 'B', text: 'NOMBRE DEL EQUIPO' },
+            { col: 'C', text: 'USUARIO RESPONSABLE' },
+            { col: 'D', text: 'ÁREA / DEPARTAMENTO' },
+            { col: 'E', text: 'NAS DESTINO' },
+            { col: 'F', text: 'ÚLTIMO RESPALDO' },
+            { col: 'G', text: 'DÍAS SIN COPIA' },
+            { col: 'H', text: 'TAMAÑO' },
+            { col: 'I', text: 'ESTADO SEMÁFORO' },
+            { col: 'J', text: 'ARCHIVO MÁS RECIENTE' },
+            { col: 'K', text: 'TEMPORALES' }
+        ];
+
+        headersTbl1.forEach(h => {
+            const cell = ws1.getCell(`${h.col}${headerRowIdx}`);
+            cell.value = h.text;
+            cell.font = fontHeader;
+            cell.fill = fillHeaderDark;
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.border = borderThin;
+        });
+
+        // 5. Filas de Equipos
+        let currRowIdx = headerRowIdx + 1;
+        equiposFiltrados.forEach((eq, idx) => {
+            const r = ws1.getRow(currRowIdx);
+            r.height = 20;
+            const bgZebra = (idx % 2 === 0) ? 'FFFFFFFF' : 'FFF8FAFC';
+
+            // Celda B: Equipo
+            const cEq = ws1.getCell(`B${currRowIdx}`);
+            cEq.value = eq.nombre_equipo;
+            cEq.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+            cEq.alignment = { vertical: 'middle' };
+
+            // Celda C: Usuario
+            const cUsr = ws1.getCell(`C${currRowIdx}`);
+            cUsr.value = eq.usuario_responsable || 'Sin asignar';
+            cUsr.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF334155' } };
+            cUsr.alignment = { vertical: 'middle' };
+
+            // Celda D: Área
+            const cArea = ws1.getCell(`D${currRowIdx}`);
+            cArea.value = eq.area_nombre || 'General';
+            cArea.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF0369A1' } };
+            cArea.alignment = { vertical: 'middle' };
+
+            // Celda E: NAS
+            const cNas = ws1.getCell(`E${currRowIdx}`);
+            cNas.value = eq.nas_nombre || 'No asignado';
+            cNas.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF475569' } };
+            cNas.alignment = { vertical: 'middle' };
+
+            // Celda F: Último Respaldo
+            const cUlt = ws1.getCell(`F${currRowIdx}`);
+            cUlt.value = eq.ultimo_respaldo ? eq.ultimo_respaldo.replace('T', ' ') : 'Sin registro';
+            cUlt.font = { name: 'Segoe UI', size: 8.5, color: { argb: 'FF334155' } };
+            cUlt.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            // Celda G: Días Sin Respaldo
+            const cDias = ws1.getCell(`G${currRowIdx}`);
+            cDias.value = Number(eq.dias_sin_respaldo || 0);
+            cDias.font = { name: 'Segoe UI', size: 9.5, bold: true };
+            cDias.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            // Celda H: Tamaño
+            const cTam = ws1.getCell(`H${currRowIdx}`);
+            cTam.value = formatBytes(eq.tamano_bytes);
+            cTam.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF1E293B' } };
+            cTam.alignment = { horizontal: 'right', vertical: 'middle' };
+
+            // Celda I: Estado Semáforo con Color Oficial
+            const cEst = ws1.getCell(`I${currRowIdx}`);
+            let estadoTexto = 'Al Día (≤6d)';
+            let estBg = 'FFDCFCE7';
+            let estFg = 'FF15803D';
+
+            if (eq.estado_actual === 'vencido') {
+                estadoTexto = 'En Alerta (7-12d)';
+                estBg = 'FFFEF3C7';
+                estFg = 'FFB45309';
+            } else if (eq.estado_actual === 'critico') {
+                estadoTexto = 'Crítico (≥13d)';
+                estBg = 'FFFEE2E2';
+                estFg = 'FFB91C1C';
+            } else if (eq.estado_actual === 'incompleto') {
+                estadoTexto = 'Incompleto (.tmp)';
+                estBg = 'FFFCE7F3';
+                estFg = 'FFBE185D';
+            } else if (eq.estado_actual === 'exento') {
+                estadoTexto = 'No Aplica (Exento)';
+                estBg = 'FFF1F5F9';
+                estFg = 'FF475569';
+            }
+
+            cEst.value = estadoTexto;
+            cEst.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: estFg } };
+            cEst.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: estBg } };
+            cEst.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            // Celda J: Archivo Reciente
+            const cArch = ws1.getCell(`J${currRowIdx}`);
+            cArch.value = eq.archivo_reciente || 'Ninguno';
+            cArch.font = { name: 'Consolas', size: 8.5, color: { argb: 'FF475569' } };
+            cArch.alignment = { vertical: 'middle' };
+
+            // Celda K: Temporales
+            const cTmp = ws1.getCell(`K${currRowIdx}`);
+            if (eq.tiene_temporales) {
+                cTmp.value = 'SÍ (.TMP)';
+                cTmp.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FF991B1B' } };
+                cTmp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+            } else {
+                cTmp.value = 'NO';
+                cTmp.font = { name: 'Segoe UI', size: 8.5, color: { argb: 'FF64748B' } };
+                cTmp.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
+            }
+            cTmp.alignment = { horizontal: 'center', vertical: 'middle' };
+
+            // Aplicar fondos zebra y bordes a las columnas sin fondo propio
+            ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'].forEach(colK => {
+                const cell = ws1.getCell(`${colK}${currRowIdx}`);
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
+                cell.border = borderThin;
+            });
+            cEst.border = borderThin;
+            cTmp.border = borderThin;
+
+            currRowIdx++;
+        });
+
+        // Pie de página Hoja 1
+        ws1.mergeCells(`B${currRowIdx}:K${currRowIdx}`);
+        const cFoot1 = ws1.getCell(`B${currRowIdx}`);
+        cFoot1.value = `Reporte Oficial emitido por el Sistema de Auditoría de Sistemas | ${agencia.nombre} | ${totalEquipos} equipos monitoreados`;
+        cFoot1.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF475569' } };
+        cFoot1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cFoot1.alignment = { vertical: 'middle' };
+        cFoot1.border = borderThin;
+
+        // =====================================================================
+        // HOJA 2: MATRIZ SEMANAL DEL MES (SECCIONADA POR ÁREA)
+        // =====================================================================
+        const ws2 = wb.addWorksheet('Matriz Semanal por Área', {
+            views: [{ showGridLines: true }]
+        });
+
+        const semanasDef = res.semanas_def || {};
+        const semanasKeys = Object.keys(semanasDef);
+
+        // Definir columnas de la Hoja 2
+        const colsWs2 = [
+            { key: 'margen', width: 3 },
+            { key: 'equipo', width: 22 },
+            { key: 'usuario', width: 25 },
+            { key: 'area', width: 20 }
+        ];
+
+        semanasKeys.forEach(sId => {
+            colsWs2.push({ key: sId, width: 17 });
+        });
+        colsWs2.push({ key: 'pct', width: 18 });
+        ws2.columns = colsWs2;
+
+        const ultimaColLetra = String.fromCharCode(65 + colsWs2.length - 1); // e.g. 'I' o 'J'
+
+        // 1. Membrete Hoja 2
+        ws2.mergeCells(`B2:${ultimaColLetra}2`);
+        const cTitle2 = ws2.getCell('B2');
+        cTitle2.value = `MATRIZ SEMANAL DE CONSTANCIA Y RESPALDOS - ${res.mes_seleccionado || mesSel}`;
+        cTitle2.font = { name: 'Segoe UI', size: 15, bold: true, color: { argb: 'FF0F172A' } };
+        cTitle2.alignment = { vertical: 'middle' };
+
+        ws2.mergeCells(`B3:${ultimaColLetra}3`);
+        const cSub2 = ws2.getCell('B3');
+        cSub2.value = `Auditoría mensual de 4 a 5 semanas calendario organizada por Departamentos / Áreas (${agencia.nombre})`;
+        cSub2.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0284C7' } };
+        cSub2.alignment = { vertical: 'middle' };
+
+        ws2.mergeCells(`B4:${ultimaColLetra}4`);
+        const cMeta2_2 = ws2.getCell('B4');
+        cMeta2_2.value = `Emitido: ${fechaHoy} ${horaHoy} hrs  |  Filtros: ${filtrosAplicadosStr}  |  Total Equipos: ${totalEquipos}`;
+        cMeta2_2.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF475569' } };
+        cMeta2_2.alignment = { vertical: 'middle' };
+
+        // 2. Leyenda explicativa de colores
+        ws2.mergeCells(`B5:${ultimaColLetra}5`);
+        const cLeyenda = ws2.getCell('B5');
+        cLeyenda.value = 'GUÍA VISUAL: [Verde] Cumplido en fecha  |  [Verde Agua] En curso (≤6 días)  |  [Azul] Programado próx.  |  [Gris] No aplica (Exento)  |  [Rojo] Sin respaldo  |  [Gris Claro] Futuro';
+        cLeyenda.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: 'FF334155' } };
+        cLeyenda.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        cLeyenda.alignment = { vertical: 'middle' };
+        cLeyenda.border = borderThin;
+
+        // 3. Encabezados de Columnas de la Matriz (Fila 7)
+        ws2.getRow(7).height = 28;
+        const colHeadersWs2 = [
+            { col: 'B', text: 'NOMBRE DEL EQUIPO' },
+            { col: 'C', text: 'USUARIO RESPONSABLE' },
+            { col: 'D', text: 'ÁREA' }
+        ];
+
+        let colCode = 69; // 'E'
+        semanasKeys.forEach(sId => {
+            const sConf = semanasDef[sId] || {};
+            const colLetter = String.fromCharCode(colCode);
+            colHeadersWs2.push({
+                col: colLetter,
+                text: `${sConf.label || sId}\n(${sConf.dias_label || ''})`
+            });
+            colCode++;
+        });
+
+        const pctColLetter = String.fromCharCode(colCode);
+        colHeadersWs2.push({ col: pctColLetter, text: '% CUMPLIMIENTO' });
+
+        colHeadersWs2.forEach(ch => {
+            const cell = ws2.getCell(`${ch.col}7`);
+            cell.value = ch.text;
+            cell.font = fontHeader;
+            cell.fill = fillHeaderDark;
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.border = borderThin;
+        });
+
+        // 4. Filas de la Matriz Agrupadas por ÁREA
+        let rowMatrizIdx = 8;
+        const areasNombresOrdenadas = Object.keys(areasMap).sort();
+
+        areasNombresOrdenadas.forEach(arNombre => {
+            const eqListArea = areasMap[arNombre];
+
+            // Fila de encabezado de área (Separador distintivo de área)
+            ws2.mergeCells(`B${rowMatrizIdx}:${ultimaColLetra}${rowMatrizIdx}`);
+            const cAreaHeader = ws2.getCell(`B${rowMatrizIdx}`);
+            cAreaHeader.value = `📂 ÁREA: ${arNombre.toUpperCase()} (${eqListArea.length} ${eqListArea.length === 1 ? 'equipo' : 'equipos'})`;
+            cAreaHeader.font = { name: 'Segoe UI', size: 10.5, bold: true, color: { argb: 'FFFFFFFF' } };
+            cAreaHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+            cAreaHeader.alignment = { vertical: 'middle' };
+            cAreaHeader.border = borderThin;
+            ws2.getRow(rowMatrizIdx).height = 24;
+            rowMatrizIdx++;
+
+            // Filas de cada equipo de esta área
+            eqListArea.forEach((eq, eqAreaIdx) => {
+                const r = ws2.getRow(rowMatrizIdx);
+                r.height = 20;
+                const bgZebra = (eqAreaIdx % 2 === 0) ? 'FFFFFFFF' : 'FFF8FAFC';
+
+                // B: Equipo
+                const cEq = ws2.getCell(`B${rowMatrizIdx}`);
+                cEq.value = eq.nombre_equipo;
+                cEq.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+                cEq.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
+                cEq.alignment = { vertical: 'middle' };
+                cEq.border = borderThin;
+
+                // C: Usuario
+                const cUsr = ws2.getCell(`C${rowMatrizIdx}`);
+                cUsr.value = eq.usuario_responsable || 'Sin asignar';
+                cUsr.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF334155' } };
+                cUsr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
+                cUsr.alignment = { vertical: 'middle' };
+                cUsr.border = borderThin;
+
+                // D: Área
+                const cAr = ws2.getCell(`D${rowMatrizIdx}`);
+                cAr.value = eq.area_nombre || 'General';
+                cAr.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF0369A1' } };
+                cAr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
+                cAr.alignment = { vertical: 'middle' };
+                cAr.border = borderThin;
+
+                // Columnas de Semanas S1..S5
+                let sColCode = 69; // 'E'
+                semanasKeys.forEach(sId => {
+                    const colLetter = String.fromCharCode(sColCode);
+                    const cSem = ws2.getCell(`${colLetter}${rowMatrizIdx}`);
+                    const semData = (eq.semanas && eq.semanas[sId]) ? eq.semanas[sId] : { estado: 'sin_respaldo' };
+
+                    let valTexto = 'Sin resp.';
+                    let semBg = 'FFFEE2E2'; // rojo suave
+                    let semFg = 'FF991B1B';
+
+                    if (semData.estado === 'exitoso') {
+                        valTexto = semData.fecha_corta || 'Cumplido';
+                        semBg = 'FFDCFCE7'; // verde
+                        semFg = 'FF166534';
+                    } else if (semData.estado === 'exento') {
+                        valTexto = 'No aplica';
+                        semBg = 'FFF1F5F9'; // gris
+                        semFg = 'FF475569';
+                    } else if (semData.estado === 'programado') {
+                        valTexto = semData.label_extra || 'Programado';
+                        semBg = 'FFE0F2FE'; // azul suave
+                        semFg = 'FF0369A1';
+                    } else if (semData.estado === 'en_curso') {
+                        valTexto = 'En curso';
+                        semBg = 'FFCCFBF1'; // menta
+                        semFg = 'FF115E59';
+                    } else if (semData.estado === 'futuro') {
+                        valTexto = '-';
+                        semBg = 'FFF8FAFC'; // gris muy tenue
+                        semFg = 'FF94A3B8';
+                    }
+
+                    cSem.value = valTexto;
+                    cSem.font = { name: 'Segoe UI', size: 8.5, bold: true, color: { argb: semFg } };
+                    cSem.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: semBg } };
+                    cSem.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cSem.border = borderThin;
+
+                    sColCode++;
+                });
+
+                // Columna % Cumplimiento del mes
+                const cPct = ws2.getCell(`${pctColLetter}${rowMatrizIdx}`);
+                const pctNum = Number(eq.cumplimiento_porcentaje !== undefined ? eq.cumplimiento_porcentaje : (eq.porcentaje || 0));
+                cPct.value = `${pctNum}%`;
+
+                let pctBg = 'FFFEE2E2';
+                let pctFg = 'FFB91C1C';
+                if (pctNum >= 80) {
+                    pctBg = 'FFDCFCE7';
+                    pctFg = 'FF15803D';
+                } else if (pctNum >= 50) {
+                    pctBg = 'FFFEF3C7';
+                    pctFg = 'FFB45309';
+                }
+
+                cPct.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: pctFg } };
+                cPct.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: pctBg } };
+                cPct.alignment = { horizontal: 'center', vertical: 'middle' };
+                cPct.border = borderThin;
+
+                rowMatrizIdx++;
+            });
+        });
+
+        // 5. Pie de la Hoja 2
+        ws2.mergeCells(`B${rowMatrizIdx}:${ultimaColLetra}${rowMatrizIdx}`);
+        const cFoot2 = ws2.getCell(`B${rowMatrizIdx}`);
+        cFoot2.value = `Fin de Matriz Semanal • Total de Áreas: ${areasNombresOrdenadas.length} • Total Equipos: ${totalEquipos} • SLA Promedio: ${cumplimientoSLA}%`;
+        cFoot2.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF334155' } };
+        cFoot2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        cFoot2.alignment = { vertical: 'middle' };
+        cFoot2.border = borderThin;
+
+        // =====================================================================
+        // GENERACIÓN Y DESCARGA DEL ARCHIVO BINARIO (.XLSX)
+        // =====================================================================
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const cleanAgencia = (agencia.nombre || 'Grupo_Huerta').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `Auditoria_Respaldos_${cleanAgencia}_${mesSel}_${now.toISOString().slice(0, 10)}.xlsx`;
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+
+        // Notificación de éxito
+        Swal.fire({
+            title: '¡Reporte Excel Generado!',
+            html: `
+                <div class="text-start small py-1">
+                    <p class="mb-2 text-white">El libro de auditoría se ha generado y descargado correctamente con el formato ejecutivo oficial:</p>
+                    <ul class="text-secondary ps-3 mb-2">
+                        <li><strong>Hoja 1 ("Resumen y Auditoría"):</strong> Membrete corporativo, KPIs (SLA, Críticos, Al Día, Temporales), Gráficas ejecutivas y tabla completa filtrada.</li>
+                        <li><strong>Hoja 2 ("Matriz Semanal por Área"):</strong> Desglose de semanas de ${mesSel} agrupadas y seccionadas por Departamentos con colores del semáforo.</li>
+                    </ul>
+                    <div class="p-2 rounded bg-dark border border-secondary border-opacity-25 text-success font-monospace" style="font-size: 0.75rem;">
+                        <i class="bi bi-file-earmark-excel me-1"></i> ${fileName}
+                    </div>
+                </div>
+            `,
+            icon: 'success',
+            confirmButtonText: 'Aceptar',
+            confirmButtonColor: '#10b981'
+        });
+
+    } catch (err) {
+        console.error('Error al exportar libro Excel:', err);
+        Swal.fire({
+            title: 'Error al Generar Excel',
+            text: err.message || 'Ocurrió un problema inesperado al construir el reporte.',
+            icon: 'error'
+        });
+    }
+}
+
 </script>
 </body>
 </html>

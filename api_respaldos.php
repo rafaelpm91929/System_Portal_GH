@@ -14,6 +14,7 @@ date_default_timezone_set('America/Mexico_City');
 
 require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
+require_once __DIR__ . '/excel_helper.php';
 
 if ($pdo) {
     asegurarTablasRespaldos($pdo);
@@ -1612,11 +1613,13 @@ switch ($action) {
 
             $stmtEq = $pdo->query("
                 SELECT e.id, e.nombre_equipo, e.usuario_responsable, e.area_nombre, e.estado, e.ultimo_respaldo, e.dias_sin_respaldo, e.tiene_temporales,
+                       e.nas_id, n.nombre as nas_nombre, n.marca as nas_marca, e.archivo_reciente, e.tamano_bytes,
                        COALESCE(p.dias_programados, 'Vie') as dias_programados,
                        COALESCE(p.aplica_esta_semana, 1) as aplica_esta_semana,
                        COALESCE(p.semanas_mes_aplica, 'S1,S2,S3,S4,S5') as semanas_mes_aplica,
                        p.motivo_exencion
                 FROM respaldos_equipos e
+                LEFT JOIN respaldos_nas n ON e.nas_id = n.id
                 LEFT JOIN respaldos_areas_politicas p ON e.area_nombre = p.area_nombre
                 WHERE COALESCE(e.monitorear, 1) = 1 
                   AND e.nombre_equipo NOT LIKE '%@%'
@@ -1797,6 +1800,12 @@ switch ($action) {
                     'nombre_equipo' => $eq['nombre_equipo'],
                     'usuario_responsable' => $eq['usuario_responsable'],
                     'area_nombre' => $eq['area_nombre'],
+                    'nas_id' => $eq['nas_id'] ?? null,
+                    'nas_nombre' => $eq['nas_nombre'] ?: 'No asignado',
+                    'nas_marca' => $eq['nas_marca'] ?: 'NAS',
+                    'archivo_reciente' => $eq['archivo_reciente'] ?: 'Ninguno',
+                    'tamano_bytes' => (float)($eq['tamano_bytes'] ?? 0),
+                    'tiene_temporales' => !empty($eq['tiene_temporales']),
                     'estado_actual' => $estadoReal,
                     'dias_sin_respaldo' => $diasSinRespaldo,
                     'ultimo_respaldo' => $eq['ultimo_respaldo'],
@@ -1978,6 +1987,100 @@ switch ($action) {
             }
 
             fclose($output);
+            exit();
+        } catch (Throwable $e) {
+            echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+        break;
+
+    /**
+     * Exportación de auditoría a Microsoft Excel con diseño corporativo oficial (MHTML)
+     */
+    case 'exportar_excel':
+        validarSesionPortal();
+        requerirPermiso('respaldos', 'puede_exportar');
+
+        $filtroArea = trim($_GET['area'] ?? '');
+        $filtroNas = (int)($_GET['nas_id'] ?? 0);
+        $filtroEstado = trim($_GET['estado'] ?? '');
+
+        try {
+            $sql = "
+                SELECT e.nombre_equipo, e.usuario_responsable, e.area_nombre, 
+                       n.nombre as nas_nombre, e.ultimo_respaldo, e.archivo_reciente, 
+                       e.tamano_bytes, e.estado, e.dias_sin_respaldo, e.tiene_temporales
+                FROM respaldos_equipos e
+                LEFT JOIN respaldos_nas n ON e.nas_id = n.id
+                WHERE 1=1
+            ";
+            $params = [];
+
+            if (!empty($filtroArea)) {
+                $sql .= " AND e.area_nombre = ?";
+                $params[] = $filtroArea;
+            }
+            if ($filtroNas > 0) {
+                $sql .= " AND e.nas_id = ?";
+                $params[] = $filtroNas;
+            }
+            if (!empty($filtroEstado)) {
+                $sql .= " AND e.estado = ?";
+                $params[] = $filtroEstado;
+            }
+
+            $sql .= " ORDER BY e.area_nombre ASC, e.nombre_equipo ASC";
+
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $columnas = [
+                ['label' => 'Equipo', 'width' => '170px'],
+                ['label' => 'Usuario Responsable', 'width' => '190px'],
+                ['label' => 'Área / Departamento', 'width' => '160px'],
+                ['label' => 'NAS Destino', 'width' => '140px'],
+                ['label' => 'Último Respaldo', 'width' => '140px', 'align' => 'center'],
+                ['label' => 'Días Sin Copia', 'width' => '110px', 'align' => 'center'],
+                ['label' => 'Tamaño (MB)', 'width' => '110px', 'align' => 'right'],
+                ['label' => 'Estado Semáforo', 'width' => '150px', 'align' => 'center'],
+                ['label' => 'Archivo Más Reciente', 'width' => '220px'],
+                ['label' => 'Temporales', 'width' => '90px', 'align' => 'center']
+            ];
+
+            $filas = [];
+            foreach ($rows as $r) {
+                $mb = !empty($r['tamano_bytes']) ? round($r['tamano_bytes'] / (1024 * 1024), 2) : 0;
+                $estadoTexto = 'Al Día (≤6d)';
+                $badgeClass = 'badge-status-ok';
+
+                if ($r['estado'] === 'vencido') {
+                    $estadoTexto = 'En Alerta (7-12d)';
+                    $badgeClass = 'badge-status-warn';
+                } elseif ($r['estado'] === 'critico') {
+                    $estadoTexto = 'Crítico (≥13d)';
+                    $badgeClass = 'badge-status-err';
+                } elseif ($r['estado'] === 'incompleto') {
+                    $estadoTexto = 'Incompleto (.tmp)';
+                    $badgeClass = 'badge-status-err';
+                }
+
+                $filas[] = [
+                    ['val' => '<b>' . htmlspecialchars($r['nombre_equipo']) . '</b>'],
+                    ['val' => htmlspecialchars($r['usuario_responsable'] ?: 'No asignado')],
+                    ['val' => '<span class="badge-pill badge-area">' . htmlspecialchars($r['area_nombre']) . '</span>'],
+                    ['val' => htmlspecialchars($r['nas_nombre'] ?: 'No asignado')],
+                    ['val' => !empty($r['ultimo_respaldo']) ? date('d/m/Y H:i', strtotime($r['ultimo_respaldo'])) : 'Sin registro', 'align' => 'center'],
+                    ['val' => (int)$r['dias_sin_respaldo'], 'align' => 'center'],
+                    ['val' => number_format($mb, 2) . ' MB', 'align' => 'right'],
+                    ['val' => '<span class="badge-pill ' . $badgeClass . '">' . $estadoTexto . '</span>', 'align' => 'center'],
+                    ['val' => '<code style="font-size: 8pt;">' . htmlspecialchars($r['archivo_reciente'] ?: 'Ninguno') . '</code>'],
+                    ['val' => !empty($r['tiene_temporales']) ? '<span style="color: #b91c1c; font-weight: bold;">SÍ</span>' : 'NO', 'align' => 'center']
+                ];
+            }
+
+            $agenciaData = obtenerDatosAgenciaExcel($pdo);
+            $nombreArchivo = 'Auditoria_Respaldos_' . date('Y-m-d_His') . '.xls';
+            descargarExcelConDiseno('Auditoría de Respaldos (NAS)', 'Monitoreo y Continuidad Operativa', $columnas, $filas, $agenciaData, $nombreArchivo, 'Auditoria Respaldos');
             exit();
         } catch (Throwable $e) {
             echo json_encode(['success' => false, 'error' => $e->getMessage()]);
