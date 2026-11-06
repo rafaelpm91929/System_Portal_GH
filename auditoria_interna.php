@@ -1,9 +1,25 @@
 <?php
+/**
+ * Módulo de Auditoría Interna & Control Operativo
+ * 100% Local y Autónomo (Sin APIs externas)
+ * Diseño Basado en Botones y Tarjetas Ejecutivas (Cero Tablas)
+ * 
+ * Secciones:
+ * 1. Gestión de Infraestructura:
+ *    - Responsivas de Equipos (Inventario)
+ *    - Planes de Mantenimiento (Calendario y Evidencias PDF)
+ *    - Control de Correos (Altas, Bajas, Eliminados y Sincronización)
+ *    - Licencias de Office (Product Keys y Cuentas Vinculadas)
+ * 2. Seguridad de la Información:
+ *    - Usuarios GDS (Credenciales y Responsivas Firmadas)
+ *    - Password GDS - Movimientos Críticos (Contraseñas y Actas)
+ *    - Control de Usuarios GRP (Roles y Permisos de Acceso)
+ */
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// 1. Protección de Sesión
 if (!isset($_SESSION['usuario_id'])) {
     header("Location: login.php");
     exit();
@@ -13,6 +29,9 @@ require_once __DIR__ . '/conexion.php';
 require_once __DIR__ . '/permisos_helper.php';
 require_once __DIR__ . '/excel_helper.php';
 
+date_default_timezone_set('America/Mexico_City');
+
+// Asegurar tablas de base de datos
 if ($pdo) {
     asegurarTablasPermisos($pdo);
     asegurarTablasAuditoriaInterna($pdo);
@@ -20,3068 +39,3300 @@ if ($pdo) {
 
 requerirPermiso('auditoria_interna', 'puede_ver');
 
-// Permisos del usuario actual
-$puedeEditar = tienePermiso('auditoria_interna', 'puede_editar');
-$puedeCrear = tienePermiso('auditoria_interna', 'puede_crear');
+$puedeEditar  = tienePermiso('auditoria_interna', 'puede_editar');
 $puedeEliminar = tienePermiso('auditoria_interna', 'puede_eliminar');
-$puedeExportar = tienePermiso('auditoria_interna', 'puede_exportar');
-$esAdmin = in_array(strtolower($_SESSION['usuario_rol'] ?? ''), ['admin', 'superadmin']);
 
-// Datos de sesión y agencia
-$nombreUsuario = $_SESSION['usuario_nombre'] ?? 'Usuario';
-$agenciaData = obtenerDatosAgenciaExcel($pdo ?? null, $_SESSION['agencia'] ?? '');
-$agenciaNombre = $agenciaData['nombre'] ?: 'GRUPO HUERTA';
+$usuarioId     = $_SESSION['usuario_id'];
+$nombreUsuario = $_SESSION['usuario_nombre'] ?? ($_SESSION['nombre'] ?? 'Auditor de Sistemas');
+$rolActual     = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
 
-// Listado de áreas disponibles desde inventario y usuarios para los filtros
-$areasDisponibles = [];
+// Datos de la Agencia
+$agenciaInfo = null;
 if ($pdo) {
     try {
-        $stmtA = $pdo->query("
-            SELECT DISTINCT departamento as area FROM inv_equipos_vw WHERE departamento IS NOT NULL AND departamento != ''
-            UNION 
-            SELECT DISTINCT area FROM usuarios WHERE area IS NOT NULL AND area != ''
-            UNION
-            SELECT DISTINCT area FROM audit_correos WHERE area IS NOT NULL AND area != ''
-            ORDER BY area ASC
-        ");
-        $areasDisponibles = $stmtA ? $stmtA->fetchAll(PDO::FETCH_COLUMN) : [];
+        $stmtAg = $pdo->query("SELECT nombre, logo_url, razon_social FROM agencias ORDER BY id ASC LIMIT 1");
+        $agenciaInfo = $stmtAg ? $stmtAg->fetch(PDO::FETCH_ASSOC) : null;
     } catch (Throwable $e) {}
 }
-if (empty($areasDisponibles)) {
-    $areasDisponibles = ['Administración', 'Caja', 'CRM', 'Dirección', 'Garantías', 'HyP', 'Mercadotecnia', 'Refacciones', 'Seminuevos', 'Servicio', 'Servicios Financieros', 'Sistemas', 'Ventas'];
+$agenciaNombre = !empty($agenciaInfo['nombre']) ? trim($agenciaInfo['nombre']) : ($_SESSION['agencia'] ?? 'Agencia Automotriz');
+$agenciaLogo   = !empty($agenciaInfo['logo_url']) ? $agenciaInfo['logo_url'] : 'img/logo.png';
+
+// Directorios locales para evidencias y responsivas
+$dirUploads = __DIR__ . '/uploads/auditoria';
+$dirsReq = [
+    $dirUploads,
+    $dirUploads . '/responsivas',
+    $dirUploads . '/mantenimiento',
+    $dirUploads . '/gds_usuarios',
+    $dirUploads . '/gds_passwords',
+    $dirUploads . '/grp'
+];
+foreach ($dirsReq as $d) {
+    if (!is_dir($d)) @mkdir($d, 0777, true);
 }
 
-// Métricas de KPIs de cabecera
-$totalEquiposAudit = 0;
-$equiposConResp = 0;
-$mantenimientosProg = 0;
-$mantenimientosReal = 0;
-$correosActivos = 0;
-$correosBajas = 0;
-$licenciasActivas = 0;
-$usuariosGdsCount = 0;
-$passwordsGdsCount = 0;
-$usuariosGrpCount = 0;
+// =============================================================================
+// PROCESAMIENTO LOCAL DE ACCIONES (POST / GET)
+// =============================================================================
+$mensajeAlerta = '';
+$tipoAlerta = '';
+
+// Procesar llamadas AJAX locales o envíos de formulario
+$action = trim($_POST['action'] ?? $_GET['action'] ?? '');
+
+if (!empty($action) && $pdo) {
+    $esAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') || isset($_POST['es_ajax']);
+
+    try {
+        switch ($action) {
+
+            // 1. RESPONSIVAS DE EQUIPOS
+            case 'subir_responsiva_equipo':
+                if (!$puedeEditar) throw new Exception("No cuenta con permisos para subir archivos.");
+                $eqId = intval($_POST['equipo_id'] ?? 0);
+                $seccion = trim($_POST['seccion'] ?? 'inv_equipos_vw');
+                if ($eqId <= 0) throw new Exception("Equipo no válido.");
+                if (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Seleccione un archivo PDF válido.");
+                }
+                $ext = strtolower(pathinfo($_FILES['archivo_pdf']['name'], PATHINFO_EXTENSION));
+                if ($ext !== 'pdf') throw new Exception("Únicamente se admiten archivos en formato PDF.");
+                
+                $nomArch = 'RESP_EQ_' . $eqId . '_' . date('Ymd_His') . '.pdf';
+                $destPath = $dirUploads . '/responsivas/' . $nomArch;
+                $relUrl = 'uploads/auditoria/responsivas/' . $nomArch;
+                if (!move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $destPath)) {
+                    throw new Exception("Error al guardar el archivo en el servidor.");
+                }
+                $stmtU = $pdo->prepare("UPDATE `$seccion` SET responsiva_url = ? WHERE id = ?");
+                $stmtU->execute([$relUrl, $eqId]);
+
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Responsiva subida con éxito', 'url' => $relUrl]);
+                    exit();
+                }
+                $mensajeAlerta = 'Responsiva de equipo actualizada correctamente.';
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_responsiva_equipo':
+                if (!$puedeEliminar) throw new Exception("No cuenta con permisos de eliminación.");
+                $eqId = intval($_POST['equipo_id'] ?? 0);
+                $seccion = trim($_POST['seccion'] ?? 'inv_equipos_vw');
+                $stmtU = $pdo->prepare("UPDATE `$seccion` SET responsiva_url = NULL WHERE id = ?");
+                $stmtU->execute([$eqId]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Responsiva eliminada']);
+                    exit();
+                }
+                $mensajeAlerta = 'Responsiva desvinculada del equipo.';
+                $tipoAlerta = 'info';
+                break;
+
+            // 2. PLANES DE MANTENIMIENTO
+            case 'guardar_mantenimiento':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idM = intval($_POST['mantenimiento_id'] ?? 0);
+                $nomEq = trim($_POST['nombre_equipo'] ?? '');
+                $area = trim($_POST['area'] ?? 'General');
+                $user = trim($_POST['usuario_responsable'] ?? '');
+                $tipoM = trim($_POST['tipo_mantenimiento'] ?? 'Preventivo');
+                $fProg = trim($_POST['fecha_programada'] ?? date('Y-m-d'));
+                $frec = trim($_POST['frecuencia'] ?? 'Semestral');
+                $est = trim($_POST['estado'] ?? 'Programado');
+                $tec = trim($_POST['tecnico_responsable'] ?? 'Sistemas');
+                $obs = trim($_POST['observaciones'] ?? '');
+                $eqId = !empty($_POST['equipo_id']) ? intval($_POST['equipo_id']) : null;
+
+                if (empty($nomEq)) throw new Exception("El nombre del equipo es obligatorio.");
+
+                if ($idM > 0) {
+                    $stmtM = $pdo->prepare("UPDATE audit_mantenimientos SET equipo_id=?, nombre_equipo=?, area=?, usuario_responsable=?, tipo_mantenimiento=?, fecha_programada=?, frecuencia=?, estado=?, tecnico_responsable=?, observaciones=? WHERE id=?");
+                    $stmtM->execute([$eqId, $nomEq, $area, $user, $tipoM, $fProg, $frec, $est, $tec, $obs, $idM]);
+                    $msg = 'Mantenimiento actualizado correctamente.';
+                } else {
+                    $stmtM = $pdo->prepare("INSERT INTO audit_mantenimientos (equipo_id, nombre_equipo, area, usuario_responsable, tipo_mantenimiento, fecha_programada, frecuencia, estado, tecnico_responsable, observaciones) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmtM->execute([$eqId, $nomEq, $area, $user, $tipoM, $fProg, $frec, $est, $tec, $obs]);
+                    $msg = 'Plan de mantenimiento registrado exitosamente.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'subir_evidencia_mantenimiento':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idM = intval($_POST['mantenimiento_id'] ?? 0);
+                if ($idM <= 0) throw new Exception("ID de mantenimiento no válido.");
+                if (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Seleccione un archivo PDF válido.");
+                }
+                $ext = strtolower(pathinfo($_FILES['archivo_pdf']['name'], PATHINFO_EXTENSION));
+                if ($ext !== 'pdf') throw new Exception("Sólo se admiten archivos PDF.");
+
+                $nomArch = 'MANT_EVID_' . $idM . '_' . date('Ymd_His') . '.pdf';
+                $destPath = $dirUploads . '/mantenimiento/' . $nomArch;
+                $relUrl = 'uploads/auditoria/mantenimiento/' . $nomArch;
+                if (!move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $destPath)) {
+                    throw new Exception("Error al guardar la evidencia.");
+                }
+                $hoy = date('Y-m-d');
+                $stmtU = $pdo->prepare("UPDATE audit_mantenimientos SET evidencia_pdf_url=?, estado='Realizado', fecha_realizada=IFNULL(fecha_realizada, ?) WHERE id=?");
+                $stmtU->execute([$relUrl, $hoy, $idM]);
+
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Evidencia guardada y estatus marcado como Realizado.', 'url' => $relUrl]);
+                    exit();
+                }
+                $mensajeAlerta = 'Evidencia en PDF registrada con éxito.';
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_mantenimiento':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idM = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_mantenimientos WHERE id = ?");
+                $stmt->execute([$idM]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Mantenimiento eliminado']);
+                    exit();
+                }
+                $mensajeAlerta = 'Registro de mantenimiento eliminado.';
+                $tipoAlerta = 'info';
+                break;
+
+            // 3. CONTROL DE CORREOS
+            case 'guardar_correo':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idC = intval($_POST['correo_id'] ?? 0);
+                $correo = trim($_POST['correo'] ?? '');
+                $nom = trim($_POST['nombre_colaborador'] ?? '');
+                $area = trim($_POST['area'] ?? 'General');
+                $puesto = trim($_POST['puesto'] ?? '');
+                $tipoC = trim($_POST['tipo_correo'] ?? 'Personalizado');
+                $est = trim($_POST['estado'] ?? 'Activo');
+                $pass = trim($_POST['password_cuenta'] ?? '');
+                $mot = trim($_POST['motivo_baja'] ?? '');
+
+                if (empty($correo) || !filter_var($correo, FILTER_VALIDATE_EMAIL)) {
+                    throw new Exception("Ingrese una dirección de correo válida.");
+                }
+
+                $fBaja = ($est !== 'Activo') ? date('Y-m-d') : null;
+
+                if ($idC > 0) {
+                    $stmtC = $pdo->prepare("UPDATE audit_correos SET correo=?, nombre_colaborador=?, area=?, puesto=?, tipo_correo=?, estado=?, password_cuenta=?, motivo_baja=?, fecha_baja=COALESCE(?, fecha_baja) WHERE id=?");
+                    $stmtC->execute([$correo, $nom, $area, $puesto, $tipoC, $est, $pass, $mot, $fBaja, $idC]);
+                    $msg = 'Cuenta de correo actualizada.';
+                } else {
+                    $stmtC = $pdo->prepare("INSERT INTO audit_correos (correo, nombre_colaborador, area, puesto, tipo_correo, estado, password_cuenta, motivo_baja, fecha_baja) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmtC->execute([$correo, $nom, $area, $puesto, $tipoC, $est, $pass, $mot, $fBaja]);
+                    $msg = 'Correo corporativo registrado.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'cambiar_estado_correo':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idC = intval($_POST['id'] ?? 0);
+                $nuevoEst = trim($_POST['nuevo_estado'] ?? 'En Baja');
+                $mot = trim($_POST['motivo'] ?? 'Baja operativa del colaborador');
+                $fBaja = ($nuevoEst !== 'Activo') ? date('Y-m-d') : null;
+
+                $stmt = $pdo->prepare("UPDATE audit_correos SET estado = ?, motivo_baja = ?, fecha_baja = ? WHERE id = ?");
+                $stmt->execute([$nuevoEst, $mot, $fBaja, $idC]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => "Estado actualizado a $nuevoEst."]);
+                    exit();
+                }
+                $mensajeAlerta = "Cuenta de correo marcada como $nuevoEst.";
+                $tipoAlerta = 'warning';
+                break;
+
+            case 'eliminar_correo':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idC = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_correos WHERE id = ?");
+                $stmt->execute([$idC]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Correo eliminado de la matriz']);
+                    exit();
+                }
+                $mensajeAlerta = 'Cuenta de correo eliminada.';
+                $tipoAlerta = 'info';
+                break;
+
+            case 'sincronizar_correos':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $nuevos = 0;
+                $stmtIns = $pdo->prepare("INSERT INTO audit_correos (correo, nombre_colaborador, area, puesto, tipo_correo, estado) VALUES (?, ?, ?, ?, 'Personalizado', 'Activo')");
+
+                // De usuarios
+                $resU = $pdo->query("SELECT email, nombre, departamento, puesto FROM usuarios WHERE email IS NOT NULL AND TRIM(email) != ''");
+                if ($resU) {
+                    while ($ru = $resU->fetch(PDO::FETCH_ASSOC)) {
+                        $em = strtolower(trim($ru['email']));
+                        if (filter_var($em, FILTER_VALIDATE_EMAIL)) {
+                            $chk = $pdo->prepare("SELECT COUNT(*) FROM audit_correos WHERE LOWER(correo) = ?");
+                            $chk->execute([$em]);
+                            if ($chk->fetchColumn() == 0) {
+                                $stmtIns->execute([$em, $ru['nombre'] ?: 'Colaborador', $ru['departamento'] ?: 'General', $ru['puesto'] ?: 'Usuario']);
+                                $nuevos++;
+                            }
+                        }
+                    }
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => "Sincronización completada. Se añadieron $nuevos nuevas cuentas.", 'nuevos' => $nuevos]);
+                    exit();
+                }
+                $mensajeAlerta = "Sincronización completada ($nuevos correos nuevos agregados).";
+                $tipoAlerta = 'success';
+                break;
+
+            // 4. LICENCIAS DE OFFICE
+            case 'guardar_licencia':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idL = intval($_POST['licencia_id'] ?? 0);
+                $pk = trim($_POST['product_key'] ?? '');
+                $ver = trim($_POST['version_office'] ?? 'Microsoft 365');
+                $tipoL = trim($_POST['tipo_licencia'] ?? 'Suscripción');
+                $cMs = trim($_POST['cuenta_microsoft'] ?? '');
+                $eq = trim($_POST['equipo_asignado'] ?? '');
+                $col = trim($_POST['colaborador'] ?? '');
+                $area = trim($_POST['area'] ?? 'General');
+                $est = trim($_POST['estado'] ?? 'Activa');
+                $fVenc = !empty($_POST['fecha_vencimiento']) ? trim($_POST['fecha_vencimiento']) : null;
+
+                if (empty($pk)) throw new Exception("El Product Key o código de activación es requerido.");
+
+                if ($idL > 0) {
+                    $stmtL = $pdo->prepare("UPDATE audit_licencias_office SET product_key=?, version_office=?, tipo_licencia=?, cuenta_microsoft=?, equipo_asignado=?, colaborador=?, area=?, estado=?, fecha_vencimiento=? WHERE id=?");
+                    $stmtL->execute([$pk, $ver, $tipoL, $cMs, $eq, $col, $area, $est, $fVenc, $idL]);
+                    $msg = 'Licencia de Office actualizada.';
+                } else {
+                    $stmtL = $pdo->prepare("INSERT INTO audit_licencias_office (product_key, version_office, tipo_licencia, cuenta_microsoft, equipo_asignado, colaborador, area, estado, fecha_vencimiento) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmtL->execute([$pk, $ver, $tipoL, $cMs, $eq, $col, $area, $est, $fVenc]);
+                    $msg = 'Licencia de Office registrada con éxito.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_licencia':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idL = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_licencias_office WHERE id = ?");
+                $stmt->execute([$idL]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Licencia eliminada']);
+                    exit();
+                }
+                $mensajeAlerta = 'Licencia de software eliminada.';
+                $tipoAlerta = 'info';
+                break;
+
+            // 5. USUARIOS GDS
+            case 'guardar_gds_usuario':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idU = intval($_POST['gds_id'] ?? 0);
+                $usr = trim($_POST['usuario_gds'] ?? '');
+                $col = trim($_POST['nombre_colaborador'] ?? '');
+                $pwd = trim($_POST['password_gds'] ?? '');
+                $prof = trim($_POST['perfil_gds'] ?? 'Operativo');
+                $suc = trim($_POST['sucursal'] ?? 'Matriz');
+                $area = trim($_POST['area'] ?? 'General');
+                $est = trim($_POST['estado'] ?? 'Activo');
+                $uId = !empty($_POST['usuario_id']) ? intval($_POST['usuario_id']) : null;
+
+                if (empty($usr)) throw new Exception("El usuario de GDS es requerido.");
+
+                if ($idU > 0) {
+                    $stmtU = $pdo->prepare("UPDATE audit_gds_usuarios SET usuario_id=?, usuario_gds=?, nombre_colaborador=?, password_gds=?, perfil_gds=?, sucursal=?, area=?, estado=? WHERE id=?");
+                    $stmtU->execute([$uId, $usr, $col, $pwd, $prof, $suc, $area, $est, $idU]);
+                    $msg = 'Usuario GDS actualizado.';
+                } else {
+                    $stmtU = $pdo->prepare("INSERT INTO audit_gds_usuarios (usuario_id, usuario_gds, nombre_colaborador, password_gds, perfil_gds, sucursal, area, estado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                    $stmtU->execute([$uId, $usr, $col, $pwd, $prof, $suc, $area, $est]);
+                    $msg = 'Usuario GDS asignado exitosamente.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'subir_responsiva_gds':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idU = intval($_POST['id'] ?? 0);
+                if ($idU <= 0) throw new Exception("ID no válido.");
+                if (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Seleccione un archivo PDF válido.");
+                }
+                $nomArch = 'GDS_USR_' . $idU . '_' . date('Ymd_His') . '.pdf';
+                $destPath = $dirUploads . '/gds_usuarios/' . $nomArch;
+                $relUrl = 'uploads/auditoria/gds_usuarios/' . $nomArch;
+                if (!move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $destPath)) {
+                    throw new Exception("Error al guardar archivo.");
+                }
+                $stmt = $pdo->prepare("UPDATE audit_gds_usuarios SET responsiva_pdf_url = ? WHERE id = ?");
+                $stmt->execute([$relUrl, $idU]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Responsiva GDS subida con éxito', 'url' => $relUrl]);
+                    exit();
+                }
+                $mensajeAlerta = 'Responsiva de Usuario GDS cargada.';
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_gds_usuario':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idU = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_gds_usuarios WHERE id = ?");
+                $stmt->execute([$idU]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Usuario GDS eliminado']);
+                    exit();
+                }
+                $mensajeAlerta = 'Usuario GDS eliminado.';
+                $tipoAlerta = 'info';
+                break;
+
+            // 6. PASSWORD GDS - MOVIMIENTOS
+            case 'guardar_gds_password':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idP = intval($_POST['movimiento_id'] ?? 0);
+                $mov = trim($_POST['tipo_movimiento'] ?? '');
+                $desc = trim($_POST['descripcion'] ?? '');
+                $pass = trim($_POST['password'] ?? '');
+                $resp = trim($_POST['responsable_autorizado'] ?? '');
+                $cargo = trim($_POST['cargo_responsable'] ?? 'Gerencia');
+                $nivel = trim($_POST['nivel_seguridad'] ?? 'Alto');
+
+                if (empty($mov) || empty($pass)) throw new Exception("El movimiento y la contraseña son obligatorios.");
+
+                if ($idP > 0) {
+                    $stmtP = $pdo->prepare("UPDATE audit_gds_passwords_movimientos SET tipo_movimiento=?, descripcion=?, password=?, responsable_autorizado=?, cargo_responsable=?, nivel_seguridad=? WHERE id=?");
+                    $stmtP->execute([$mov, $desc, $pass, $resp, $cargo, $nivel, $idP]);
+                    $msg = 'Contraseña de movimiento actualizada.';
+                } else {
+                    $stmtP = $pdo->prepare("INSERT INTO audit_gds_passwords_movimientos (tipo_movimiento, descripcion, password, responsable_autorizado, cargo_responsable, nivel_seguridad) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmtP->execute([$mov, $desc, $pass, $resp, $cargo, $nivel]);
+                    $msg = 'Clave de movimiento configurada.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'subir_responsiva_movimiento':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idP = intval($_POST['id'] ?? 0);
+                if ($idP <= 0) throw new Exception("ID no válido.");
+                if (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Seleccione un archivo PDF válido.");
+                }
+                $nomArch = 'GDS_MOV_' . $idP . '_' . date('Ymd_His') . '.pdf';
+                $destPath = $dirUploads . '/gds_passwords/' . $nomArch;
+                $relUrl = 'uploads/auditoria/gds_passwords/' . $nomArch;
+                if (!move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $destPath)) {
+                    throw new Exception("Error al guardar archivo.");
+                }
+                $stmt = $pdo->prepare("UPDATE audit_gds_passwords_movimientos SET responsiva_pdf_url = ? WHERE id = ?");
+                $stmt->execute([$relUrl, $idP]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Responsiva de movimiento cargada', 'url' => $relUrl]);
+                    exit();
+                }
+                $mensajeAlerta = 'Acta responsiva de movimiento subida.';
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_gds_password':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idP = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_gds_passwords_movimientos WHERE id = ?");
+                $stmt->execute([$idP]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Clave de movimiento eliminada']);
+                    exit();
+                }
+                $mensajeAlerta = 'Clave de movimiento eliminada.';
+                $tipoAlerta = 'info';
+                break;
+
+            // 7. USUARIOS GRP
+            case 'guardar_grp_usuario':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idG = intval($_POST['grp_id'] ?? 0);
+                $usr = trim($_POST['usuario_grp'] ?? '');
+                $col = trim($_POST['nombre_colaborador'] ?? '');
+                $pwd = trim($_POST['password_grp'] ?? '');
+                $roles = isset($_POST['roles']) ? (is_array($_POST['roles']) ? implode(', ', $_POST['roles']) : trim($_POST['roles'])) : 'Usuario';
+                $mods = trim($_POST['modulos_permitidos'] ?? 'General');
+                $est = trim($_POST['estado'] ?? 'Activo');
+
+                if (empty($usr)) throw new Exception("El usuario de GRP es requerido.");
+
+                if ($idG > 0) {
+                    $stmtG = $pdo->prepare("UPDATE audit_grp_usuarios SET usuario_grp=?, nombre_colaborador=?, password_grp=?, roles=?, modulos_permitidos=?, estado=? WHERE id=?");
+                    $stmtG->execute([$usr, $col, $pwd, $roles, $mods, $est, $idG]);
+                    $msg = 'Usuario GRP actualizado.';
+                } else {
+                    $stmtG = $pdo->prepare("INSERT INTO audit_grp_usuarios (usuario_grp, nombre_colaborador, password_grp, roles, modulos_permitidos, estado) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmtG->execute([$usr, $col, $pwd, $roles, $mods, $est]);
+                    $msg = 'Usuario y roles GRP asignados correctamente.';
+                }
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => $msg]);
+                    exit();
+                }
+                $mensajeAlerta = $msg;
+                $tipoAlerta = 'success';
+                break;
+
+            case 'subir_responsiva_grp':
+                if (!$puedeEditar) throw new Exception("Permiso denegado.");
+                $idG = intval($_POST['id'] ?? 0);
+                if ($idG <= 0) throw new Exception("ID no válido.");
+                if (!isset($_FILES['archivo_pdf']) || $_FILES['archivo_pdf']['error'] !== UPLOAD_ERR_OK) {
+                    throw new Exception("Seleccione un archivo PDF.");
+                }
+                $nomArch = 'GRP_USR_' . $idG . '_' . date('Ymd_His') . '.pdf';
+                $destPath = $dirUploads . '/grp/' . $nomArch;
+                $relUrl = 'uploads/auditoria/grp/' . $nomArch;
+                if (!move_uploaded_file($_FILES['archivo_pdf']['tmp_name'], $destPath)) {
+                    throw new Exception("Error al guardar archivo.");
+                }
+                $stmt = $pdo->prepare("UPDATE audit_grp_usuarios SET responsiva_pdf_url = ? WHERE id = ?");
+                $stmt->execute([$relUrl, $idG]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Responsiva GRP subida con éxito', 'url' => $relUrl]);
+                    exit();
+                }
+                $mensajeAlerta = 'Responsiva de acceso GRP cargada.';
+                $tipoAlerta = 'success';
+                break;
+
+            case 'eliminar_grp_usuario':
+                if (!$puedeEliminar) throw new Exception("Permiso denegado.");
+                $idG = intval($_POST['id'] ?? 0);
+                $stmt = $pdo->prepare("DELETE FROM audit_grp_usuarios WHERE id = ?");
+                $stmt->execute([$idG]);
+                if ($esAjax) {
+                    echo json_encode(['success' => true, 'mensaje' => 'Usuario GRP eliminado']);
+                    exit();
+                }
+                $mensajeAlerta = 'Usuario GRP eliminado.';
+                $tipoAlerta = 'info';
+                break;
+        }
+    } catch (Throwable $eAccion) {
+        if ($esAjax) {
+            echo json_encode(['success' => false, 'error' => $eAccion->getMessage()]);
+            exit();
+        }
+        $mensajeAlerta = $eAccion->getMessage();
+        $tipoAlerta = 'danger';
+    }
+}
+
+// =============================================================================
+// CONSULTA DE DATOS LOCALES PARA RENDERIZADO INMEDIATO
+// =============================================================================
+$equiposInventario = [];
+$mantenimientos    = [];
+$correos           = [];
+$licenciasOffice   = [];
+$gdsUsuarios       = [];
+$gdsPasswords      = [];
+$grpUsuarios       = [];
+$catalogoUsuarios  = [];
+$catalogoAreas     = [];
 
 if ($pdo) {
+    // 1. Equipos de Inventario para Responsivas
     try {
-        // Equipos
-        $stmtEq = $pdo->query("SELECT COUNT(*) as tot, SUM(CASE WHEN responsiva_url IS NOT NULL AND responsiva_url != '' THEN 1 ELSE 0 END) as con_resp FROM inv_equipos_vw WHERE estado IS NULL OR estado != 'Baja'");
-        if ($stmtEq && ($rEq = $stmtEq->fetch(PDO::FETCH_ASSOC))) {
-            $totalEquiposAudit = (int)($rEq['tot'] ?? 0);
-            $equiposConResp = (int)($rEq['con_resp'] ?? 0);
+        $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario, departamento, puesto, tipo, marca, modelo, serie, responsiva_url FROM inv_equipos_vw WHERE (estado IS NULL OR estado != 'Baja') ORDER BY departamento ASC, nombre_equipo ASC");
+        if ($stmtEq) {
+            $equiposInventario = $stmtEq->fetchAll(PDO::FETCH_ASSOC);
         }
-        // Mantenimientos
-        $mantenimientosProg = (int)$pdo->query("SELECT COUNT(*) FROM audit_mantenimientos WHERE estado != 'Realizado'")->fetchColumn();
-        $mantenimientosReal = (int)$pdo->query("SELECT COUNT(*) FROM audit_mantenimientos WHERE estado = 'Realizado'")->fetchColumn();
-        // Correos
-        $correosActivos = (int)$pdo->query("SELECT COUNT(*) FROM audit_correos WHERE estado = 'Activo'")->fetchColumn();
-        $correosBajas = (int)$pdo->query("SELECT COUNT(*) FROM audit_correos WHERE estado != 'Activo'")->fetchColumn();
-        // Licencias
-        $licenciasActivas = (int)$pdo->query("SELECT COUNT(*) FROM audit_licencias_office WHERE estado = 'Activa'")->fetchColumn();
-        // GDS / GRP
-        $usuariosGdsCount = (int)$pdo->query("SELECT COUNT(*) FROM audit_gds_usuarios")->fetchColumn();
-        $passwordsGdsCount = (int)$pdo->query("SELECT COUNT(*) FROM audit_gds_passwords_movimientos")->fetchColumn();
-        $usuariosGrpCount = (int)$pdo->query("SELECT COUNT(*) FROM audit_grp_usuarios")->fetchColumn();
-    } catch (Throwable $eKpi) {}
+    } catch (Throwable $t) {
+        try {
+            $stmtEq = $pdo->query("SELECT id, nombre_equipo, usuario, departamento, puesto, tipo, marca, modelo, serie, responsiva_url FROM inv_equipos_corp WHERE (estado IS NULL OR estado != 'Baja') ORDER BY departamento ASC, nombre_equipo ASC");
+            if ($stmtEq) $equiposInventario = $stmtEq->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $t2) {}
+    }
+
+    // 2. Planes de Mantenimiento
+    try {
+        $stmtM = $pdo->query("SELECT * FROM audit_mantenimientos ORDER BY fecha_programada DESC, id DESC");
+        if ($stmtM) $mantenimientos = $stmtM->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // 3. Control de Correos
+    try {
+        $stmtC = $pdo->query("SELECT * FROM audit_correos ORDER BY CASE WHEN estado = 'Activo' THEN 1 WHEN estado = 'En Baja' THEN 2 ELSE 3 END, correo ASC");
+        if ($stmtC) $correos = $stmtC->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // 4. Licencias de Office
+    try {
+        $stmtL = $pdo->query("SELECT * FROM audit_licencias_office ORDER BY version_office ASC, id DESC");
+        if ($stmtL) $licenciasOffice = $stmtL->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // 5. Usuarios GDS
+    try {
+        $stmtG = $pdo->query("SELECT * FROM audit_gds_usuarios ORDER BY usuario_gds ASC");
+        if ($stmtG) $gdsUsuarios = $stmtG->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // 6. Password GDS Movimientos
+    try {
+        $stmtP = $pdo->query("SELECT * FROM audit_gds_passwords_movimientos ORDER BY id ASC");
+        if ($stmtP) $gdsPasswords = $stmtP->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // 7. Usuarios GRP
+    try {
+        $stmtGr = $pdo->query("SELECT * FROM audit_grp_usuarios ORDER BY usuario_grp ASC");
+        if ($stmtGr) $grpUsuarios = $stmtGr->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // Catálogos para Modales
+    try {
+        $stmtU = $pdo->query("SELECT id, nombre, usuario, email, departamento, puesto FROM usuarios ORDER BY nombre ASC");
+        if ($stmtU) $catalogoUsuarios = $stmtU->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $t) {}
+
+    // Áreas únicas encontradas
+    $areasSet = [];
+    foreach ($equiposInventario as $e) { if (!empty($e['departamento'])) $areasSet[$e['departamento']] = true; }
+    foreach ($correos as $c) { if (!empty($c['area'])) $areasSet[$c['area']] = true; }
+    foreach ($mantenimientos as $m) { if (!empty($m['area'])) $areasSet[$m['area']] = true; }
+    ksort($areasSet);
+    $catalogoAreas = array_keys($areasSet);
 }
+
+// Estadísticas de Resumen para los Botones del Menú Principal
+$cntTotalEquipos   = count($equiposInventario);
+$cntFirmadasEq     = count(array_filter($equiposInventario, fn($e) => !empty($e['responsiva_url'])));
+$cntPendientesEq   = $cntTotalEquipos - $cntFirmadasEq;
+
+$cntTotalManten    = count($mantenimientos);
+$cntRealizadosM    = count(array_filter($mantenimientos, fn($m) => $m['estado'] === 'Realizado'));
+$cntProgramadosM   = count(array_filter($mantenimientos, fn($m) => $m['estado'] === 'Programado'));
+
+$cntTotalCorreos   = count($correos);
+$cntActivosCorr    = count(array_filter($correos, fn($c) => $c['estado'] === 'Activo'));
+$cntBajaCorr       = count(array_filter($correos, fn($c) => $c['estado'] === 'En Baja'));
+$cntEliminCorr     = count(array_filter($correos, fn($c) => $c['estado'] === 'Eliminado'));
+
+$cntTotalLicencias = count($licenciasOffice);
+$cntTotalGds       = count($gdsUsuarios);
+$cntGdsResp        = count(array_filter($gdsUsuarios, fn($u) => !empty($u['responsiva_pdf_url'])));
+
+$cntTotalPassMov   = count($gdsPasswords);
+$cntTotalGrp       = count($grpUsuarios);
+$cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['responsiva_pdf_url'])));
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auditoría Interna y Control Operativo | <?php echo htmlspecialchars($agenciaNombre); ?></title>
+    <title>Auditoría Interna & Control Operativo | <?php echo htmlspecialchars($agenciaNombre); ?></title>
     <?php include_once 'pwa_head.php'; ?>
+    <!-- Bootstrap 5 y Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
-    <script>
-    window.DATOS_AGENCIA_EXCEL = <?php echo json_encode($agenciaData, JSON_UNESCAPED_UNICODE); ?>;
-    </script>
-    <?php renderizarEstilosTemaGlobal($pdo); ?>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- ExcelJS para Exportación Premium Multi-pestaña -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         :root {
             --bg-dark: #040d1a;
             --bg-card: #09172c;
-            --bg-card-hover: #0e2440;
+            --bg-card-hover: #0d213f;
             --gold-accent: #d4af37;
+            --gold-light: #f5df9e;
             --gold-border: rgba(212, 175, 55, 0.4);
-            --gold-glow: rgba(212, 175, 55, 0.15);
-            --color-exitoso: #10b981;
-            --color-alerta: #f59e0b;
-            --color-critico: #ef4444;
-            --color-info: #0284c7;
+            --gold-glow: rgba(212, 175, 55, 0.25);
+            --cyan-accent: #38bdf8;
+            --cyan-border: rgba(56, 189, 248, 0.4);
+            --cyan-glow: rgba(56, 189, 248, 0.25);
+            --emerald-accent: #10b981;
+            --emerald-border: rgba(16, 185, 129, 0.4);
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
             background-color: var(--bg-dark);
-            background-image: radial-gradient(#0b223e 1px, transparent 1px);
-            background-size: 24px 24px;
-            color: #e2e8f0;
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-image: 
+                radial-gradient(circle at 15% 15%, rgba(212, 175, 55, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 85% 20%, rgba(56, 189, 248, 0.12) 0%, transparent 45%),
+                radial-gradient(circle at 50% 90%, rgba(9, 23, 44, 0.8) 0%, transparent 60%);
+            background-attachment: fixed;
+            color: #ffffff;
+            font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
+            margin: 0;
+            overflow-x: hidden;
         }
 
-        .top-navbar {
-            background: rgba(9, 23, 44, 0.85);
-            backdrop-filter: blur(12px);
+        /* NAVBAR SUPERIOR */
+        .executive-navbar {
+            background: rgba(4, 13, 26, 0.95);
+            backdrop-filter: blur(14px);
             border-bottom: 1px solid var(--gold-border);
-            padding: 12px 24px;
+            padding: 14px 24px;
             position: sticky;
             top: 0;
-            z-index: 1020;
+            z-index: 1030;
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
         }
 
-        .card-executive {
-            background: linear-gradient(145deg, rgba(9, 23, 44, 0.9) 0%, rgba(5, 14, 28, 0.95) 100%);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 14px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-            transition: all 0.25s ease;
+        .brand-title {
+            font-family: 'Cinzel', serif;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            color: #ffffff;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .card-executive:hover {
-            border-color: rgba(212, 175, 55, 0.3);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.45);
-        }
-
-        .kpi-card {
+        /* ESTILOS DE BOTONES EJECUTIVOS */
+        .btn-gold-main {
+            background: linear-gradient(135deg, #d4af37 0%, #aa851d 100%);
+            color: #040d1a !important;
+            border: 1px solid var(--gold-border);
+            font-weight: 700;
+            font-size: 0.88rem;
+            padding: 9px 18px;
             border-radius: 12px;
-            padding: 16px;
-            height: 100%;
-            background: rgba(13, 30, 54, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            transition: transform 0.2s;
+            box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+            transition: all 0.25s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .btn-gold-main:hover {
+            background: linear-gradient(135deg, #f5df9e 0%, #c49d29 100%);
+            color: #000000 !important;
+            box-shadow: 0 6px 22px rgba(212, 175, 55, 0.5);
+            transform: translateY(-2px);
         }
 
-        .kpi-card:hover {
+        .btn-cyan-main {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            color: #ffffff !important;
+            border: 1px solid var(--cyan-border);
+            font-weight: 700;
+            font-size: 0.88rem;
+            padding: 9px 18px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);
+            transition: all 0.25s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .btn-cyan-main:hover {
+            background: linear-gradient(135deg, #38bdf8 0%, #0284c7 100%);
+            box-shadow: 0 6px 22px rgba(56, 189, 248, 0.5);
             transform: translateY(-2px);
+        }
+
+        .btn-outline-gold {
+            color: var(--gold-light) !important;
+            border: 1px solid var(--gold-border);
+            background: rgba(212, 175, 55, 0.08);
+            font-weight: 600;
+            font-size: 0.85rem;
+            padding: 8px 16px;
+            border-radius: 10px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .btn-outline-gold:hover {
+            color: #ffffff !important;
+            background: rgba(212, 175, 55, 0.22);
+            border-color: var(--gold-accent);
+            box-shadow: 0 0 14px var(--gold-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-action-tile {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #e2e8f0;
+            font-weight: 600;
+            font-size: 0.8rem;
+            padding: 7px 14px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .btn-action-tile:hover {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: var(--cyan-accent);
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+        .btn-action-tile.btn-tile-gold:hover {
+            background: rgba(212, 175, 55, 0.25);
+            border-color: var(--gold-accent);
+            color: #ffffff;
+        }
+        .btn-action-tile.btn-tile-danger:hover {
+            background: rgba(239, 68, 68, 0.25);
+            border-color: #ef4444;
+            color: #ffffff;
+        }
+
+        /* GRANDES BOTONES DE NAVEGACIÓN PRINCIPAL (HUB DE BOTONES) */
+        .section-header-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            padding: 6px 16px;
+            border-radius: 30px;
+            margin-bottom: 20px;
+        }
+        .pill-infra {
+            background: rgba(56, 189, 248, 0.12);
+            color: #7dd3fc;
+            border: 1px solid var(--cyan-border);
+        }
+        .pill-seguridad {
+            background: rgba(212, 175, 55, 0.14);
+            color: #f5df9e;
+            border: 1px solid var(--gold-border);
+        }
+
+        /* BOTONES INTERACTIVOS GIGANTES */
+        .big-hub-button {
+            background: linear-gradient(145deg, #09172c 0%, #061224 100%);
+            border: 1.5px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+            text-align: left;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 220px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+        .big-hub-button::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: all 0.3s ease;
+        }
+        .big-hub-button:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.6);
+        }
+        .hub-btn-infra:hover {
+            border-color: var(--cyan-accent);
+            box-shadow: 0 20px 45px rgba(56, 189, 248, 0.25);
+        }
+        .hub-btn-infra:hover::before {
+            background: linear-gradient(90deg, transparent, var(--cyan-accent), transparent);
+        }
+        .hub-btn-seguridad:hover {
+            border-color: var(--gold-accent);
+            box-shadow: 0 20px 45px rgba(212, 175, 55, 0.25);
+        }
+        .hub-btn-seguridad:hover::before {
+            background: linear-gradient(90deg, transparent, var(--gold-accent), transparent);
+        }
+
+        .hub-icon-box {
+            width: 58px;
+            height: 58px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.75rem;
+            margin-bottom: 16px;
+            transition: all 0.3s ease;
+        }
+        .hub-btn-infra .hub-icon-box {
+            background: rgba(56, 189, 248, 0.12);
+            color: #38bdf8;
+            border: 1px solid var(--cyan-border);
+        }
+        .hub-btn-seguridad .hub-icon-box {
+            background: rgba(212, 175, 55, 0.12);
+            color: #d4af37;
+            border: 1px solid var(--gold-border);
+        }
+        .big-hub-button:hover .hub-icon-box {
+            transform: scale(1.1) rotate(4deg);
+        }
+
+        .hub-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 6px;
+        }
+        .hub-desc {
+            font-size: 0.82rem;
+            color: #94a3b8;
+            line-height: 1.45;
+            margin-bottom: 16px;
+            flex-grow: 1;
+        }
+
+        .hub-stats-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .hub-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #cbd5e1;
+        }
+        .hub-badge.badge-success-glow {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: #6ee7b7;
+        }
+        .hub-badge.badge-warning-glow {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fde68a;
+        }
+
+        .hub-open-cta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            font-weight: 700;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .hub-btn-infra .hub-open-cta { color: #38bdf8; }
+        .hub-btn-seguridad .hub-open-cta { color: #f5df9e; }
+
+        /* VISTAS DE CADA SECCIÓN (TARJETAS DE ACCIÓN - CERO TABLAS) */
+        .section-view-panel {
+            display: none;
+            animation: fadeIn 0.3s ease forwards;
+        }
+        .section-view-panel.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .sub-header-toolbar {
+            background: rgba(9, 23, 44, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--gold-border);
+            border-radius: 16px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        /* TARJETAS EJECUTIVAS PARA ELEMENTOS (NO TABLAS) */
+        .item-action-card {
+            background: linear-gradient(145deg, #08162b 0%, #061122 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            transition: all 0.25s ease;
+            position: relative;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            height: 100%;
+        }
+        .item-action-card:hover {
+            border-color: rgba(56, 189, 248, 0.6);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px rgba(56, 189, 248, 0.15);
+        }
+        .card-gold-accent:hover {
+            border-color: var(--gold-accent) !important;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 20px var(--gold-glow) !important;
+        }
+
+        .item-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .item-title-box {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .item-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            color: #38bdf8;
+            flex-shrink: 0;
+        }
+        .item-icon.icon-gold {
+            background: rgba(212, 175, 55, 0.12);
+            color: #d4af37;
             border-color: var(--gold-border);
         }
 
-        .kpi-label {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #94a3b8;
+        .item-main-title {
+            font-size: 1.02rem;
             font-weight: 700;
+            color: #ffffff;
+            margin: 0;
+            line-height: 1.3;
         }
-
-        .kpi-number {
-            font-size: 1.7rem;
-            font-weight: 800;
-            line-height: 1.2;
-            font-family: 'JetBrains Mono', monospace;
-        }
-
-        /* Navegación por Pilares y Pestañas */
-        .pillar-header {
-            background: rgba(15, 23, 42, 0.8);
-            border-radius: 12px;
-            padding: 8px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            margin-bottom: 16px;
-        }
-
-        .nav-pills-custom {
-            gap: 8px;
-        }
-
-        .nav-pills-custom .nav-link {
+        .item-sub-title {
+            font-size: 0.8rem;
             color: #94a3b8;
-            font-weight: 600;
-            font-size: 0.88rem;
-            padding: 10px 18px;
+            margin: 0;
+        }
+
+        .item-details-grid {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 10px;
-            border: 1px solid transparent;
-            background: rgba(255, 255, 255, 0.03);
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .nav-pills-custom .nav-link:hover {
-            color: #ffffff;
-            background: rgba(255, 255, 255, 0.07);
-            border-color: rgba(255, 255, 255, 0.15);
-        }
-
-        .nav-pills-custom .nav-link.active {
-            color: #ffffff;
-            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-            border-color: #38bdf8;
-            box-shadow: 0 4px 15px rgba(2, 132, 199, 0.35);
-        }
-
-        .nav-pills-custom .nav-link.active.pillar-security {
-            background: linear-gradient(135deg, #b45309 0%, #78350f 100%);
-            border-color: #f59e0b;
-            box-shadow: 0 4px 15px rgba(245, 158, 11, 0.35);
-        }
-
-        /* Tablas Customizadas */
-        .table-custom {
-            width: 100%;
-            margin-bottom: 0;
-            color: #cbd5e1;
-            font-size: 0.86rem;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
-
-        .table-custom thead th {
-            background-color: #0c1a2e;
-            color: #94a3b8;
-            font-weight: 700;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 10px;
             font-size: 0.78rem;
+        }
+        .detail-item-label {
+            color: #64748b;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            padding: 12px 14px;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-            white-space: nowrap;
-        }
-
-        .table-custom tbody tr {
-            transition: background 0.15s ease;
-        }
-
-        .table-custom tbody tr:hover {
-            background-color: rgba(255, 255, 255, 0.04) !important;
-        }
-
-        .table-custom tbody td {
-            padding: 10px 14px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            vertical-align: middle;
-        }
-
-        .badge-status-pill {
-            font-size: 0.74rem;
+            font-size: 0.68rem;
             font-weight: 700;
-            padding: 4px 10px;
-            border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            letter-spacing: 0.3px;
+            margin-bottom: 2px;
+            display: block;
+        }
+        .detail-item-val {
+            color: #e2e8f0;
+            font-weight: 600;
+            word-break: break-all;
         }
 
-        .badge-ok { background: rgba(16, 185, 129, 0.18); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }
-        .badge-warn { background: rgba(245, 158, 11, 0.18); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }
-        .badge-err { background: rgba(239, 68, 68, 0.18); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
-        .badge-info { background: rgba(56, 189, 248, 0.18); color: #7dd3fc; border: 1px solid rgba(56, 189, 248, 0.35); }
-        .badge-muted { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); }
+        .item-card-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
 
-        .pass-hidden {
-            letter-spacing: 3px;
-            font-family: 'JetBrains Mono', monospace;
+        /* MODALES */
+        .modal-content {
+            background-color: #061325;
+            border: 1px solid var(--gold-border);
+            color: #ffffff;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.8);
+            border-radius: 18px;
+        }
+        .modal-header {
+            border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+            padding: 18px 24px;
+        }
+        .modal-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 16px 24px;
+        }
+        .form-control, .form-select {
+            background-color: rgba(13, 30, 54, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #ffffff;
+            border-radius: 10px;
+            padding: 10px 14px;
+            font-size: 0.9rem;
+        }
+        .form-control:focus, .form-select:focus {
+            background-color: #0b1e38;
+            border-color: var(--gold-accent);
+            color: #ffffff;
+            box-shadow: 0 0 12px var(--gold-glow);
+        }
+
+        /* PILL FILTERS */
+        .filter-pill-btn {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             color: #94a3b8;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 6px 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .filter-pill-btn:hover {
+            color: #ffffff;
+            border-color: var(--cyan-accent);
+        }
+        .filter-pill-btn.active {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: var(--cyan-accent);
+            color: #ffffff;
+            box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+        }
+        .filter-pill-btn.filter-gold.active {
+            background: rgba(212, 175, 55, 0.25);
+            border-color: var(--gold-accent);
+            color: #f5df9e;
+            box-shadow: 0 0 12px var(--gold-glow);
         }
 
-        /* Estilos de Impresión */
-        @media print {
-            .top-navbar, .no-print, .btn, .nav-pills-custom, .input-group, select, input {
-                display: none !important;
-            }
-            body {
-                background: #ffffff !important;
-                color: #000000 !important;
-            }
-            .card-executive {
-                background: #ffffff !important;
-                border: 1px solid #000000 !important;
-                box-shadow: none !important;
-                color: #000000 !important;
-            }
-            .table-custom thead th {
-                background: #f1f5f9 !important;
-                color: #000000 !important;
-                border: 1px solid #cbd5e1 !important;
-            }
-            .table-custom tbody td {
-                color: #000000 !important;
-                border: 1px solid #cbd5e1 !important;
-            }
-            .print-only-header {
-                display: block !important;
-            }
+        /* PASSWORD PEEK */
+        .password-peek {
+            font-family: monospace;
+            letter-spacing: 2px;
         }
     </style>
 </head>
 <body>
 
-<!-- Navbar Superior -->
-<div class="top-navbar d-flex justify-content-between align-items-center">
-    <div class="d-flex align-items-center gap-3">
-        <a href="menu.php" class="btn btn-outline-secondary btn-sm rounded-3 text-white border-opacity-25" title="Regresar al Menú Principal">
-            <i class="bi bi-arrow-left me-1"></i> Menú
-        </a>
-        <div class="vr bg-secondary opacity-25" style="height: 24px;"></div>
-        <div class="d-flex align-items-center gap-2">
-            <div class="p-2 rounded-3 text-warning d-flex align-items-center justify-content-center" style="background: rgba(212, 175, 55, 0.15); border: 1px solid var(--gold-border); width: 36px; height: 36px;">
-                <i class="bi bi-shield-check fs-5"></i>
+    <!-- NAVBAR SUPERIOR -->
+    <header class="executive-navbar">
+        <div class="container-fluid d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-3">
+                <a href="menu.php" class="btn-outline-gold" title="Regresar al Menú Principal">
+                    <i class="bi bi-arrow-left"></i> Menú
+                </a>
+                <div class="brand-title">
+                    <i class="bi bi-shield-check text-warning"></i>
+                    <span>AUDITORÍA INTERNA & CONTROL TI</span>
+                </div>
+                <span class="badge" style="background: rgba(212, 175, 55, 0.15); color: #f5df9e; border: 1px solid var(--gold-border);">
+                    <?php echo htmlspecialchars($agenciaNombre); ?>
+                </span>
             </div>
-            <div>
-                <span class="fw-bold tracking-wide text-white">AUDITORÍA INTERNA & CONTROL OPERATIVO</span>
-                <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50 ms-2">TI & SEGURIDAD</span>
+
+            <!-- BOTONES SUPERIORES DE ACCIÓN -->
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn-gold-main" onclick="exportarAuditoriaCompletaExcel()" title="Descargar Libro Completo con 7 Hojas de Cálculo">
+                    <i class="bi bi-file-earmark-excel-fill"></i>
+                    <span>Exportar Todo a Excel</span>
+                </button>
+                <button type="button" class="btn-outline-gold" onclick="window.print()" title="Imprimir informe en formato PDF">
+                    <i class="bi bi-printer-fill"></i> Imprimir PDF
+                </button>
             </div>
         </div>
-    </div>
+    </header>
 
-    <!-- Opciones de Exportación e Impresión -->
-    <div class="d-flex align-items-center gap-2">
-        <?php if ($puedeExportar): ?>
-        <div class="btn-group btn-group-sm">
-            <button type="button" class="btn btn-outline-success rounded-3 fw-semibold shadow-sm" onclick="exportarSeccionActivaExcel()" title="Exportar la sección actualmente en pantalla a Microsoft Excel (.xlsx)">
-                <i class="bi bi-file-earmark-spreadsheet-fill me-1 text-success"></i> Exportar a Excel
-            </button>
-            <button type="button" class="btn btn-outline-success dropdown-toggle dropdown-toggle-split rounded-end-3" data-bs-toggle="dropdown" aria-expanded="false" title="Más opciones de exportación">
-                <span class="visually-hidden">Opciones de exportación</span>
-            </button>
-            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow border-secondary border-opacity-50">
-                <li><h6 class="dropdown-header text-warning">Reportes en Excel Oficial (.xlsx)</h6></li>
-                <li>
-                    <a class="dropdown-item py-2" href="javascript:void(0)" onclick="exportarSeccionActivaExcel()">
-                        <i class="bi bi-file-earmark-excel-fill text-success me-2"></i> Exportar Sección Activa (.xlsx)
-                    </a>
-                </li>
-                <li>
-                    <a class="dropdown-item py-2" href="javascript:void(0)" onclick="exportarLibroCompletoAuditoriaExcel()">
-                        <i class="bi bi-journal-album text-warning me-2"></i> Libro Completo de Auditoría (Multi-Hoja)
-                    </a>
-                </li>
-                <li><hr class="dropdown-divider border-secondary border-opacity-25"></li>
-                <li><h6 class="dropdown-header text-info">Descargas Directas (.xls)</h6></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=mantenimientos"><i class="bi bi-tools me-2 text-info"></i> Mantenimientos (.xls)</a></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=correos"><i class="bi bi-envelope me-2 text-info"></i> Control de Correos (.xls)</a></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=licencias"><i class="bi bi-key me-2 text-info"></i> Licencias Office (.xls)</a></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=gds_usuarios"><i class="bi bi-person-badge me-2 text-info"></i> Usuarios GDS (.xls)</a></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=gds_passwords"><i class="bi bi-shield-lock me-2 text-info"></i> Passwords Movimientos GDS (.xls)</a></li>
-                <li><a class="dropdown-item py-1 small" href="api_auditoria.php?action=exportar_excel_seccion&seccion=grp"><i class="bi bi-people me-2 text-info"></i> Usuarios GRP (.xls)</a></li>
-            </ul>
+    <!-- ALERTAS DEL SISTEMA -->
+    <div class="container-fluid px-4 mt-3">
+        <?php if (!empty($mensajeAlerta)): ?>
+        <div class="alert alert-<?php echo $tipoAlerta; ?> alert-dismissible fade show d-flex align-items-center gap-2" role="alert" style="background: rgba(13, 30, 54, 0.95); border: 1px solid var(--gold-border); color: #ffffff;">
+            <i class="bi bi-info-circle-fill text-warning fs-5"></i>
+            <div><?php echo htmlspecialchars($mensajeAlerta); ?></div>
+            <button type="button" class="btn-close btn-close-white ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
         <?php endif; ?>
-
-        <button type="button" class="btn btn-outline-light btn-sm rounded-3 fw-semibold" onclick="imprimirAuditoria()" title="Imprimir o Guardar en PDF">
-            <i class="bi bi-printer me-1"></i> Imprimir / PDF
-        </button>
-
-        <a href="logout.php" class="btn btn-outline-danger btn-sm rounded-3" title="Cerrar Sesión">
-            <i class="bi bi-box-arrow-right"></i>
-        </a>
-    </div>
-</div>
-
-<div class="container-fluid px-4 py-4" style="max-width: 1600px;">
-
-    <!-- Encabezado de Página -->
-    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-        <div>
-            <h2 class="fw-bold mb-1 text-white">Módulo de Auditoría Interna</h2>
-            <p class="text-secondary small mb-0">
-                Supervisión continua de infraestructura física, responsivas firmadas, planes preventivos y control estricto de accesos a sistemas core (GDS y GRP).
-            </p>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-dark border border-secondary border-opacity-50 text-secondary p-2">
-                <i class="bi bi-building me-1 text-warning"></i> <?php echo htmlspecialchars($agenciaNombre); ?>
-            </span>
-            <span class="badge bg-dark border border-secondary border-opacity-50 text-secondary p-2">
-                <i class="bi bi-calendar3 me-1 text-info"></i> <?php echo date('d/m/Y'); ?>
-            </span>
-        </div>
     </div>
 
-    <!-- TARJETAS DE KPIS EJECUTIVOS GLOBALES -->
-    <div class="row g-3 mb-4">
-        <!-- 1. Responsivas Equipos -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Responsivas PC</span>
-                    <i class="bi bi-file-earmark-check text-info fs-5"></i>
-                </div>
-                <div class="kpi-number text-info"><?php echo $equiposConResp; ?> <span class="text-secondary fs-6 fw-normal">/ <?php echo $totalEquiposAudit; ?></span></div>
-                <div class="text-secondary small mt-1"><?php echo ($totalEquiposAudit > 0) ? round(($equiposConResp/$totalEquiposAudit)*100) : 0; ?>% equipos firmados</div>
-            </div>
-        </div>
+    <!-- CONTENEDOR PRINCIPAL -->
+    <main class="container-fluid px-4 py-3">
 
-        <!-- 2. Mantenimientos -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Mantenimientos</span>
-                    <i class="bi bi-tools text-warning fs-5"></i>
-                </div>
-                <div class="kpi-number text-warning"><?php echo $mantenimientosProg; ?></div>
-                <div class="text-secondary small mt-1"><?php echo $mantenimientosReal; ?> realizados con PDF</div>
-            </div>
-        </div>
-
-        <!-- 3. Correos Activos -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Cuentas Correo</span>
-                    <i class="bi bi-envelope-check text-success fs-5"></i>
-                </div>
-                <div class="kpi-number text-success"><?php echo $correosActivos; ?></div>
-                <div class="text-secondary small mt-1"><?php echo $correosBajas; ?> cuentas en baja / canceladas</div>
-            </div>
-        </div>
-
-        <!-- 4. Licencias Office -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Licencias Office</span>
-                    <i class="bi bi-key-fill text-primary fs-5"></i>
-                </div>
-                <div class="kpi-number text-primary"><?php echo $licenciasActivas; ?></div>
-                <div class="text-secondary small mt-1">Product Keys auditadas</div>
-            </div>
-        </div>
-
-        <!-- 5. Usuarios GDS & GRP -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Accesos Core</span>
-                    <i class="bi bi-people-fill text-info fs-5"></i>
-                </div>
-                <div class="kpi-number text-white"><?php echo ($usuariosGdsCount + $usuariosGrpCount); ?></div>
-                <div class="text-secondary small mt-1"><?php echo $usuariosGdsCount; ?> GDS + <?php echo $usuariosGrpCount; ?> GRP</div>
-            </div>
-        </div>
-
-        <!-- 6. Passwords Movimientos GDS -->
-        <div class="col-6 col-md-4 col-xl-2">
-            <div class="card-executive kpi-card" style="border-color: rgba(239, 68, 68, 0.3);">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <span class="kpi-label">Claves Movimiento</span>
-                    <i class="bi bi-shield-lock-fill text-danger fs-5"></i>
-                </div>
-                <div class="kpi-number text-danger"><?php echo $passwordsGdsCount; ?></div>
-                <div class="text-secondary small mt-1">Operaciones críticas GDS</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- NAVEGACIÓN PRINCIPAL: SECCIONES Y SUBSECCIONES -->
-    <div class="card-executive p-3 mb-4">
-        <ul class="nav nav-pills nav-pills-custom" id="pillsAuditoria" role="tablist">
+        <!-- ===================================================================
+             VISTA 0: TABLERO PRINCIPAL DE BOTONES (HUB DE NAVEGACIÓN)
+             =================================================================== -->
+        <section id="vista-hub" class="section-view-panel active">
             
-            <!-- PILAR 1: GESTIÓN DE INFRAESTRUCTURA -->
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="pill-responsivas-tab" data-bs-toggle="pill" data-bs-target="#pill-responsivas" type="button" role="tab" onclick="cambiarSeccionActiva('responsivas')">
-                    <i class="bi bi-file-earmark-check-fill text-info"></i> Responsivas de Equipos
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="pill-mantenimiento-tab" data-bs-toggle="pill" data-bs-target="#pill-mantenimiento" type="button" role="tab" onclick="cambiarSeccionActiva('mantenimiento')">
-                    <i class="bi bi-tools text-warning"></i> Planes de Mantenimiento
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="pill-correos-tab" data-bs-toggle="pill" data-bs-target="#pill-correos" type="button" role="tab" onclick="cambiarSeccionActiva('correos')">
-                    <i class="bi bi-envelope-fill text-success"></i> Control de Correos
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="pill-licencias-tab" data-bs-toggle="pill" data-bs-target="#pill-licencias" type="button" role="tab" onclick="cambiarSeccionActiva('licencias')">
-                    <i class="bi bi-key-fill text-primary"></i> Licencias de Office
-                </button>
-            </li>
-
-            <!-- SEPARADOR -->
-            <li class="nav-item d-none d-lg-block align-self-center mx-1">
-                <div class="vr bg-secondary opacity-50" style="height: 28px;"></div>
-            </li>
-
-            <!-- PILAR 2: SEGURIDAD DE LA INFORMACIÓN -->
-            <li class="nav-item" role="presentation">
-                <button class="nav-link pillar-security" id="pill-gds-usr-tab" data-bs-toggle="pill" data-bs-target="#pill-gds-usr" type="button" role="tab" onclick="cambiarSeccionActiva('gds_usr')">
-                    <i class="bi bi-person-badge-fill text-warning"></i> Usuarios GDS
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link pillar-security" id="pill-gds-pass-tab" data-bs-toggle="pill" data-bs-target="#pill-gds-pass" type="button" role="tab" onclick="cambiarSeccionActiva('gds_pass')">
-                    <i class="bi bi-shield-lock-fill text-danger"></i> Password GDS (Movimientos)
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link pillar-security" id="pill-grp-usr-tab" data-bs-toggle="pill" data-bs-target="#pill-grp-usr" type="button" role="tab" onclick="cambiarSeccionActiva('grp_usr')">
-                    <i class="bi bi-people-fill text-info"></i> Usuarios de GRP
-                </button>
-            </li>
-        </ul>
-    </div>
-
-    <!-- CONTENIDO DE LAS SUBSECCIONES -->
-    <div class="tab-content" id="pillsAuditoriaContent">
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 1.1: RESPONSIVAS DE EQUIPOS (INVENTARIO)                 -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade show active" id="pill-responsivas" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-file-earmark-check-fill text-info me-2"></i>Auditoría de Cartas Responsivas de Equipos</h5>
-                        <p class="text-secondary small mb-0">Monitoreo de responsivas físicas y digitales subidas al inventario. Genera formatos para firma y sube evidencias en PDF.</p>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="badge bg-dark border border-secondary border-opacity-25 text-info px-3 py-2 small" id="contadorBadgeResponsivas">
-                            Cargando equipos...
-                        </span>
-                    </div>
-                </div>
-
-                <!-- Filtros de Responsivas -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-4">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqResp" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por equipo, usuario o serie..." onkeyup="cargarResponsivasEquipos()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaResp" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarResponsivasEquipos()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroEstadoResp" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarResponsivasEquipos()">
-                            <option value="">Todos los Estados de Responsiva</option>
-                            <option value="firmada">🟢 Con Responsiva Firmada (PDF)</option>
-                            <option value="pendiente">🔴 Pendiente de Firma / Subir</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <a href="equipos.php" target="_blank" class="btn btn-outline-info btn-sm rounded-3 w-100">
-                            <i class="bi bi-box-arrow-up-right me-1"></i> Ir a Inventario
-                        </a>
-                    </div>
-                </div>
-
-                <!-- Tabla de Responsivas -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaResponsivasEquipos">
-                        <thead>
-                            <tr>
-                                <th>Equipo</th>
-                                <th>Usuario Responsable</th>
-                                <th>Área / Depto</th>
-                                <th>Puesto</th>
-                                <th>Tipo / Marca</th>
-                                <th>Número de Serie</th>
-                                <th class="text-center">Estado Responsiva</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyResponsivasEquipos">
-                            <tr><td colspan="8" class="text-center py-4 text-secondary"><div class="spinner-border spinner-border-sm text-info me-2"></div>Cargando equipos del inventario...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+            <div class="text-center mb-4">
+                <h2 style="font-family: 'Cinzel', serif; font-weight: 700; color: #ffffff; letter-spacing: 1px;">
+                    Panel de Control y Auditoría Operativa
+                </h2>
+                <p class="text-secondary mb-0" style="font-size: 0.95rem;">
+                    Seleccione una de las secciones a continuación para gestionar responsivas, calendarios, credenciales y evidencias sin tablas complejas.
+                </p>
             </div>
-        </div>
 
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 1.2: PLANES DE MANTENIMIENTO                             -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-mantenimiento" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-tools text-warning me-2"></i>Planes y Calendario de Mantenimiento por Área</h5>
-                        <p class="text-secondary small mb-0">Control de mantenimiento preventivo y correctivo de hardware. Adjunta reportes de servicio y evidencias en PDF.</p>
-                    </div>
-                    <?php if ($puedeCrear): ?>
-                    <button class="btn btn-warning btn-sm rounded-3 fw-semibold shadow" onclick="abrirModalNuevoMantenimiento()">
-                        <i class="bi bi-plus-circle me-1"></i> Programar Mantenimiento
-                    </button>
-                    <?php endif; ?>
+            <!-- SECCIÓN 1: GESTIÓN DE INFRAESTRUCTURA -->
+            <div class="mb-5">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <span class="section-header-pill pill-infra">
+                        <i class="bi bi-hdd-network-fill"></i> 1. Gestión de Infraestructura
+                    </span>
+                    <span class="text-secondary small">4 Módulos Operativos</span>
                 </div>
 
-                <!-- Filtros Mantenimiento -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-4">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqMant" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por equipo, usuario o técnico..." onkeyup="cargarMantenimientos()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaMant" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarMantenimientos()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroEstadoMant" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarMantenimientos()">
-                            <option value="">Todos los Estados</option>
-                            <option value="Programado">🟡 Programado</option>
-                            <option value="En Proceso">🔵 En Proceso</option>
-                            <option value="Realizado">🟢 Realizado (Con Evidencia)</option>
-                            <option value="Atrasado">🔴 Atrasado</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorMantenimientos">0 registros</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Mantenimientos -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaMantenimientos">
-                        <thead>
-                            <tr>
-                                <th>Equipo</th>
-                                <th>Área</th>
-                                <th>Usuario Asignado</th>
-                                <th>Tipo</th>
-                                <th>Fecha Programada</th>
-                                <th>Fecha Realizada</th>
-                                <th>Frecuencia</th>
-                                <th class="text-center">Estado</th>
-                                <th>Técnico</th>
-                                <th class="text-center">Evidencia PDF</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyMantenimientos">
-                            <tr><td colspan="11" class="text-center py-4 text-secondary">Cargando planes de mantenimiento...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 1.3: CONTROL DE CORREOS                                 -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-correos" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-envelope-fill text-success me-2"></i>Matriz y Control de Correos Institucionales</h5>
-                        <p class="text-secondary small mb-0">Padrón oficial de cuentas de correo, estado activo, gestión de bajas, cancelaciones y motivos para auditoría.</p>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        <button class="btn btn-outline-info btn-sm rounded-3" onclick="sincronizarCorreos()" title="Importar automáticamente nuevos correos detectados en el inventario o directorio">
-                            <i class="bi bi-arrow-repeat me-1"></i> Sincronizar Cuentas
-                        </button>
-                        <?php if ($puedeCrear): ?>
-                        <button class="btn btn-success btn-sm rounded-3 fw-semibold shadow" onclick="abrirModalNuevoCorreo()">
-                            <i class="bi bi-plus-circle me-1"></i> Nueva Cuenta de Correo
-                        </button>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <!-- Filtros Correos -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-4">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqCorr" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por colaborador, correo o puesto..." onkeyup="cargarCorreos()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaCorr" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarCorreos()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroEstadoCorr" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarCorreos()">
-                            <option value="">Todos los Estados</option>
-                            <option value="Activo">🟢 Cuentas Activas</option>
-                            <option value="En Baja">🟡 En Proceso de Baja</option>
-                            <option value="Eliminado">🔴 Eliminadas / Canceladas</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorCorreos">0 cuentas</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Correos -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaCorreos">
-                        <thead>
-                            <tr>
-                                <th>Colaborador</th>
-                                <th>Correo Electrónico</th>
-                                <th>Área</th>
-                                <th>Puesto</th>
-                                <th>Tipo</th>
-                                <th class="text-center">Estado</th>
-                                <th>Fecha Alta</th>
-                                <th>Fecha / Motivo de Baja</th>
-                                <th>Contraseña</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyCorreos">
-                            <tr><td colspan="10" class="text-center py-4 text-secondary">Cargando cuentas de correo...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 1.4: LICENCIAS DE OFFICE                                -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-licencias" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-key-fill text-primary me-2"></i>Matriz de Licenciamiento Microsoft Office</h5>
-                        <p class="text-secondary small mb-0">Control de códigos y Product Keys de Microsoft Office / 365, cuentas vinculadas, equipos asignados y vigencia.</p>
-                    </div>
-                    <?php if ($puedeCrear): ?>
-                    <button class="btn btn-primary btn-sm rounded-3 fw-semibold shadow" onclick="abrirModalNuevaLicencia()">
-                        <i class="bi bi-plus-circle me-1"></i> Registrar Licencia
-                    </button>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Filtros Licencias -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-4">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqLic" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por código, producto o usuario..." onkeyup="cargarLicencias()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaLic" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarLicencias()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroEstadoLic" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarLicencias()">
-                            <option value="">Todos los Estados</option>
-                            <option value="Activa">🟢 Activa (Asignada)</option>
-                            <option value="Disponible">🔵 Disponible (Sin asignar)</option>
-                            <option value="Vencida">🔴 Vencida</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorLicencias">0 licencias</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Licencias -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaLicencias">
-                        <thead>
-                            <tr>
-                                <th>Código / Clave de Licencia</th>
-                                <th>Producto</th>
-                                <th>Tipo</th>
-                                <th>Cuenta Microsoft</th>
-                                <th>Equipo Asignado</th>
-                                <th>Usuario Asignado</th>
-                                <th>Área</th>
-                                <th class="text-center">Estado</th>
-                                <th>Fecha Compra</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyLicencias">
-                            <tr><td colspan="10" class="text-center py-4 text-secondary">Cargando licencias de Office...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 2.1: SEGURIDAD: USUARIOS GDS                             -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-gds-usr" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-person-badge-fill text-warning me-2"></i>Asignación de Usuarios y Credenciales DMS / GDS</h5>
-                        <p class="text-secondary small mb-0">Control de usuarios y claves del sistema de agencia. Emite la responsiva formal de confidencialidad y adjunta el PDF firmado.</p>
-                    </div>
-                    <?php if ($puedeCrear): ?>
-                    <button class="btn btn-warning btn-sm rounded-3 fw-semibold shadow" onclick="abrirModalNuevoGdsUsuario()">
-                        <i class="bi bi-plus-circle me-1"></i> Asignar Usuario GDS
-                    </button>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Filtros GDS Usuarios -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-5">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqGdsUsr" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por colaborador, usuario GDS o perfil..." onkeyup="cargarGdsUsuarios()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaGdsUsr" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGdsUsuarios()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <select id="filtroEstadoGdsUsr" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGdsUsuarios()">
-                            <option value="">Todos</option>
-                            <option value="Activo">🟢 Activo</option>
-                            <option value="Suspendido">🟡 Suspendido</option>
-                            <option value="Baja">🔴 Baja</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorGdsUsr">0 usuarios</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Usuarios GDS -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaGdsUsuarios">
-                        <thead>
-                            <tr>
-                                <th>Colaborador</th>
-                                <th>Área</th>
-                                <th>Puesto</th>
-                                <th>Usuario GDS</th>
-                                <th>Contraseña GDS</th>
-                                <th>Perfil / Rol GDS</th>
-                                <th>Sucursal</th>
-                                <th class="text-center">Estado</th>
-                                <th class="text-center">Responsiva Firmada</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyGdsUsuarios">
-                            <tr><td colspan="10" class="text-center py-4 text-secondary">Cargando usuarios de GDS...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 2.2: SEGURIDAD: CONTRASEÑAS DE MOVIMIENTOS GDS           -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-gds-pass" role="tabpanel">
-            <div class="card-executive p-4 border-danger border-opacity-25">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-shield-lock-fill text-danger me-2"></i>Custodia de Contraseñas de Movimientos Críticos (GDS)</h5>
-                        <p class="text-secondary small mb-0">Registro y custodia de claves para operaciones de alta sensibilidad (cancelaciones, descuentos, traspasos). Emite responsiva y sube evidencia.</p>
-                    </div>
-                    <?php if ($puedeCrear): ?>
-                    <button class="btn btn-danger btn-sm rounded-3 fw-semibold shadow" onclick="abrirModalNuevoGdsPassword()">
-                        <i class="bi bi-key-fill me-1"></i> Configurar Password de Movimiento
-                    </button>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Filtros Password Movimientos -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-5">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqGdsPass" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por movimiento o responsable..." onkeyup="cargarGdsPasswords()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaGdsPass" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGdsPasswords()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <select id="filtroNivelGdsPass" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGdsPasswords()">
-                            <option value="">Todos los Niveles</option>
-                            <option value="Crítico">🔴 Crítico</option>
-                            <option value="Alto">🟠 Alto</option>
-                            <option value="Medio">🟡 Medio</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorGdsPass">0 claves</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Passwords de Movimientos -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaGdsPasswords">
-                        <thead>
-                            <tr>
-                                <th>Tipo de Movimiento</th>
-                                <th>Descripción de la Operación</th>
-                                <th>Contraseña Asignada</th>
-                                <th>Usuario / Gerente Autorizado</th>
-                                <th>Puesto / Área</th>
-                                <th class="text-center">Nivel</th>
-                                <th>Última Actualización</th>
-                                <th class="text-center">Responsiva Firmada</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyGdsPasswords">
-                            <tr><td colspan="9" class="text-center py-4 text-secondary">Cargando contraseñas de movimientos...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- =================================================================== -->
-        <!-- SUBSECCIÓN 2.3: SEGURIDAD: CONTROL DE USUARIOS GRP                  -->
-        <!-- =================================================================== -->
-        <div class="tab-pane fade" id="pill-grp-usr" role="tabpanel">
-            <div class="card-executive p-4">
-                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
-                    <div>
-                        <h5 class="fw-bold text-white mb-1"><i class="bi bi-people-fill text-info me-2"></i>Control de Usuarios y Roles de GRP</h5>
-                        <p class="text-secondary small mb-0">Asignación de cuentas de usuario, contraseñas, roles específicos y módulos autorizados dentro del sistema GRP.</p>
-                    </div>
-                    <?php if ($puedeCrear): ?>
-                    <button class="btn btn-info btn-sm rounded-3 fw-semibold shadow text-dark" onclick="abrirModalNuevoGrpUsuario()">
-                        <i class="bi bi-plus-circle-fill me-1"></i> Asignar Usuario GRP
-                    </button>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Filtros GRP -->
-                <div class="row g-2 align-items-center mb-3">
-                    <div class="col-12 col-md-5">
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text bg-dark border-secondary border-opacity-25 text-secondary"><i class="bi bi-search"></i></span>
-                            <input type="text" id="busqGrp" class="form-control bg-dark text-white border-secondary border-opacity-25" placeholder="Buscar por colaborador, usuario GRP o roles..." onkeyup="cargarGrpUsuarios()">
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <select id="filtroAreaGrp" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGrpUsuarios()">
-                            <option value="">Todas las Áreas</option>
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-6 col-md-2">
-                        <select id="filtroEstadoGrp" class="form-select form-select-sm bg-dark text-white border-secondary border-opacity-25" onchange="cargarGrpUsuarios()">
-                            <option value="">Todos</option>
-                            <option value="Activo">🟢 Activo</option>
-                            <option value="Inactivo">🔴 Inactivo</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-2 text-end">
-                        <span class="text-secondary small" id="contadorGrp">0 cuentas GRP</span>
-                    </div>
-                </div>
-
-                <!-- Tabla de Usuarios GRP -->
-                <div class="table-responsive">
-                    <table class="table-custom" id="tablaGrpUsuarios">
-                        <thead>
-                            <tr>
-                                <th>Colaborador</th>
-                                <th>Área</th>
-                                <th>Puesto</th>
-                                <th>Usuario GRP</th>
-                                <th>Contraseña GRP</th>
-                                <th>Roles Asignados en GRP</th>
-                                <th>Módulos Permitidos</th>
-                                <th class="text-center">Estado</th>
-                                <th class="text-center">Responsiva Firmada</th>
-                                <th class="text-end">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tbodyGrpUsuarios">
-                            <tr><td colspan="10" class="text-center py-4 text-secondary">Cargando usuarios de GRP...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-    </div>
-</div>
-
-<!-- ======================================================================= -->
-<!-- MODALES DEL SISTEMA                                                     -->
-<!-- ======================================================================= -->
-
-<!-- 1. MODAL: MANTENIMIENTO (PROGRAMAR / EDITAR) -->
-<div class="modal fade" id="modalMantenimiento" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold" id="modalMantenimientoTitulo"><i class="bi bi-tools text-warning me-2"></i>Programar Mantenimiento</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formMantenimiento" onsubmit="guardarMantenimiento(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="mantId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Nombre del Equipo *</label>
-                        <input type="text" name="nombre_equipo" id="mantEquipo" class="form-control bg-dark text-white border-secondary" placeholder="Ej. PC-ADM-01, LAP-VTA-05" required>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Área / Depto</label>
-                            <select name="area" id="mantArea" class="form-select bg-dark text-white border-secondary">
-                                <?php foreach ($areasDisponibles as $ar): ?>
-                                <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Tipo</label>
-                            <select name="tipo_mantenimiento" id="mantTipo" class="form-select bg-dark text-white border-secondary">
-                                <option value="Preventivo">Preventivo</option>
-                                <option value="Correctivo">Correctivo</option>
-                                <option value="Limpieza Física">Limpieza Física</option>
-                                <option value="Optimización SO">Optimización SO / Antivirus</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Usuario Responsable</label>
-                        <input type="text" name="usuario_responsable" id="mantUsuario" class="form-control bg-dark text-white border-secondary" placeholder="Nombre del colaborador">
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Fecha Programada *</label>
-                            <input type="date" name="fecha_programada" id="mantFechaProg" class="form-control bg-dark text-white border-secondary" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Frecuencia</label>
-                            <select name="frecuencia" id="mantFrecuencia" class="form-select bg-dark text-white border-secondary">
-                                <option value="Mensual">Mensual</option>
-                                <option value="Trimestral">Trimestral</option>
-                                <option value="Semestral" selected>Semestral</option>
-                                <option value="Anual">Anual</option>
-                                <option value="Única">Única</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Estado</label>
-                            <select name="estado" id="mantEstado" class="form-select bg-dark text-white border-secondary">
-                                <option value="Programado">Programado</option>
-                                <option value="En Proceso">En Proceso</option>
-                                <option value="Realizado">Realizado</option>
-                                <option value="Atrasado">Atrasado</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Técnico Asignado</label>
-                            <input type="text" name="tecnico_responsable" id="mantTecnico" class="form-control bg-dark text-white border-secondary" value="Sistemas">
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Observaciones / Tareas a Realizar</label>
-                        <textarea name="observaciones" id="mantObs" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="Detalles de la revisión..."></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-warning btn-sm fw-semibold">Guardar Mantenimiento</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 2. MODAL: SUBIR EVIDENCIA DE MANTENIMIENTO (PDF) -->
-<div class="modal fade" id="modalSubirEvidencia" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold"><i class="bi bi-file-earmark-pdf-fill text-danger me-2"></i>Adjuntar Evidencia de Mantenimiento</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formSubirEvidencia" onsubmit="enviarEvidenciaMantenimiento(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="mantenimiento_id" id="evidenciaMantId">
-                    <p class="text-secondary small mb-3" id="evidenciaEquipoLabel">Equipo: ...</p>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Seleccionar Reporte / Checklist en PDF *</label>
-                        <input type="file" name="archivo_pdf" id="archivoEvidenciaPdf" class="form-control bg-dark text-white border-secondary" accept="application/pdf" required>
-                        <small class="text-secondary" style="font-size: 0.72rem;">Sube el PDF con firmas del usuario y reporte técnico de servicio.</small>
-                    </div>
-                    <div class="form-check form-switch mt-2">
-                        <input class="form-check-input" type="checkbox" name="marcar_realizado" id="checkMarcarRealizado" checked value="1">
-                        <label class="form-check-label small" for="checkMarcarRealizado">Marcar automáticamente como <strong>Realizado</strong> con fecha de hoy</label>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success btn-sm fw-semibold" id="btnSubirEvid"><i class="bi bi-cloud-arrow-up-fill me-1"></i> Subir Evidencia</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 3. MODAL: CORREO (CREAR / EDITAR) -->
-<div class="modal fade" id="modalCorreo" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold" id="modalCorreoTitulo"><i class="bi bi-envelope-fill text-success me-2"></i>Cuenta de Correo</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formCorreo" onsubmit="guardarCorreo(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="corrId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Nombre del Colaborador *</label>
-                        <input type="text" name="nombre_colaborador" id="corrNombre" class="form-control bg-dark text-white border-secondary" placeholder="Nombre y Apellidos" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Correo Electrónico *</label>
-                        <input type="email" name="correo" id="corrEmail" class="form-control bg-dark text-white border-secondary" placeholder="ejemplo@agencia.com" required>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Área / Depto</label>
-                            <select name="area" id="corrArea" class="form-select bg-dark text-white border-secondary">
-                                <?php foreach ($areasDisponibles as $ar): ?>
-                                <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Puesto</label>
-                            <input type="text" name="puesto" id="corrPuesto" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Asesor de Ventas">
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Tipo de Cuenta</label>
-                            <select name="tipo_cuenta" id="corrTipo" class="form-select bg-dark text-white border-secondary">
-                                <option value="Corporativo">Corporativo (Dominio)</option>
-                                <option value="Planta VW/SEAT">Planta (VW/SEAT)</option>
-                                <option value="Servicio">Servicio / Taller</option>
-                                <option value="Genérico">Genérico / Área</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Estado</label>
-                            <select name="estado" id="corrEstado" class="form-select bg-dark text-white border-secondary">
-                                <option value="Activo">Activo</option>
-                                <option value="En Baja">En Baja</option>
-                                <option value="Eliminado">Eliminado</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Contraseña de Correo (Control Sistemas)</label>
-                        <input type="text" name="contrasena_guardada" id="corrPass" class="form-control bg-dark text-white border-secondary" placeholder="Clave asignada">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Observaciones / Notas</label>
-                        <textarea name="observaciones" id="corrObs" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="Detalles de la cuenta..."></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success btn-sm fw-semibold">Guardar Cuenta</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 4. MODAL: DAR DE BAJA CORREO -->
-<div class="modal fade" id="modalBajaCorreo" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold text-danger"><i class="bi bi-person-x-fill me-2"></i>Registrar Baja de Correo</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formBajaCorreo" onsubmit="confirmarBajaCorreo(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="bajaCorrId">
-                    <p class="small text-white mb-2" id="bajaCorrEmailLabel">Correo: ...</p>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Acción a Realizar *</label>
-                        <select name="estado" id="bajaCorrEstado" class="form-select bg-dark text-white border-secondary">
-                            <option value="En Baja">Marcar como "En Baja" (Temporal / Resguardo)</option>
-                            <option value="Eliminado">Marcar como "Eliminado" (Definitivo / Cancelado)</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Motivo de Baja / Cancelación *</label>
-                        <textarea name="motivo_baja" id="bajaCorrMotivo" rows="3" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Renuncia de colaborador, cambio de puesto, reasignación..." required></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger btn-sm fw-semibold">Aplicar Baja</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 5. MODAL: LICENCIA DE OFFICE (CREAR / EDITAR) -->
-<div class="modal fade" id="modalLicencia" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold" id="modalLicenciaTitulo"><i class="bi bi-key-fill text-primary me-2"></i>Licencia de Office</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formLicencia" onsubmit="guardarLicencia(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="licId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Código / Product Key *</label>
-                        <input type="text" name="codigo_licencia" id="licCodigo" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Producto / Versión *</label>
-                        <select name="nombre_producto" id="licProducto" class="form-select bg-dark text-white border-secondary">
-                            <option value="Microsoft 365 Business Standard">Microsoft 365 Business Standard</option>
-                            <option value="Microsoft 365 Business Basic">Microsoft 365 Business Basic</option>
-                            <option value="Office Hogar y Empresas 2021">Office Hogar y Empresas 2021</option>
-                            <option value="Office Hogar y Empresas 2019">Office Hogar y Empresas 2019</option>
-                            <option value="Office Professional Plus 2019">Office Professional Plus 2019</option>
-                            <option value="Microsoft 365 Apps for Enterprise">Microsoft 365 Apps for Enterprise</option>
-                        </select>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Tipo de Licencia</label>
-                            <select name="tipo_licencia" id="licTipo" class="form-select bg-dark text-white border-secondary">
-                                <option value="Digital / ESD">Digital / ESD</option>
-                                <option value="Suscripción Anual">Suscripción Anual</option>
-                                <option value="OEM">OEM (De fábrica)</option>
-                                <option value="FPP">FPP (Caja física)</option>
-                                <option value="Volumen">Volumen / MAK</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Estado</label>
-                            <select name="estado" id="licEstado" class="form-select bg-dark text-white border-secondary">
-                                <option value="Activa">Activa (Asignada)</option>
-                                <option value="Disponible">Disponible (Sin asignar)</option>
-                                <option value="Vencida">Vencida</option>
-                                <option value="Reasignada">Reasignada</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Cuenta Microsoft Asociada</label>
-                        <input type="email" name="cuenta_microsoft" id="licCuentaMs" class="form-control bg-dark text-white border-secondary" placeholder="correo.activacion@agencia.com">
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Equipo Asignado</label>
-                            <input type="text" name="equipo_asignado" id="licEquipo" class="form-control bg-dark text-white border-secondary" placeholder="Ej. PC-VTA-02">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Usuario Asignado</label>
-                            <input type="text" name="usuario_asignado" id="licUsuario" class="form-control bg-dark text-white border-secondary" placeholder="Nombre colaborador">
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Área / Depto</label>
-                        <select name="area" id="licArea" class="form-select bg-dark text-white border-secondary">
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-primary btn-sm fw-semibold">Guardar Licencia</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 6. MODAL: USUARIO GDS (CREAR / EDITAR) -->
-<div class="modal fade" id="modalGdsUsuario" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold" id="modalGdsUsrTitulo"><i class="bi bi-person-badge-fill text-warning me-2"></i>Usuario DMS / GDS</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formGdsUsuario" onsubmit="guardarGdsUsuario(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="gdsUsrId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Colaborador / Empleado *</label>
-                        <input type="text" name="colaborador" id="gdsUsrColaborador" class="form-control bg-dark text-white border-secondary" placeholder="Nombre completo" required>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Usuario GDS (Login) *</label>
-                            <input type="text" name="usuario_gds" id="gdsUsrLogin" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="ej. rmartinez" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Contraseña GDS *</label>
-                            <input type="text" name="password_gds" id="gdsUsrPass" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="Clave temporal" required>
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Área / Depto</label>
-                            <select name="area" id="gdsUsrArea" class="form-select bg-dark text-white border-secondary">
-                                <?php foreach ($areasDisponibles as $ar): ?>
-                                <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Puesto</label>
-                            <input type="text" name="puesto" id="gdsUsrPuesto" class="form-control bg-dark text-white border-secondary" placeholder="Puesto">
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Perfil / Rol GDS</label>
-                            <input type="text" name="perfil_gds" id="gdsUsrPerfil" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Ventas, Caja, Asesor">
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Sucursal</label>
-                            <input type="text" name="sucursal" id="gdsUsrSucursal" class="form-control bg-dark text-white border-secondary" value="Matriz">
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Estado</label>
-                            <select name="estado" id="gdsUsrEstado" class="form-select bg-dark text-white border-secondary">
-                                <option value="Activo">Activo</option>
-                                <option value="Suspendido">Suspendido</option>
-                                <option value="Baja">Baja</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Fecha Asignación</label>
-                            <input type="date" name="fecha_asignacion" id="gdsUsrFecha" class="form-control bg-dark text-white border-secondary" value="<?php echo date('Y-m-d'); ?>">
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-warning btn-sm fw-semibold">Guardar Usuario GDS</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 7. MODAL: PASSWORD DE MOVIMIENTO GDS (CREAR / EDITAR) -->
-<div class="modal fade" id="modalGdsPassword" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold text-danger" id="modalGdsPassTitulo"><i class="bi bi-shield-lock-fill me-2"></i>Contraseña de Movimiento GDS</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formGdsPassword" onsubmit="guardarGdsPassword(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="gdsPassId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Tipo de Movimiento / Operación Crítica *</label>
-                        <input type="text" name="tipo_movimiento" id="gdsPassTipo" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Cancelación de Facturas, Descuentos Especiales" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Descripción y Alcance de la Autorización</label>
-                        <textarea name="descripcion_movimiento" id="gdsPassDesc" rows="2" class="form-control bg-dark text-white border-secondary" placeholder="Detalles de la autorización requerida..."></textarea>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Contraseña de Movimiento *</label>
-                            <input type="text" name="password_movimiento" id="gdsPassVal" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="Clave de autorización" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Nivel de Seguridad</label>
-                            <select name="nivel_seguridad" id="gdsPassNivel" class="form-select bg-dark text-white border-secondary">
-                                <option value="Crítico">Crítico (Gerencial)</option>
-                                <option value="Alto" selected>Alto</option>
-                                <option value="Medio">Medio</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Usuario / Gerente Autorizado *</label>
-                            <input type="text" name="usuario_autorizado" id="gdsPassUsuario" class="form-control bg-dark text-white border-secondary" placeholder="Nombre completo" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Puesto / Cargo</label>
-                            <input type="text" name="puesto_autorizado" id="gdsPassPuesto" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Gerente Administrativo">
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Área / Depto</label>
-                        <select name="area" id="gdsPassArea" class="form-select bg-dark text-white border-secondary">
-                            <?php foreach ($areasDisponibles as $ar): ?>
-                            <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger btn-sm fw-semibold">Guardar Clave</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 8. MODAL: USUARIO GRP (CREAR / EDITAR) -->
-<div class="modal fade" id="modalGrpUsuario" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold text-info" id="modalGrpUsrTitulo"><i class="bi bi-people-fill me-2"></i>Usuario de GRP</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formGrpUsuario" onsubmit="guardarGrpUsuario(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="id" id="grpUsrId" value="0">
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Colaborador / Empleado *</label>
-                        <input type="text" name="colaborador" id="grpUsrColaborador" class="form-control bg-dark text-white border-secondary" placeholder="Nombre completo" required>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Usuario GRP *</label>
-                            <input type="text" name="usuario_grp" id="grpUsrLogin" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="Login GRP" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Contraseña GRP *</label>
-                            <input type="text" name="password_grp" id="grpUsrPass" class="form-control bg-dark text-white border-secondary font-monospace" placeholder="Password" required>
-                        </div>
-                    </div>
-                    <div class="row g-2 mb-3">
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Área</label>
-                            <select name="area" id="grpUsrArea" class="form-select bg-dark text-white border-secondary">
-                                <?php foreach ($areasDisponibles as $ar): ?>
-                                <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small text-secondary">Puesto</label>
-                            <input type="text" name="puesto" id="grpUsrPuesto" class="form-control bg-dark text-white border-secondary" placeholder="Puesto">
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Roles Asignados en GRP * (separados por coma)</label>
-                        <input type="text" name="roles_grp" id="grpUsrRoles" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Compras, Contabilidad, Tesorería, Facturación" required>
-                        <small class="text-secondary" style="font-size: 0.72rem;">Indica los perfiles o roles asignados dentro del ERP.</small>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Módulos Permitidos</label>
-                        <input type="text" name="modulos_permitidos" id="grpUsrModulos" class="form-control bg-dark text-white border-secondary" placeholder="Ej. Cuentas por Cobrar, Inventarios, Pólizas">
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-info btn-sm fw-semibold text-dark">Guardar Usuario GRP</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 9. MODAL: SUBIR RESPONSIVA FIRMADA (GENÉRICO PARA EQUIPOS, GDS O GRP) -->
-<div class="modal fade" id="modalSubirResponsivaDoc" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-secondary">
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title fw-bold text-success"><i class="bi bi-file-earmark-arrow-up-fill me-2"></i>Subir Carta Responsiva Firmada (PDF)</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="formSubirResponsivaDoc" onsubmit="enviarResponsivaDocumento(event)">
-                <div class="modal-body">
-                    <input type="hidden" name="tipo_entidad" id="subirDocTipo"> <!-- 'equipo', 'gds_usuario', 'gds_password', 'grp_usuario' -->
-                    <input type="hidden" name="entidad_id" id="subirDocId">
-                    <input type="hidden" name="seccion_equipo" id="subirDocSeccionEq">
-                    <p class="text-white small mb-3" id="subirDocLabelInfo">Documento: ...</p>
-                    <div class="mb-3">
-                        <label class="form-label small text-secondary">Seleccionar Archivo PDF Firmado *</label>
-                        <input type="file" name="archivo_pdf" id="archivoRespDocPdf" class="form-control bg-dark text-white border-secondary" accept="application/pdf" required>
-                        <small class="text-secondary" style="font-size: 0.72rem;">Sube el PDF escaneado con las firmas oficiales de entrega y recepción.</small>
-                    </div>
-                </div>
-                <div class="modal-footer border-secondary">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-success btn-sm fw-semibold" id="btnSubirDocSubmit"><i class="bi bi-cloud-arrow-up-fill me-1"></i> Guardar PDF Firmado</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- 10. MODAL: VISOR DE PDFS INTEGRADO -->
-<div class="modal fade" id="modalVisorPdf" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-centered" style="height: 90vh;">
-        <div class="modal-content bg-dark text-white border-secondary h-100">
-            <div class="modal-header border-secondary py-2">
-                <h6 class="modal-title fw-bold text-white mb-0" id="visorPdfTitulo"><i class="bi bi-file-earmark-pdf-fill text-danger me-2"></i>Visor de Documento</h6>
-                <div class="d-flex align-items-center gap-2">
-                    <a id="btnDescargarPdfDirecto" href="#" target="_blank" class="btn btn-outline-info btn-sm py-1 px-2" title="Abrir en pestaña nueva">
-                        <i class="bi bi-box-arrow-up-right me-1"></i> Abrir completo
-                    </a>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-            </div>
-            <div class="modal-body p-0 h-100 bg-secondary bg-opacity-10">
-                <iframe id="iframeVisorPdf" src="" style="width: 100%; height: 100%; border: none;"></iframe>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- SCRIPTS DEL MÓDULO AUDITORÍA INTERNA -->
-<script>
-let seccionActiva = 'responsivas';
-let cacheDatos = {
-    responsivas: [],
-    mantenimiento: [],
-    correos: [],
-    licencias: [],
-    gds_usr: [],
-    gds_pass: [],
-    grp_usr: []
-};
-
-// Inicialización
-document.addEventListener('DOMContentLoaded', () => {
-    cargarResponsivasEquipos();
-});
-
-function cambiarSeccionActiva(sec) {
-    seccionActiva = sec;
-    if (sec === 'responsivas') cargarResponsivasEquipos();
-    else if (sec === 'mantenimiento') cargarMantenimientos();
-    else if (sec === 'correos') cargarCorreos();
-    else if (sec === 'licencias') cargarLicencias();
-    else if (sec === 'gds_usr') cargarGdsUsuarios();
-    else if (sec === 'gds_pass') cargarGdsPasswords();
-    else if (sec === 'grp_usr') cargarGrpUsuarios();
-}
-
-// =============================================================================
-// 1. CARGA: RESPONSIVAS DE EQUIPOS
-// =============================================================================
-function cargarResponsivasEquipos() {
-    const area = document.getElementById('filtroAreaResp')?.value || '';
-    const estado = document.getElementById('filtroEstadoResp')?.value || '';
-    const busq = document.getElementById('busqResp')?.value || '';
-
-    const tbody = document.getElementById('tbodyResponsivasEquipos');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_responsivas_equipos&area=${encodeURIComponent(area)}&estado_resp=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.responsivas = res.datos || [];
-            
-            const contEl = document.getElementById('contadorBadgeResponsivas');
-            if (contEl) contEl.innerText = `${cacheDatos.responsivas.length} equipos en inventario`;
-
-            if (cacheDatos.responsivas.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-secondary">No se encontraron equipos bajo los filtros seleccionados.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.responsivas.forEach(e => {
-                const badgeResp = e.tiene_responsiva === 1
-                    ? '<span class="badge-status-pill badge-ok"><i class="bi bi-check-circle-fill"></i> Firmada (PDF)</span>'
-                    : '<span class="badge-status-pill badge-err"><i class="bi bi-clock-history"></i> Pendiente</span>';
-
-                let btnVerResp = '';
-                if (e.tiene_responsiva === 1) {
-                    btnVerResp = `
-                        <button type="button" class="btn btn-outline-info btn-sm px-2 py-0 me-1" onclick="verPdfModal('${e.responsiva_url}', 'Responsiva - ${e.nombre_equipo}')" title="Visualizar responsiva firmada">
-                            <i class="bi bi-eye-fill"></i>
-                        </button>
-                    `;
-                }
-
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${e.nombre_equipo}</strong></td>
-                        <td>${e.usuario}</td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${e.area}</span></td>
-                        <td><small class="text-secondary">${e.puesto}</small></td>
-                        <td><span class="badge bg-dark text-secondary">${e.tipo}</span> ${e.marca} ${e.modelo}</td>
-                        <td><code class="text-secondary">${e.serie}</code></td>
-                        <td class="text-center">${badgeResp}</td>
-                        <td class="text-end text-nowrap">
-                            ${btnVerResp}
-                            <a href="generar_responsiva.php?id=${e.id}&sec=${e.seccion}" target="_blank" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" title="Generar formato de Responsiva para imprimir y firmar">
-                                <i class="bi bi-printer-fill me-1"></i> Imprimir
-                            </a>
-                            <button type="button" class="btn btn-outline-success btn-sm px-2 py-0" onclick="abrirModalSubirResponsivaEquipo(${e.id}, '${e.seccion}', '${e.nombre_equipo} (${e.usuario})')" title="Subir PDF de la responsiva firmada">
-                                <i class="bi bi-upload"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
-
-function abrirModalSubirResponsivaEquipo(id, seccion, label) {
-    document.getElementById('subirDocTipo').value = 'equipo';
-    document.getElementById('subirDocId').value = id;
-    document.getElementById('subirDocSeccionEq').value = seccion;
-    document.getElementById('subirDocLabelInfo').innerHTML = `Equipo: <strong>${label}</strong>`;
-    document.getElementById('archivoRespDocPdf').value = '';
-    const modal = new bootstrap.Modal(document.getElementById('modalSubirResponsivaDoc'));
-    modal.show();
-}
-
-// =============================================================================
-// 2. CARGA: PLANES DE MANTENIMIENTO
-// =============================================================================
-function cargarMantenimientos() {
-    const area = document.getElementById('filtroAreaMant')?.value || '';
-    const estado = document.getElementById('filtroEstadoMant')?.value || '';
-    const busq = document.getElementById('busqMant')?.value || '';
-
-    const tbody = document.getElementById('tbodyMantenimientos');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_mantenimientos&area=${encodeURIComponent(area)}&estado=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.mantenimiento = res.datos || [];
-
-            const contEl = document.getElementById('contadorMantenimientos');
-            if (contEl) contEl.innerText = `${cacheDatos.mantenimiento.length} registros`;
-
-            if (cacheDatos.mantenimiento.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-secondary">No hay planes de mantenimiento registrados con estos filtros.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.mantenimiento.forEach(m => {
-                let badgeClass = 'badge-warn';
-                if (m.estado === 'Realizado') badgeClass = 'badge-ok';
-                else if (m.estado === 'Atrasado') badgeClass = 'badge-err';
-                else if (m.estado === 'En Proceso') badgeClass = 'badge-info';
-
-                let evidenciaHtml = '<span class="badge-status-pill badge-err"><i class="bi bi-clock"></i> Pendiente</span>';
-                if (m.evidencia_pdf_url) {
-                    evidenciaHtml = `
-                        <button type="button" class="btn btn-outline-success btn-sm px-2 py-0" onclick="verPdfModal('${m.evidencia_pdf_url}', 'Evidencia Mantenimiento - ${m.nombre_equipo}')" title="Ver reporte de mantenimiento en PDF">
-                            <i class="bi bi-file-earmark-check-fill me-1"></i> Ver PDF
-                        </button>
-                    `;
-                }
-
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${m.nombre_equipo}</strong></td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${m.area || 'General'}</span></td>
-                        <td>${m.usuario_responsable || 'Sin asignar'}</td>
-                        <td><span class="badge bg-dark text-info">${m.tipo_mantenimiento}</span></td>
-                        <td>${m.fecha_programada}</td>
-                        <td>${m.fecha_realizada || '-'}</td>
-                        <td>${m.frecuencia}</td>
-                        <td class="text-center"><span class="badge-status-pill ${badgeClass}">${m.estado}</span></td>
-                        <td><small class="text-secondary">${m.tecnico_responsable || 'Sistemas'}</small></td>
-                        <td class="text-center">${evidenciaHtml}</td>
-                        <td class="text-end text-nowrap">
-                            <button type="button" class="btn btn-outline-info btn-sm px-2 py-0 me-1" onclick="abrirModalSubirEvidenciaMant(${m.id}, '${m.nombre_equipo}')" title="Adjuntar reporte de servicio / evidencia PDF">
-                                <i class="bi bi-upload"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarMantenimiento(${JSON.stringify(m)})' title="Editar plan">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-2 py-0" onclick="eliminarMantenimiento(${m.id})" title="Eliminar registro">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="11" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
-
-function abrirModalNuevoMantenimiento() {
-    document.getElementById('formMantenimiento').reset();
-    document.getElementById('mantId').value = 0;
-    document.getElementById('mantFechaProg').value = new Date().toISOString().slice(0, 10);
-    document.getElementById('modalMantenimientoTitulo').innerHTML = '<i class="bi bi-tools text-warning me-2"></i>Programar Mantenimiento';
-    const modal = new bootstrap.Modal(document.getElementById('modalMantenimiento'));
-    modal.show();
-}
-
-function abrirModalEditarMantenimiento(m) {
-    document.getElementById('mantId').value = m.id;
-    document.getElementById('mantEquipo').value = m.nombre_equipo;
-    document.getElementById('mantArea').value = m.area || 'General';
-    document.getElementById('mantUsuario').value = m.usuario_responsable || '';
-    document.getElementById('mantTipo').value = m.tipo_mantenimiento || 'Preventivo';
-    document.getElementById('mantFechaProg').value = m.fecha_programada;
-    document.getElementById('mantFrecuencia').value = m.frecuencia || 'Semestral';
-    document.getElementById('mantEstado').value = m.estado || 'Programado';
-    document.getElementById('mantTecnico').value = m.tecnico_responsable || 'Sistemas';
-    document.getElementById('mantObs').value = m.observaciones || '';
-    document.getElementById('modalMantenimientoTitulo').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i>Editar Plan de Mantenimiento';
-    const modal = new bootstrap.Modal(document.getElementById('modalMantenimiento'));
-    modal.show();
-}
-
-function guardarMantenimiento(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formMantenimiento'));
-    formData.append('action', 'guardar_mantenimiento');
-
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalMantenimiento')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarMantenimientos();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
-
-function abrirModalSubirEvidenciaMant(id, equipo) {
-    document.getElementById('evidenciaMantId').value = id;
-    document.getElementById('evidenciaEquipoLabel').innerHTML = `Equipo: <strong>${equipo}</strong>`;
-    document.getElementById('archivoEvidenciaPdf').value = '';
-    const modal = new bootstrap.Modal(document.getElementById('modalSubirEvidencia'));
-    modal.show();
-}
-
-function enviarEvidenciaMantenimiento(e) {
-    e.preventDefault();
-    const btn = document.getElementById('btnSubirEvid');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Subiendo...';
-
-    const formData = new FormData(document.getElementById('formSubirEvidencia'));
-    formData.append('action', 'subir_evidencia_mantenimiento');
-
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill me-1"></i> Subir Evidencia';
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalSubirEvidencia')).hide();
-            Swal.fire({ title: 'Evidencia Guardada', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarMantenimientos();
-        })
-        .catch(err => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill me-1"></i> Subir Evidencia';
-            Swal.fire('Error', err.message, 'error');
-        });
-}
-
-function eliminarMantenimiento(id) {
-    Swal.fire({
-        title: '¿Eliminar mantenimiento?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_mantenimiento');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarMantenimientos();
-                });
-        }
-    });
-}
-
-// =============================================================================
-// 3. CARGA: CONTROL DE CORREOS
-// =============================================================================
-function cargarCorreos() {
-    const area = document.getElementById('filtroAreaCorr')?.value || '';
-    const estado = document.getElementById('filtroEstadoCorr')?.value || '';
-    const busq = document.getElementById('busqCorr')?.value || '';
-
-    const tbody = document.getElementById('tbodyCorreos');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_correos&area=${encodeURIComponent(area)}&estado=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.correos = res.datos || [];
-
-            const contEl = document.getElementById('contadorCorreos');
-            if (contEl) contEl.innerText = `${cacheDatos.correos.length} cuentas`;
-
-            if (cacheDatos.correos.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-secondary">No se encontraron cuentas de correo.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.correos.forEach(c => {
-                let badgeClass = 'badge-ok';
-                if (c.estado === 'En Baja') badgeClass = 'badge-warn';
-                else if (c.estado === 'Eliminado') badgeClass = 'badge-err';
-
-                const passId = `corrPass_${c.id}`;
-                const passVal = c.contrasena_guardada || '';
-                const passHtml = passVal ? `
-                    <div class="d-flex align-items-center gap-1">
-                        <span id="${passId}" class="pass-hidden" data-pass="${escapeHtml(passVal)}">••••••••</span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="togglePassView('${passId}')" title="Ver contraseña">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="copiarAlPortapapeles('${escapeHtml(passVal)}')" title="Copiar contraseña">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
-                    </div>
-                ` : '<span class="text-secondary small">N/A</span>';
-
-                let infoBaja = '-';
-                if (c.estado !== 'Activo') {
-                    infoBaja = `<span class="text-warning">${c.fecha_baja || 'Fecha no registrada'}</span><br><small class="text-secondary">${c.motivo_baja || 'Sin motivo especificado'}</small>`;
-                }
-
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${c.nombre_colaborador}</strong></td>
-                        <td><code class="text-info">${c.correo}</code></td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${c.area || 'General'}</span></td>
-                        <td>${c.puesto || 'N/A'}</td>
-                        <td><span class="badge bg-dark text-secondary">${c.tipo_cuenta}</span></td>
-                        <td class="text-center"><span class="badge-status-pill ${badgeClass}">${c.estado}</span></td>
-                        <td>${c.fecha_alta || '-'}</td>
-                        <td>${infoBaja}</td>
-                        <td>${passHtml}</td>
-                        <td class="text-end text-nowrap">
-                            ${c.estado === 'Activo' ? `
-                                <button type="button" class="btn btn-outline-danger btn-sm px-2 py-0 me-1" onclick="abrirModalBajaCorreo(${c.id}, '${c.correo}')" title="Poner en Baja o Cancelar">
-                                    <i class="bi bi-person-x"></i> Baja
-                                </button>
-                            ` : `
-                                <button type="button" class="btn btn-outline-success btn-sm px-2 py-0 me-1" onclick="reactivarCorreo(${c.id})" title="Reactivar cuenta">
-                                    <i class="bi bi-check-circle"></i> Reactivar
-                                </button>
-                            `}
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarCorreo(${JSON.stringify(c)})' title="Editar cuenta">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-0" onclick="eliminarCorreo(${c.id})" title="Eliminar registro">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
-
-function sincronizarCorreos() {
-    Swal.fire({
-        title: 'Sincronizando cuentas de correo...',
-        text: 'Buscando cuentas activas en el inventario de equipos y directorio institucional...',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-
-    const fd = new FormData();
-    fd.append('action', 'sincronizar_correos');
-    fetch('api_auditoria.php', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            Swal.fire({ title: '¡Sincronizado!', text: res.mensaje, icon: 'success' });
-            cargarCorreos();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
-
-function abrirModalNuevoCorreo() {
-    document.getElementById('formCorreo').reset();
-    document.getElementById('corrId').value = 0;
-    document.getElementById('modalCorreoTitulo').innerHTML = '<i class="bi bi-envelope-fill text-success me-2"></i>Nueva Cuenta de Correo';
-    const modal = new bootstrap.Modal(document.getElementById('modalCorreo'));
-    modal.show();
-}
-
-function abrirModalEditarCorreo(c) {
-    document.getElementById('corrId').value = c.id;
-    document.getElementById('corrNombre').value = c.nombre_colaborador;
-    document.getElementById('corrEmail').value = c.correo;
-    document.getElementById('corrArea').value = c.area || 'General';
-    document.getElementById('corrPuesto').value = c.puesto || '';
-    document.getElementById('corrTipo').value = c.tipo_cuenta || 'Corporativo';
-    document.getElementById('corrEstado').value = c.estado || 'Activo';
-    document.getElementById('corrPass').value = c.contrasena_guardada || '';
-    document.getElementById('corrObs').value = c.observaciones || '';
-    document.getElementById('modalCorreoTitulo').innerHTML = '<i class="bi bi-pencil-square text-success me-2"></i>Editar Cuenta de Correo';
-    const modal = new bootstrap.Modal(document.getElementById('modalCorreo'));
-    modal.show();
-}
-
-function guardarCorreo(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formCorreo'));
-    formData.append('action', 'guardar_correo');
-
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalCorreo')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarCorreos();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
-
-function abrirModalBajaCorreo(id, email) {
-    document.getElementById('bajaCorrId').value = id;
-    document.getElementById('bajaCorrEmailLabel').innerHTML = `Cuenta a desactivar: <strong class="text-warning">${email}</strong>`;
-    document.getElementById('bajaCorrMotivo').value = '';
-    const modal = new bootstrap.Modal(document.getElementById('modalBajaCorreo'));
-    modal.show();
-}
-
-function confirmarBajaCorreo(e) {
-    e.preventDefault();
-    const fd = new FormData(document.getElementById('formBajaCorreo'));
-    fd.append('action', 'cambiar_estado_correo');
-
-    fetch('api_auditoria.php', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalBajaCorreo')).hide();
-            Swal.fire({ title: 'Baja Aplicada', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarCorreos();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
-
-function reactivarCorreo(id) {
-    const fd = new FormData();
-    fd.append('action', 'cambiar_estado_correo');
-    fd.append('id', id);
-    fd.append('estado', 'Activo');
-
-    fetch('api_auditoria.php', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cargarCorreos();
-        });
-}
-
-function eliminarCorreo(id) {
-    Swal.fire({
-        title: '¿Eliminar cuenta de correo?',
-        text: 'Se eliminará del registro de auditoría.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_correo');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarCorreos();
-                });
-        }
-    });
-}
-
-// =============================================================================
-// 4. CARGA: LICENCIAS DE OFFICE
-// =============================================================================
-function cargarLicencias() {
-    const area = document.getElementById('filtroAreaLic')?.value || '';
-    const estado = document.getElementById('filtroEstadoLic')?.value || '';
-    const busq = document.getElementById('busqLic')?.value || '';
-
-    const tbody = document.getElementById('tbodyLicencias');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_licencias&area=${encodeURIComponent(area)}&estado=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.licencias = res.datos || [];
-
-            const contEl = document.getElementById('contadorLicencias');
-            if (contEl) contEl.innerText = `${cacheDatos.licencias.length} licencias`;
-
-            if (cacheDatos.licencias.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-secondary">No hay licencias registradas.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.licencias.forEach(l => {
-                let badgeClass = (l.estado === 'Activa') ? 'badge-ok' : ((l.estado === 'Disponible') ? 'badge-info' : 'badge-err');
-
-                html += `
-                    <tr>
-                        <td>
-                            <div class="d-flex align-items-center gap-1">
-                                <code class="text-warning fw-bold">${l.codigo_licencia}</code>
-                                <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="copiarAlPortapapeles('${escapeHtml(l.codigo_licencia)}')" title="Copiar Product Key">
-                                    <i class="bi bi-clipboard"></i>
-                                </button>
+                <div class="row g-4">
+                    <!-- BOTÓN 1: RESPONSIVAS DE EQUIPOS -->
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="big-hub-button hub-btn-infra" onclick="abrirModulo('responsivas')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-laptop"></i>
+                                </div>
+                                <div class="hub-title">Responsivas de Equipos</div>
+                                <div class="hub-desc">
+                                    Generación de responsivas físicas de inventario para firma y subida del expediente firmado en PDF.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge"><?php echo $cntTotalEquipos; ?> Equipos</span>
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntFirmadasEq; ?> Firmadas</span>
+                                    <span class="hub-badge badge-warning-glow"><?php echo $cntPendientesEq; ?> Pendientes</span>
+                                </div>
                             </div>
-                        </td>
-                        <td><strong class="text-white">${l.nombre_producto}</strong></td>
-                        <td><span class="badge bg-dark text-secondary">${l.tipo_licencia}</span></td>
-                        <td><small class="text-info">${l.cuenta_microsoft || 'N/A'}</small></td>
-                        <td>${l.equipo_asignado || '<span class="text-secondary">Sin asignar</span>'}</td>
-                        <td>${l.usuario_asignado || '<span class="text-secondary">Sin asignar</span>'}</td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${l.area || 'General'}</span></td>
-                        <td class="text-center"><span class="badge-status-pill ${badgeClass}">${l.estado}</span></td>
-                        <td>${l.fecha_compra || '-'}</td>
-                        <td class="text-end text-nowrap">
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarLicencia(${JSON.stringify(l)})' title="Editar licencia">
-                                <i class="bi bi-pencil"></i>
+                            <div class="hub-open-cta">
+                                <span>Abrir Módulo</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN 2: PLANES DE MANTENIMIENTO -->
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="big-hub-button hub-btn-infra" onclick="abrirModulo('mantenimiento')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-calendar-check-fill"></i>
+                                </div>
+                                <div class="hub-title">Planes de Mantenimiento</div>
+                                <div class="hub-desc">
+                                    Calendario preventivo/correctivo por área y equipo con carga de evidencia y expedientes en PDF.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge"><?php echo $cntTotalManten; ?> Programados</span>
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntRealizadosM; ?> Realizados</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Calendario</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN 3: CONTROL DE CORREOS -->
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="big-hub-button hub-btn-infra" onclick="abrirModulo('correos')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-envelope-at-fill"></i>
+                                </div>
+                                <div class="hub-title">Control de Correos</div>
+                                <div class="hub-desc">
+                                    Matriz corporativa de cuentas de correo, gestión de bajas, eliminaciones y sincronización directa.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntActivosCorr; ?> Activos</span>
+                                    <span class="hub-badge badge-warning-glow"><?php echo $cntBajaCorr; ?> En Baja</span>
+                                    <span class="hub-badge"><?php echo $cntEliminCorr; ?> Eliminados</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Correos</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN 4: LICENCIAS DE OFFICE -->
+                    <div class="col-12 col-md-6 col-xl-3">
+                        <div class="big-hub-button hub-btn-infra" onclick="abrirModulo('licencias')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-microsoft"></i>
+                                </div>
+                                <div class="hub-title">Licencias de Office</div>
+                                <div class="hub-desc">
+                                    Product Keys corporativas, cuentas Microsoft vinculadas, equipos asignados y estatus de vigencia.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntTotalLicencias; ?> Licencias Activas</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Licencias</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECCIÓN 2: SEGURIDAD DE LA INFORMACIÓN -->
+            <div>
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <span class="section-header-pill pill-seguridad">
+                        <i class="bi bi-shield-lock-fill"></i> 2. Seguridad de la Información
+                    </span>
+                    <span class="text-secondary small">3 Módulos de Accesos & Criptografía</span>
+                </div>
+
+                <div class="row g-4">
+                    <!-- BOTÓN 5: USUARIOS GDS -->
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="big-hub-button hub-btn-seguridad" onclick="abrirModulo('gds_usuarios')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-person-badge-fill"></i>
+                                </div>
+                                <div class="hub-title">Usuarios GDS (DMS)</div>
+                                <div class="hub-desc">
+                                    Asignación de credenciales del sistema central GDS, generación de responsiva formal y subida de PDF firmado.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge"><?php echo $cntTotalGds; ?> Usuarios Asignados</span>
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntGdsResp; ?> Responsivas OK</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Usuarios GDS</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN 6: PASSWORD GDS (MOVIMIENTOS CRÍTICOS) -->
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="big-hub-button hub-btn-seguridad" onclick="abrirModulo('gds_passwords')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-key-fill"></i>
+                                </div>
+                                <div class="hub-title">Password GDS (Movimientos)</div>
+                                <div class="hub-desc">
+                                    Claves de cancelación, notas de crédito y descuentos especiales con acta responsiva para gerentes.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge badge-warning-glow"><?php echo $cntTotalPassMov; ?> Claves Críticas</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Claves</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- BOTÓN 7: CONTROL DE USUARIOS GRP -->
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <div class="big-hub-button hub-btn-seguridad" onclick="abrirModulo('grp_usuarios')">
+                            <div>
+                                <div class="hub-icon-box">
+                                    <i class="bi bi-shield-shaded"></i>
+                                </div>
+                                <div class="hub-title">Usuarios & Roles GRP</div>
+                                <div class="hub-desc">
+                                    Asignación de usuarios, contraseñas y roles autorizados en GRP con generación y custodia de responsiva.
+                                </div>
+                                <div class="hub-stats-row">
+                                    <span class="hub-badge"><?php echo $cntTotalGrp; ?> Usuarios GRP</span>
+                                    <span class="hub-badge badge-success-glow"><?php echo $cntGrpResp; ?> Responsivas OK</span>
+                                </div>
+                            </div>
+                            <div class="hub-open-cta">
+                                <span>Abrir Usuarios GRP</span>
+                                <i class="bi bi-arrow-right-circle-fill fs-5"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+
+        <!-- ===================================================================
+             SUB-MÓDULO 1: RESPONSIVAS DE EQUIPOS (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-responsivas" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-laptop text-info me-2"></i> Responsivas de Equipos</h4>
+                        <span class="text-secondary small">Equipos de cómputo vinculados al Inventario</span>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 260px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" id="busq-equipos" class="form-control form-control-sm" placeholder="Buscar equipo o usuario..." onkeyup="filtrarCards('card-equipo', this.value)">
+                    </div>
+
+                    <button type="button" class="filter-pill-btn active" onclick="filtrarEstadoResp(this, 'todos')">Todos (<?php echo $cntTotalEquipos; ?>)</button>
+                    <button type="button" class="filter-pill-btn" onclick="filtrarEstadoResp(this, 'firmadas')">Firmadas (<?php echo $cntFirmadasEq; ?>)</button>
+                    <button type="button" class="filter-pill-btn" onclick="filtrarEstadoResp(this, 'pendientes')">Pendientes (<?php echo $cntPendientesEq; ?>)</button>
+
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('responsivas')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE EQUIPOS (NO TABLAS) -->
+            <div class="row g-3" id="contenedor-equipos">
+                <?php if (empty($equiposInventario)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-laptop text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay equipos registrados en el inventario.</h5>
+                </div>
+                <?php else: ?>
+                <?php foreach ($equiposInventario as $eq): 
+                    $tieneResp = !empty($eq['responsiva_url']);
+                ?>
+                <div class="col-12 col-md-6 col-lg-4 col-xl-3 card-equipo" 
+                     data-search="<?php echo htmlspecialchars(strtolower($eq['nombre_equipo'] . ' ' . $eq['usuario'] . ' ' . $eq['departamento'] . ' ' . $eq['serie'])); ?>"
+                     data-estado="<?php echo $tieneResp ? 'firmadas' : 'pendientes'; ?>">
+                    <div class="item-action-card">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon">
+                                        <i class="bi bi-pc-display"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($eq['nombre_equipo']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($eq['departamento'] ?: 'General'); ?></p>
+                                    </div>
+                                </div>
+                                <?php if ($tieneResp): ?>
+                                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50"><i class="bi bi-check-circle-fill"></i> Firmada</span>
+                                <?php else: ?>
+                                    <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50"><i class="bi bi-clock-history"></i> Pendiente</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Responsable</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($eq['usuario'] ?: 'Sin Asignar'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Puesto</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($eq['puesto'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Marca / Modelo</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars(($eq['marca'] ?? '') . ' ' . ($eq['modelo'] ?? '')); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">No. Serie</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($eq['serie'] ?: 'S/N'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA EL EQUIPO -->
+                        <div class="item-card-actions">
+                            <!-- BOTÓN GENERAR E IMPRIMIR RESPONSIVA CON DATOS -->
+                            <a href="generar_responsiva.php?id=<?php echo $eq['id']; ?>&sec=equipos_vw" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir Responsiva Oficial con datos para firma física">
+                                <i class="bi bi-printer-fill"></i> Imprimir Responsiva
+                            </a>
+
+                            <!-- BOTÓN SUBIR ARCHIVO FIRMADO -->
+                            <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('equipo', <?php echo $eq['id']; ?>, '<?php echo htmlspecialchars($eq['nombre_equipo']); ?>')" title="Subir expediente PDF firmado">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
                             </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-2 py-0" onclick="eliminarLicencia(${l.id})" title="Eliminar registro">
+
+                            <!-- BOTÓN VER PDF SI YA ESTÁ SUBIDO -->
+                            <?php if ($tieneResp): ?>
+                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($eq['responsiva_url']); ?>', 'Responsiva - <?php echo htmlspecialchars($eq['nombre_equipo']); ?>')" title="Ver PDF firmado">
+                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+
+
+        <!-- ===================================================================
+             SUB-MÓDULO 2: PLANES DE MANTENIMIENTO (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-mantenimiento" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-calendar-check-fill text-info me-2"></i> Planes de Mantenimiento</h4>
+                        <span class="text-secondary small">Calendario y expedientes de evidencia preventiva y correctiva</span>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 240px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control form-control-sm" placeholder="Buscar equipo o área..." onkeyup="filtrarCards('card-mantenimiento', this.value)">
+                    </div>
+
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalMantenimiento(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Programar Mantenimiento
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('mantenimiento')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE MANTENIMIENTO (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($mantenimientos)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-calendar-x text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay mantenimientos programados.</h5>
+                    <button type="button" class="btn-gold-main mt-2" onclick="abrirModalMantenimiento(0)">
+                        <i class="bi bi-plus-lg"></i> Crear Primer Plan de Mantenimiento
+                    </button>
+                </div>
+                <?php else: ?>
+                <?php foreach ($mantenimientos as $m): 
+                    $tieneEvid = !empty($m['evidencia_pdf_url']);
+                    $stClass = ($m['estado'] === 'Realizado') ? 'success' : (($m['estado'] === 'En Proceso') ? 'info' : 'warning');
+                ?>
+                <div class="col-12 col-md-6 col-lg-4 card-mantenimiento" data-search="<?php echo htmlspecialchars(strtolower($m['nombre_equipo'] . ' ' . $m['area'] . ' ' . $m['usuario_responsable'] . ' ' . $m['tecnico_responsable'])); ?>">
+                    <div class="item-action-card">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon">
+                                        <i class="bi bi-tools"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($m['nombre_equipo']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($m['area']); ?> | <?php echo htmlspecialchars($m['tipo_mantenimiento']); ?></p>
+                                    </div>
+                                </div>
+                                <span class="badge bg-<?php echo $stClass; ?> bg-opacity-25 text-<?php echo $stClass; ?> border border-<?php echo $stClass; ?> border-opacity-50">
+                                    <?php echo htmlspecialchars($m['estado']); ?>
+                                </span>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Fecha Programada</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['fecha_programada']); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Frecuencia</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['frecuencia'] ?: 'Semestral'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Técnico</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['tecnico_responsable'] ?: 'Sistemas'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Responsable</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['usuario_responsable'] ?: 'N/A'); ?></span>
+                                </div>
+                            </div>
+                            <?php if (!empty($m['observaciones'])): ?>
+                            <p class="text-secondary small mb-3 fst-italic" style="font-size: 0.78rem;">
+                                "<?php echo htmlspecialchars($m['observaciones']); ?>"
+                            </p>
+                            <?php endif; ?>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA MANTENIMIENTO -->
+                        <div class="item-card-actions">
+                            <button type="button" class="btn-action-tile btn-tile-gold" onclick="abrirModalSubirPdf('mantenimiento', <?php echo $m['id']; ?>, '<?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir Evidencia PDF
+                            </button>
+
+                            <?php if ($tieneEvid): ?>
+                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($m['evidencia_pdf_url']); ?>', 'Evidencia - <?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver Evidencia
+                            </button>
+                            <?php endif; ?>
+
+                            <button type="button" class="btn-action-tile" onclick='editarMantenimiento(<?php echo json_encode($m); ?>)'>
+                                <i class="bi bi-pencil-square"></i> Editar
+                            </button>
+
+                            <?php if ($puedeEliminar): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('mantenimiento', <?php echo $m['id']; ?>)">
                                 <i class="bi bi-trash"></i>
                             </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
 
-function abrirModalNuevaLicencia() {
-    document.getElementById('formLicencia').reset();
-    document.getElementById('licId').value = 0;
-    document.getElementById('modalLicenciaTitulo').innerHTML = '<i class="bi bi-key-fill text-primary me-2"></i>Registrar Licencia de Office';
-    const modal = new bootstrap.Modal(document.getElementById('modalLicencia'));
-    modal.show();
-}
 
-function abrirModalEditarLicencia(l) {
-    document.getElementById('licId').value = l.id;
-    document.getElementById('licCodigo').value = l.codigo_licencia;
-    document.getElementById('licProducto').value = l.nombre_producto;
-    document.getElementById('licTipo').value = l.tipo_licencia || 'Digital / ESD';
-    document.getElementById('licCuentaMs').value = l.cuenta_microsoft || '';
-    document.getElementById('licEquipo').value = l.equipo_asignado || '';
-    document.getElementById('licUsuario').value = l.usuario_asignado || '';
-    document.getElementById('licArea').value = l.area || 'General';
-    document.getElementById('licEstado').value = l.estado || 'Activa';
-    document.getElementById('modalLicenciaTitulo').innerHTML = '<i class="bi bi-pencil-square text-primary me-2"></i>Editar Licencia de Office';
-    const modal = new bootstrap.Modal(document.getElementById('modalLicencia'));
-    modal.show();
-}
+        <!-- ===================================================================
+             SUB-MÓDULO 3: CONTROL DE CORREOS (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-correos" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-envelope-at-fill text-info me-2"></i> Control de Correos</h4>
+                        <span class="text-secondary small">Cuentas corporativas, bajas y eliminaciones</span>
+                    </div>
+                </div>
 
-function guardarLicencia(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formLicencia'));
-    formData.append('action', 'guardar_licencia');
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 240px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control form-control-sm" placeholder="Buscar correo o persona..." onkeyup="filtrarCards('card-correo', this.value)">
+                    </div>
 
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalLicencia')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarLicencias();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalCorreo(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Nuevo Correo
+                    </button>
+                    <button type="button" class="btn-outline-gold btn-sm" onclick="sincronizarCorreos()">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizar
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('correos')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
 
-function eliminarLicencia(id) {
-    Swal.fire({
-        title: '¿Eliminar licencia?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_licencia');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarLicencias();
-                });
-        }
-    });
-}
+            <!-- GRID DE TARJETAS DE CORREOS (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($correos)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-envelope-x text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay correos registrados.</h5>
+                    <button type="button" class="btn-gold-main mt-2" onclick="sincronizarCorreos()">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizar Automáticamente
+                    </button>
+                </div>
+                <?php else: ?>
+                <?php foreach ($correos as $c): 
+                    $estCorr = $c['estado'];
+                    $badgeCls = ($estCorr === 'Activo') ? 'success' : (($estCorr === 'En Baja') ? 'warning' : 'danger');
+                ?>
+                <div class="col-12 col-md-6 col-lg-4 col-xl-3 card-correo" data-search="<?php echo htmlspecialchars(strtolower($c['correo'] . ' ' . $c['nombre_colaborador'] . ' ' . $c['area'] . ' ' . $c['puesto'])); ?>">
+                    <div class="item-action-card">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon">
+                                        <i class="bi bi-envelope-check"></i>
+                                    </div>
+                                    <div style="overflow: hidden;">
+                                        <h6 class="item-main-title text-truncate" title="<?php echo htmlspecialchars($c['correo']); ?>">
+                                            <?php echo htmlspecialchars($c['correo']); ?>
+                                        </h6>
+                                        <p class="item-sub-title text-truncate"><?php echo htmlspecialchars($c['nombre_colaborador']); ?></p>
+                                    </div>
+                                </div>
+                                <span class="badge bg-<?php echo $badgeCls; ?> bg-opacity-25 text-<?php echo $badgeCls; ?> border border-<?php echo $badgeCls; ?> border-opacity-50">
+                                    <?php echo htmlspecialchars($estCorr); ?>
+                                </span>
+                            </div>
 
-// =============================================================================
-// 5. CARGA: USUARIOS GDS
-// =============================================================================
-function cargarGdsUsuarios() {
-    const area = document.getElementById('filtroAreaGdsUsr')?.value || '';
-    const estado = document.getElementById('filtroEstadoGdsUsr')?.value || '';
-    const busq = document.getElementById('busqGdsUsr')?.value || '';
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Área</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($c['area'] ?: 'General'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Puesto</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($c['puesto'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Tipo</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($c['tipo_correo'] ?: 'Personal'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Fecha Estado</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($c['fecha_baja'] ?: 'Activo'); ?></span>
+                                </div>
+                            </div>
+                            <?php if (!empty($c['motivo_baja'])): ?>
+                            <p class="text-warning small mb-2 fst-italic" style="font-size: 0.75rem;">
+                                Motivo: <?php echo htmlspecialchars($c['motivo_baja']); ?>
+                            </p>
+                            <?php endif; ?>
+                        </div>
 
-    const tbody = document.getElementById('tbodyGdsUsuarios');
-    if (!tbody) return;
+                        <!-- BOTONES DE ACCIÓN PARA CORREO -->
+                        <div class="item-card-actions">
+                            <?php if ($estCorr === 'Activo'): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger" onclick="cambiarEstadoCorreo(<?php echo $c['id']; ?>, 'En Baja')" title="Marcar cuenta de correo En Baja">
+                                <i class="bi bi-slash-circle"></i> Dar de Baja
+                            </button>
+                            <button type="button" class="btn-action-tile btn-tile-danger" onclick="cambiarEstadoCorreo(<?php echo $c['id']; ?>, 'Eliminado')" title="Marcar como Eliminado">
+                                <i class="bi bi-x-octagon"></i> Eliminar
+                            </button>
+                            <?php else: ?>
+                            <button type="button" class="btn-action-tile btn-tile-gold" onclick="cambiarEstadoCorreo(<?php echo $c['id']; ?>, 'Activo')" title="Reactivar cuenta de correo">
+                                <i class="bi bi-check-circle"></i> Reactivar
+                            </button>
+                            <?php endif; ?>
 
-    let url = `api_auditoria.php?action=listar_gds_usuarios&area=${encodeURIComponent(area)}&estado=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.gds_usr = res.datos || [];
+                            <button type="button" class="btn-action-tile ms-auto" onclick='editarCorreo(<?php echo json_encode($c); ?>)'>
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
 
-            const contEl = document.getElementById('contadorGdsUsr');
-            if (contEl) contEl.innerText = `${cacheDatos.gds_usr.length} usuarios`;
 
-            if (cacheDatos.gds_usr.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-secondary">No hay usuarios de GDS registrados.</td></tr>';
-                return;
-            }
+        <!-- ===================================================================
+             SUB-MÓDULO 4: LICENCIAS DE OFFICE (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-licencias" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-microsoft text-info me-2"></i> Licencias de Office</h4>
+                        <span class="text-secondary small">Product Keys, cuentas vinculadas y equipos asignados</span>
+                    </div>
+                </div>
 
-            let html = '';
-            cacheDatos.gds_usr.forEach(u => {
-                const passId = `gdsUsrPass_${u.id}`;
-                const passVal = u.password_gds || '';
-                const passHtml = `
-                    <div class="d-flex align-items-center gap-1">
-                        <span id="${passId}" class="pass-hidden" data-pass="${escapeHtml(passVal)}">••••••••</span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="togglePassView('${passId}')" title="Ver contraseña">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="copiarAlPortapapeles('${escapeHtml(passVal)}')" title="Copiar contraseña">
-                            <i class="bi bi-clipboard"></i>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 240px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control form-control-sm" placeholder="Buscar versión o clave..." onkeyup="filtrarCards('card-licencia', this.value)">
+                    </div>
+
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalLicencia(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Registrar Licencia
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('licencias')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE LICENCIAS (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($licenciasOffice)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-key text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay licencias registradas.</h5>
+                </div>
+                <?php else: ?>
+                <?php foreach ($licenciasOffice as $lic): ?>
+                <div class="col-12 col-md-6 col-lg-4 card-licencia" data-search="<?php echo htmlspecialchars(strtolower($lic['product_key'] . ' ' . $lic['version_office'] . ' ' . $lic['cuenta_microsoft'] . ' ' . $lic['colaborador'] . ' ' . $lic['equipo_asignado'])); ?>">
+                    <div class="item-action-card">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon">
+                                        <i class="bi bi-shield-check"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($lic['version_office']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($lic['tipo_licencia'] ?: 'Suscripción'); ?></p>
+                                    </div>
+                                </div>
+                                <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50">
+                                    <?php echo htmlspecialchars($lic['estado'] ?: 'Activa'); ?>
+                                </span>
+                            </div>
+
+                            <!-- CLAVE DE PRODUCTO -->
+                            <div class="p-2 mb-2 rounded border border-secondary border-opacity-25 d-flex align-items-center justify-content-between" style="background: rgba(0,0,0,0.35);">
+                                <code class="text-warning fw-bold password-peek" id="pk-<?php echo $lic['id']; ?>" data-real="<?php echo htmlspecialchars($lic['product_key']); ?>">
+                                    •••••-•••••-•••••-•••••
+                                </code>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="togglePeek('pk-<?php echo $lic['id']; ?>', this)" title="Mostrar / Ocultar">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="copiarTexto('<?php echo htmlspecialchars($lic['product_key']); ?>')" title="Copiar Clave">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Cuenta MS</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($lic['cuenta_microsoft'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Equipo Asignado</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($lic['equipo_asignado'] ?: 'N/A'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Usuario / Área</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars(($lic['colaborador'] ?? '') . ' (' . ($lic['area'] ?? 'General') . ')'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Vencimiento</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($lic['fecha_vencimiento'] ?: 'Perpetua'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA LICENCIA -->
+                        <div class="item-card-actions">
+                            <button type="button" class="btn-action-tile" onclick='editarLicencia(<?php echo json_encode($lic); ?>)'>
+                                <i class="bi bi-pencil-square"></i> Editar
+                            </button>
+                            <?php if ($puedeEliminar): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('licencia', <?php echo $lic['id']; ?>)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+
+
+        <!-- ===================================================================
+             SUB-MÓDULO 5: USUARIOS GDS (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-gds_usuarios" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-person-badge-fill text-warning me-2"></i> Usuarios GDS (DMS)</h4>
+                        <span class="text-secondary small">Asignación de credenciales, responsivas oficiales y custodia en PDF</span>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 240px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control form-control-sm" placeholder="Buscar usuario GDS..." onkeyup="filtrarCards('card-gds', this.value)">
+                    </div>
+
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalGdsUsuario(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Asignar Usuario GDS
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('gds_usuarios')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE USUARIOS GDS (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($gdsUsuarios)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-person-x text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay usuarios de GDS registrados.</h5>
+                    <button type="button" class="btn-gold-main mt-2" onclick="abrirModalGdsUsuario(0)">
+                        <i class="bi bi-plus-lg"></i> Asignar Primer Usuario GDS
+                    </button>
+                </div>
+                <?php else: ?>
+                <?php foreach ($gdsUsuarios as $gu): 
+                    $tieneResp = !empty($gu['responsiva_pdf_url']);
+                ?>
+                <div class="col-12 col-md-6 col-lg-4 card-gds" data-search="<?php echo htmlspecialchars(strtolower($gu['usuario_gds'] . ' ' . $gu['nombre_colaborador'] . ' ' . $gu['area'] . ' ' . $gu['perfil_gds'])); ?>">
+                    <div class="item-action-card card-gold-accent">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon icon-gold">
+                                        <i class="bi bi-person-check-fill"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($gu['usuario_gds']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($gu['nombre_colaborador']); ?></p>
+                                    </div>
+                                </div>
+                                <?php if ($tieneResp): ?>
+                                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50"><i class="bi bi-check-circle-fill"></i> Responsiva OK</span>
+                                <?php else: ?>
+                                    <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50"><i class="bi bi-clock-history"></i> Sin Responsiva</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- CONTRASEÑA GDS OCULTA / VISIBLE -->
+                            <div class="p-2 mb-2 rounded border border-warning border-opacity-25 d-flex align-items-center justify-content-between" style="background: rgba(212, 175, 55, 0.06);">
+                                <div>
+                                    <span class="detail-item-label text-warning">Password GDS</span>
+                                    <code class="text-light fw-bold password-peek" id="pwd-gds-<?php echo $gu['id']; ?>" data-real="<?php echo htmlspecialchars($gu['password_gds']); ?>">
+                                        ••••••••
+                                    </code>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="togglePeek('pwd-gds-<?php echo $gu['id']; ?>', this)" title="Ver Contraseña">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="copiarTexto('<?php echo htmlspecialchars($gu['password_gds']); ?>')" title="Copiar Contraseña">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Perfil GDS</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gu['perfil_gds'] ?: 'Operativo'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Área</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gu['area'] ?: 'General'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Sucursal</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gu['sucursal'] ?: 'Matriz'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Estado</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gu['estado'] ?: 'Activo'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA USUARIO GDS -->
+                        <div class="item-card-actions">
+                            <!-- BOTÓN GENERAR E IMPRIMIR RESPONSIVA CON DATOS -->
+                            <a href="generar_responsiva_gds.php?id=<?php echo $gu['id']; ?>" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir Responsiva Oficial de Credenciales para firma">
+                                <i class="bi bi-printer-fill"></i> Imprimir Responsiva
+                            </a>
+
+                            <!-- BOTÓN SUBIR PDF -->
+                            <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('gds', <?php echo $gu['id']; ?>, '<?php echo htmlspecialchars($gu['usuario_gds']); ?>')">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
+                            </button>
+
+                            <!-- BOTÓN VER PDF SI YA ESTÁ SUBIDO -->
+                            <?php if ($tieneResp): ?>
+                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($gu['responsiva_pdf_url']); ?>', 'Responsiva GDS - <?php echo htmlspecialchars($gu['usuario_gds']); ?>')">
+                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                            </button>
+                            <?php endif; ?>
+
+                            <button type="button" class="btn-action-tile" onclick='editarGdsUsuario(<?php echo json_encode($gu); ?>)'>
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+
+                            <?php if ($puedeEliminar): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('gds_usuario', <?php echo $gu['id']; ?>)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+
+
+        <!-- ===================================================================
+             SUB-MÓDULO 6: PASSWORD GDS MOVIMIENTOS (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-gds_passwords" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-key-fill text-warning me-2"></i> Password GDS - Movimientos Críticos</h4>
+                        <span class="text-secondary small">Claves de cancelaciones, notas de crédito, descuentos y actas de autorización</span>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalGdsPassword(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Nueva Clave de Movimiento
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('gds_passwords')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE CLAVES DE MOVIMIENTOS (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($gdsPasswords)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-shield-x text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay claves de movimiento configuradas.</h5>
+                </div>
+                <?php else: ?>
+                <?php foreach ($gdsPasswords as $gp): 
+                    $tieneResp = !empty($gp['responsiva_pdf_url']);
+                ?>
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="item-action-card card-gold-accent">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon icon-gold">
+                                        <i class="bi bi-shield-lock-fill"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($gp['tipo_movimiento']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($gp['cargo_responsable'] ?: 'Gerencia'); ?></p>
+                                    </div>
+                                </div>
+                                <span class="badge bg-danger bg-opacity-25 text-danger border border-danger border-opacity-50">
+                                    Nivel <?php echo htmlspecialchars($gp['nivel_seguridad'] ?: 'Crítico'); ?>
+                                </span>
+                            </div>
+
+                            <p class="text-secondary small mb-2" style="font-size: 0.82rem;">
+                                <?php echo htmlspecialchars($gp['descripcion']); ?>
+                            </p>
+
+                            <!-- CONTRASEÑA DEL MOVIMIENTO -->
+                            <div class="p-2 mb-2 rounded border border-warning border-opacity-25 d-flex align-items-center justify-content-between" style="background: rgba(212, 175, 55, 0.08);">
+                                <div>
+                                    <span class="detail-item-label text-warning">Contraseña de Autorización</span>
+                                    <code class="text-warning fw-bold password-peek" id="pwd-mov-<?php echo $gp['id']; ?>" data-real="<?php echo htmlspecialchars($gp['password']); ?>">
+                                        ••••••••
+                                    </code>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="togglePeek('pwd-mov-<?php echo $gp['id']; ?>', this)" title="Ver">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="copiarTexto('<?php echo htmlspecialchars($gp['password']); ?>')" title="Copiar">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Responsable Autorizado</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gp['responsable_autorizado'] ?: 'Gerente General'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Expediente Firmado</span>
+                                    <span class="detail-item-val"><?php echo $tieneResp ? 'Cargado en PDF' : 'Pendiente de Firma'; ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA MOVIMIENTO -->
+                        <div class="item-card-actions">
+                            <!-- BOTÓN GENERAR E IMPRIMIR RESPONSIVA CON DATOS -->
+                            <a href="generar_responsiva_movimiento.php?id=<?php echo $gp['id']; ?>" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir Acta Responsiva Oficial para firma">
+                                <i class="bi bi-printer-fill"></i> Imprimir Responsiva
+                            </a>
+
+                            <!-- BOTÓN SUBIR PDF -->
+                            <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('movimiento', <?php echo $gp['id']; ?>, '<?php echo htmlspecialchars($gp['tipo_movimiento']); ?>')">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
+                            </button>
+
+                            <!-- BOTÓN VER PDF SI YA ESTÁ SUBIDO -->
+                            <?php if ($tieneResp): ?>
+                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($gp['responsiva_pdf_url']); ?>', 'Responsiva Movimiento - <?php echo htmlspecialchars($gp['tipo_movimiento']); ?>')">
+                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                            </button>
+                            <?php endif; ?>
+
+                            <button type="button" class="btn-action-tile" onclick='editarGdsPassword(<?php echo json_encode($gp); ?>)'>
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+
+                            <?php if ($puedeEliminar): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('gds_password', <?php echo $gp['id']; ?>)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+
+
+        <!-- ===================================================================
+             SUB-MÓDULO 7: CONTROL DE USUARIOS GRP (BASADO EN TARJETAS Y BOTONES)
+             =================================================================== -->
+        <section id="vista-grp_usuarios" class="section-view-panel">
+            <div class="sub-header-toolbar">
+                <div class="d-flex align-items-center gap-3">
+                    <button type="button" class="btn-outline-gold" onclick="volverAlHub()">
+                        <i class="bi bi-arrow-left"></i> Volver a Botones
+                    </button>
+                    <div>
+                        <h4 class="m-0 fw-bold text-white"><i class="bi bi-shield-shaded text-warning me-2"></i> Control de Usuarios de GRP</h4>
+                        <span class="text-secondary small">Asignación de usuario, contraseña, roles y responsivas</span>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <div class="input-group" style="width: 240px;">
+                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control form-control-sm" placeholder="Buscar usuario GRP..." onkeyup="filtrarCards('card-grp', this.value)">
+                    </div>
+
+                    <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalGrpUsuario(0)">
+                        <i class="bi bi-plus-circle-fill"></i> Asignar Usuario GRP
+                    </button>
+                    <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('grp_usuarios')">
+                        <i class="bi bi-file-earmark-excel-fill"></i> Excel
+                    </button>
+                </div>
+            </div>
+
+            <!-- GRID DE TARJETAS DE USUARIOS GRP (NO TABLAS) -->
+            <div class="row g-3">
+                <?php if (empty($grpUsuarios)): ?>
+                <div class="col-12 text-center py-5">
+                    <i class="bi bi-shield-x text-secondary fs-1 d-block mb-3"></i>
+                    <h5 class="text-secondary">No hay usuarios de GRP configurados.</h5>
+                    <button type="button" class="btn-gold-main mt-2" onclick="abrirModalGrpUsuario(0)">
+                        <i class="bi bi-plus-lg"></i> Asignar Primer Usuario GRP
+                    </button>
+                </div>
+                <?php else: ?>
+                <?php foreach ($grpUsuarios as $gr): 
+                    $tieneResp = !empty($gr['responsiva_pdf_url']);
+                ?>
+                <div class="col-12 col-md-6 col-lg-4 card-grp" data-search="<?php echo htmlspecialchars(strtolower($gr['usuario_grp'] . ' ' . $gr['nombre_colaborador'] . ' ' . $gr['roles'] . ' ' . $gr['modulos_permitidos'])); ?>">
+                    <div class="item-action-card card-gold-accent">
+                        <div>
+                            <div class="item-card-header">
+                                <div class="item-title-box">
+                                    <div class="item-icon icon-gold">
+                                        <i class="bi bi-person-lock"></i>
+                                    </div>
+                                    <div>
+                                        <h6 class="item-main-title"><?php echo htmlspecialchars($gr['usuario_grp']); ?></h6>
+                                        <p class="item-sub-title"><?php echo htmlspecialchars($gr['nombre_colaborador']); ?></p>
+                                    </div>
+                                </div>
+                                <?php if ($tieneResp): ?>
+                                    <span class="badge bg-success bg-opacity-25 text-success border border-success border-opacity-50"><i class="bi bi-check-circle-fill"></i> Responsiva OK</span>
+                                <?php else: ?>
+                                    <span class="badge bg-warning bg-opacity-25 text-warning border border-warning border-opacity-50"><i class="bi bi-clock-history"></i> Sin Responsiva</span>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- CONTRASEÑA GRP OCULTA / VISIBLE -->
+                            <div class="p-2 mb-2 rounded border border-warning border-opacity-25 d-flex align-items-center justify-content-between" style="background: rgba(212, 175, 55, 0.08);">
+                                <div>
+                                    <span class="detail-item-label text-warning">Contraseña GRP</span>
+                                    <code class="text-light fw-bold password-peek" id="pwd-grp-<?php echo $gr['id']; ?>" data-real="<?php echo htmlspecialchars($gr['password_grp']); ?>">
+                                        ••••••••
+                                    </code>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="togglePeek('pwd-grp-<?php echo $gr['id']; ?>', this)" title="Ver">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-warning py-0 px-2" onclick="copiarTexto('<?php echo htmlspecialchars($gr['password_grp']); ?>')" title="Copiar">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- ROLES GRP ASIGNADOS -->
+                            <div class="mb-3">
+                                <span class="detail-item-label mb-1">Roles Asignados en GRP</span>
+                                <div class="d-flex flex-wrap gap-1">
+                                    <?php 
+                                    $rolesArr = explode(',', $gr['roles'] ?: 'Usuario');
+                                    foreach ($rolesArr as $ra):
+                                        $rTrim = trim($ra);
+                                        if (empty($rTrim)) continue;
+                                    ?>
+                                    <span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">
+                                        <?php echo htmlspecialchars($rTrim); ?>
+                                    </span>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+
+                            <div class="item-details-grid">
+                                <div>
+                                    <span class="detail-item-label">Módulos</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gr['modulos_permitidos'] ?: 'General'); ?></span>
+                                </div>
+                                <div>
+                                    <span class="detail-item-label">Estatus</span>
+                                    <span class="detail-item-val"><?php echo htmlspecialchars($gr['estado'] ?: 'Activo'); ?></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- BOTONES DE ACCIÓN PARA USUARIO GRP -->
+                        <div class="item-card-actions">
+                            <!-- BOTÓN GENERAR E IMPRIMIR RESPONSIVA CON DATOS -->
+                            <a href="generar_responsiva_grp.php?id=<?php echo $gr['id']; ?>" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir Responsiva Oficial de Acceso GRP para firma">
+                                <i class="bi bi-printer-fill"></i> Imprimir Responsiva
+                            </a>
+
+                            <!-- BOTÓN SUBIR PDF -->
+                            <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('grp', <?php echo $gr['id']; ?>, '<?php echo htmlspecialchars($gr['usuario_grp']); ?>')">
+                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
+                            </button>
+
+                            <!-- BOTÓN VER PDF SI YA ESTÁ SUBIDO -->
+                            <?php if ($tieneResp): ?>
+                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($gr['responsiva_pdf_url']); ?>', 'Responsiva GRP - <?php echo htmlspecialchars($gr['usuario_grp']); ?>')">
+                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                            </button>
+                            <?php endif; ?>
+
+                            <button type="button" class="btn-action-tile" onclick='editarGrpUsuario(<?php echo json_encode($gr); ?>)'>
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+
+                            <?php if ($puedeEliminar): ?>
+                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('grp_usuario', <?php echo $gr['id']; ?>)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </section>
+
+    </main>
+
+
+    <!-- ===================================================================
+         MODALES DE ACCIÓN DIRECTA (SIN REDIRECCIONES EXTERNAS)
+         =================================================================== -->
+
+    <!-- 1. MODAL SUBIR PDF DE EVIDENCIA O RESPONSIVA -->
+    <div class="modal fade" id="modalSubirPdf" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="formSubirPdf" method="POST" enctype="multipart/form-data">
+                    <input type="hidden" name="action" id="subir-action" value="">
+                    <input type="hidden" name="equipo_id" id="subir-equipo-id" value="">
+                    <input type="hidden" name="mantenimiento_id" id="subir-mant-id" value="">
+                    <input type="hidden" name="id" id="subir-generic-id" value="">
+                    <input type="hidden" name="seccion" value="inv_equipos_vw">
+
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
+                            <i class="bi bi-cloud-arrow-up-fill text-warning"></i>
+                            <span id="subir-modal-titulo">Subir Archivo PDF</span>
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <p class="text-secondary small mb-3" id="subir-modal-desc">
+                            Seleccione el archivo PDF escaneado con las firmas oficiales de autorización y entrega.
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label text-warning fw-bold small">ARCHIVO EN FORMATO PDF</label>
+                            <input type="file" name="archivo_pdf" class="form-control" accept="application/pdf" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">
+                            <i class="bi bi-check-lg"></i> Guardar Archivo
                         </button>
                     </div>
-                `;
+                </form>
+            </div>
+        </div>
+    </div>
 
-                const respHtml = u.responsiva_firmada_url ? `
-                    <button type="button" class="btn btn-outline-success btn-sm px-2 py-0" onclick="verPdfModal('${u.responsiva_firmada_url}', 'Responsiva GDS - ${u.colaborador}')" title="Ver responsiva firmada en PDF">
-                        <i class="bi bi-file-earmark-check-fill me-1"></i> Firmada (PDF)
-                    </button>
-                ` : '<span class="badge-status-pill badge-err"><i class="bi bi-clock"></i> Pendiente</span>';
+    <!-- 2. MODAL PROGRAMAR / EDITAR MANTENIMIENTO -->
+    <div class="modal fade" id="modalMantenimiento" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_mantenimiento">
+                    <input type="hidden" name="mantenimiento_id" id="mant-id" value="0">
+                    <input type="hidden" name="equipo_id" id="mant-equipo-id" value="">
 
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${u.colaborador}</strong></td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${u.area || 'General'}</span></td>
-                        <td><small class="text-secondary">${u.puesto || 'N/A'}</small></td>
-                        <td><code class="text-warning fw-bold">${u.usuario_gds}</code></td>
-                        <td>${passHtml}</td>
-                        <td><span class="badge bg-dark text-info">${u.perfil_gds || 'Operativo'}</span></td>
-                        <td><small class="text-secondary">${u.sucursal || 'Matriz'}</small></td>
-                        <td class="text-center"><span class="badge-status-pill ${u.estado === 'Activo' ? 'badge-ok' : 'badge-err'}">${u.estado}</span></td>
-                        <td class="text-center">${respHtml}</td>
-                        <td class="text-end text-nowrap">
-                            <a href="generar_responsiva_gds.php?id=${u.id}" target="_blank" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" title="Generar Responsiva Oficial GDS para imprimir y firmar">
-                                <i class="bi bi-printer-fill me-1"></i> Responsiva
-                            </a>
-                            <button type="button" class="btn btn-outline-success btn-sm px-2 py-0 me-1" onclick="abrirModalSubirResponsivaDoc('gds_usuario', ${u.id}, 'Usuario GDS: ${u.colaborador} (${u.usuario_gds})')" title="Subir PDF de la responsiva firmada">
-                                <i class="bi bi-upload"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarGdsUsuario(${JSON.stringify(u)})' title="Editar usuario">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-2 py-0" onclick="eliminarGdsUsuario(${u.id})" title="Eliminar registro">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
-
-function abrirModalNuevoGdsUsuario() {
-    document.getElementById('formGdsUsuario').reset();
-    document.getElementById('gdsUsrId').value = 0;
-    document.getElementById('modalGdsUsrTitulo').innerHTML = '<i class="bi bi-person-badge-fill text-warning me-2"></i>Asignar Usuario DMS / GDS';
-    const modal = new bootstrap.Modal(document.getElementById('modalGdsUsuario'));
-    modal.show();
-}
-
-function abrirModalEditarGdsUsuario(u) {
-    document.getElementById('gdsUsrId').value = u.id;
-    document.getElementById('gdsUsrColaborador').value = u.colaborador;
-    document.getElementById('gdsUsrLogin').value = u.usuario_gds;
-    document.getElementById('gdsUsrPass').value = u.password_gds;
-    document.getElementById('gdsUsrArea').value = u.area || 'General';
-    document.getElementById('gdsUsrPuesto').value = u.puesto || '';
-    document.getElementById('gdsUsrPerfil').value = u.perfil_gds || 'Operativo';
-    document.getElementById('gdsUsrSucursal').value = u.sucursal || 'Matriz';
-    document.getElementById('gdsUsrEstado').value = u.estado || 'Activo';
-    document.getElementById('modalGdsUsrTitulo').innerHTML = '<i class="bi bi-pencil-square text-warning me-2"></i>Editar Usuario GDS';
-    const modal = new bootstrap.Modal(document.getElementById('modalGdsUsuario'));
-    modal.show();
-}
-
-function guardarGdsUsuario(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formGdsUsuario'));
-    formData.append('action', 'guardar_gds_usuario');
-
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalGdsUsuario')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarGdsUsuarios();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
-
-function eliminarGdsUsuario(id) {
-    Swal.fire({
-        title: '¿Eliminar usuario GDS?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_gds_usuario');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarGdsUsuarios();
-                });
-        }
-    });
-}
-
-// =============================================================================
-// 6. CARGA: PASSWORD DE MOVIMIENTOS GDS
-// =============================================================================
-function cargarGdsPasswords() {
-    const area = document.getElementById('filtroAreaGdsPass')?.value || '';
-    const nivel = document.getElementById('filtroNivelGdsPass')?.value || '';
-    const busq = document.getElementById('busqGdsPass')?.value || '';
-
-    const tbody = document.getElementById('tbodyGdsPasswords');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_gds_passwords&area=${encodeURIComponent(area)}&nivel=${encodeURIComponent(nivel)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.gds_pass = res.datos || [];
-
-            const contEl = document.getElementById('contadorGdsPass');
-            if (contEl) contEl.innerText = `${cacheDatos.gds_pass.length} claves`;
-
-            if (cacheDatos.gds_pass.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-secondary">No hay contraseñas de movimientos registradas.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.gds_pass.forEach(p => {
-                const passId = `gdsPassVal_${p.id}`;
-                const passVal = p.password_movimiento || '';
-                const passHtml = `
-                    <div class="d-flex align-items-center gap-1">
-                        <span id="${passId}" class="pass-hidden" data-pass="${escapeHtml(passVal)}">••••••••</span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="togglePassView('${passId}')" title="Ver contraseña">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="copiarAlPortapapeles('${escapeHtml(passVal)}')" title="Copiar contraseña">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="mant-modal-titulo">Programar Plan de Mantenimiento</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
-                `;
+                    <div class="modal-body p-4">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label text-warning small fw-bold">SELECCIONAR EQUIPO DEL INVENTARIO O ESCRIBIR NOMBRE</label>
+                                <input type="text" name="nombre_equipo" id="mant-nom-equipo" list="lista-equipos" class="form-control" placeholder="Ej: SRV-DATACENTER-01" required>
+                                <datalist id="lista-equipos">
+                                    <?php foreach ($equiposInventario as $eq): ?>
+                                    <option value="<?php echo htmlspecialchars($eq['nombre_equipo']); ?>" data-area="<?php echo htmlspecialchars($eq['departamento']); ?>" data-user="<?php echo htmlspecialchars($eq['usuario']); ?>" data-id="<?php echo $eq['id']; ?>">
+                                        <?php echo htmlspecialchars($eq['nombre_equipo'] . ' - ' . $eq['usuario']); ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </datalist>
+                            </div>
 
-                const respHtml = p.responsiva_firmada_url ? `
-                    <button type="button" class="btn btn-outline-success btn-sm px-2 py-0" onclick="verPdfModal('${p.responsiva_firmada_url}', 'Responsiva Clave Movimiento - ${p.tipo_movimiento}')" title="Ver responsiva firmada en PDF">
-                        <i class="bi bi-file-earmark-check-fill me-1"></i> Firmada (PDF)
-                    </button>
-                ` : '<span class="badge-status-pill badge-err"><i class="bi bi-clock"></i> Pendiente</span>';
+                            <div class="col-md-6">
+                                <label class="form-label text-warning small fw-bold">ÁREA O DEPARTAMENTO</label>
+                                <input type="text" name="area" id="mant-area" class="form-control" placeholder="Ej: Sistemas, Ventas, Taller" required>
+                            </div>
 
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${p.tipo_movimiento}</strong></td>
-                        <td><small class="text-secondary">${p.descripcion_movimiento || 'Sin descripción'}</small></td>
-                        <td>${passHtml}</td>
-                        <td><strong class="text-danger">${p.usuario_autorizado}</strong></td>
-                        <td>${p.puesto_autorizado || ''} <span class="badge bg-secondary bg-opacity-25 text-light">${p.area}</span></td>
-                        <td class="text-center"><span class="badge-status-pill badge-err">${p.nivel_seguridad || 'Crítico'}</span></td>
-                        <td>${p.fecha_actualizacion || '-'}</td>
-                        <td class="text-center">${respHtml}</td>
-                        <td class="text-end text-nowrap">
-                            <a href="generar_responsiva_movimiento.php?id=${p.id}" target="_blank" class="btn btn-outline-danger btn-sm px-2 py-0 me-1" title="Generar Responsiva Oficial de Clave Especial">
-                                <i class="bi bi-printer-fill me-1"></i> Responsiva
-                            </a>
-                            <button type="button" class="btn btn-outline-success btn-sm px-2 py-0 me-1" onclick="abrirModalSubirResponsivaDoc('gds_password', ${p.id}, 'Clave: ${p.tipo_movimiento} (${p.usuario_autorizado})')" title="Subir PDF de la responsiva firmada">
-                                <i class="bi bi-upload"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarGdsPassword(${JSON.stringify(p)})' title="Editar clave">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-0" onclick="eliminarGdsPassword(${p.id})" title="Eliminar registro">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small fw-bold">USUARIO RESPONSABLE</label>
+                                <input type="text" name="usuario_responsable" id="mant-usuario" class="form-control" placeholder="Colaborador asignado">
+                            </div>
 
-function abrirModalNuevoGdsPassword() {
-    document.getElementById('formGdsPassword').reset();
-    document.getElementById('gdsPassId').value = 0;
-    document.getElementById('modalGdsPassTitulo').innerHTML = '<i class="bi bi-shield-lock-fill me-2"></i>Configurar Contraseña de Movimiento GDS';
-    const modal = new bootstrap.Modal(document.getElementById('modalGdsPassword'));
-    modal.show();
-}
+                            <div class="col-md-6">
+                                <label class="form-label text-secondary small fw-bold">TIPO DE MANTENIMIENTO</label>
+                                <select name="tipo_mantenimiento" id="mant-tipo" class="form-select">
+                                    <option value="Preventivo">Preventivo (Hardware & Software)</option>
+                                    <option value="Correctivo">Correctivo (Reparación / Cambio de Componentes)</option>
+                                    <option value="Auditoría / Limpieza">Auditoría / Limpieza Profunda</option>
+                                </select>
+                            </div>
 
-function abrirModalEditarGdsPassword(p) {
-    document.getElementById('gdsPassId').value = p.id;
-    document.getElementById('gdsPassTipo').value = p.tipo_movimiento;
-    document.getElementById('gdsPassDesc').value = p.descripcion_movimiento || '';
-    document.getElementById('gdsPassVal').value = p.password_movimiento;
-    document.getElementById('gdsPassUsuario').value = p.usuario_autorizado;
-    document.getElementById('gdsPassPuesto').value = p.puesto_autorizado || '';
-    document.getElementById('gdsPassArea').value = p.area || 'General';
-    document.getElementById('gdsPassNivel').value = p.nivel_seguridad || 'Alto';
-    document.getElementById('modalGdsPassTitulo').innerHTML = '<i class="bi bi-pencil-square me-2"></i>Editar Contraseña de Movimiento';
-    const modal = new bootstrap.Modal(document.getElementById('modalGdsPassword'));
-    modal.show();
-}
+                            <div class="col-md-4">
+                                <label class="form-label text-secondary small fw-bold">FECHA PROGRAMADA</label>
+                                <input type="date" name="fecha_programada" id="mant-fecha-prog" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                            </div>
 
-function guardarGdsPassword(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formGdsPassword'));
-    formData.append('action', 'guardar_gds_password');
+                            <div class="col-md-4">
+                                <label class="form-label text-secondary small fw-bold">FRECUENCIA</label>
+                                <select name="frecuencia" id="mant-frecuencia" class="form-select">
+                                    <option value="Mensual">Mensual</option>
+                                    <option value="Bimestral">Bimestral</option>
+                                    <option value="Trimestral">Trimestral</option>
+                                    <option value="Semestral" selected>Semestral</option>
+                                    <option value="Anual">Anual</option>
+                                </select>
+                            </div>
 
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalGdsPassword')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarGdsPasswords();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
+                            <div class="col-md-4">
+                                <label class="form-label text-secondary small fw-bold">ESTADO</label>
+                                <select name="estado" id="mant-estado" class="form-select">
+                                    <option value="Programado">Programado</option>
+                                    <option value="En Proceso">En Proceso</option>
+                                    <option value="Realizado">Realizado</option>
+                                </select>
+                            </div>
 
-function eliminarGdsPassword(id) {
-    Swal.fire({
-        title: '¿Eliminar clave de movimiento?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_gds_password');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarGdsPasswords();
-                });
-        }
-    });
-}
+                            <div class="col-md-12">
+                                <label class="form-label text-secondary small fw-bold">TÉCNICO / INGENIERO DE SISTEMAS</label>
+                                <input type="text" name="tecnico_responsable" id="mant-tecnico" class="form-control" value="Soporte Sistemas">
+                            </div>
 
-// =============================================================================
-// 7. CARGA: USUARIOS GRP
-// =============================================================================
-function cargarGrpUsuarios() {
-    const area = document.getElementById('filtroAreaGrp')?.value || '';
-    const estado = document.getElementById('filtroEstadoGrp')?.value || '';
-    const busq = document.getElementById('busqGrp')?.value || '';
-
-    const tbody = document.getElementById('tbodyGrpUsuarios');
-    if (!tbody) return;
-
-    let url = `api_auditoria.php?action=listar_grp_usuarios&area=${encodeURIComponent(area)}&estado=${encodeURIComponent(estado)}&busqueda=${encodeURIComponent(busq)}`;
-    fetch(url)
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            cacheDatos.grp_usr = res.datos || [];
-
-            const contEl = document.getElementById('contadorGrp');
-            if (contEl) contEl.innerText = `${cacheDatos.grp_usr.length} cuentas GRP`;
-
-            if (cacheDatos.grp_usr.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-secondary">No hay usuarios de GRP registrados.</td></tr>';
-                return;
-            }
-
-            let html = '';
-            cacheDatos.grp_usr.forEach(g => {
-                const passId = `grpUsrPass_${g.id}`;
-                const passVal = g.password_grp || '';
-                const passHtml = `
-                    <div class="d-flex align-items-center gap-1">
-                        <span id="${passId}" class="pass-hidden" data-pass="${escapeHtml(passVal)}">••••••••</span>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="togglePassView('${passId}')" title="Ver contraseña">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm p-0 px-1 border-0" onclick="copiarAlPortapapeles('${escapeHtml(passVal)}')" title="Copiar contraseña">
-                            <i class="bi bi-clipboard"></i>
-                        </button>
+                            <div class="col-md-12">
+                                <label class="form-label text-secondary small fw-bold">DETALLE / OBSERVACIONES DE LA INTERVENCIÓN</label>
+                                <textarea name="observaciones" id="mant-obs" class="form-control" rows="2" placeholder="Describa tareas a realizar: soplado de polvo, pasta térmica, antivirus, optimización..."></textarea>
+                            </div>
+                        </div>
                     </div>
-                `;
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Mantenimiento</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-                // Badges de roles
-                const rolesArr = (g.roles_grp || '').split(',');
-                let rolesBadges = '';
-                rolesArr.forEach(r => {
-                    const rTrim = r.trim();
-                    if (rTrim) rolesBadges += `<span class="badge bg-primary bg-opacity-25 text-info border border-info border-opacity-25 me-1 mb-1">${escapeHtml(rTrim)}</span>`;
-                });
+    <!-- 3. MODAL NUEVO / EDITAR CORREO -->
+    <div class="modal fade" id="modalCorreo" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_correo">
+                    <input type="hidden" name="correo_id" id="correo-id" value="0">
 
-                const respHtml = g.responsiva_firmada_url ? `
-                    <button type="button" class="btn btn-outline-success btn-sm px-2 py-0" onclick="verPdfModal('${g.responsiva_firmada_url}', 'Responsiva GRP - ${g.colaborador}')" title="Ver responsiva firmada en PDF">
-                        <i class="bi bi-file-earmark-check-fill me-1"></i> Firmada (PDF)
-                    </button>
-                ` : '<span class="badge-status-pill badge-err"><i class="bi bi-clock"></i> Pendiente</span>';
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="correo-modal-titulo">Registrar Cuenta de Correo</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label text-warning small fw-bold">DIRECCIÓN DE CORREO CORPORATIVO</label>
+                            <input type="email" name="correo" id="correo-email" class="form-control" placeholder="ejemplo@agenciagrupohuerta.com" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">COLABORADOR ASIGNADO</label>
+                            <input type="text" name="nombre_colaborador" id="correo-nombre" class="form-control" placeholder="Nombre y Apellidos" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">ÁREA</label>
+                                <input type="text" name="area" id="correo-area" class="form-control" placeholder="Ej: Ventas, Administración" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">PUESTO</label>
+                                <input type="text" name="puesto" id="correo-puesto" class="form-control" placeholder="Ej: Asesor, Gerente">
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">TIPO DE CORREO</label>
+                                <select name="tipo_correo" id="correo-tipo" class="form-select">
+                                    <option value="Personalizado">Personalizado</option>
+                                    <option value="Genérico">Genérico / Área</option>
+                                    <option value="Notificaciones">Notificaciones</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">ESTADO</label>
+                                <select name="estado" id="correo-estado" class="form-select">
+                                    <option value="Activo">Activo</option>
+                                    <option value="En Baja">En Baja</option>
+                                    <option value="Eliminado">Eliminado</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">CONTRASEÑA ASIGNADA (OPCIONAL)</label>
+                            <input type="text" name="password_cuenta" id="correo-pass" class="form-control" placeholder="Contraseña de acceso seguro">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Cuenta</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-                html += `
-                    <tr>
-                        <td><strong class="text-white">${g.colaborador}</strong></td>
-                        <td><span class="badge bg-secondary bg-opacity-25 text-light border border-secondary border-opacity-50">${g.area || 'General'}</span></td>
-                        <td><small class="text-secondary">${g.puesto || 'N/A'}</small></td>
-                        <td><code class="text-info fw-bold">${g.usuario_grp}</code></td>
-                        <td>${passHtml}</td>
-                        <td>${rolesBadges}</td>
-                        <td><small class="text-secondary">${g.modulos_permitidos || 'Todos los módulos'}</small></td>
-                        <td class="text-center"><span class="badge-status-pill ${g.estado === 'Activo' ? 'badge-ok' : 'badge-err'}">${g.estado}</span></td>
-                        <td class="text-center">${respHtml}</td>
-                        <td class="text-end text-nowrap">
-                            <a href="generar_responsiva_grp.php?id=${g.id}" target="_blank" class="btn btn-outline-info btn-sm px-2 py-0 me-1" title="Generar Responsiva Oficial GRP para imprimir y firmar">
-                                <i class="bi bi-printer-fill me-1"></i> Responsiva
-                            </a>
-                            <button type="button" class="btn btn-outline-success btn-sm px-2 py-0 me-1" onclick="abrirModalSubirResponsivaDoc('grp_usuario', ${g.id}, 'Usuario GRP: ${g.colaborador} (${g.usuario_grp})')" title="Subir PDF de la responsiva firmada">
-                                <i class="bi bi-upload"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-warning btn-sm px-2 py-0 me-1" onclick='abrirModalEditarGrpUsuario(${JSON.stringify(g)})' title="Editar usuario GRP">
-                                <i class="bi bi-pencil"></i>
-                            </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm px-2 py-0" onclick="eliminarGrpUsuario(${g.id})" title="Eliminar registro">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            tbody.innerHTML = `<tr><td colspan="10" class="text-center py-4 text-danger">Error: ${err.message}</td></tr>`;
-        });
-}
+    <!-- 4. MODAL NUEVA / EDITAR LICENCIA DE OFFICE -->
+    <div class="modal fade" id="modalLicencia" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_licencia">
+                    <input type="hidden" name="licencia_id" id="lic-id" value="0">
 
-function abrirModalNuevoGrpUsuario() {
-    document.getElementById('formGrpUsuario').reset();
-    document.getElementById('grpUsrId').value = 0;
-    document.getElementById('modalGrpUsrTitulo').innerHTML = '<i class="bi bi-people-fill text-info me-2"></i>Asignar Usuario de GRP';
-    const modal = new bootstrap.Modal(document.getElementById('modalGrpUsuario'));
-    modal.show();
-}
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="lic-modal-titulo">Registrar Licencia de Office</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label text-warning small fw-bold">PRODUCT KEY / CÓDIGO DE ACTIVACIÓN</label>
+                            <input type="text" name="product_key" id="lic-pk" class="form-control fw-bold" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">VERSIÓN DE OFFICE</label>
+                                <select name="version_office" id="lic-ver" class="form-select">
+                                    <option value="Microsoft 365 Business Standard">Microsoft 365 Business Standard</option>
+                                    <option value="Microsoft 365 Business Basic">Microsoft 365 Business Basic</option>
+                                    <option value="Office Hogar y Empresas 2021">Office Hogar y Empresas 2021</option>
+                                    <option value="Office Hogar y Empresas 2019">Office Hogar y Empresas 2019</option>
+                                    <option value="Office Professional Plus 2019">Office Professional Plus 2019</option>
+                                    <option value="Office 2016 OEM">Office 2016 OEM</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">TIPO DE LICENCIA</label>
+                                <select name="tipo_licencia" id="lic-tipo" class="form-select">
+                                    <option value="Suscripción Anual">Suscripción Anual</option>
+                                    <option value="Digital / ESD">Digital / ESD</option>
+                                    <option value="OEM / FPP">OEM / FPP</option>
+                                    <option value="Volumen (MAK/KMS)">Volumen (MAK/KMS)</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">CUENTA MICROSOFT VINCULADA</label>
+                            <input type="email" name="cuenta_microsoft" id="lic-cuenta-ms" class="form-control" placeholder="admin@agenciagrupohuerta.com">
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">EQUIPO ASIGNADO</label>
+                                <input type="text" name="equipo_asignado" id="lic-equipo" class="form-control" placeholder="Ej: SRV-AD-01">
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">COLABORADOR / ÁREA</label>
+                                <input type="text" name="colaborador" id="lic-colab" class="form-control" placeholder="Nombre del usuario">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Licencia</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-function abrirModalEditarGrpUsuario(g) {
-    document.getElementById('grpUsrId').value = g.id;
-    document.getElementById('grpUsrColaborador').value = g.colaborador;
-    document.getElementById('grpUsrLogin').value = g.usuario_grp;
-    document.getElementById('grpUsrPass').value = g.password_grp;
-    document.getElementById('grpUsrArea').value = g.area || 'General';
-    document.getElementById('grpUsrPuesto').value = g.puesto || '';
-    document.getElementById('grpUsrRoles').value = g.roles_grp || '';
-    document.getElementById('grpUsrModulos').value = g.modulos_permitidos || '';
-    document.getElementById('modalGrpUsrTitulo').innerHTML = '<i class="bi bi-pencil-square text-info me-2"></i>Editar Usuario GRP';
-    const modal = new bootstrap.Modal(document.getElementById('modalGrpUsuario'));
-    modal.show();
-}
+    <!-- 5. MODAL ASIGNAR / EDITAR USUARIO GDS -->
+    <div class="modal fade" id="modalGdsUsuario" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_gds_usuario">
+                    <input type="hidden" name="gds_id" id="gds-id" value="0">
 
-function guardarGrpUsuario(e) {
-    e.preventDefault();
-    const formData = new FormData(document.getElementById('formGrpUsuario'));
-    formData.append('action', 'guardar_grp_usuario');
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="gds-modal-titulo">Asignar Credenciales GDS (DMS)</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label text-warning small fw-bold">VINCULAR CON COLABORADOR DEL SISTEMA</label>
+                            <select name="usuario_id" id="gds-usuario-select" class="form-select" onchange="autocompletarColaboradorGds(this)">
+                                <option value="">-- Seleccionar Colaborador --</option>
+                                <?php foreach ($catalogoUsuarios as $u): ?>
+                                <option value="<?php echo $u['id']; ?>" data-nombre="<?php echo htmlspecialchars($u['nombre']); ?>" data-area="<?php echo htmlspecialchars($u['departamento']); ?>" data-login="<?php echo htmlspecialchars($u['usuario']); ?>">
+                                    <?php echo htmlspecialchars($u['nombre'] . ' (' . ($u['departamento'] ?: 'General') . ')'); ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">NOMBRE COMPLETO DEL COLABORADOR</label>
+                            <input type="text" name="nombre_colaborador" id="gds-colaborador" class="form-control" placeholder="Nombre completo" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-warning small fw-bold">USUARIO GDS</label>
+                                <input type="text" name="usuario_gds" id="gds-usuario" class="form-control text-uppercase" placeholder="EJ: JPEREZ" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-warning small fw-bold">CONTRASEÑA GDS</label>
+                                <input type="text" name="password_gds" id="gds-pass" class="form-control" placeholder="Contraseña segura" required>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">PERFIL GDS</label>
+                                <select name="perfil_gds" id="gds-perfil" class="form-select">
+                                    <option value="Asesor Ventas">Asesor Ventas</option>
+                                    <option value="Asesor Servicio">Asesor Servicio</option>
+                                    <option value="Caja / Cobranza">Caja / Cobranza</option>
+                                    <option value="Facturación">Facturación</option>
+                                    <option value="Refacciones">Refacciones</option>
+                                    <option value="Gerencial">Gerencial</option>
+                                    <option value="Administrador">Administrador</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">ÁREA</label>
+                                <input type="text" name="area" id="gds-area" class="form-control" placeholder="Ej: Ventas, Administración">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Credenciales GDS</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    fetch('api_auditoria.php', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(res => {
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalGrpUsuario')).hide();
-            Swal.fire({ title: 'Guardado', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-            cargarGrpUsuarios();
-        })
-        .catch(err => Swal.fire('Error', err.message, 'error'));
-}
+    <!-- 6. MODAL NUEVA / EDITAR CLAVE DE MOVIMIENTO GDS -->
+    <div class="modal fade" id="modalGdsPassword" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_gds_password">
+                    <input type="hidden" name="movimiento_id" id="mov-id" value="0">
 
-function eliminarGrpUsuario(id) {
-    Swal.fire({
-        title: '¿Eliminar usuario GRP?',
-        text: 'Esta acción no se puede deshacer.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, eliminar',
-        cancelButtonText: 'Cancelar'
-    }).then(res => {
-        if (res.isConfirmed) {
-            const fd = new FormData();
-            fd.append('action', 'eliminar_grp_usuario');
-            fd.append('id', id);
-            fetch('api_auditoria.php', { method: 'POST', body: fd })
-                .then(r => r.json())
-                .then(r => {
-                    if (!r.success) throw new Error(r.error);
-                    cargarGrpUsuarios();
-                });
-        }
-    });
-}
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="mov-modal-titulo">Configurar Clave de Movimiento GDS</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label text-warning small fw-bold">TIPO DE MOVIMIENTO CRÍTICO</label>
+                            <input type="text" name="tipo_movimiento" id="mov-tipo" class="form-control" placeholder="Ej: Cancelación de Facturas y Notas de Crédito" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">DESCRIPCIÓN DEL MOVIMIENTO Y CONDICIONES</label>
+                            <textarea name="descripcion" id="mov-desc" class="form-control" rows="2" placeholder="Describa para qué operaciones se utiliza esta clave y quién la custodia..." required></textarea>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-warning small fw-bold">CONTRASEÑA DE AUTORIZACIÓN</label>
+                                <input type="text" name="password" id="mov-pass" class="form-control" placeholder="Contraseña de autorización" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">NIVEL DE SEGURIDAD</label>
+                                <select name="nivel_seguridad" id="mov-nivel" class="form-select">
+                                    <option value="Crítico">Crítico</option>
+                                    <option value="Muy Alto">Muy Alto</option>
+                                    <option value="Alto">Alto</option>
+                                    <option value="Medio">Medio</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">RESPONSABLE AUTORIZADO</label>
+                                <input type="text" name="responsable_autorizado" id="mov-resp" class="form-control" placeholder="Ej: Gerente General" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-secondary small fw-bold">CARGO</label>
+                                <input type="text" name="cargo_responsable" id="mov-cargo" class="form-control" placeholder="Ej: Gerencia Administrativa">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Clave de Movimiento</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-// =============================================================================
-// SUBIR RESPONSIVAS FIRMADAS (GDS, GRP O EQUIPOS)
-// =============================================================================
-function abrirModalSubirResponsivaDoc(tipo, id, label) {
-    document.getElementById('subirDocTipo').value = tipo;
-    document.getElementById('subirDocId').value = id;
-    document.getElementById('subirDocLabelInfo').innerHTML = `Documento: <strong>${label}</strong>`;
-    document.getElementById('archivoRespDocPdf').value = '';
-    const modal = new bootstrap.Modal(document.getElementById('modalSubirResponsivaDoc'));
-    modal.show();
-}
+    <!-- 7. MODAL ASIGNAR / EDITAR USUARIO GRP -->
+    <div class="modal fade" id="modalGrpUsuario" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form method="POST">
+                    <input type="hidden" name="action" value="guardar_grp_usuario">
+                    <input type="hidden" name="grp_id" id="grp-id" value="0">
 
-function enviarResponsivaDocumento(e) {
-    e.preventDefault();
-    const tipo = document.getElementById('subirDocTipo').value;
-    const id = document.getElementById('subirDocId').value;
-    const seccionEq = document.getElementById('subirDocSeccionEq').value;
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold text-white" id="grp-modal-titulo">Asignar Credenciales y Roles GRP</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">NOMBRE COMPLETO DEL COLABORADOR</label>
+                            <input type="text" name="nombre_colaborador" id="grp-nombre" class="form-control" placeholder="Nombre completo del usuario" required>
+                        </div>
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <label class="form-label text-warning small fw-bold">USUARIO GRP</label>
+                                <input type="text" name="usuario_grp" id="grp-usr" class="form-control" placeholder="ej: maria.lopez" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label text-warning small fw-bold">CONTRASEÑA GRP</label>
+                                <input type="text" name="password_grp" id="grp-pass" class="form-control" placeholder="Contraseña de acceso" required>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-warning small fw-bold">ROLES ASIGNADOS EN GRP (SELECCIONE LOS APLICABLES)</label>
+                            <div class="row g-2 p-2 rounded border border-secondary border-opacity-25" style="background: rgba(0,0,0,0.25);">
+                                <?php 
+                                $rolesCatalogo = ['Administrador General', 'Contabilidad', 'Tesorería & Bancos', 'Facturación', 'Cobranza & Cuentas por Cobrar', 'Compras & Proveedores', 'Inventarios & Almacén', 'Recursos Humanos', 'Consulta / Auditor'];
+                                foreach ($rolesCatalogo as $rc):
+                                ?>
+                                <div class="col-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input check-grp-role" type="checkbox" name="roles[]" value="<?php echo $rc; ?>" id="rc-<?php echo md5($rc); ?>">
+                                        <label class="form-check-label small" for="rc-<?php echo md5($rc); ?>">
+                                            <?php echo $rc; ?>
+                                        </label>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-secondary small fw-bold">MÓDULOS PERMITIDOS</label>
+                            <input type="text" name="modulos_permitidos" id="grp-mods" class="form-control" placeholder="Ej: Facturación, Contabilidad, Bancos" value="General">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn-gold-main">Guardar Usuario GRP</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    const fd = new FormData();
-    const fileInput = document.getElementById('archivoRespDocPdf');
-    if (!fileInput.files || fileInput.files.length === 0) {
-        Swal.fire('Atención', 'Selecciona un archivo PDF', 'warning');
-        return;
-    }
-    fd.append('archivo_pdf', fileInput.files[0]);
+    <!-- 8. MODAL VISOR DE PDF INTEGRADO -->
+    <div class="modal fade" id="modalVisorPdf" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered" style="height: 90vh;">
+            <div class="modal-content h-100">
+                <div class="modal-header py-2">
+                    <h5 class="modal-title fw-bold text-white small" id="visor-pdf-titulo">Expediente Oficial PDF</h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <a id="visor-pdf-descargar" href="#" download class="btn btn-sm btn-outline-warning py-1 px-3">
+                            <i class="bi bi-download"></i> Descargar
+                        </a>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                    </div>
+                </div>
+                <div class="modal-body p-0 h-100">
+                    <iframe id="visor-pdf-frame" src="" style="width: 100%; height: 100%; border: none;"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    if (tipo === 'equipo') {
-        fd.append('action', 'subir_responsiva_equipo');
-        fd.append('equipo_id', id);
-        fd.append('seccion', seccionEq);
-    } else if (tipo === 'gds_usuario') {
-        fd.append('action', 'subir_responsiva_gds_usuario');
-        fd.append('gds_usuario_id', id);
-    } else if (tipo === 'gds_password') {
-        fd.append('action', 'subir_responsiva_gds_password');
-        fd.append('movimiento_id', id);
-    } else if (tipo === 'grp_usuario') {
-        fd.append('action', 'subir_responsiva_grp_usuario');
-        fd.append('grp_usuario_id', id);
-    }
 
-    const btn = document.getElementById('btnSubirDocSubmit');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Guardando...';
+    <!-- ===================================================================
+         JAVASCRIPT NATIVO: NAVEGACIÓN BASADA EN BOTONES Y ACCIONES LOCALES
+         =================================================================== -->
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
-    fetch('api_auditoria.php', { method: 'POST', body: fd })
-        .then(r => r.json())
-        .then(res => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill me-1"></i> Guardar PDF Firmado';
-            if (!res.success) throw new Error(res.error);
-            bootstrap.Modal.getInstance(document.getElementById('modalSubirResponsivaDoc')).hide();
-            Swal.fire({ title: '¡Responsiva Guardada!', text: res.mensaje, icon: 'success', timer: 1500, showConfirmButton: false });
-
-            // Recargar vista correspondiente
-            if (tipo === 'equipo') cargarResponsivasEquipos();
-            else if (tipo === 'gds_usuario') cargarGdsUsuarios();
-            else if (tipo === 'gds_password') cargarGdsPasswords();
-            else if (tipo === 'grp_usuario') cargarGrpUsuarios();
-        })
-        .catch(err => {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-cloud-arrow-up-fill me-1"></i> Guardar PDF Firmado';
-            Swal.fire('Error', err.message, 'error');
-        });
-}
-
-// =============================================================================
-// VISOR DE PDFS EN MODAL
-// =============================================================================
-function verPdfModal(url, titulo) {
-    if (!url) {
-        Swal.fire('Aviso', 'No hay archivo PDF disponible para visualizar.', 'info');
-        return;
-    }
-    document.getElementById('visorPdfTitulo').innerHTML = `<i class="bi bi-file-earmark-pdf-fill text-danger me-2"></i>${escapeHtml(titulo || 'Documento PDF')}`;
-    document.getElementById('iframeVisorPdf').src = url;
-    document.getElementById('btnDescargarPdfDirecto').href = url;
-    const modal = new bootstrap.Modal(document.getElementById('modalVisorPdf'));
-    modal.show();
-}
-
-// =============================================================================
-// UTILIDADES: VER/OCULTAR CONTRASEÑAS Y COPIAR
-// =============================================================================
-function togglePassView(elId) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    const pass = el.getAttribute('data-pass') || '';
-    if (el.innerText === '••••••••') {
-        el.innerText = pass;
-        el.classList.remove('pass-hidden');
-        el.classList.add('text-warning', 'fw-bold');
-    } else {
-        el.innerText = '••••••••';
-        el.classList.add('pass-hidden');
-        el.classList.remove('text-warning', 'fw-bold');
-    }
-}
-
-function copiarAlPortapapeles(texto) {
-    if (!navigator.clipboard) {
-        const ta = document.createElement('textarea');
-        ta.value = texto;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-    } else {
-        navigator.clipboard.writeText(texto);
-    }
-    const Toast = Swal.mixin({
-        toast: true,
-        position: 'top-end',
-        showConfirmButton: false,
-        timer: 1500,
-        timerProgressBar: true
-    });
-    Toast.fire({ icon: 'success', title: 'Copiado al portapapeles' });
-}
-
-function escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-function imprimirAuditoria() {
-    window.print();
-}
-
-// =============================================================================
-// EXPORTACIÓN AVANZADA A EXCEL (.XLSX) CON EXCELJS
-// =============================================================================
-async function exportarSeccionActivaExcel() {
-    if (typeof ExcelJS === 'undefined') {
-        Swal.fire('Info', 'Cargando motor de Excel, intente de nuevo en un momento...', 'info');
-        return;
-    }
-
-    const agencia = window.DATOS_AGENCIA_EXCEL || { nombre: 'GRUPO HUERTA' };
-    const now = new Date();
-    const fechaStr = now.toLocaleDateString('es-MX');
-    const horaStr = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
-
-    const wb = new ExcelJS.Workbook();
-    wb.creator = 'Portal de Sistemas - ' + agencia.nombre;
-    wb.created = now;
-
-    const borderThin = {
-        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
-    };
-    const fillHeader = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
-    const fontHeader = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-
-    let sheetName = 'Auditoría';
-    let subTitulo = 'Reporte de Auditoría';
-    let dataRows = [];
-    let headers = [];
-
-    if (seccionActiva === 'responsivas') {
-        sheetName = 'Responsivas de Equipos';
-        subTitulo = 'Auditoría de Cartas Responsivas de Equipos';
-        headers = ['Equipo', 'Usuario', 'Área', 'Puesto', 'Tipo / Modelo', 'Serie', 'Estado Responsiva'];
-        dataRows = cacheDatos.responsivas.map(e => [
-            e.nombre_equipo, e.usuario, e.area, e.puesto, `${e.tipo} ${e.marca} ${e.modelo}`, e.serie,
-            e.tiene_responsiva === 1 ? 'Firmada (PDF)' : 'Pendiente'
-        ]);
-    } else if (seccionActiva === 'mantenimiento') {
-        sheetName = 'Planes Mantenimiento';
-        subTitulo = 'Cronograma y Evidencias de Mantenimiento';
-        headers = ['Equipo', 'Área', 'Usuario Responsable', 'Tipo', 'Fecha Programada', 'Fecha Realizada', 'Frecuencia', 'Estado', 'Técnico', 'Evidencia PDF'];
-        dataRows = cacheDatos.mantenimiento.map(m => [
-            m.nombre_equipo, m.area, m.usuario_responsable, m.tipo_mantenimiento, m.fecha_programada,
-            m.fecha_realizada || '-', m.frecuencia, m.estado, m.tecnico_responsable || 'Sistemas',
-            m.evidencia_pdf_url ? 'SÍ (PDF)' : 'Pendiente'
-        ]);
-    } else if (seccionActiva === 'correos') {
-        sheetName = 'Control de Correos';
-        subTitulo = 'Matriz Integral de Cuentas de Correo y Bajas';
-        headers = ['Colaborador', 'Correo Electrónico', 'Área', 'Puesto', 'Tipo Cuenta', 'Estado', 'Fecha Alta', 'Fecha Baja', 'Motivo de Baja'];
-        dataRows = cacheDatos.correos.map(c => [
-            c.nombre_colaborador, c.correo, c.area, c.puesto, c.tipo_cuenta, c.estado,
-            c.fecha_alta || '-', c.fecha_baja || '-', c.motivo_baja || '-'
-        ]);
-    } else if (seccionActiva === 'licencias') {
-        sheetName = 'Licencias de Office';
-        subTitulo = 'Matriz de Licenciamiento y Product Keys';
-        headers = ['Product Key', 'Producto', 'Tipo', 'Cuenta Microsoft', 'Equipo Asignado', 'Usuario Asignado', 'Área', 'Estado', 'Fecha Compra'];
-        dataRows = cacheDatos.licencias.map(l => [
-            l.codigo_licencia, l.nombre_producto, l.tipo_licencia, l.cuenta_microsoft, l.equipo_asignado,
-            l.usuario_asignado, l.area, l.estado, l.fecha_compra || '-'
-        ]);
-    } else if (seccionActiva === 'gds_usr') {
-        sheetName = 'Usuarios GDS';
-        subTitulo = 'Control de Accesos y Credenciales DMS/GDS';
-        headers = ['Colaborador', 'Área', 'Puesto', 'Usuario GDS', 'Contraseña GDS', 'Perfil GDS', 'Sucursal', 'Estado', 'Responsiva'];
-        dataRows = cacheDatos.gds_usr.map(u => [
-            u.colaborador, u.area, u.puesto, u.usuario_gds, u.password_gds, u.perfil_gds, u.sucursal,
-            u.estado, u.responsiva_firmada_url ? 'Firmada (PDF)' : 'Pendiente'
-        ]);
-    } else if (seccionActiva === 'gds_pass') {
-        sheetName = 'Passwords Movimientos GDS';
-        subTitulo = 'Custodia de Claves de Movimientos Críticos';
-        headers = ['Tipo de Movimiento', 'Descripción', 'Contraseña de Autorización', 'Usuario Autorizado', 'Puesto', 'Área', 'Nivel', 'Última Modif.', 'Responsiva'];
-        dataRows = cacheDatos.gds_pass.map(p => [
-            p.tipo_movimiento, p.descripcion_movimiento, p.password_movimiento, p.usuario_autorizado,
-            p.puesto_autorizado, p.area, p.nivel_seguridad, p.fecha_actualizacion || '-',
-            p.responsiva_firmada_url ? 'Firmada (PDF)' : 'Pendiente'
-        ]);
-    } else if (seccionActiva === 'grp_usr') {
-        sheetName = 'Usuarios GRP';
-        subTitulo = 'Asignación de Roles y Permisos GRP';
-        headers = ['Colaborador', 'Área', 'Puesto', 'Usuario GRP', 'Contraseña GRP', 'Roles GRP', 'Módulos', 'Estado', 'Responsiva'];
-        dataRows = cacheDatos.grp_usr.map(g => [
-            g.colaborador, g.area, g.puesto, g.usuario_grp, g.password_grp, g.roles_grp,
-            g.modulos_permitidos, g.estado, g.responsiva_firmada_url ? 'Firmada (PDF)' : 'Pendiente'
-        ]);
-    }
-
-    const ws = wb.addWorksheet(sheetName.substring(0, 31), { views: [{ showGridLines: true }] });
-
-    // Membrete
-    const numCols = headers.length;
-    const endColLetter = String.fromCharCode(65 + numCols - 1);
-
-    ws.mergeCells(`A2:${endColLetter}2`);
-    const cTitle = ws.getCell('A2');
-    cTitle.value = (agencia.nombre || 'GRUPO HUERTA').toUpperCase();
-    cTitle.font = { name: 'Segoe UI', size: 15, bold: true, color: { argb: 'FF0F172A' } };
-
-    ws.mergeCells(`A3:${endColLetter}3`);
-    const cSub = ws.getCell('A3');
-    cSub.value = subTitulo.toUpperCase();
-    cSub.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0284C7' } };
-
-    ws.mergeCells(`A4:${endColLetter}4`);
-    const cMeta = ws.getCell('A4');
-    cMeta.value = `Emisión: ${fechaStr} ${horaStr} hrs | Razón Social: ${agencia.razon_social || ''} | Total: ${dataRows.length} registros`;
-    cMeta.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF475569' } };
-
-    // Encabezados fila 6
-    const hRow = ws.getRow(6);
-    hRow.height = 24;
-    headers.forEach((h, idx) => {
-        const cell = ws.getCell(6, idx + 1);
-        cell.value = h;
-        cell.font = fontHeader;
-        cell.fill = fillHeader;
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.border = borderThin;
-    });
-
-    // Filas de datos
-    let rIdx = 7;
-    dataRows.forEach((row, rowNum) => {
-        const r = ws.getRow(rIdx);
-        r.height = 19;
-        const bgZebra = (rowNum % 2 === 0) ? 'FFFFFFFF' : 'FFF8FAFC';
-
-        row.forEach((val, colNum) => {
-            const cell = ws.getCell(rIdx, colNum + 1);
-            cell.value = val;
-            cell.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF1E293B' } };
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
-            cell.alignment = { vertical: 'middle' };
-            cell.border = borderThin;
-        });
-        rIdx++;
-    });
-
-    // Auto-ajuste de columnas
-    ws.columns.forEach(col => {
-        col.width = 20;
-    });
-
-    // Escribir buffer y descargar
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    const fileName = `Auditoria_${sheetName.replace(/[^a-zA-Z0-9_-]/g, '_')}_${now.toISOString().slice(0, 10)}.xlsx`;
-
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    Swal.fire({
-        title: '¡Reporte Generado!',
-        text: `Se descargó exitosamente: ${fileName}`,
-        icon: 'success',
-        timer: 2000,
-        showConfirmButton: false
-    });
-}
-
-async function exportarLibroCompletoAuditoriaExcel() {
-    Swal.fire({
-        title: 'Generando Libro Completo de Auditoría...',
-        text: 'Estructurando las 7 secciones en un libro multi-hoja oficial...',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-
-    try {
-        // Asegurar que todas las secciones estén cargadas
-        const promises = [
-            fetch('api_auditoria.php?action=listar_responsivas_equipos').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_mantenimientos').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_correos').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_licencias').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_gds_usuarios').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_gds_passwords').then(r => r.json()),
-            fetch('api_auditoria.php?action=listar_grp_usuarios').then(r => r.json())
-        ];
-
-        const [rResp, rMant, rCorr, rLic, rGdsU, rGdsP, rGrp] = await Promise.all(promises);
-
-        const agencia = window.DATOS_AGENCIA_EXCEL || { nombre: 'GRUPO HUERTA' };
-        const now = new Date();
-        const wb = new ExcelJS.Workbook();
-        wb.creator = 'Portal de Sistemas - ' + agencia.nombre;
-        wb.created = now;
-
-        const borderThin = {
-            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
-            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+    <script>
+        // DATOS LOCALES PARA EXPORTACIÓN EN EXCEL MULTI-HOJA
+        const DATOS_AUDITORIA = {
+            agencia: <?php echo json_encode($agenciaNombre); ?>,
+            equipos: <?php echo json_encode($equiposInventario); ?>,
+            mantenimientos: <?php echo json_encode($mantenimientos); ?>,
+            correos: <?php echo json_encode($correos); ?>,
+            licencias: <?php echo json_encode($licenciasOffice); ?>,
+            gdsUsuarios: <?php echo json_encode($gdsUsuarios); ?>,
+            gdsPasswords: <?php echo json_encode($gdsPasswords); ?>,
+            grpUsuarios: <?php echo json_encode($grpUsuarios); ?>
         };
-        const fillHeader = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
-        const fontHeader = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
 
-        const agregarHoja = (nombreHoja, titulo, headers, data) => {
-            const ws = wb.addWorksheet(nombreHoja.substring(0, 31), { views: [{ showGridLines: true }] });
-            const endCol = String.fromCharCode(65 + headers.length - 1);
+        // NAVEGACIÓN ENTRE VISTAS DE BOTONES
+        function abrirModulo(seccionId) {
+            document.querySelectorAll('.section-view-panel').forEach(p => p.classList.remove('active'));
+            const target = document.getElementById('vista-' + seccionId);
+            if (target) {
+                target.classList.add('active');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                window.location.hash = seccionId;
+            }
+        }
 
-            ws.mergeCells(`A2:${endCol}2`);
-            const cT = ws.getCell('A2');
-            cT.value = (agencia.nombre || 'GRUPO HUERTA').toUpperCase();
-            cT.font = { name: 'Segoe UI', size: 14, bold: true, color: { argb: 'FF0F172A' } };
+        function volverAlHub() {
+            document.querySelectorAll('.section-view-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('vista-hub').classList.add('active');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            history.pushState("", document.title, window.location.pathname + window.location.search);
+        }
 
-            ws.mergeCells(`A3:${endCol}3`);
-            const cS = ws.getCell('A3');
-            cS.value = titulo.toUpperCase();
-            cS.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF0284C7' } };
-
-            ws.getRow(5).height = 24;
-            headers.forEach((h, i) => {
-                const cell = ws.getCell(5, i + 1);
-                cell.value = h;
-                cell.font = fontHeader;
-                cell.fill = fillHeader;
-                cell.alignment = { horizontal: 'center', vertical: 'middle' };
-                cell.border = borderThin;
-            });
-
-            let rIdx = 6;
-            data.forEach((row, rowIdx) => {
-                const r = ws.getRow(rIdx);
-                r.height = 19;
-                const bgZebra = (rowIdx % 2 === 0) ? 'FFFFFFFF' : 'FFF8FAFC';
-                row.forEach((val, cIdx) => {
-                    const cell = ws.getCell(rIdx, cIdx + 1);
-                    cell.value = val;
-                    cell.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF1E293B' } };
-                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgZebra } };
-                    cell.alignment = { vertical: 'middle' };
-                    cell.border = borderThin;
-                });
-                rIdx++;
-            });
-
-            ws.columns.forEach(col => { col.width = 22; });
-        };
-
-        // 1. Responsivas
-        agregarHoja('1. Responsivas Equipos', 'Auditoría de Responsivas de Equipos', 
-            ['Equipo', 'Usuario', 'Área', 'Puesto', 'Tipo / Marca', 'Serie', 'Estado Responsiva'],
-            (rResp.datos || []).map(e => [e.nombre_equipo, e.usuario, e.area, e.puesto, `${e.tipo} ${e.marca}`, e.serie, e.tiene_responsiva === 1 ? 'Firmada' : 'Pendiente'])
-        );
-
-        // 2. Mantenimientos
-        agregarHoja('2. Planes Mantenimiento', 'Planes y Calendario de Mantenimiento',
-            ['Equipo', 'Área', 'Usuario', 'Tipo', 'Fecha Prog.', 'Fecha Real.', 'Frecuencia', 'Estado', 'Técnico', 'Evidencia PDF'],
-            (rMant.datos || []).map(m => [m.nombre_equipo, m.area, m.usuario_responsable, m.tipo_mantenimiento, m.fecha_programada, m.fecha_realizada || '-', m.frecuencia, m.estado, m.tecnico_responsable || 'Sistemas', m.evidencia_pdf_url ? 'SÍ (PDF)' : 'Pendiente'])
-        );
-
-        // 3. Correos
-        agregarHoja('3. Control de Correos', 'Matriz de Correos, Altas y Bajas',
-            ['Colaborador', 'Correo Electrónico', 'Área', 'Puesto', 'Tipo', 'Estado', 'Fecha Alta', 'Fecha Baja', 'Motivo'],
-            (rCorr.datos || []).map(c => [c.nombre_colaborador, c.correo, c.area, c.puesto, c.tipo_cuenta, c.estado, c.fecha_alta || '-', c.fecha_baja || '-', c.motivo_baja || '-'])
-        );
-
-        // 4. Licencias
-        agregarHoja('4. Licencias Office', 'Matriz de Licencias y Product Keys',
-            ['Product Key', 'Producto', 'Tipo', 'Cuenta MS', 'Equipo', 'Usuario', 'Área', 'Estado', 'Compra'],
-            (rLic.datos || []).map(l => [l.codigo_licencia, l.nombre_producto, l.tipo_licencia, l.cuenta_microsoft, l.equipo_asignado, l.usuario_asignado, l.area, l.estado, l.fecha_compra || '-'])
-        );
-
-        // 5. Usuarios GDS
-        agregarHoja('5. Usuarios GDS', 'Usuarios y Credenciales GDS',
-            ['Colaborador', 'Área', 'Puesto', 'Usuario GDS', 'Password GDS', 'Perfil GDS', 'Sucursal', 'Estado', 'Responsiva'],
-            (rGdsU.datos || []).map(u => [u.colaborador, u.area, u.puesto, u.usuario_gds, u.password_gds, u.perfil_gds, u.sucursal, u.estado, u.responsiva_firmada_url ? 'SÍ (PDF)' : 'Pendiente'])
-        );
-
-        // 6. Passwords Movimientos GDS
-        agregarHoja('6. Passwords Movimientos GDS', 'Custodia de Claves de Movimientos Críticos GDS',
-            ['Tipo de Movimiento', 'Descripción', 'Password', 'Usuario Autorizado', 'Puesto', 'Área', 'Nivel', 'Última Modif.', 'Responsiva'],
-            (rGdsP.datos || []).map(p => [p.tipo_movimiento, p.descripcion_movimiento, p.password_movimiento, p.usuario_autorizado, p.puesto_autorizado, p.area, p.nivel_seguridad, p.fecha_actualizacion || '-', p.responsiva_firmada_url ? 'SÍ (PDF)' : 'Pendiente'])
-        );
-
-        // 7. Usuarios GRP
-        agregarHoja('7. Usuarios GRP', 'Usuarios y Roles en Sistema GRP',
-            ['Colaborador', 'Área', 'Puesto', 'Usuario GRP', 'Password GRP', 'Roles GRP', 'Módulos', 'Estado', 'Responsiva'],
-            (rGrp.datos || []).map(g => [g.colaborador, g.area, g.puesto, g.usuario_grp, g.password_grp, g.roles_grp, g.modulos_permitidos, g.estado, g.responsiva_firmada_url ? 'SÍ (PDF)' : 'Pendiente'])
-        );
-
-        const buffer = await wb.xlsx.writeBuffer();
-        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        const fileName = `Libro_Completo_Auditoria_Interna_${now.toISOString().slice(0, 10)}.xlsx`;
-
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        Swal.fire({
-            title: '¡Libro de Auditoría Descargado!',
-            text: 'Se han integrado las 7 secciones en un solo libro Excel (.xlsx) con hojas individuales.',
-            icon: 'success'
+        // Revisar hash al cargar la página
+        window.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash.replace('#', '');
+            if (hash && document.getElementById('vista-' + hash)) {
+                abrirModulo(hash);
+            }
         });
 
-    } catch (err) {
-        Swal.fire('Error', 'No se pudo generar el libro completo: ' + err.message, 'error');
-    }
-}
-</script>
+        // FILTRO EN TIEMPO REAL DE TARJETAS
+        function filtrarCards(cardClass, query) {
+            const q = query.toLowerCase().trim();
+            document.querySelectorAll('.' + cardClass).forEach(card => {
+                const searchStr = card.getAttribute('data-search') || '';
+                card.style.display = searchStr.includes(q) ? '' : 'none';
+            });
+        }
+
+        // FILTRO POR ESTADO EN RESPONSIVAS
+        function filtrarEstadoResp(btn, estado) {
+            btn.parentElement.querySelectorAll('.filter-pill-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            document.querySelectorAll('.card-equipo').forEach(card => {
+                if (estado === 'todos') {
+                    card.style.display = '';
+                } else {
+                    card.style.display = (card.getAttribute('data-estado') === estado) ? '' : 'none';
+                }
+            });
+        }
+
+        // MOSTRAR / OCULTAR CONTRASEÑAS (PEEK)
+        function togglePeek(elemId, btn) {
+            const el = document.getElementById(elemId);
+            if (!el) return;
+            const real = el.getAttribute('data-real');
+            const icon = btn.querySelector('i');
+            if (el.innerText.includes('•')) {
+                el.innerText = real;
+                if (icon) icon.className = 'bi bi-eye-slash';
+            } else {
+                el.innerText = '••••••••';
+                if (icon) icon.className = 'bi bi-eye';
+            }
+        }
+
+        // COPIAR AL PORTAPAPELES
+        function copiarTexto(texto) {
+            if (!texto) return;
+            navigator.clipboard.writeText(texto).then(() => {
+                const toast = document.createElement('div');
+                toast.className = 'position-fixed bottom-0 end-0 p-3';
+                toast.style.zIndex = '9999';
+                toast.innerHTML = `<div class="toast show align-items-center text-white bg-success border-0 py-2 px-3 rounded shadow">
+                    <i class="bi bi-check2-circle me-2"></i> Copiado al portapapeles
+                </div>`;
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 2000);
+            });
+        }
+
+        // VISOR MODAL DE PDF
+        function verPdfModal(url, titulo) {
+            if (!url) return;
+            document.getElementById('visor-pdf-titulo').innerText = titulo;
+            document.getElementById('visor-pdf-descargar').href = url;
+            document.getElementById('visor-pdf-frame').src = url;
+            new bootstrap.Modal(document.getElementById('modalVisorPdf')).show();
+        }
+
+        // MODAL PARA SUBIR ARCHIVO PDF
+        function abrirModalSubirPdf(tipo, id, nombre) {
+            document.getElementById('subir-equipo-id').value = '';
+            document.getElementById('subir-mant-id').value = '';
+            document.getElementById('subir-generic-id').value = '';
+
+            let action = '';
+            let titulo = '';
+            if (tipo === 'equipo') {
+                action = 'subir_responsiva_equipo';
+                titulo = 'Subir Responsiva de Equipo: ' + nombre;
+                document.getElementById('subir-equipo-id').value = id;
+            } else if (tipo === 'mantenimiento') {
+                action = 'subir_evidencia_mantenimiento';
+                titulo = 'Subir Evidencia de Mantenimiento: ' + nombre;
+                document.getElementById('subir-mant-id').value = id;
+            } else if (tipo === 'gds') {
+                action = 'subir_responsiva_gds';
+                titulo = 'Subir Responsiva GDS: ' + nombre;
+                document.getElementById('subir-generic-id').value = id;
+            } else if (tipo === 'movimiento') {
+                action = 'subir_responsiva_movimiento';
+                titulo = 'Subir Acta de Movimiento: ' + nombre;
+                document.getElementById('subir-generic-id').value = id;
+            } else if (tipo === 'grp') {
+                action = 'subir_responsiva_grp';
+                titulo = 'Subir Responsiva GRP: ' + nombre;
+                document.getElementById('subir-generic-id').value = id;
+            }
+
+            document.getElementById('subir-action').value = action;
+            document.getElementById('subir-modal-titulo').innerText = titulo;
+            new bootstrap.Modal(document.getElementById('modalSubirPdf')).show();
+        }
+
+        // AUTOCOMPLETAR DATOS DE COLABORADOR GDS
+        function autocompletarColaboradorGds(select) {
+            const opt = select.options[select.selectedIndex];
+            if (opt && opt.value) {
+                document.getElementById('gds-colaborador').value = opt.getAttribute('data-nombre') || '';
+                document.getElementById('gds-area').value = opt.getAttribute('data-area') || '';
+                if (!document.getElementById('gds-usuario').value) {
+                    document.getElementById('gds-usuario').value = (opt.getAttribute('data-login') || '').toUpperCase();
+                }
+            }
+        }
+
+        // APERTURA Y EDICIÓN DE MODALES
+        function abrirModalMantenimiento(id) {
+            document.getElementById('mant-id').value = '0';
+            document.getElementById('mant-modal-titulo').innerText = 'Programar Plan de Mantenimiento';
+            document.getElementById('mant-nom-equipo').value = '';
+            document.getElementById('mant-area').value = '';
+            document.getElementById('mant-usuario').value = '';
+            document.getElementById('mant-obs').value = '';
+            new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
+        }
+
+        function editarMantenimiento(m) {
+            document.getElementById('mant-id').value = m.id;
+            document.getElementById('mant-modal-titulo').innerText = 'Editar Plan de Mantenimiento #' + m.id;
+            document.getElementById('mant-nom-equipo').value = m.nombre_equipo || '';
+            document.getElementById('mant-area').value = m.area || '';
+            document.getElementById('mant-usuario').value = m.usuario_responsable || '';
+            document.getElementById('mant-tipo').value = m.tipo_mantenimiento || 'Preventivo';
+            document.getElementById('mant-fecha-prog').value = m.fecha_programada || '';
+            document.getElementById('mant-frecuencia').value = m.frecuencia || 'Semestral';
+            document.getElementById('mant-estado').value = m.estado || 'Programado';
+            document.getElementById('mant-tecnico').value = m.tecnico_responsable || 'Sistemas';
+            document.getElementById('mant-obs').value = m.observaciones || '';
+            new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
+        }
+
+        function abrirModalCorreo(id) {
+            document.getElementById('correo-id').value = '0';
+            document.getElementById('correo-modal-titulo').innerText = 'Registrar Cuenta de Correo';
+            document.getElementById('correo-email').value = '';
+            document.getElementById('correo-nombre').value = '';
+            document.getElementById('correo-area').value = '';
+            document.getElementById('correo-puesto').value = '';
+            document.getElementById('correo-pass').value = '';
+            new bootstrap.Modal(document.getElementById('modalCorreo')).show();
+        }
+
+        function editarCorreo(c) {
+            document.getElementById('correo-id').value = c.id;
+            document.getElementById('correo-modal-titulo').innerText = 'Editar Cuenta de Correo #' + c.id;
+            document.getElementById('correo-email').value = c.correo || '';
+            document.getElementById('correo-nombre').value = c.nombre_colaborador || '';
+            document.getElementById('correo-area').value = c.area || '';
+            document.getElementById('correo-puesto').value = c.puesto || '';
+            document.getElementById('correo-tipo').value = c.tipo_correo || 'Personalizado';
+            document.getElementById('correo-estado').value = c.estado || 'Activo';
+            document.getElementById('correo-pass').value = c.password_cuenta || '';
+            new bootstrap.Modal(document.getElementById('modalCorreo')).show();
+        }
+
+        function abrirModalLicencia(id) {
+            document.getElementById('lic-id').value = '0';
+            document.getElementById('lic-modal-titulo').innerText = 'Registrar Licencia de Office';
+            document.getElementById('lic-pk').value = '';
+            document.getElementById('lic-cuenta-ms').value = '';
+            document.getElementById('lic-equipo').value = '';
+            document.getElementById('lic-colab').value = '';
+            new bootstrap.Modal(document.getElementById('modalLicencia')).show();
+        }
+
+        function editarLicencia(lic) {
+            document.getElementById('lic-id').value = lic.id;
+            document.getElementById('lic-modal-titulo').innerText = 'Editar Licencia #' + lic.id;
+            document.getElementById('lic-pk').value = lic.product_key || '';
+            document.getElementById('lic-ver').value = lic.version_office || 'Microsoft 365 Business Standard';
+            document.getElementById('lic-tipo').value = lic.tipo_licencia || 'Suscripción Anual';
+            document.getElementById('lic-cuenta-ms').value = lic.cuenta_microsoft || '';
+            document.getElementById('lic-equipo').value = lic.equipo_asignado || '';
+            document.getElementById('lic-colab').value = lic.colaborador || '';
+            new bootstrap.Modal(document.getElementById('modalLicencia')).show();
+        }
+
+        function abrirModalGdsUsuario(id) {
+            document.getElementById('gds-id').value = '0';
+            document.getElementById('gds-modal-titulo').innerText = 'Asignar Credenciales GDS (DMS)';
+            document.getElementById('gds-usuario').value = '';
+            document.getElementById('gds-colaborador').value = '';
+            document.getElementById('gds-pass').value = '';
+            document.getElementById('gds-area').value = '';
+            new bootstrap.Modal(document.getElementById('modalGdsUsuario')).show();
+        }
+
+        function editarGdsUsuario(gu) {
+            document.getElementById('gds-id').value = gu.id;
+            document.getElementById('gds-modal-titulo').innerText = 'Editar Credenciales GDS #' + gu.id;
+            document.getElementById('gds-usuario').value = gu.usuario_gds || '';
+            document.getElementById('gds-colaborador').value = gu.nombre_colaborador || '';
+            document.getElementById('gds-pass').value = gu.password_gds || '';
+            document.getElementById('gds-perfil').value = gu.perfil_gds || 'Operativo';
+            document.getElementById('gds-area').value = gu.area || '';
+            new bootstrap.Modal(document.getElementById('modalGdsUsuario')).show();
+        }
+
+        function abrirModalGdsPassword(id) {
+            document.getElementById('mov-id').value = '0';
+            document.getElementById('mov-modal-titulo').innerText = 'Configurar Clave de Movimiento GDS';
+            document.getElementById('mov-tipo').value = '';
+            document.getElementById('mov-desc').value = '';
+            document.getElementById('mov-pass').value = '';
+            document.getElementById('mov-resp').value = '';
+            document.getElementById('mov-cargo').value = 'Gerencia';
+            new bootstrap.Modal(document.getElementById('modalGdsPassword')).show();
+        }
+
+        function editarGdsPassword(gp) {
+            document.getElementById('mov-id').value = gp.id;
+            document.getElementById('mov-modal-titulo').innerText = 'Editar Clave de Movimiento #' + gp.id;
+            document.getElementById('mov-tipo').value = gp.tipo_movimiento || '';
+            document.getElementById('mov-desc').value = gp.descripcion || '';
+            document.getElementById('mov-pass').value = gp.password || '';
+            document.getElementById('mov-nivel').value = gp.nivel_seguridad || 'Crítico';
+            document.getElementById('mov-resp').value = gp.responsable_autorizado || '';
+            document.getElementById('mov-cargo').value = gp.cargo_responsable || '';
+            new bootstrap.Modal(document.getElementById('modalGdsPassword')).show();
+        }
+
+        function abrirModalGrpUsuario(id) {
+            document.getElementById('grp-id').value = '0';
+            document.getElementById('grp-modal-titulo').innerText = 'Asignar Credenciales y Roles GRP';
+            document.getElementById('grp-usr').value = '';
+            document.getElementById('grp-nombre').value = '';
+            document.getElementById('grp-pass').value = '';
+            document.querySelectorAll('.check-grp-role').forEach(c => c.checked = false);
+            new bootstrap.Modal(document.getElementById('modalGrpUsuario')).show();
+        }
+
+        function editarGrpUsuario(gr) {
+            document.getElementById('grp-id').value = gr.id;
+            document.getElementById('grp-modal-titulo').innerText = 'Editar Usuario GRP #' + gr.id;
+            document.getElementById('grp-usr').value = gr.usuario_grp || '';
+            document.getElementById('grp-nombre').value = gr.nombre_colaborador || '';
+            document.getElementById('grp-pass').value = gr.password_grp || '';
+            document.getElementById('grp-mods').value = gr.modulos_permitidos || 'General';
+
+            const rolesStr = (gr.roles || '').toLowerCase();
+            document.querySelectorAll('.check-grp-role').forEach(c => {
+                c.checked = rolesStr.includes(c.value.toLowerCase());
+            });
+            new bootstrap.Modal(document.getElementById('modalGrpUsuario')).show();
+        }
+
+        // ACCIONES LOCALES RÁPIDAS
+        function cambiarEstadoCorreo(id, nuevoEstado) {
+            let mot = '';
+            if (nuevoEstado !== 'Activo') {
+                mot = prompt(`Ingrese el motivo para marcar la cuenta como "${nuevoEstado}":`, 'Baja operativa del colaborador');
+                if (mot === null) return;
+            }
+
+            const formData = new FormData();
+            formData.append('action', 'cambiar_estado_correo');
+            formData.append('id', id);
+            formData.append('nuevo_estado', nuevoEstado);
+            formData.append('motivo', mot);
+            formData.append('es_ajax', '1');
+
+            fetch('auditoria_interna.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        window.location.hash = 'correos';
+                        window.location.reload();
+                    } else {
+                        alert(res.error || 'Error al actualizar');
+                    }
+                });
+        }
+
+        function sincronizarCorreos() {
+            if (!confirm('¿Desea sincronizar automáticamente la matriz de correos con los usuarios y equipos registrados?')) return;
+            const formData = new FormData();
+            formData.append('action', 'sincronizar_correos');
+            formData.append('es_ajax', '1');
+
+            fetch('auditoria_interna.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(res => {
+                    alert(res.mensaje || 'Sincronización terminada');
+                    window.location.hash = 'correos';
+                    window.location.reload();
+                });
+        }
+
+        function confirmarEliminar(tipo, id) {
+            if (!confirm(`¿Está seguro de eliminar este registro (#${id})? Esta acción no se puede deshacer.`)) return;
+
+            let action = '';
+            let hash = '';
+            if (tipo === 'mantenimiento') { action = 'eliminar_mantenimiento'; hash = 'mantenimiento'; }
+            else if (tipo === 'licencia') { action = 'eliminar_licencia'; hash = 'licencias'; }
+            else if (tipo === 'gds_usuario') { action = 'eliminar_gds_usuario'; hash = 'gds_usuarios'; }
+            else if (tipo === 'gds_password') { action = 'eliminar_gds_password'; hash = 'gds_passwords'; }
+            else if (tipo === 'grp_usuario') { action = 'eliminar_grp_usuario'; hash = 'grp_usuarios'; }
+
+            const formData = new FormData();
+            formData.append('action', action);
+            formData.append('id', id);
+            formData.append('es_ajax', '1');
+
+            fetch('auditoria_interna.php', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        window.location.hash = hash;
+                        window.location.reload();
+                    } else {
+                        alert(res.error || 'Error al eliminar');
+                    }
+                });
+        }
+
+        // =====================================================================
+        // EXPORTADOR PREMIUM DE EXCEL MULTI-PESTAÑA CON EXCELJS
+        // =====================================================================
+        async function exportarAuditoriaCompletaExcel() {
+            const wb = new ExcelJS.Workbook();
+            wb.creator = 'Sistema de Auditoría Interna TI';
+            wb.created = new Date();
+
+            const estiloHeader = {
+                font: { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } },
+                fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D213F' } },
+                alignment: { vertical: 'middle', horizontal: 'center' },
+                border: {
+                    top: { style: 'thin', color: { argb: 'FFD4AF37' } },
+                    bottom: { style: 'medium', color: { argb: 'FFD4AF37' } }
+                }
+            };
+
+            // 1. HOJA: RESPONSIVAS EQUIPOS
+            const ws1 = wb.addWorksheet('1. Responsivas Equipos');
+            ws1.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Equipo', key: 'nombre', width: 22 },
+                { header: 'Área', key: 'area', width: 18 },
+                { header: 'Responsable', key: 'usuario', width: 26 },
+                { header: 'Puesto', key: 'puesto', width: 22 },
+                { header: 'Marca / Modelo', key: 'marca_modelo', width: 22 },
+                { header: 'No. Serie', key: 'serie', width: 18 },
+                { header: 'Estatus Responsiva', key: 'estatus', width: 20 }
+            ];
+            ws1.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.equipos.forEach(eq => {
+                ws1.addRow({
+                    id: eq.id,
+                    nombre: eq.nombre_equipo,
+                    area: eq.departamento || 'General',
+                    usuario: eq.usuario || 'Sin Asignar',
+                    puesto: eq.puesto || 'N/A',
+                    marca_modelo: (eq.marca || '') + ' ' + (eq.modelo || ''),
+                    serie: eq.serie || 'S/N',
+                    estatus: eq.responsiva_url ? 'Firmada' : 'Pendiente'
+                });
+            });
+
+            // 2. HOJA: PLANES DE MANTENIMIENTO
+            const ws2 = wb.addWorksheet('2. Mantenimientos');
+            ws2.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Equipo', key: 'equipo', width: 22 },
+                { header: 'Área', key: 'area', width: 18 },
+                { header: 'Tipo', key: 'tipo', width: 18 },
+                { header: 'Fecha Programada', key: 'fecha_prog', width: 18 },
+                { header: 'Frecuencia', key: 'frec', width: 15 },
+                { header: 'Estado', key: 'estado', width: 15 },
+                { header: 'Técnico', key: 'tecnico', width: 22 },
+                { header: 'Evidencia PDF', key: 'evidencia', width: 16 }
+            ];
+            ws2.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.mantenimientos.forEach(m => {
+                ws2.addRow({
+                    id: m.id,
+                    equipo: m.nombre_equipo,
+                    area: m.area,
+                    tipo: m.tipo_mantenimiento,
+                    fecha_prog: m.fecha_programada,
+                    frec: m.frecuencia,
+                    estado: m.estado,
+                    tecnico: m.tecnico_responsable,
+                    evidencia: m.evidencia_pdf_url ? 'Sí (Cargada)' : 'No'
+                });
+            });
+
+            // 3. HOJA: CONTROL DE CORREOS
+            const ws3 = wb.addWorksheet('3. Control de Correos');
+            ws3.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Correo Electrónico', key: 'correo', width: 32 },
+                { header: 'Colaborador', key: 'colab', width: 26 },
+                { header: 'Área', key: 'area', width: 18 },
+                { header: 'Puesto', key: 'puesto', width: 22 },
+                { header: 'Tipo', key: 'tipo', width: 16 },
+                { header: 'Estado', key: 'estado', width: 14 },
+                { header: 'Fecha Baja', key: 'fecha_baja', width: 15 },
+                { header: 'Motivo Baja', key: 'motivo', width: 30 }
+            ];
+            ws3.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.correos.forEach(c => {
+                ws3.addRow({
+                    id: c.id,
+                    correo: c.correo,
+                    colab: c.nombre_colaborador,
+                    area: c.area,
+                    puesto: c.puesto,
+                    tipo: c.tipo_correo,
+                    estado: c.estado,
+                    fecha_baja: c.fecha_baja || '-',
+                    motivo: c.motivo_baja || '-'
+                });
+            });
+
+            // 4. HOJA: LICENCIAS DE OFFICE
+            const ws4 = wb.addWorksheet('4. Licencias Office');
+            ws4.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Versión de Office', key: 'ver', width: 30 },
+                { header: 'Product Key / Clave', key: 'pk', width: 32 },
+                { header: 'Tipo Licencia', key: 'tipo', width: 20 },
+                { header: 'Cuenta Microsoft', key: 'cuenta', width: 30 },
+                { header: 'Equipo Asignado', key: 'eq', width: 20 },
+                { header: 'Colaborador', key: 'colab', width: 24 },
+                { header: 'Área', key: 'area', width: 18 },
+                { header: 'Estado', key: 'estado', width: 14 }
+            ];
+            ws4.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.licencias.forEach(l => {
+                ws4.addRow({
+                    id: l.id,
+                    ver: l.version_office,
+                    pk: l.product_key,
+                    tipo: l.tipo_licencia,
+                    cuenta: l.cuenta_microsoft,
+                    eq: l.equipo_asignado,
+                    colab: l.colaborador,
+                    area: l.area,
+                    estado: l.estado
+                });
+            });
+
+            // 5. HOJA: USUARIOS GDS
+            const ws5 = wb.addWorksheet('5. Usuarios GDS');
+            ws5.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Usuario GDS', key: 'usr', width: 18 },
+                { header: 'Colaborador', key: 'colab', width: 26 },
+                { header: 'Contraseña GDS', key: 'pass', width: 20 },
+                { header: 'Perfil GDS', key: 'perfil', width: 20 },
+                { header: 'Área', key: 'area', width: 18 },
+                { header: 'Sucursal', key: 'sucursal', width: 16 },
+                { header: 'Responsiva Firmada', key: 'resp', width: 20 }
+            ];
+            ws5.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.gdsUsuarios.forEach(gu => {
+                ws5.addRow({
+                    id: gu.id,
+                    usr: gu.usuario_gds,
+                    colab: gu.nombre_colaborador,
+                    pass: gu.password_gds,
+                    perfil: gu.perfil_gds,
+                    area: gu.area,
+                    sucursal: gu.sucursal,
+                    resp: gu.responsiva_pdf_url ? 'Firmada (PDF)' : 'Pendiente'
+                });
+            });
+
+            // 6. HOJA: PASSWORD GDS MOVIMIENTOS
+            const ws6 = wb.addWorksheet('6. Password GDS Movimientos');
+            ws6.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Tipo de Movimiento', key: 'mov', width: 32 },
+                { header: 'Descripción', key: 'desc', width: 45 },
+                { header: 'Contraseña', key: 'pass', width: 20 },
+                { header: 'Nivel Seguridad', key: 'nivel', width: 16 },
+                { header: 'Responsable Autorizado', key: 'resp', width: 26 },
+                { header: 'Cargo', key: 'cargo', width: 22 },
+                { header: 'Acta Firmada', key: 'acta', width: 18 }
+            ];
+            ws6.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.gdsPasswords.forEach(gp => {
+                ws6.addRow({
+                    id: gp.id,
+                    mov: gp.tipo_movimiento,
+                    desc: gp.descripcion,
+                    pass: gp.password,
+                    nivel: gp.nivel_seguridad,
+                    resp: gp.responsable_autorizado,
+                    cargo: gp.cargo_responsable,
+                    acta: gp.responsiva_pdf_url ? 'Sí (Cargada)' : 'No'
+                });
+            });
+
+            // 7. HOJA: USUARIOS GRP
+            const ws7 = wb.addWorksheet('7. Usuarios GRP');
+            ws7.columns = [
+                { header: 'ID', key: 'id', width: 8 },
+                { header: 'Usuario GRP', key: 'usr', width: 20 },
+                { header: 'Colaborador', key: 'colab', width: 26 },
+                { header: 'Contraseña GRP', key: 'pass', width: 20 },
+                { header: 'Roles Asignados', key: 'roles', width: 40 },
+                { header: 'Módulos Permitidos', key: 'mods', width: 25 },
+                { header: 'Estatus', key: 'est', width: 14 },
+                { header: 'Responsiva Firmada', key: 'resp', width: 20 }
+            ];
+            ws7.getRow(1).eachCell(cell => Object.assign(cell, estiloHeader));
+            DATOS_AUDITORIA.grpUsuarios.forEach(gr => {
+                ws7.addRow({
+                    id: gr.id,
+                    usr: gr.usuario_grp,
+                    colab: gr.nombre_colaborador,
+                    pass: gr.password_grp,
+                    roles: gr.roles,
+                    mods: gr.modulos_permitidos,
+                    est: gr.estado,
+                    resp: gr.responsiva_pdf_url ? 'Firmada (PDF)' : 'Pendiente'
+                });
+            });
+
+            // Descargar el archivo
+            const buffer = await wb.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            saveAs(blob, `Auditoria_Interna_${DATOS_AUDITORIA.agencia.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        }
+
+        function exportarSeccionExcel(seccion) {
+            exportarAuditoriaCompletaExcel();
+        }
+    </script>
 </body>
 </html>
