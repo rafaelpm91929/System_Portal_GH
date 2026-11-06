@@ -7,7 +7,7 @@
  * Secciones:
  * 1. Gestión de Infraestructura:
  *    - Responsivas de Equipos (Inventario)
- *    - Planes de Mantenimiento (Calendario y Evidencias PDF)
+ *    - Planes de Mantenimiento (Calendario Interactivo, Asignación de Días, Expedientes PDF y Filtros por Máquina y Área)
  *    - Control de Correos (Altas, Bajas, Eliminados y Sincronización)
  *    - Licencias de Office (Product Keys y Cuentas Vinculadas)
  * 2. Seguridad de la Información:
@@ -39,7 +39,7 @@ if ($pdo) {
 
 requerirPermiso('auditoria_interna', 'puede_ver');
 
-$puedeEditar  = tienePermiso('auditoria_interna', 'puede_editar');
+$puedeEditar   = tienePermiso('auditoria_interna', 'puede_editar');
 $puedeEliminar = tienePermiso('auditoria_interna', 'puede_eliminar');
 
 $usuarioId     = $_SESSION['usuario_id'];
@@ -77,7 +77,6 @@ foreach ($dirsReq as $d) {
 $mensajeAlerta = '';
 $tipoAlerta = '';
 
-// Procesar llamadas AJAX locales o envíos de formulario
 $action = trim($_POST['action'] ?? $_GET['action'] ?? '');
 
 if (!empty($action) && $pdo) {
@@ -129,7 +128,7 @@ if (!empty($action) && $pdo) {
                 $tipoAlerta = 'info';
                 break;
 
-            // 2. PLANES DE MANTENIMIENTO
+            // 2. PLANES DE MANTENIMIENTO (ASIGNACIÓN DE DÍAS Y CALENDARIO)
             case 'guardar_mantenimiento':
                 if (!$puedeEditar) throw new Exception("Permiso denegado.");
                 $idM = intval($_POST['mantenimiento_id'] ?? 0);
@@ -153,7 +152,7 @@ if (!empty($action) && $pdo) {
                 } else {
                     $stmtM = $pdo->prepare("INSERT INTO audit_mantenimientos (equipo_id, nombre_equipo, area, usuario_responsable, tipo_mantenimiento, fecha_programada, frecuencia, estado, tecnico_responsable, observaciones) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                     $stmtM->execute([$eqId, $nomEq, $area, $user, $tipoM, $fProg, $frec, $est, $tec, $obs]);
-                    $msg = 'Plan de mantenimiento registrado exitosamente.';
+                    $msg = 'Día de mantenimiento programado exitosamente.';
                 }
                 if ($esAjax) {
                     echo json_encode(['success' => true, 'mensaje' => $msg]);
@@ -184,10 +183,10 @@ if (!empty($action) && $pdo) {
                 $stmtU->execute([$relUrl, $hoy, $idM]);
 
                 if ($esAjax) {
-                    echo json_encode(['success' => true, 'mensaje' => 'Evidencia guardada y estatus marcado como Realizado.', 'url' => $relUrl]);
+                    echo json_encode(['success' => true, 'mensaje' => 'Expediente/Evidencia PDF guardada y estatus marcado como Realizado.', 'url' => $relUrl]);
                     exit();
                 }
-                $mensajeAlerta = 'Evidencia en PDF registrada con éxito.';
+                $mensajeAlerta = 'Expediente en PDF registrado con éxito.';
                 $tipoAlerta = 'success';
                 break;
 
@@ -275,7 +274,6 @@ if (!empty($action) && $pdo) {
                 $nuevos = 0;
                 $stmtIns = $pdo->prepare("INSERT INTO audit_correos (correo, nombre_colaborador, area, puesto, tipo_correo, estado) VALUES (?, ?, ?, ?, 'Personalizado', 'Activo')");
 
-                // De usuarios
                 $resU = $pdo->query("SELECT email, nombre, departamento, puesto FROM usuarios WHERE email IS NOT NULL AND TRIM(email) != ''");
                 if ($resU) {
                     while ($ru = $resU->fetch(PDO::FETCH_ASSOC)) {
@@ -625,11 +623,12 @@ if ($pdo) {
 
     // Áreas únicas encontradas
     $areasSet = [];
-    foreach ($equiposInventario as $e) { if (!empty($e['departamento'])) $areasSet[$e['departamento']] = true; }
-    foreach ($correos as $c) { if (!empty($c['area'])) $areasSet[$c['area']] = true; }
-    foreach ($mantenimientos as $m) { if (!empty($m['area'])) $areasSet[$m['area']] = true; }
+    foreach ($equiposInventario as $e) { if (!empty($e['departamento'])) $areasSet[trim($e['departamento'])] = true; }
+    foreach ($correos as $c) { if (!empty($c['area'])) $areasSet[trim($c['area'])] = true; }
+    foreach ($mantenimientos as $m) { if (!empty($m['area'])) $areasSet[trim($m['area'])] = true; }
     ksort($areasSet);
     $catalogoAreas = array_keys($areasSet);
+    if (!in_array('General', $catalogoAreas)) $catalogoAreas[] = 'General';
 }
 
 // Estadísticas de Resumen para los Botones del Menú Principal
@@ -653,6 +652,34 @@ $cntGdsResp        = count(array_filter($gdsUsuarios, fn($u) => !empty($u['respo
 $cntTotalPassMov   = count($gdsPasswords);
 $cntTotalGrp       = count($grpUsuarios);
 $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['responsiva_pdf_url'])));
+
+// Agrupación de Mantenimientos por Área
+$mantenimientosPorArea = [];
+foreach ($catalogoAreas as $ar) {
+    $mantenimientosPorArea[$ar] = [];
+}
+foreach ($mantenimientos as $m) {
+    $ar = !empty($m['area']) ? trim($m['area']) : 'General';
+    if (!isset($mantenimientosPorArea[$ar])) $mantenimientosPorArea[$ar] = [];
+    $mantenimientosPorArea[$ar][] = $m;
+}
+
+// Mapa de Máquinas / Equipos con su historial y próxima fecha de mantenimiento
+$equiposConMantenimiento = [];
+foreach ($equiposInventario as $eq) {
+    $eqId = $eq['id'];
+    $nomEq = strtolower(trim($eq['nombre_equipo']));
+    $mantsDelEq = array_values(array_filter($mantenimientos, function($m) use ($eqId, $nomEq) {
+        return (!empty($m['equipo_id']) && (int)$m['equipo_id'] === (int)$eqId) ||
+               (strtolower(trim($m['nombre_equipo'])) === $nomEq);
+    }));
+    $proximoMant = !empty($mantsDelEq[0]) ? $mantsDelEq[0] : null;
+    $equiposConMantenimiento[] = [
+        'equipo' => $eq,
+        'mantenimientos' => $mantsDelEq,
+        'proximo' => $proximoMant
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -830,7 +857,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             color: #ffffff;
         }
 
-        /* GRANDES BOTONES DE NAVEGACIÓN PRINCIPAL (HUB DE BOTONES) */
+        /* BOTONES INTERACTIVOS GIGANTES */
         .section-header-pill {
             display: inline-flex;
             align-items: center;
@@ -854,7 +881,6 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             border: 1px solid var(--gold-border);
         }
 
-        /* BOTONES INTERACTIVOS GIGANTES */
         .big-hub-button {
             background: linear-gradient(145deg, #09172c 0%, #061224 100%);
             border: 1.5px solid rgba(255, 255, 255, 0.1);
@@ -1003,7 +1029,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
         }
 
-        /* TARJETAS EJECUTIVAS PARA ELEMENTOS (NO TABLAS) */
+        /* TARJETAS EJECUTIVAS PARA ELEMENTOS */
         .item-action-card {
             background: linear-gradient(145deg, #08162b 0%, #061122 100%);
             border: 1px solid rgba(255, 255, 255, 0.1);
@@ -1157,14 +1183,141 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             color: #ffffff;
             box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
         }
-        .filter-pill-btn.filter-gold.active {
-            background: rgba(212, 175, 55, 0.25);
+
+        /* ESTILOS DEL CALENDARIO MENSUAL DE MANTENIMIENTO */
+        .calendar-wrapper {
+            background: rgba(9, 23, 44, 0.9);
+            border: 1px solid var(--gold-border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 10px 35px rgba(0,0,0,0.5);
+            margin-bottom: 24px;
+        }
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .calendar-day-header {
+            text-align: center;
+            font-weight: 800;
+            font-size: 0.78rem;
+            color: var(--gold-light);
+            padding: 10px 4px;
+            background: rgba(212, 175, 55, 0.12);
+            border: 1px solid var(--gold-border);
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .calendar-day-cell {
+            min-height: 125px;
+            background: rgba(13, 30, 54, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            transition: all 0.2s ease;
+        }
+        .calendar-day-cell:hover {
+            border-color: var(--cyan-accent);
+            background: rgba(13, 30, 54, 0.85);
+        }
+        .calendar-day-cell.day-today {
+            border: 1.5px solid var(--gold-accent);
+            background: rgba(212, 175, 55, 0.09);
+            box-shadow: inset 0 0 15px rgba(212, 175, 55, 0.15);
+        }
+        .calendar-day-cell.day-other-month {
+            opacity: 0.25;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .calendar-day-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .calendar-day-number {
+            font-size: 0.88rem;
+            font-weight: 800;
+            color: #e2e8f0;
+        }
+        .btn-cal-add {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #94a3b8;
+            font-size: 0.68rem;
+            padding: 1px 5px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-cal-add:hover {
+            background: var(--gold-accent);
+            color: #000000;
             border-color: var(--gold-accent);
-            color: #f5df9e;
-            box-shadow: 0 0 12px var(--gold-glow);
         }
 
-        /* PASSWORD PEEK */
+        .calendar-event-badge {
+            background: rgba(56, 189, 248, 0.16);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            color: #7dd3fc;
+            font-size: 0.72rem;
+            padding: 4px 6px;
+            border-radius: 6px;
+            margin-bottom: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            text-decoration: none;
+        }
+        .calendar-event-badge:hover {
+            transform: scale(1.02);
+            border-color: #38bdf8;
+            color: #ffffff;
+            box-shadow: 0 2px 8px rgba(56, 189, 248, 0.4);
+        }
+        .calendar-event-badge.badge-realizado {
+            background: rgba(16, 185, 129, 0.18);
+            border-color: rgba(16, 185, 129, 0.45);
+            color: #6ee7b7;
+        }
+        .calendar-event-badge.badge-proceso {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.5);
+            color: #bae6fd;
+        }
+        .calendar-event-badge.badge-programado {
+            background: rgba(245, 158, 11, 0.18);
+            border-color: rgba(245, 158, 11, 0.45);
+            color: #fde68a;
+        }
+
+        /* VISTA POR ÁREA */
+        .area-group-container {
+            background: rgba(9, 23, 44, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .area-header-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+
         .password-peek {
             font-family: monospace;
             letter-spacing: 2px;
@@ -1226,7 +1379,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                     Panel de Control y Auditoría Operativa
                 </h2>
                 <p class="text-secondary mb-0" style="font-size: 0.95rem;">
-                    Seleccione una de las secciones a continuación para gestionar responsivas, calendarios, credenciales y evidencias sin tablas complejas.
+                    Seleccione una de las secciones a continuación para gestionar responsivas, calendarios de mantenimiento, credenciales y expedientes.
                 </p>
             </div>
 
@@ -1273,7 +1426,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                                 </div>
                                 <div class="hub-title">Planes de Mantenimiento</div>
                                 <div class="hub-desc">
-                                    Calendario preventivo/correctivo por área y equipo con carga de evidencia y expedientes en PDF.
+                                    Calendario mensual, asignación de días por máquina o área, expedientes de servicio y evidencia en PDF.
                                 </div>
                                 <div class="hub-stats-row">
                                     <span class="hub-badge"><?php echo $cntTotalManten; ?> Programados</span>
@@ -1281,7 +1434,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                                 </div>
                             </div>
                             <div class="hub-open-cta">
-                                <span>Abrir Calendario</span>
+                                <span>Abrir Calendario & Planes</span>
                                 <i class="bi bi-arrow-right-circle-fill fs-5"></i>
                             </div>
                         </div>
@@ -1530,7 +1683,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
 
 
         <!-- ===================================================================
-             SUB-MÓDULO 2: PLANES DE MANTENIMIENTO (BASADO EN TARJETAS Y BOTONES)
+             SUB-MÓDULO 2: PLANES DE MANTENIMIENTO (CALENDARIO, DÍAS, EXPEDIENTE PDF, MÁQUINAS Y ÁREAS)
              =================================================================== -->
         <section id="vista-mantenimiento" class="section-view-panel">
             <div class="sub-header-toolbar">
@@ -1540,18 +1693,13 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                     </button>
                     <div>
                         <h4 class="m-0 fw-bold text-white"><i class="bi bi-calendar-check-fill text-info me-2"></i> Planes de Mantenimiento</h4>
-                        <span class="text-secondary small">Calendario y expedientes de evidencia preventiva y correctiva</span>
+                        <span class="text-secondary small">Calendario interactivo, asignación de días, expedientes oficiales PDF por máquina y área</span>
                     </div>
                 </div>
 
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                    <div class="input-group" style="width: 240px;">
-                        <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
-                        <input type="text" class="form-control form-control-sm" placeholder="Buscar equipo o área..." onkeyup="filtrarCards('card-mantenimiento', this.value)">
-                    </div>
-
                     <button type="button" class="btn-gold-main btn-sm" onclick="abrirModalMantenimiento(0)">
-                        <i class="bi bi-plus-circle-fill"></i> Programar Mantenimiento
+                        <i class="bi bi-calendar-plus-fill"></i> Asignar Día de Mantenimiento
                     </button>
                     <button type="button" class="btn-cyan-main btn-sm ms-2" onclick="exportarSeccionExcel('mantenimiento')">
                         <i class="bi bi-file-earmark-excel-fill"></i> Excel
@@ -1559,91 +1707,393 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                 </div>
             </div>
 
-            <!-- GRID DE TARJETAS DE MANTENIMIENTO (NO TABLAS) -->
-            <div class="row g-3">
-                <?php if (empty($mantenimientos)): ?>
-                <div class="col-12 text-center py-5">
-                    <i class="bi bi-calendar-x text-secondary fs-1 d-block mb-3"></i>
-                    <h5 class="text-secondary">No hay mantenimientos programados.</h5>
-                    <button type="button" class="btn-gold-main mt-2" onclick="abrirModalMantenimiento(0)">
-                        <i class="bi bi-plus-lg"></i> Crear Primer Plan de Mantenimiento
+            <!-- SELECTOR DE VISTAS CON BOTONES INTERACTIVOS -->
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 p-3 rounded-4 mb-4 border border-secondary border-opacity-25" style="background: rgba(13, 30, 54, 0.7);">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="text-secondary small fw-bold text-uppercase me-2"><i class="bi bi-eye-fill text-warning me-1"></i> Modo de Vista:</span>
+                    <button type="button" class="filter-pill-btn active" id="btn-mant-cal" onclick="cambiarSubvistaMantenimiento('cal')">
+                        <i class="bi bi-calendar3"></i> 🗓️ Ver Calendario
+                    </button>
+                    <button type="button" class="filter-pill-btn" id="btn-mant-area" onclick="cambiarSubvistaMantenimiento('area')">
+                        <i class="bi bi-building"></i> 🏢 Ver por Área
+                    </button>
+                    <button type="button" class="filter-pill-btn" id="btn-mant-maquina" onclick="cambiarSubvistaMantenimiento('maquina')">
+                        <i class="bi bi-pc-display"></i> 💻 Ver por Máquina
+                    </button>
+                    <button type="button" class="filter-pill-btn" id="btn-mant-fichas" onclick="cambiarSubvistaMantenimiento('fichas')">
+                        <i class="bi bi-grid-fill"></i> 📋 Todas las Fichas
                     </button>
                 </div>
-                <?php else: ?>
-                <?php foreach ($mantenimientos as $m): 
-                    $tieneEvid = !empty($m['evidencia_pdf_url']);
-                    $stClass = ($m['estado'] === 'Realizado') ? 'success' : (($m['estado'] === 'En Proceso') ? 'info' : 'warning');
+
+                <!-- Búsqueda rápida general -->
+                <div class="input-group" style="max-width: 280px;">
+                    <span class="input-group-text bg-dark border-secondary text-secondary"><i class="bi bi-search"></i></span>
+                    <input type="text" id="busq-mantenimiento-gen" class="form-control form-control-sm" placeholder="Buscar máquina o área..." onkeyup="filtrarCards('card-mantenimiento', this.value)">
+                </div>
+            </div>
+
+            <!-- ===============================================================
+                 SUB-VISTA 1: CALENDARIO MENSUAL INTERACTIVO
+                 =============================================================== -->
+            <div id="mant-subview-cal" class="mant-subview">
+                <div class="calendar-wrapper">
+                    <!-- BARRA DE CONTROL DEL CALENDARIO -->
+                    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 pb-3 mb-3 border-bottom border-secondary border-opacity-25">
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn-action-tile" onclick="calMesAnterior()" title="Mes Anterior">
+                                <i class="bi bi-chevron-left"></i> Anterior
+                            </button>
+                            <h4 id="cal-titulo-mes" class="text-warning fw-bold m-0 text-uppercase px-2" style="font-family: 'Cinzel', serif; letter-spacing: 1px;">
+                                Noviembre 2026
+                            </h4>
+                            <button type="button" class="btn-action-tile" onclick="calMesSiguiente()" title="Mes Siguiente">
+                                Siguiente <i class="bi bi-chevron-right"></i>
+                            </button>
+                            <button type="button" class="btn-outline-gold btn-sm ms-2" onclick="calIrHoy()">
+                                Hoy
+                            </button>
+                        </div>
+
+                        <!-- FILTRO POR ÁREA EN EL CALENDARIO -->
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="text-secondary small fw-bold">Filtrar Área:</span>
+                            <select id="cal-filtro-area" class="form-select form-select-sm" style="min-width: 180px;" onchange="renderCalendario()">
+                                <option value="todas">-- Todas las Áreas --</option>
+                                <?php foreach ($catalogoAreas as $ar): ?>
+                                <option value="<?php echo htmlspecialchars($ar); ?>"><?php echo htmlspecialchars($ar); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="button" class="btn-gold-main btn-sm py-1" onclick="abrirModalMantenimiento(0)">
+                                <i class="bi bi-plus-lg"></i> Asignar Día
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- CUADRÍCULA DE DÍAS DE LA SEMANA -->
+                    <div class="calendar-grid mb-2">
+                        <div class="calendar-day-header text-danger">Domingo</div>
+                        <div class="calendar-day-header">Lunes</div>
+                        <div class="calendar-day-header">Martes</div>
+                        <div class="calendar-day-header">Miércoles</div>
+                        <div class="calendar-day-header">Jueves</div>
+                        <div class="calendar-day-header">Viernes</div>
+                        <div class="calendar-day-header text-info">Sábado</div>
+                    </div>
+
+                    <!-- CONTENEDOR DINÁMICO DE CELDAS DE DÍAS -->
+                    <div class="calendar-grid" id="cal-grid-dias">
+                        <!-- Generado por JavaScript renderCalendario() -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===============================================================
+                 SUB-VISTA 2: VER POR ÁREA
+                 =============================================================== -->
+            <div id="mant-subview-area" class="mant-subview" style="display: none;">
+                <?php foreach ($catalogoAreas as $ar): 
+                    $mantsArea = $mantenimientosPorArea[$ar] ?? [];
+                    $cntTotalAr = count($mantsArea);
+                    $cntRealizAr = count(array_filter($mantsArea, fn($m) => $m['estado'] === 'Realizado'));
+                    $porcCumpl = ($cntTotalAr > 0) ? round(($cntRealizAr / $cntTotalAr) * 100) : 0;
                 ?>
-                <div class="col-12 col-md-6 col-lg-4 card-mantenimiento" data-search="<?php echo htmlspecialchars(strtolower($m['nombre_equipo'] . ' ' . $m['area'] . ' ' . $m['usuario_responsable'] . ' ' . $m['tecnico_responsable'])); ?>">
-                    <div class="item-action-card">
-                        <div>
-                            <div class="item-card-header">
-                                <div class="item-title-box">
-                                    <div class="item-icon">
-                                        <i class="bi bi-tools"></i>
-                                    </div>
-                                    <div>
-                                        <h6 class="item-main-title"><?php echo htmlspecialchars($m['nombre_equipo']); ?></h6>
-                                        <p class="item-sub-title"><?php echo htmlspecialchars($m['area']); ?> | <?php echo htmlspecialchars($m['tipo_mantenimiento']); ?></p>
-                                    </div>
-                                </div>
-                                <span class="badge bg-<?php echo $stClass; ?> bg-opacity-25 text-<?php echo $stClass; ?> border border-<?php echo $stClass; ?> border-opacity-50">
-                                    <?php echo htmlspecialchars($m['estado']); ?>
+                <div class="area-group-container">
+                    <div class="area-header-bar">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="item-icon">
+                                <i class="bi bi-building"></i>
+                            </div>
+                            <div>
+                                <h5 class="fw-bold text-white m-0">Área: <?php echo htmlspecialchars($ar); ?></h5>
+                                <span class="text-secondary small">
+                                    <?php echo $cntTotalAr; ?> Mantenimientos registrados (<?php echo $cntRealizAr; ?> Realizados, <?php echo $cntTotalAr - $cntRealizAr; ?> Pendientes)
                                 </span>
                             </div>
+                        </div>
 
-                            <div class="item-details-grid">
-                                <div>
-                                    <span class="detail-item-label">Fecha Programada</span>
-                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['fecha_programada']); ?></span>
-                                </div>
-                                <div>
-                                    <span class="detail-item-label">Frecuencia</span>
-                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['frecuencia'] ?: 'Semestral'); ?></span>
-                                </div>
-                                <div>
-                                    <span class="detail-item-label">Técnico</span>
-                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['tecnico_responsable'] ?: 'Sistemas'); ?></span>
-                                </div>
-                                <div>
-                                    <span class="detail-item-label">Responsable</span>
-                                    <span class="detail-item-val"><?php echo htmlspecialchars($m['usuario_responsable'] ?: 'N/A'); ?></span>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="text-end d-none d-md-block" style="min-width: 140px;">
+                                <div class="text-secondary small fw-bold">Cumplimiento: <?php echo $porcCumpl; ?>%</div>
+                                <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1);">
+                                    <div class="progress-bar bg-success" style="width: <?php echo $porcCumpl; ?>%"></div>
                                 </div>
                             </div>
-                            <?php if (!empty($m['observaciones'])): ?>
-                            <p class="text-secondary small mb-3 fst-italic" style="font-size: 0.78rem;">
-                                "<?php echo htmlspecialchars($m['observaciones']); ?>"
-                            </p>
-                            <?php endif; ?>
+
+                            <button type="button" class="btn-outline-gold btn-sm" onclick="asignarMantenimientoArea('<?php echo htmlspecialchars($ar); ?>')">
+                                <i class="bi bi-plus-circle"></i> Asignar en esta Área
+                            </button>
                         </div>
+                    </div>
 
-                        <!-- BOTONES DE ACCIÓN PARA MANTENIMIENTO -->
-                        <div class="item-card-actions">
-                            <button type="button" class="btn-action-tile btn-tile-gold" onclick="abrirModalSubirPdf('mantenimiento', <?php echo $m['id']; ?>, '<?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
-                                <i class="bi bi-cloud-arrow-up-fill"></i> Subir Evidencia PDF
+                    <!-- MÁQUINAS DEL ÁREA -->
+                    <div class="row g-3">
+                        <?php if (empty($mantsArea)): ?>
+                        <div class="col-12 py-3 text-center text-secondary small">
+                            <i class="bi bi-calendar-x me-1"></i> No hay planes de mantenimiento registrados para esta área actualmente.
+                            <button type="button" class="btn btn-sm btn-link text-warning" onclick="asignarMantenimientoArea('<?php echo htmlspecialchars($ar); ?>')">
+                                Programar día ahora
                             </button>
-
-                            <?php if ($tieneEvid): ?>
-                            <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($m['evidencia_pdf_url']); ?>', 'Evidencia - <?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
-                                <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver Evidencia
-                            </button>
-                            <?php endif; ?>
-
-                            <button type="button" class="btn-action-tile" onclick='editarMantenimiento(<?php echo json_encode($m); ?>)'>
-                                <i class="bi bi-pencil-square"></i> Editar
-                            </button>
-
-                            <?php if ($puedeEliminar): ?>
-                            <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('mantenimiento', <?php echo $m['id']; ?>)">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                            <?php endif; ?>
                         </div>
+                        <?php else: ?>
+                        <?php foreach ($mantsArea as $m): 
+                            $tieneEvid = !empty($m['evidencia_pdf_url']);
+                            $stClass = ($m['estado'] === 'Realizado') ? 'success' : (($m['estado'] === 'En Proceso') ? 'info' : 'warning');
+                        ?>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <div class="item-action-card">
+                                <div>
+                                    <div class="item-card-header">
+                                        <div class="item-title-box">
+                                            <div class="item-icon">
+                                                <i class="bi bi-pc-display"></i>
+                                            </div>
+                                            <div>
+                                                <h6 class="item-main-title"><?php echo htmlspecialchars($m['nombre_equipo']); ?></h6>
+                                                <p class="item-sub-title"><?php echo htmlspecialchars($m['usuario_responsable'] ?: 'Sin Asignar'); ?></p>
+                                            </div>
+                                        </div>
+                                        <span class="badge bg-<?php echo $stClass; ?> bg-opacity-25 text-<?php echo $stClass; ?> border border-<?php echo $stClass; ?> border-opacity-50">
+                                            <?php echo htmlspecialchars($m['estado']); ?>
+                                        </span>
+                                    </div>
+
+                                    <div class="item-details-grid">
+                                        <div>
+                                            <span class="detail-item-label">Día Asignado</span>
+                                            <span class="detail-item-val fw-bold text-warning"><?php echo htmlspecialchars($m['fecha_programada']); ?></span>
+                                        </div>
+                                        <div>
+                                            <span class="detail-item-label">Tipo</span>
+                                            <span class="detail-item-val"><?php echo htmlspecialchars($m['tipo_mantenimiento']); ?></span>
+                                        </div>
+                                        <div>
+                                            <span class="detail-item-label">Frecuencia</span>
+                                            <span class="detail-item-val"><?php echo htmlspecialchars($m['frecuencia'] ?: 'Semestral'); ?></span>
+                                        </div>
+                                        <div>
+                                            <span class="detail-item-label">Técnico</span>
+                                            <span class="detail-item-val"><?php echo htmlspecialchars($m['tecnico_responsable'] ?: 'Sistemas'); ?></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- BOTONES DE ACCIÓN PARA MANTENIMIENTO DEL ÁREA -->
+                                <div class="item-card-actions">
+                                    <!-- BOTÓN IMPRIMIR EXPEDIENTE OFICIAL DE MANTENIMIENTO (PDF) -->
+                                    <a href="generar_expediente_mantenimiento.php?id=<?php echo $m['id']; ?>" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir / Exportar Expediente Oficial de Mantenimiento PDF">
+                                        <i class="bi bi-printer-fill"></i> Imprimir Expediente
+                                    </a>
+
+                                    <!-- BOTÓN SUBIR EVIDENCIA PDF -->
+                                    <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('mantenimiento', <?php echo $m['id']; ?>, '<?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                        <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
+                                    </button>
+
+                                    <!-- BOTÓN VER EVIDENCIA PDF SI EXISTE -->
+                                    <?php if ($tieneEvid): ?>
+                                    <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($m['evidencia_pdf_url']); ?>', 'Evidencia - <?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                        <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                                    </button>
+                                    <?php endif; ?>
+
+                                    <!-- BOTÓN EDITAR / REASIGNAR DÍA -->
+                                    <button type="button" class="btn-action-tile ms-auto" onclick='editarMantenimiento(<?php echo json_encode($m); ?>)' title="Cambiar fecha o datos">
+                                        <i class="bi bi-pencil-square"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endforeach; ?>
-                <?php endif; ?>
             </div>
+
+            <!-- ===============================================================
+                 SUB-VISTA 3: VER POR MÁQUINA / EQUIPO
+                 =============================================================== -->
+            <div id="mant-subview-maquina" class="mant-subview" style="display: none;">
+                <div class="row g-3">
+                    <?php if (empty($equiposConMantenimiento)): ?>
+                    <div class="col-12 py-5 text-center text-secondary">
+                        <i class="bi bi-pc-display fs-1 d-block mb-3"></i>
+                        No se encontraron máquinas en el inventario.
+                    </div>
+                    <?php else: ?>
+                    <?php foreach ($equiposConMantenimiento as $em): 
+                        $eq = $em['equipo'];
+                        $mProximo = $em['proximo'];
+                        $tienePlan = !empty($mProximo);
+                        $tieneEvid = $tienePlan && !empty($mProximo['evidencia_pdf_url']);
+                        $stClass = $tienePlan ? (($mProximo['estado'] === 'Realizado') ? 'success' : (($mProximo['estado'] === 'En Proceso') ? 'info' : 'warning')) : 'secondary';
+                    ?>
+                    <div class="col-12 col-md-6 col-lg-4 col-xl-3 card-equipo-mant" data-search="<?php echo htmlspecialchars(strtolower($eq['nombre_equipo'] . ' ' . $eq['usuario'] . ' ' . $eq['departamento'] . ' ' . $eq['serie'])); ?>">
+                        <div class="item-action-card">
+                            <div>
+                                <div class="item-card-header">
+                                    <div class="item-title-box">
+                                        <div class="item-icon">
+                                            <i class="bi bi-laptop"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="item-main-title"><?php echo htmlspecialchars($eq['nombre_equipo']); ?></h6>
+                                            <p class="item-sub-title"><?php echo htmlspecialchars($eq['departamento'] ?: 'General'); ?></p>
+                                        </div>
+                                    </div>
+                                    <?php if ($tienePlan): ?>
+                                    <span class="badge bg-<?php echo $stClass; ?> bg-opacity-25 text-<?php echo $stClass; ?> border border-<?php echo $stClass; ?> border-opacity-50">
+                                        <?php echo htmlspecialchars($mProximo['estado']); ?>
+                                    </span>
+                                    <?php else: ?>
+                                    <span class="badge bg-secondary bg-opacity-25 text-secondary border border-secondary border-opacity-50">
+                                        Sin Programar
+                                    </span>
+                                    <?php endif; ?>
+                                </div>
+
+                                <div class="item-details-grid">
+                                    <div>
+                                        <span class="detail-item-label">Responsable</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($eq['usuario'] ?: 'Sin Asignar'); ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="detail-item-label">No. Serie</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($eq['serie'] ?: 'S/N'); ?></span>
+                                    </div>
+                                    <div class="grid-span-2" style="grid-column: span 2;">
+                                        <span class="detail-item-label">Día de Mantenimiento</span>
+                                        <span class="detail-item-val fw-bold text-warning">
+                                            <?php echo $tienePlan ? htmlspecialchars($mProximo['fecha_programada']) . ' (' . htmlspecialchars($mProximo['tipo_mantenimiento']) . ')' : 'No programado'; ?>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- BOTONES DE ACCIÓN POR MÁQUINA -->
+                            <div class="item-card-actions">
+                                <!-- BOTÓN ASIGNAR / CAMBIAR DÍA -->
+                                <button type="button" class="btn-action-tile btn-tile-gold" onclick="asignarDiaMaquina(<?php echo $eq['id']; ?>, '<?php echo htmlspecialchars($eq['nombre_equipo']); ?>', '<?php echo htmlspecialchars($eq['departamento']); ?>', '<?php echo htmlspecialchars($eq['usuario']); ?>')">
+                                    <i class="bi bi-calendar-event"></i> <?php echo $tienePlan ? 'Reasignar Día' : 'Asignar Día'; ?>
+                                </button>
+
+                                <!-- BOTÓN IMPRIMIR EXPEDIENTE SI TIENE MANTENIMIENTO -->
+                                <?php if ($tienePlan): ?>
+                                <a href="generar_expediente_mantenimiento.php?id=<?php echo $mProximo['id']; ?>" target="_blank" class="btn-action-tile" title="Imprimir / Exportar Expediente Oficial de Mantenimiento PDF">
+                                    <i class="bi bi-printer-fill text-warning"></i> Expediente
+                                </a>
+
+                                <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('mantenimiento', <?php echo $mProximo['id']; ?>, '<?php echo htmlspecialchars($mProximo['nombre_equipo']); ?>')" title="Subir Evidencia PDF">
+                                    <i class="bi bi-cloud-arrow-up-fill"></i> Subir
+                                </button>
+
+                                <?php if ($tieneEvid): ?>
+                                <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($mProximo['evidencia_pdf_url']); ?>', 'Evidencia - <?php echo htmlspecialchars($mProximo['nombre_equipo']); ?>')" title="Ver Evidencia PDF">
+                                    <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                                </button>
+                                <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- ===============================================================
+                 SUB-VISTA 4: TODAS LAS FICHAS DE MANTENIMIENTO
+                 =============================================================== -->
+            <div id="mant-subview-fichas" class="mant-subview" style="display: none;">
+                <div class="row g-3">
+                    <?php if (empty($mantenimientos)): ?>
+                    <div class="col-12 text-center py-5">
+                        <i class="bi bi-calendar-x text-secondary fs-1 d-block mb-3"></i>
+                        <h5 class="text-secondary">No hay mantenimientos programados.</h5>
+                    </div>
+                    <?php else: ?>
+                    <?php foreach ($mantenimientos as $m): 
+                        $tieneEvid = !empty($m['evidencia_pdf_url']);
+                        $stClass = ($m['estado'] === 'Realizado') ? 'success' : (($m['estado'] === 'En Proceso') ? 'info' : 'warning');
+                    ?>
+                    <div class="col-12 col-md-6 col-lg-4 card-mantenimiento" data-search="<?php echo htmlspecialchars(strtolower($m['nombre_equipo'] . ' ' . $m['area'] . ' ' . $m['usuario_responsable'] . ' ' . $m['tecnico_responsable'])); ?>">
+                        <div class="item-action-card">
+                            <div>
+                                <div class="item-card-header">
+                                    <div class="item-title-box">
+                                        <div class="item-icon">
+                                            <i class="bi bi-tools"></i>
+                                        </div>
+                                        <div>
+                                            <h6 class="item-main-title"><?php echo htmlspecialchars($m['nombre_equipo']); ?></h6>
+                                            <p class="item-sub-title"><?php echo htmlspecialchars($m['area']); ?> | <?php echo htmlspecialchars($m['tipo_mantenimiento']); ?></p>
+                                        </div>
+                                    </div>
+                                    <span class="badge bg-<?php echo $stClass; ?> bg-opacity-25 text-<?php echo $stClass; ?> border border-<?php echo $stClass; ?> border-opacity-50">
+                                        <?php echo htmlspecialchars($m['estado']); ?>
+                                    </span>
+                                </div>
+
+                                <div class="item-details-grid">
+                                    <div>
+                                        <span class="detail-item-label">Fecha Programada</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($m['fecha_programada']); ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="detail-item-label">Frecuencia</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($m['frecuencia'] ?: 'Semestral'); ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="detail-item-label">Técnico</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($m['tecnico_responsable'] ?: 'Sistemas'); ?></span>
+                                    </div>
+                                    <div>
+                                        <span class="detail-item-label">Responsable</span>
+                                        <span class="detail-item-val"><?php echo htmlspecialchars($m['usuario_responsable'] ?: 'N/A'); ?></span>
+                                    </div>
+                                </div>
+                                <?php if (!empty($m['observaciones'])): ?>
+                                <p class="text-secondary small mb-3 fst-italic" style="font-size: 0.78rem;">
+                                    "<?php echo htmlspecialchars($m['observaciones']); ?>"
+                                </p>
+                                <?php endif; ?>
+                            </div>
+
+                            <!-- BOTONES DE ACCIÓN PARA MANTENIMIENTO -->
+                            <div class="item-card-actions">
+                                <!-- BOTÓN IMPRIMIR EXPEDIENTE OFICIAL DE MANTENIMIENTO (PDF) -->
+                                <a href="generar_expediente_mantenimiento.php?id=<?php echo $m['id']; ?>" target="_blank" class="btn-action-tile btn-tile-gold" title="Imprimir / Exportar Expediente Oficial de Mantenimiento PDF">
+                                    <i class="bi bi-printer-fill"></i> Imprimir Expediente
+                                </a>
+
+                                <!-- BOTÓN SUBIR EVIDENCIA PDF -->
+                                <button type="button" class="btn-action-tile" onclick="abrirModalSubirPdf('mantenimiento', <?php echo $m['id']; ?>, '<?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                    <i class="bi bi-cloud-arrow-up-fill"></i> Subir PDF
+                                </button>
+
+                                <?php if ($tieneEvid): ?>
+                                <button type="button" class="btn-action-tile" onclick="verPdfModal('<?php echo htmlspecialchars($m['evidencia_pdf_url']); ?>', 'Evidencia - <?php echo htmlspecialchars($m['nombre_equipo']); ?>')">
+                                    <i class="bi bi-file-earmark-pdf-fill text-danger"></i> Ver PDF
+                                </button>
+                                <?php endif; ?>
+
+                                <button type="button" class="btn-action-tile" onclick='editarMantenimiento(<?php echo json_encode($m); ?>)'>
+                                    <i class="bi bi-pencil-square"></i> Editar
+                                </button>
+
+                                <?php if ($puedeEliminar): ?>
+                                <button type="button" class="btn-action-tile btn-tile-danger ms-auto" onclick="confirmarEliminar('mantenimiento', <?php echo $m['id']; ?>)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+
         </section>
 
 
@@ -2334,7 +2784,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
         </div>
     </div>
 
-    <!-- 2. MODAL PROGRAMAR / EDITAR MANTENIMIENTO -->
+    <!-- 2. MODAL PROGRAMAR / ASIGNAR DÍA DE MANTENIMIENTO -->
     <div class="modal fade" id="modalMantenimiento" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
@@ -2344,18 +2794,18 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                     <input type="hidden" name="equipo_id" id="mant-equipo-id" value="">
 
                     <div class="modal-header">
-                        <h5 class="modal-title fw-bold text-white" id="mant-modal-titulo">Programar Plan de Mantenimiento</h5>
+                        <h5 class="modal-title fw-bold text-white" id="mant-modal-titulo">Asignar Día de Mantenimiento</h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body p-4">
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label class="form-label text-warning small fw-bold">SELECCIONAR EQUIPO DEL INVENTARIO O ESCRIBIR NOMBRE</label>
-                                <input type="text" name="nombre_equipo" id="mant-nom-equipo" list="lista-equipos" class="form-control" placeholder="Ej: SRV-DATACENTER-01" required>
+                                <label class="form-label text-warning small fw-bold">SELECCIONAR MÁQUINA / EQUIPO DEL INVENTARIO</label>
+                                <input type="text" name="nombre_equipo" id="mant-nom-equipo" list="lista-equipos" class="form-control" placeholder="Ej: SRV-DATACENTER-01" required onchange="vincularDatosEquipoModal(this)">
                                 <datalist id="lista-equipos">
                                     <?php foreach ($equiposInventario as $eq): ?>
                                     <option value="<?php echo htmlspecialchars($eq['nombre_equipo']); ?>" data-area="<?php echo htmlspecialchars($eq['departamento']); ?>" data-user="<?php echo htmlspecialchars($eq['usuario']); ?>" data-id="<?php echo $eq['id']; ?>">
-                                        <?php echo htmlspecialchars($eq['nombre_equipo'] . ' - ' . $eq['usuario']); ?>
+                                        <?php echo htmlspecialchars($eq['nombre_equipo'] . ' - ' . ($eq['departamento'] ?: 'General') . ' (' . ($eq['usuario'] ?: 'Sin asignar') . ')'); ?>
                                     </option>
                                     <?php endforeach; ?>
                                 </datalist>
@@ -2381,8 +2831,8 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                             </div>
 
                             <div class="col-md-4">
-                                <label class="form-label text-secondary small fw-bold">FECHA PROGRAMADA</label>
-                                <input type="date" name="fecha_programada" id="mant-fecha-prog" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                <label class="form-label text-warning small fw-bold">DÍA / FECHA ASIGNADA</label>
+                                <input type="date" name="fecha_programada" id="mant-fecha-prog" class="form-control fw-bold" value="<?php echo date('Y-m-d'); ?>" required>
                             </div>
 
                             <div class="col-md-4">
@@ -2418,9 +2868,72 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="submit" class="btn-gold-main">Guardar Mantenimiento</button>
+                        <button type="submit" class="btn-gold-main">Guardar y Programar</button>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL DETALLE RÁPIDO DE MANTENIMIENTO DESDE EL CALENDARIO -->
+    <div class="modal fade" id="modalDetalleCal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title fw-bold text-white d-flex align-items-center gap-2">
+                        <i class="bi bi-tools text-warning"></i>
+                        <span id="cal-det-equipo">Mantenimiento</span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3 p-3 rounded border border-secondary border-opacity-25" style="background: rgba(0,0,0,0.3);">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary small fw-bold">DÍA PROGRAMADO:</span>
+                            <span id="cal-det-fecha" class="text-warning fw-bold"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary small fw-bold">ÁREA:</span>
+                            <span id="cal-det-area" class="text-light"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary small fw-bold">RESPONSABLE:</span>
+                            <span id="cal-det-usuario" class="text-light"></span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span class="text-secondary small fw-bold">ESTADO:</span>
+                            <span id="cal-det-estado" class="badge"></span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="text-secondary small fw-bold">TÉCNICO:</span>
+                            <span id="cal-det-tecnico" class="text-light"></span>
+                        </div>
+                    </div>
+
+                    <!-- BOTONES DE ACCIÓN DESDE EL DETALLE DEL CALENDARIO -->
+                    <div class="d-grid gap-2">
+                        <!-- IMPRIMIR EXPEDIENTE PDF -->
+                        <a id="btn-cal-imprimir-exp" href="#" target="_blank" class="btn btn-warning fw-bold py-2">
+                            <i class="bi bi-printer-fill me-1"></i> Imprimir Expediente de Mantenimiento (PDF)
+                        </a>
+
+                        <!-- SUBIR EVIDENCIA PDF -->
+                        <button type="button" id="btn-cal-subir-evid" class="btn btn-outline-info py-2" onclick="">
+                            <i class="bi bi-cloud-arrow-up-fill me-1"></i> Subir Evidencia PDF Firmada
+                        </button>
+
+                        <!-- VER EVIDENCIA PDF -->
+                        <button type="button" id="btn-cal-ver-evid" class="btn btn-outline-light py-2" style="display: none;" onclick="">
+                            <i class="bi bi-file-earmark-pdf-fill text-danger me-1"></i> Ver Evidencia PDF Cargada
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-action-tile" data-bs-dismiss="modal">Cerrar</button>
+                    <button type="button" id="btn-cal-editar" class="btn-action-tile btn-tile-gold" onclick="">
+                        <i class="bi bi-pencil-square"></i> Modificar Datos
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -2760,7 +3273,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-        // DATOS LOCALES PARA EXPORTACIÓN EN EXCEL MULTI-HOJA
+        // DATOS LOCALES PARA EXPORTACIÓN EN EXCEL MULTI-HOJA Y CALENDARIO
         const DATOS_AUDITORIA = {
             agencia: <?php echo json_encode($agenciaNombre); ?>,
             equipos: <?php echo json_encode($equiposInventario); ?>,
@@ -2772,6 +3285,10 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             grpUsuarios: <?php echo json_encode($grpUsuarios); ?>
         };
 
+        // ESTADO GLOBAL DEL CALENDARIO
+        let calFechaActual = new Date();
+        const nombresMeses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
         // NAVEGACIÓN ENTRE VISTAS DE BOTONES
         function abrirModulo(seccionId) {
             document.querySelectorAll('.section-view-panel').forEach(p => p.classList.remove('active'));
@@ -2780,6 +3297,9 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
                 target.classList.add('active');
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 window.location.hash = seccionId;
+                if (seccionId === 'mantenimiento') {
+                    renderCalendario();
+                }
             }
         }
 
@@ -2790,12 +3310,233 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             history.pushState("", document.title, window.location.pathname + window.location.search);
         }
 
+        // CONTROL DE SUBVISTAS DE MANTENIMIENTO (CALENDARIO, ÁREA, MÁQUINA, FICHAS)
+        function cambiarSubvistaMantenimiento(sub) {
+            document.querySelectorAll('.mant-subview').forEach(v => v.style.display = 'none');
+            document.getElementById('btn-mant-cal').classList.remove('active');
+            document.getElementById('btn-mant-area').classList.remove('active');
+            document.getElementById('btn-mant-maquina').classList.remove('active');
+            document.getElementById('btn-mant-fichas').classList.remove('active');
+
+            const target = document.getElementById('mant-subview-' + sub);
+            const btn = document.getElementById('btn-mant-' + sub);
+            if (target) target.style.display = 'block';
+            if (btn) btn.classList.add('active');
+
+            if (sub === 'cal') {
+                renderCalendario();
+            }
+        }
+
+        // =====================================================================
+        // MOTOR DE RENDERIZADO DEL CALENDARIO MENSUAL DE MANTENIMIENTO
+        // =====================================================================
+        function renderCalendario() {
+            const contenedor = document.getElementById('cal-grid-dias');
+            if (!contenedor) return;
+
+            const year = calFechaActual.getFullYear();
+            const month = calFechaActual.getMonth(); // 0 a 11
+            const filtroArea = document.getElementById('cal-filtro-area')?.value || 'todas';
+
+            document.getElementById('cal-titulo-mes').innerText = `${nombresMeses[month]} ${year}`;
+
+            // Primer día del mes y total de días
+            const primerDia = new Date(year, month, 1);
+            const diaSemanaInicio = primerDia.getDay(); // 0 = Domingo
+            const ultimoDia = new Date(year, month + 1, 0);
+            const totalDiasMes = ultimoDia.getDate();
+
+            // Días del mes anterior para relleno
+            const ultimoDiaMesAnt = new Date(year, month, 0).getDate();
+
+            // Mantenimientos del mes mapeados por día
+            const mantsDelMes = {};
+            DATOS_AUDITORIA.mantenimientos.forEach(m => {
+                if (!m.fecha_programada) return;
+                const partes = m.fecha_programada.split('-');
+                if (partes.length === 3) {
+                    const mYear = parseInt(partes[0], 10);
+                    const mMonth = parseInt(partes[1], 10) - 1;
+                    const mDia = parseInt(partes[2], 10);
+
+                    if (mYear === year && mMonth === month) {
+                        if (filtroArea === 'todas' || m.area === filtroArea) {
+                            if (!mantsDelMes[mDia]) mantsDelMes[mDia] = [];
+                            mantsDelMes[mDia].push(m);
+                        }
+                    }
+                }
+            });
+
+            const hoy = new Date();
+            const esHoyMesAno = (hoy.getFullYear() === year && hoy.getMonth() === month);
+
+            let html = '';
+
+            // Celdas de relleno del mes anterior
+            for (let i = diaSemanaInicio - 1; i >= 0; i--) {
+                const numDia = ultimoDiaMesAnt - i;
+                html += `<div class="calendar-day-cell day-other-month">
+                    <div class="calendar-day-top">
+                        <span class="calendar-day-number">${numDia}</span>
+                    </div>
+                </div>`;
+            }
+
+            // Celdas de los días del mes
+            for (let d = 1; d <= totalDiasMes; d++) {
+                const esHoy = esHoyMesAno && (hoy.getDate() === d);
+                const fechaStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const mantsHoy = mantsDelMes[d] || [];
+
+                html += `<div class="calendar-day-cell ${esHoy ? 'day-today' : ''}">
+                    <div class="calendar-day-top">
+                        <span class="calendar-day-number ${esHoy ? 'text-warning' : ''}">${d} ${esHoy ? '<small class="text-warning fw-normal" style="font-size: 0.65rem;">(Hoy)</small>' : ''}</span>
+                        <button type="button" class="btn-cal-add" onclick="abrirModalAsignarFecha('${fechaStr}')" title="Asignar mantenimiento a esta fecha">
+                            + Asignar
+                        </button>
+                    </div>
+                    <div class="calendar-day-events" style="overflow-y: auto; max-height: 95px;">`;
+
+                mantsHoy.forEach(m => {
+                    const st = m.estado || 'Programado';
+                    let cls = 'badge-programado';
+                    if (st === 'Realizado') cls = 'badge-realizado';
+                    else if (st === 'En Proceso') cls = 'badge-proceso';
+
+                    html += `<a href="javascript:void(0)" class="calendar-event-badge ${cls}" onclick='abrirDetalleMantenimientoCal(${JSON.stringify(m)})' title="${m.nombre_equipo} (${m.area}) - ${st}">
+                        <i class="bi bi-pc"></i>
+                        <span>${m.nombre_equipo}</span>
+                    </a>`;
+                });
+
+                html += `   </div>
+                </div>`;
+            }
+
+            // Celdas de relleno del mes siguiente (para completar la cuadrícula de 7 columnas)
+            const celdasOcupadas = diaSemanaInicio + totalDiasMes;
+            const celdasRestantes = (celdasOcupadas % 7 === 0) ? 0 : 7 - (celdasOcupadas % 7);
+            for (let j = 1; j <= celdasRestantes; j++) {
+                html += `<div class="calendar-day-cell day-other-month">
+                    <div class="calendar-day-top">
+                        <span class="calendar-day-number">${j}</span>
+                    </div>
+                </div>`;
+            }
+
+            contenedor.innerHTML = html;
+        }
+
+        function calMesAnterior() {
+            calFechaActual.setMonth(calFechaActual.getMonth() - 1);
+            renderCalendario();
+        }
+
+        function calMesSiguiente() {
+            calFechaActual.setMonth(calFechaActual.getMonth() + 1);
+            renderCalendario();
+        }
+
+        function calIrHoy() {
+            calFechaActual = new Date();
+            renderCalendario();
+        }
+
+        // ABRIR MODAL PARA ASIGNAR UN DÍA DESDE EL CALENDARIO O MÁQUINA
+        function abrirModalAsignarFecha(fechaStr) {
+            document.getElementById('mant-id').value = '0';
+            document.getElementById('mant-modal-titulo').innerText = 'Asignar Día de Mantenimiento (' + fechaStr + ')';
+            document.getElementById('mant-nom-equipo').value = '';
+            document.getElementById('mant-area').value = '';
+            document.getElementById('mant-usuario').value = '';
+            document.getElementById('mant-fecha-prog').value = fechaStr;
+            document.getElementById('mant-obs').value = 'Mantenimiento preventivo programado.';
+            new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
+        }
+
+        function asignarDiaMaquina(eqId, nomEquipo, area, usuario) {
+            document.getElementById('mant-id').value = '0';
+            document.getElementById('mant-equipo-id').value = eqId;
+            document.getElementById('mant-modal-titulo').innerText = 'Asignar Día para ' + nomEquipo;
+            document.getElementById('mant-nom-equipo').value = nomEquipo;
+            document.getElementById('mant-area').value = area || 'General';
+            document.getElementById('mant-usuario').value = usuario || '';
+            document.getElementById('mant-fecha-prog').value = new Date().toISOString().slice(0, 10);
+            new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
+        }
+
+        function asignarMantenimientoArea(area) {
+            document.getElementById('mant-id').value = '0';
+            document.getElementById('mant-modal-titulo').innerText = 'Programar Mantenimiento en Área: ' + area;
+            document.getElementById('mant-nom-equipo').value = '';
+            document.getElementById('mant-area').value = area;
+            document.getElementById('mant-usuario').value = '';
+            document.getElementById('mant-fecha-prog').value = new Date().toISOString().slice(0, 10);
+            new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
+        }
+
+        // DETALLE RÁPIDO DE UN EVENTO DESDE EL CALENDARIO
+        function abrirDetalleMantenimientoCal(m) {
+            document.getElementById('cal-det-equipo').innerText = m.nombre_equipo;
+            document.getElementById('cal-det-fecha').innerText = m.fecha_programada;
+            document.getElementById('cal-det-area').innerText = m.area || 'General';
+            document.getElementById('cal-det-usuario').innerText = m.usuario_responsable || 'Sin Asignar';
+            document.getElementById('cal-det-tecnico').innerText = m.tecnico_responsable || 'Sistemas';
+
+            const badgeEst = document.getElementById('cal-det-estado');
+            badgeEst.innerText = m.estado;
+            badgeEst.className = 'badge ' + ((m.estado === 'Realizado') ? 'bg-success' : ((m.estado === 'En Proceso') ? 'bg-info' : 'bg-warning text-dark'));
+
+            // Botón Imprimir Expediente Oficial PDF
+            document.getElementById('btn-cal-imprimir-exp').href = 'generar_expediente_mantenimiento.php?id=' + m.id;
+
+            // Botón Subir Evidencia PDF
+            document.getElementById('btn-cal-subir-evid').onclick = function() {
+                bootstrap.Modal.getInstance(document.getElementById('modalDetalleCal')).hide();
+                abrirModalSubirPdf('mantenimiento', m.id, m.nombre_equipo);
+            };
+
+            // Botón Ver Evidencia PDF si existe
+            const btnVer = document.getElementById('btn-cal-ver-evid');
+            if (m.evidencia_pdf_url) {
+                btnVer.style.display = 'block';
+                btnVer.onclick = function() {
+                    bootstrap.Modal.getInstance(document.getElementById('modalDetalleCal')).hide();
+                    verPdfModal(m.evidencia_pdf_url, 'Evidencia - ' + m.nombre_equipo);
+                };
+            } else {
+                btnVer.style.display = 'none';
+            }
+
+            // Botón Editar
+            document.getElementById('btn-cal-editar').onclick = function() {
+                bootstrap.Modal.getInstance(document.getElementById('modalDetalleCal')).hide();
+                editarMantenimiento(m);
+            };
+
+            new bootstrap.Modal(document.getElementById('modalDetalleCal')).show();
+        }
+
+        // AUTOCOMPLETAR DATOS DE EQUIPO SELECCIONADO EN MODAL
+        function vincularDatosEquipoModal(input) {
+            const val = input.value.trim().toLowerCase();
+            const option = Array.from(document.querySelectorAll('#lista-equipos option')).find(opt => opt.value.toLowerCase() === val);
+            if (option) {
+                document.getElementById('mant-area').value = option.getAttribute('data-area') || '';
+                document.getElementById('mant-usuario').value = option.getAttribute('data-user') || '';
+                document.getElementById('mant-equipo-id').value = option.getAttribute('data-id') || '';
+            }
+        }
+
         // Revisar hash al cargar la página
         window.addEventListener('DOMContentLoaded', () => {
             const hash = window.location.hash.replace('#', '');
             if (hash && document.getElementById('vista-' + hash)) {
                 abrirModulo(hash);
             }
+            renderCalendario();
         });
 
         // FILTRO EN TIEMPO REAL DE TARJETAS
@@ -2915,6 +3656,7 @@ $cntGrpResp        = count(array_filter($grpUsuarios, fn($u) => !empty($u['respo
             document.getElementById('mant-area').value = '';
             document.getElementById('mant-usuario').value = '';
             document.getElementById('mant-obs').value = '';
+            document.getElementById('mant-fecha-prog').value = new Date().toISOString().slice(0, 10);
             new bootstrap.Modal(document.getElementById('modalMantenimiento')).show();
         }
 
