@@ -122,7 +122,8 @@ function asegurarTablasPermisos($pdo) {
             ['ordenes_servicio', 'Órdenes de Servicio',               'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'bi-file-earmark-bar-graph', 10, 1],
             ['celulares',        'Inventario de Celulares',            'Control de equipos móviles y líneas corporativas',                          'bi-phone-fill',              11, 1],
             ['licencias',        'Licencias de Software',             'Matriz de licenciamiento corporativo y vencimientos',                        'bi-key-fill',                12, 1],
-            ['respaldos',        'Monitoreo de Respaldos (NAS)',      'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'bi-cloud-arrow-up-fill',    13, 1]
+            ['respaldos',        'Monitoreo de Respaldos (NAS)',      'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'bi-cloud-arrow-up-fill',    13, 1],
+            ['auditoria_interna', 'Auditoría Interna',                 'Gestión de infraestructura, responsivas, mantenimientos y seguridad de la información (GDS/GRP)', 'bi-shield-check', 14, 1]
         ];
 
         foreach ($modulosBase as $m) {
@@ -139,6 +140,7 @@ function asegurarTablasPermisos($pdo) {
 
         asegurarTablasReportesAgencia($pdo);
         asegurarTablasRespaldos($pdo);
+        asegurarTablasAuditoriaInterna($pdo);
     } catch (Throwable $e) {
         // Evitar interrumpir flujo si falla parcialmente
     }
@@ -170,7 +172,8 @@ function obtenerCatalogoModulos($pdo = null) {
         ['clave' => 'ordenes_servicio', 'nombre' => 'Órdenes de Servicio',               'descripcion' => 'Resumen de órdenes abiertas, cerradas y montos acumulados',                 'icono' => 'bi-file-earmark-bar-graph', 'orden' => 10, 'estatus' => 1],
         ['clave' => 'celulares',        'nombre' => 'Inventario de Celulares',            'descripcion' => 'Control de equipos móviles y líneas corporativas',                          'icono' => 'bi-phone-fill',              'orden' => 11, 'estatus' => 1],
         ['clave' => 'licencias',        'nombre' => 'Licencias de Software',             'descripcion' => 'Matriz de licenciamiento corporativo y vencimientos',                        'icono' => 'bi-key-fill',                'orden' => 12, 'estatus' => 1],
-        ['clave' => 'respaldos',        'nombre' => 'Monitoreo de Respaldos (NAS)',      'descripcion' => 'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'icono' => 'bi-cloud-arrow-up-fill',    'orden' => 13, 'estatus' => 1]
+        ['clave' => 'respaldos',        'nombre' => 'Monitoreo de Respaldos (NAS)',      'descripcion' => 'Monitoreo en tiempo real de respaldos en NAS locales con semáforo y auditoría', 'icono' => 'bi-cloud-arrow-up-fill',    'orden' => 13, 'estatus' => 1],
+        ['clave' => 'auditoria_interna', 'nombre' => 'Auditoría Interna',                 'descripcion' => 'Gestión de infraestructura, responsivas, mantenimientos y seguridad de la información (GDS/GRP)', 'icono' => 'bi-shield-check', 'orden' => 14, 'estatus' => 1]
     ];
 }
 
@@ -2344,6 +2347,541 @@ function asegurarTablasRespaldos($pdo = null) {
             }
         } catch (Throwable $eSyncPol) {}
     } catch (Throwable $e) {}
+}
+
+/**
+ * Asegura la creación y auto-población de tablas del módulo Auditoría Interna
+ * Soporta MySQL (cPanel) y SQLite (desarrollo local)
+ */
+function asegurarTablasAuditoriaInterna($pdo = null) {
+    if (!$pdo) {
+        global $pdo;
+    }
+    if (!$pdo) return;
+
+    try {
+        // 1. Asegurar directorios de almacenamiento de evidencias y responsivas firmadas
+        $dirs = [
+            __DIR__ . '/uploads/auditoria',
+            __DIR__ . '/uploads/auditoria/responsivas',
+            __DIR__ . '/uploads/auditoria/mantenimiento',
+            __DIR__ . '/uploads/auditoria/gds_usuarios',
+            __DIR__ . '/uploads/auditoria/gds_passwords',
+            __DIR__ . '/uploads/auditoria/grp'
+        ];
+        foreach ($dirs as $d) {
+            if (!is_dir($d)) {
+                @mkdir($d, 0777, true);
+            }
+        }
+
+        $driver = '';
+        try {
+            $driver = strtolower($pdo->getAttribute(PDO::ATTR_DRIVER_NAME));
+        } catch (Throwable $drvErr) {}
+
+        if ($driver === 'sqlite') {
+            // SQLite
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS audit_mantenimientos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    equipo_id INTEGER,
+                    nombre_equipo TEXT NOT NULL,
+                    area TEXT,
+                    usuario_responsable TEXT,
+                    tipo_mantenimiento TEXT DEFAULT 'Preventivo',
+                    fecha_programada TEXT NOT NULL,
+                    fecha_realizada TEXT,
+                    frecuencia TEXT DEFAULT 'Semestral',
+                    estado TEXT DEFAULT 'Programado',
+                    tecnico_responsable TEXT,
+                    observaciones TEXT,
+                    evidencia_pdf_url TEXT,
+                    creado_por TEXT,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_correos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nombre_colaborador TEXT NOT NULL,
+                    correo TEXT NOT NULL,
+                    area TEXT,
+                    puesto TEXT,
+                    tipo_cuenta TEXT DEFAULT 'Corporativo',
+                    estado TEXT DEFAULT 'Activo',
+                    fecha_alta TEXT,
+                    fecha_baja TEXT,
+                    motivo_baja TEXT,
+                    contrasena_guardada TEXT,
+                    observaciones TEXT,
+                    usuario_id INTEGER,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_licencias_office (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_licencia TEXT NOT NULL,
+                    nombre_producto TEXT NOT NULL,
+                    tipo_licencia TEXT DEFAULT 'Digital / ESD',
+                    cuenta_microsoft TEXT,
+                    equipo_asignado TEXT,
+                    usuario_asignado TEXT,
+                    area TEXT,
+                    estado TEXT DEFAULT 'Activa',
+                    fecha_compra TEXT,
+                    fecha_vencimiento TEXT,
+                    notas TEXT,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_gds_usuarios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    colaborador TEXT NOT NULL,
+                    usuario_id INTEGER,
+                    area TEXT,
+                    puesto TEXT,
+                    usuario_gds TEXT NOT NULL,
+                    password_gds TEXT NOT NULL,
+                    perfil_gds TEXT,
+                    sucursal TEXT DEFAULT 'Matriz',
+                    estado TEXT DEFAULT 'Activo',
+                    fecha_asignacion TEXT,
+                    responsiva_firmada_url TEXT,
+                    notas TEXT,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_gds_passwords_movimientos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tipo_movimiento TEXT NOT NULL,
+                    descripcion_movimiento TEXT,
+                    password_movimiento TEXT NOT NULL,
+                    usuario_autorizado TEXT NOT NULL,
+                    puesto_autorizado TEXT,
+                    area TEXT,
+                    nivel_seguridad TEXT DEFAULT 'Alto',
+                    fecha_actualizacion TEXT,
+                    fecha_vigencia TEXT,
+                    estado TEXT DEFAULT 'Activo',
+                    responsiva_firmada_url TEXT,
+                    notas TEXT,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_grp_usuarios (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    colaborador TEXT NOT NULL,
+                    usuario_id INTEGER,
+                    area TEXT,
+                    puesto TEXT,
+                    usuario_grp TEXT NOT NULL,
+                    password_grp TEXT NOT NULL,
+                    roles_grp TEXT NOT NULL,
+                    modulos_permitidos TEXT,
+                    fecha_alta TEXT,
+                    estado TEXT DEFAULT 'Activo',
+                    responsiva_firmada_url TEXT,
+                    notas_auditoria TEXT,
+                    creado_en TEXT DEFAULT CURRENT_TIMESTAMP,
+                    actualizado_en TEXT DEFAULT CURRENT_TIMESTAMP
+                );
+            ");
+        } else {
+            // MySQL
+            $pdo->exec("
+                CREATE TABLE IF NOT EXISTS `audit_mantenimientos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `equipo_id` INT NULL,
+                    `nombre_equipo` VARCHAR(100) NOT NULL,
+                    `area` VARCHAR(100) NULL,
+                    `usuario_responsable` VARCHAR(150) NULL,
+                    `tipo_mantenimiento` VARCHAR(50) DEFAULT 'Preventivo',
+                    `fecha_programada` DATE NOT NULL,
+                    `fecha_realizada` DATE NULL,
+                    `frecuencia` VARCHAR(50) DEFAULT 'Semestral',
+                    `estado` VARCHAR(50) DEFAULT 'Programado',
+                    `tecnico_responsable` VARCHAR(150) NULL,
+                    `observaciones` TEXT NULL,
+                    `evidencia_pdf_url` VARCHAR(255) NULL,
+                    `creado_por` VARCHAR(100) NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `audit_correos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `nombre_colaborador` VARCHAR(150) NOT NULL,
+                    `correo` VARCHAR(150) NOT NULL,
+                    `area` VARCHAR(100) NULL,
+                    `puesto` VARCHAR(100) NULL,
+                    `tipo_cuenta` VARCHAR(50) DEFAULT 'Corporativo',
+                    `estado` VARCHAR(50) DEFAULT 'Activo',
+                    `fecha_alta` DATE NULL,
+                    `fecha_baja` DATE NULL,
+                    `motivo_baja` TEXT NULL,
+                    `contrasena_guardada` VARCHAR(255) NULL,
+                    `observaciones` TEXT NULL,
+                    `usuario_id` INT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `audit_licencias_office` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `codigo_licencia` VARCHAR(100) NOT NULL,
+                    `nombre_producto` VARCHAR(100) NOT NULL,
+                    `tipo_licencia` VARCHAR(50) DEFAULT 'Digital / ESD',
+                    `cuenta_microsoft` VARCHAR(150) NULL,
+                    `equipo_asignado` VARCHAR(100) NULL,
+                    `usuario_asignado` VARCHAR(150) NULL,
+                    `area` VARCHAR(100) NULL,
+                    `estado` VARCHAR(50) DEFAULT 'Activa',
+                    `fecha_compra` DATE NULL,
+                    `fecha_vencimiento` DATE NULL,
+                    `notas` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `audit_gds_usuarios` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `colaborador` VARCHAR(150) NOT NULL,
+                    `usuario_id` INT NULL,
+                    `area` VARCHAR(100) NULL,
+                    `puesto` VARCHAR(100) NULL,
+                    `usuario_gds` VARCHAR(100) NOT NULL,
+                    `password_gds` VARCHAR(255) NOT NULL,
+                    `perfil_gds` VARCHAR(100) NULL,
+                    `sucursal` VARCHAR(100) DEFAULT 'Matriz',
+                    `estado` VARCHAR(50) DEFAULT 'Activo',
+                    `fecha_asignacion` DATE NULL,
+                    `responsiva_firmada_url` VARCHAR(255) NULL,
+                    `notas` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `audit_gds_passwords_movimientos` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `tipo_movimiento` VARCHAR(150) NOT NULL,
+                    `descripcion_movimiento` TEXT NULL,
+                    `password_movimiento` VARCHAR(255) NOT NULL,
+                    `usuario_autorizado` VARCHAR(150) NOT NULL,
+                    `puesto_autorizado` VARCHAR(100) NULL,
+                    `area` VARCHAR(100) NULL,
+                    `nivel_seguridad` VARCHAR(50) DEFAULT 'Alto',
+                    `fecha_actualizacion` DATE NULL,
+                    `fecha_vigencia` DATE NULL,
+                    `estado` VARCHAR(50) DEFAULT 'Activo',
+                    `responsiva_firmada_url` VARCHAR(255) NULL,
+                    `notas` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+                CREATE TABLE IF NOT EXISTS `audit_grp_usuarios` (
+                    `id` INT AUTO_INCREMENT PRIMARY KEY,
+                    `colaborador` VARCHAR(150) NOT NULL,
+                    `usuario_id` INT NULL,
+                    `area` VARCHAR(100) NULL,
+                    `puesto` VARCHAR(100) NULL,
+                    `usuario_grp` VARCHAR(100) NOT NULL,
+                    `password_grp` VARCHAR(255) NOT NULL,
+                    `roles_grp` TEXT NOT NULL,
+                    `modulos_permitidos` TEXT NULL,
+                    `fecha_alta` DATE NULL,
+                    `estado` VARCHAR(50) DEFAULT 'Activo',
+                    `responsiva_firmada_url` VARCHAR(255) NULL,
+                    `notas_auditoria` TEXT NULL,
+                    `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    `actualizado_en` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ");
+        }
+
+        // =====================================================================
+        // AUTO-POBLACIÓN INTELIGENTE INICIAL (Evita que el módulo arranque vacío)
+        // =====================================================================
+
+        // 1. Población inicial de Correos (desde usuarios y equipos)
+        try {
+            $cantCorreos = (int)$pdo->query("SELECT COUNT(*) FROM audit_correos")->fetchColumn();
+            if ($cantCorreos === 0) {
+                $stmtInsC = $pdo->prepare("
+                    INSERT INTO audit_correos (nombre_colaborador, correo, area, puesto, tipo_cuenta, estado, fecha_alta, contrasena_guardada, usuario_id)
+                    VALUES (?, ?, ?, ?, ?, 'Activo', ?, ?, ?)
+                ");
+
+                // Desde usuarios
+                try {
+                    $stmtU = $pdo->query("SELECT id, nombre, email, area, puesto, contrasena_correo, creado_en FROM usuarios WHERE email IS NOT NULL AND email != ''");
+                    if ($stmtU) {
+                        $procesados = [];
+                        while ($u = $stmtU->fetch(PDO::FETCH_ASSOC)) {
+                            $em = strtolower(trim($u['email']));
+                            if (!empty($em) && !isset($procesados[$em])) {
+                                $procesados[$em] = true;
+                                $nom = !empty($u['nombre']) ? trim($u['nombre']) : 'Colaborador';
+                                $fAlta = !empty($u['creado_en']) ? substr($u['creado_en'], 0, 10) : date('Y-m-d');
+                                $stmtInsC->execute([$nom, $em, $u['area'] ?: 'General', $u['puesto'] ?: 'Colaborador', 'Corporativo', $fAlta, $u['contrasena_correo'] ?? '', $u['id']]);
+                            }
+                        }
+                    }
+                } catch (Throwable $tu) {}
+
+                // Desde inventario de equipos (si no estaba en usuarios)
+                try {
+                    $stmtEqC = $pdo->query("SELECT DISTINCT usuario, correo, departamento, puesto FROM inv_equipos_vw WHERE correo IS NOT NULL AND correo != ''");
+                    if ($stmtEqC) {
+                        while ($eq = $stmtEqC->fetch(PDO::FETCH_ASSOC)) {
+                            $em = strtolower(trim($eq['correo']));
+                            if (!empty($em) && !isset($procesados[$em])) {
+                                $procesados[$em] = true;
+                                $nom = !empty($eq['usuario']) ? trim($eq['usuario']) : 'Usuario Equipo';
+                                $stmtInsC->execute([$nom, $em, $eq['departamento'] ?: 'General', $eq['puesto'] ?: 'Usuario', 'Corporativo', date('Y-m-d'), '', null]);
+                            }
+                        }
+                    }
+                } catch (Throwable $teq) {}
+            }
+        } catch (Throwable $eCorr) {}
+
+        // 2. Población inicial de Contraseñas de Movimientos GDS (Operaciones Críticas)
+        try {
+            $cantPassGds = (int)$pdo->query("SELECT COUNT(*) FROM audit_gds_passwords_movimientos")->fetchColumn();
+            if ($cantPassGds === 0) {
+                $movimientosIniciales = [
+                    [
+                        'tipo' => 'Cancelación de Facturas y Notas de Crédito',
+                        'desc' => 'Autorización requerida para anular comprobantes fiscales timbrados y refacturación.',
+                        'pass' => 'CAN-FACT*' . date('Y'),
+                        'usr'  => 'Gerente de Administración / Contabilidad',
+                        'puesto' => 'Gerente Administrativo',
+                        'area' => 'Administración',
+                        'nivel' => 'Crítico'
+                    ],
+                    [
+                        'tipo' => 'Modificación de Precios y Descuentos en Refacciones',
+                        'desc' => 'Autorización de porcentajes de descuento sobre mostrador y taller que superen margen mínimo.',
+                        'pass' => 'DESC-REF*' . date('Y'),
+                        'usr'  => 'Gerente de Refacciones',
+                        'puesto' => 'Gerente de Refacciones',
+                        'area' => 'Refacciones',
+                        'nivel' => 'Alto'
+                    ],
+                    [
+                        'tipo' => 'Traspaso de Unidades e Inventario de Autos',
+                        'desc' => 'Movimiento de vehículos nuevos o seminuevos entre agencias, bodegas o consignación.',
+                        'pass' => 'TRASP-AUTO*' . date('Y'),
+                        'usr'  => 'Gerente de Ventas / Logística',
+                        'puesto' => 'Gerente de Ventas',
+                        'area' => 'Ventas',
+                        'nivel' => 'Crítico'
+                    ],
+                    [
+                        'tipo' => 'Reapertura de Órdenes de Servicio Extemporáneas',
+                        'desc' => 'Apertura de órdenes cerradas o concluidas para reclamos de garantía o ajustes técnicos.',
+                        'pass' => 'ORD-SERV*' . date('Y'),
+                        'usr'  => 'Gerente de Servicio',
+                        'puesto' => 'Gerente de Servicio',
+                        'area' => 'Servicio',
+                        'nivel' => 'Alto'
+                    ],
+                    [
+                        'tipo' => 'Corte de Caja y Ajustes de Saldos',
+                        'desc' => 'Cierre forzoso de caja chica, diferencias de corte y condonación de recargos a clientes.',
+                        'pass' => 'CAJA-AJUST*' . date('Y'),
+                        'usr'  => 'Jefa de Caja General',
+                        'puesto' => 'Encargada de Caja',
+                        'area' => 'Administración',
+                        'nivel' => 'Crítico'
+                    ]
+                ];
+
+                $stmtInsP = $pdo->prepare("
+                    INSERT INTO audit_gds_passwords_movimientos 
+                    (tipo_movimiento, descripcion_movimiento, password_movimiento, usuario_autorizado, puesto_autorizado, area, nivel_seguridad, fecha_actualizacion, estado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Activo')
+                ");
+                $hoy = date('Y-m-d');
+                foreach ($movimientosIniciales as $m) {
+                    $stmtInsP->execute([$m['tipo'], $m['desc'], $m['pass'], $m['usr'], $m['puesto'], $m['area'], $m['nivel'], $hoy]);
+                }
+            }
+        } catch (Throwable $ePass) {}
+
+        // 3. Población inicial de Usuarios GDS
+        try {
+            $cantGdsUsr = (int)$pdo->query("SELECT COUNT(*) FROM audit_gds_usuarios")->fetchColumn();
+            if ($cantGdsUsr === 0) {
+                // Si hay usuarios del portal, sembrar los primeros como usuarios GDS
+                $stmtUsersG = $pdo->query("SELECT id, nombre, area, puesto FROM usuarios WHERE activo = 1 LIMIT 5");
+                if ($stmtUsersG) {
+                    $stmtInsG = $pdo->prepare("
+                        INSERT INTO audit_gds_usuarios 
+                        (colaborador, usuario_id, area, puesto, usuario_gds, password_gds, perfil_gds, sucursal, estado, fecha_asignacion)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'Matriz', 'Activo', ?)
+                    ");
+                    $hoy = date('Y-m-d');
+                    while ($ug = $stmtUsersG->fetch(PDO::FETCH_ASSOC)) {
+                        $loginGds = strtolower(substr(preg_replace('/[^a-zA-Z]/', '', $ug['nombre']), 0, 8));
+                        if (empty($loginGds)) $loginGds = 'usr' . $ug['id'];
+                        $stmtInsG->execute([
+                            $ug['nombre'],
+                            $ug['id'],
+                            $ug['area'] ?: 'General',
+                            $ug['puesto'] ?: 'Operativo',
+                            $loginGds,
+                            'Gds.' . date('Y') . '*' . $ug['id'],
+                            'Acceso Operativo ' . ($ug['area'] ?: 'General'),
+                            $hoy
+                        ]);
+                    }
+                }
+            }
+        } catch (Throwable $eGdsUsr) {}
+
+        // 4. Población inicial de Usuarios GRP
+        try {
+            $cantGrp = (int)$pdo->query("SELECT COUNT(*) FROM audit_grp_usuarios")->fetchColumn();
+            if ($cantGrp === 0) {
+                $stmtUsersGrp = $pdo->query("SELECT id, nombre, area, puesto FROM usuarios WHERE activo = 1 LIMIT 4");
+                if ($stmtUsersGrp) {
+                    $stmtInsGrp = $pdo->prepare("
+                        INSERT INTO audit_grp_usuarios 
+                        (colaborador, usuario_id, area, puesto, usuario_grp, password_grp, roles_grp, modulos_permitidos, fecha_alta, estado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Activo')
+                    ");
+                    $hoy = date('Y-m-d');
+                    while ($ugp = $stmtUsersGrp->fetch(PDO::FETCH_ASSOC)) {
+                        $loginGrp = 'grp_' . strtolower(substr(preg_replace('/[^a-zA-Z]/', '', $ugp['nombre']), 0, 7));
+                        $stmtInsGrp->execute([
+                            $ugp['nombre'],
+                            $ugp['id'],
+                            $ugp['area'] ?: 'General',
+                            $ugp['puesto'] ?: 'Analista',
+                            $loginGrp,
+                            'Grp#' . date('Y') . '$' . $ugp['id'],
+                            'Consultas, Reportes, ' . ($ugp['area'] ?: 'General'),
+                            'Facturación, Cobranza, Inventarios',
+                            $hoy
+                        ]);
+                    }
+                }
+            }
+        } catch (Throwable $eGrp) {}
+
+        // 5. Población inicial de Licencias de Office (desde inv_licencias_office o baseline)
+        try {
+            $cantLic = (int)$pdo->query("SELECT COUNT(*) FROM audit_licencias_office")->fetchColumn();
+            if ($cantLic === 0) {
+                $stmtInsL = $pdo->prepare("
+                    INSERT INTO audit_licencias_office 
+                    (codigo_licencia, nombre_producto, tipo_licencia, cuenta_microsoft, equipo_asignado, usuario_asignado, area, estado, fecha_compra)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $hoy = date('Y-m-d');
+
+                // Si existe inv_licencias_office
+                $importado = false;
+                try {
+                    $stmtExistLic = $pdo->query("SELECT * FROM inv_licencias_office LIMIT 10");
+                    if ($stmtExistLic) {
+                        while ($lic = $stmtExistLic->fetch(PDO::FETCH_ASSOC)) {
+                            $cod = $lic['clave_producto'] ?? ($lic['codigo'] ?? ($lic['serial'] ?? ''));
+                            if (!empty($cod)) {
+                                $stmtInsL->execute([
+                                    $cod,
+                                    $lic['producto'] ?? 'Microsoft 365 Business Standard',
+                                    $lic['tipo'] ?? 'Digital / ESD',
+                                    $lic['correo_cuenta'] ?? '',
+                                    $lic['equipo'] ?? '',
+                                    $lic['usuario'] ?? '',
+                                    $lic['departamento'] ?? 'General',
+                                    'Activa',
+                                    $hoy
+                                ]);
+                                $importado = true;
+                            }
+                        }
+                    }
+                } catch (Throwable $teLic) {}
+
+                if (!$importado) {
+                    $baselineLics = [
+                        ['M365-BS-9842-8812-7741', 'Microsoft 365 Business Standard', 'Suscripción Anual', 'sistemas@agenciagrupohuerta.com', 'SRV-AD-01', 'Administrador Sistemas', 'Sistemas', 'Activa'],
+                        ['OF21-HB-4412-9981-3312', 'Office Hogar y Empresas 2021', 'Digital / ESD', 'gerencia.gral@agenciagrupohuerta.com', 'DIR-PC-01', 'Dirección General', 'Dirección', 'Activa'],
+                        ['OF21-HB-8891-2244-1109', 'Office Hogar y Empresas 2021', 'Digital / ESD', 'contabilidad@agenciagrupohuerta.com', 'ADM-PC-02', 'Jefe Contabilidad', 'Administración', 'Activa'],
+                        ['OF19-PR-5521-7711-4432', 'Office Professional Plus 2019', 'OEM / Volumen', 'ventas.coord@agenciagrupohuerta.com', 'VTA-PC-05', 'Coordinador Ventas', 'Ventas', 'Activa'],
+                        ['M365-AP-3321-9988-5521', 'Microsoft 365 Apps for Enterprise', 'Suscripción Anual', 'refacciones@agenciagrupohuerta.com', 'REF-PC-01', 'Mostrador Refacciones', 'Refacciones', 'Activa']
+                    ];
+                    foreach ($baselineLics as $bl) {
+                        $stmtInsL->execute([$bl[0], $bl[1], $bl[2], $bl[3], $bl[4], $bl[5], $bl[6], $bl[7], $hoy]);
+                    }
+                }
+            }
+        } catch (Throwable $eLic) {}
+
+        // 6. Población inicial de Planes de Mantenimiento
+        try {
+            $cantMant = (int)$pdo->query("SELECT COUNT(*) FROM audit_mantenimientos")->fetchColumn();
+            if ($cantMant === 0) {
+                // Obtener algunos equipos del inventario
+                $stmtEqM = null;
+                try {
+                    $stmtEqM = $pdo->query("SELECT id, nombre_equipo, departamento, usuario FROM inv_equipos_vw LIMIT 8");
+                } catch (Throwable $te) {}
+
+                $stmtInsM = $pdo->prepare("
+                    INSERT INTO audit_mantenimientos 
+                    (equipo_id, nombre_equipo, area, usuario_responsable, tipo_mantenimiento, fecha_programada, frecuencia, estado, tecnico_responsable, observaciones)
+                    VALUES (?, ?, ?, ?, ?, ?, 'Semestral', ?, 'Soporte Sistemas', ?)
+                ");
+
+                $mesActual = date('Y-m');
+                $diasProg = ['05', '12', '18', '24', '28'];
+
+                if ($stmtEqM && ($rowsM = $stmtEqM->fetchAll(PDO::FETCH_ASSOC)) && count($rowsM) > 0) {
+                    $idx = 0;
+                    foreach ($rowsM as $em) {
+                        $dia = $diasProg[$idx % count($diasProg)];
+                        $fProg = "$mesActual-$dia";
+                        $estado = ($idx === 0) ? 'Realizado' : (($idx === 1) ? 'En Proceso' : 'Programado');
+                        $obs = ($idx === 0) ? 'Limpieza interna de disipadores, soplado, actualización de parches y antivirus completados.' : 'Mantenimiento preventivo semestral programado para hardware y software.';
+                        $stmtInsM->execute([
+                            $em['id'],
+                            $em['nombre_equipo'],
+                            $em['departamento'] ?: 'General',
+                            $em['usuario'] ?: 'Responsable de área',
+                            'Preventivo',
+                            $fProg,
+                            $estado,
+                            $obs
+                        ]);
+                        $idx++;
+                    }
+                } else {
+                    // Sembrar equipos muestra
+                    $equiposMuestra = [
+                        ['SRV-DATACENTER-01', 'Sistemas', 'Encargado de Sistemas', 'Preventivo', "$mesActual-08", 'Realizado', 'Limpieza y verificación de temperaturas de CPUs, ventiladores y discos.'],
+                        ['ADM-FACT-01', 'Administración', 'Contadora General', 'Preventivo', "$mesActual-15", 'En Proceso', 'Mantenimiento preventivo, optimización de temporales de Windows y revisión de disco.'],
+                        ['VTA-GERENCIA-01', 'Ventas', 'Gerente de Ventas', 'Preventivo', "$mesActual-22", 'Programado', 'Limpieza profunda de chasis y formateo preventivo programado.'],
+                        ['REF-MOSTRADOR-01', 'Refacciones', 'Asesor de Mostrador', 'Correctivo', "$mesActual-25", 'Programado', 'Cambio de pasta térmica y revisión de fuente de poder.'],
+                        ['SRV-TALLER-01', 'Servicio', 'Jefe de Taller', 'Preventivo', "$mesActual-28", 'Programado', 'Soplado de polvo ambiental de taller y lubricación de ventiladores.']
+                    ];
+                    foreach ($equiposMuestra as $eqM) {
+                        $stmtInsM->execute([null, $eqM[0], $eqM[1], $eqM[2], $eqM[3], $eqM[4], $eqM[5], $eqM[6]]);
+                    }
+                }
+            }
+        } catch (Throwable $eMant) {}
+
+    } catch (Throwable $eGlobal) {}
 }
 
 function obtenerCatalogoTemasOscuros() {

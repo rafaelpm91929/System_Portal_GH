@@ -385,6 +385,22 @@ $modulosVisibles = 0;
     </div>
     <?php endif; ?>
 
+    <!-- Módulo: Auditoría Interna & Control Operativo -->
+    <?php if (tienePermiso('auditoria_interna', 'puede_ver')): $modulosVisibles++; ?>
+    <div class="module-card" style="border-color: rgba(212, 175, 55, 0.45); box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35), 0 0 15px rgba(212, 175, 55, 0.12);">
+        <span class="active-badge" style="background: rgba(212, 175, 55, 0.15); color: #f5df9e; border-color: rgba(212, 175, 55, 0.35);"><i class="bi bi-shield-check me-1"></i> AUDITORÍA & CONTROL</span>
+        <div class="icon-box" style="background: rgba(212, 175, 55, 0.15); color: #d4af37; border: 1px solid rgba(212, 175, 55, 0.3);">
+            <i class="bi bi-shield-shaded"></i>
+        </div>
+        <div class="module-title">Auditoría Interna</div>
+        <div class="module-desc">
+            Gestión de responsivas de equipos, planes de mantenimiento, matriz de correos, licencias Office y accesos de seguridad (GDS y GRP).
+        </div>
+        <a href="auditoria_interna.php" class="btn-ingresar" style="background: linear-gradient(135deg, #b8972e 0%, #8c711e 100%); border-color: rgba(245, 223, 158, 0.4); box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);">Ingresar</a>
+        <span class="module-gh-tag" title="Módulo conectado con Control de TI">GH</span>
+    </div>
+    <?php endif; ?>
+
     <?php if ($modulosVisibles === 0): ?>
     <div class="col-12 py-5" style="grid-column: 1 / -1;">
         <div class="p-5 rounded-4 border border-secondary border-opacity-25 text-center shadow" style="background: rgba(13, 30, 54, 0.6); max-width: 650px; margin: 0 auto;">
