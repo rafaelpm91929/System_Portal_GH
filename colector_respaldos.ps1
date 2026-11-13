@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Agente Colector Nativo de Respaldos SMB/NAS para Windows (PowerShell)
 .DESCRIPTION
@@ -31,7 +31,7 @@ if (Test-Path $ConfigFile) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ApiUrl)) {
-    $ApiUrl = "https://portal.pirineosmotors.com/api_respaldos.php"
+    $ApiUrl = "https://portal.divolavilla.com/api_respaldos.php"
 }
 
 function Remove-Diacritics {

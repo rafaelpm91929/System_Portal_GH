@@ -32,7 +32,7 @@ CONFIG_FILE = "colector_config.json"
 LOG_FILE = "colector_respaldos.log"
 
 DEFAULT_CONFIG = {
-    "api_url": "https://portal.pirineosmotors.com/api_respaldos.php",
+    "api_url": "https://portal.divolavilla.com/api_respaldos.php",
     "api_token": "COPIAR_TOKEN_AQUI",
     "timeout_segundos": 45,
     "verificar_ssl": True,

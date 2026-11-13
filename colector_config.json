@@ -1,6 +1,6 @@
 {
-    "api_url": "https://portal.pirineosmotors.com/api_respaldos.php",
-    "api_token": "COPIAR_TOKEN_AQUI",
+    "api_url": "https://portal.divolavilla.com/api_respaldos.php",
+    "api_token": "d7f05eaf94c3e8fb4ee4718fe8e7c58e5a779228ab18e1aa",
     "timeout_segundos": 45,
     "verificar_ssl": true,
     "extensiones_temporales": [
