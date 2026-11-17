@@ -207,7 +207,7 @@ $SECCIONES = [
         'descripcion' => 'Equipos de cómputo activos (Desktop y Laptops) con expediente completo y credenciales.',
         'columnas_tabla' => ['id', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'contrasena'],
         'campos_full' => [
-            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'expediente_completo',
+            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'modelo', 'expediente_completo',
             'dominio', 'dd', 'procesador', 'ghz', 'ram', 'ip', 'mac_wifi', 'mac_ethernet', 'sistema_op', 'serie',
             'logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds',
             'correo', 'correo_oficial_planta', 'extension', 'puerto_patch_panel', 'puerto_sw', 'numero_nodo', 'servidor_sip', 'vlan', 'switch_nombre', 'power_pb', 'contrasena_pb', 'poc', 'contrasena_poc', 'msqp', 'contrasena_msqp', 'grp', 'contrasena_grp', 'etka', 'contrasena_etka',
@@ -221,7 +221,7 @@ $SECCIONES = [
         'descripcion' => 'Histórico de computadoras dadas de baja en la sucursal.',
         'columnas_tabla' => ['id', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'contrasena'],
         'campos_full' => [
-            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo',
+            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'modelo',
             'dominio', 'dd', 'procesador', 'ghz', 'ram', 'ip', 'mac_wifi', 'mac_ethernet', 'sistema_op', 'serie',
             'logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds',
             'correo', 'correo_oficial_planta', 'extension', 'puerto_patch_panel', 'puerto_sw', 'numero_nodo', 'costo', 'compra', 'proveedor', 'antivirus', 'dia_respaldo', 'hora_respaldo', 'no_break', 'modelo_nobreak', 'serie_nobreak', 'expediente_completo', 'motivo_baja'
@@ -250,7 +250,7 @@ $SECCIONES = [
         'descripcion' => 'Inventario de computadoras asignadas a la oficina corporativa.',
         'columnas_tabla' => ['id', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'contrasena'],
         'campos_full' => [
-            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo',
+            'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'modelo',
             'dominio', 'dd', 'procesador', 'ghz', 'ram', 'ip', 'mac_wifi', 'mac_ethernet', 'sistema_op', 'serie',
             'logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds',
             'correo', 'correo_oficial_planta', 'extension', 'puerto_patch_panel', 'puerto_sw', 'numero_nodo', 'costo', 'compra', 'proveedor', 'antivirus', 'dia_respaldo', 'hora_respaldo', 'no_break', 'modelo_nobreak', 'serie_nobreak', 'expediente_completo'
@@ -2027,10 +2027,10 @@ $jsonRamCounts = json_encode(array_values($ramDistribucionMap));
 // ----------------------------------------------------
 function obtenerCategoriaCampo($col, $seccion = '') {
     $c = strtolower($col);
-    if (in_array($c, ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'estatus', 'observaciones'])) {
+    if (in_array($c, ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'tipo_equipo', 'modelo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'estatus', 'observaciones'])) {
         return ['id' => 'cat_general', 'titulo' => '👤 Datos de Asignación y Dispositivo', 'icono' => 'bi-person-badge-fill'];
     }
-    if (in_array($c, ['marca', 'modelo', 'modelo_exacto', 'serie', 'imei_1', 'imei_2', 'almacenamiento', 'ram', 'color', 'sistema_op', 'mac', 'tamano_pantalla', 'resolucion', 'especificaciones', 'accesorios', 'dominio', 'dd', 'procesador', 'ghz', 'mac_wifi', 'mac_ethernet', 'rom', 'pulgadas', 'monitor', 'dvr', 'camaras', 'numero_serie', 'cam_totales_ip', 'disponibles_ip', 'cam_totales_analogicas', 'disponibles', 'capacidad_actual', 'capacidad_discos', 'numero_discos', 'tiene_actual', 'ip', 'tipo_poe', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'cantidad_discos', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia'])) {
+    if (in_array($c, ['marca', 'modelo_exacto', 'serie', 'imei_1', 'imei_2', 'almacenamiento', 'ram', 'color', 'sistema_op', 'mac', 'tamano_pantalla', 'resolucion', 'especificaciones', 'accesorios', 'dominio', 'dd', 'procesador', 'ghz', 'mac_wifi', 'mac_ethernet', 'rom', 'pulgadas', 'monitor', 'dvr', 'camaras', 'numero_serie', 'cam_totales_ip', 'disponibles_ip', 'cam_totales_analogicas', 'disponibles', 'capacidad_actual', 'capacidad_discos', 'numero_discos', 'tiene_actual', 'ip', 'tipo_poe', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'cantidad_discos', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia'])) {
         return ['id' => 'cat_specs', 'titulo' => '💻 Especificaciones Técnicas y Hardware', 'icono' => 'bi-cpu-fill'];
     }
     if (in_array($c, ['logmein', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds', 'usuario_dvr', 'contrasena_dvr', 'contrasena_camara', 'licencia', 'serie_licencia', 'serie_equipo', 'contrasena', 'usuario', 'usuario_impresora', 'contrasena_impresora', 'usuario_impresora_web', 'contrasena_impresora_web', 'contrasena_web', 'tipo_licencia'])) {
@@ -2056,6 +2056,7 @@ function obtenerEtiquetaCampo($col) {
     if ($c === 'contrasena_web') return 'Contraseña Admin Web Teléfono';
     if ($c === 'vlan') return 'VLAN de Voz';
     if ($c === 'departamento' || $c === 'area') return 'Área';
+    if ($c === 'modelo') return 'Modelo';
     if ($c === 'ubicacion') return 'Ubicación Física';
     if ($c === 'modelo_exacto') return 'Modelo Exacto';
     if ($c === 'fecha_adquisicion') return 'Fecha de Adquisición';
@@ -2278,14 +2279,15 @@ function renderBadgeTipoSite($tipo) {
     window._isSyncingNodoSwitch = false;
 
     var CATEGORIAS_EXPEDIENTE = [
-        { id: 'cat_general', titulo: '👤 Datos de Asignación y Dispositivo', icono: 'bi-person-badge-fill', campos: ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'dvr_vinculado', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'estatus', 'tipo_equipo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'extension', 'observaciones'] },
-        { id: 'cat_specs', titulo: '💻 Especificaciones Técnicas y Hardware', icono: 'bi-cpu-fill', campos: ['marca', 'modelo', 'modelo_exacto', 'serie', 'imei_1', 'imei_2', 'almacenamiento', 'ram', 'color', 'sistema_op', 'mac', 'tamano_pantalla', 'resolucion', 'especificaciones', 'accesorios', 'dominio', 'dd', 'procesador', 'ghz', 'mac_wifi', 'mac_ethernet', 'rom', 'pulgadas', 'monitor', 'dvr', 'camaras', 'numero_serie', 'cam_totales_ip', 'disponibles_ip', 'cam_totales_analogicas', 'disponibles', 'capacidad_actual', 'capacidad_discos', 'numero_discos', 'tiene_actual', 'ip', 'tipo_poe', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'cantidad_discos', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia'] },
+        { id: 'cat_general', titulo: '👤 Datos de Asignación y Dispositivo', icono: 'bi-person-badge-fill', campos: ['tipo_registro', 'subtipo_dispositivo', 'fabricante', 'dvr_vinculado', 'departamento', 'puesto', 'usuario', 'nombre_equipo', 'estado', 'estatus', 'tipo_equipo', 'modelo', 'expediente_completo', 'area', 'nombre', 'usuario_equipo', 'usuario_equipo_dominio', 'funcion_servicio', 'ambiente', 'criticidad', 'tipo_servidor', 'ubicacion', 'fecha_asignacion', 'estado_fisico', 'extension', 'observaciones'] },
+        { id: 'cat_specs', titulo: '💻 Especificaciones Técnicas y Hardware', icono: 'bi-cpu-fill', campos: ['marca', 'modelo_exacto', 'serie', 'imei_1', 'imei_2', 'almacenamiento', 'ram', 'color', 'sistema_op', 'mac', 'tamano_pantalla', 'resolucion', 'especificaciones', 'accesorios', 'dominio', 'dd', 'procesador', 'ghz', 'mac_wifi', 'mac_ethernet', 'rom', 'pulgadas', 'monitor', 'dvr', 'camaras', 'numero_serie', 'cam_totales_ip', 'disponibles_ip', 'cam_totales_analogicas', 'disponibles', 'capacidad_actual', 'capacidad_discos', 'numero_discos', 'tiene_actual', 'ip', 'tipo_poe', 'cantidad_puertos', 'velocidad_puertos', 'tipo_switch', 'firmware_version', 'posicion_rack', 'cantidad_discos', 'bahias_nas', 'capacidad_disco_ind', 'capacidad_disponible', 'config_raid', 'tipo_discos', 'protocolos_nas', 'unifi_os_ver', 'controller_ver', 'velocidad_enlace', 'ssids', 'vlans', 'poe', 'controlador_ap', 'capacidad_va', 'capacidad_w', 'tipo_ups', 'voltaje_entrada', 'voltaje_salida', 'cant_baterias', 'specs_baterias', 'fecha_bateria', 'autonomia'] },
         { id: 'cat_credenciales', titulo: '🔑 Credenciales y Accesos', icono: 'bi-key-fill', campos: ['logmein', 'contrasena', 'office', 'serie_office', 'clave_candado', 'gds', 'remoto', 'usuario_gds', 'contrasena_remoto', 'contrasena_gds', 'usuario_dvr', 'contrasena_dvr', 'contrasena_camara', 'licencia', 'serie_licencia', 'serie_equipo', 'usuario_impresora', 'contrasena_impresora', 'usuario_impresora_web', 'contrasena_impresora_web', 'contrasena_web', 'tipo_licencia'] },
         { id: 'cat_telecom', titulo: '📱 Línea, Plan e ISP', icono: 'bi-diagram-2-fill', campos: ['numero_telefonico', 'portabilidad', 'tiene_plan_celular', 'vencimiento_plan', 'proveedor_plan', 'numero_contrato_plan', 'correo', 'correo_oficial_planta', 'extension', 'puerto_patch_panel', 'puerto_sw', 'switch_nombre', 'numero_nodo', 'power_pb', 'contrasena_pb', 'poc', 'contrasena_poc', 'msqp', 'contrasena_msqp', 'grp', 'contrasena_grp', 'etka', 'contrasena_etka', 'mail', 'celular', 'pantalla', 'tablet', 'proveedor', 'contrato', 'tipo_enlace', 'ancho_banda', 'simetria_enlace', 'tipo_conexion', 'numero_contrato', 'numero_cuenta', 'circuit_id', 'soporte_contacto', 'ip_publica', 'ip_local'] },
         { id: 'cat_garantia', titulo: '🧾 Garantía y Facturación', icono: 'bi-receipt', campos: ['costo', 'folio_factura', 'fecha_compra', 'fecha_adquisicion', 'inicio_garantia', 'fin_garantia', 'garantia2', 'garantia', 'renovacion_equipo', 'compra', 'antivirus', 'dia_respaldo', 'hora_respaldo', 'no_break', 'modelo_nobreak', 'serie_nobreak', 'factura', 'plan', 'motivo_baja', 'dias_grabacion'] }
     ];
 
     var ETIQUETAS_CUSTOM = {
+        'modelo': 'MODELO',
         'tipo_licencia': 'TIPO DE LICENCIA',
         'portabilidad': 'PORTABILIDAD',
         'extension': 'EXTENSIÓN TELEFÓNICA',
@@ -4835,6 +4837,11 @@ function renderBadgeTipoSite($tipo) {
                                             <td class="fw-bold text-white">
                                                 <i class="bi bi-display text-primary me-1"></i>
                                                 <?php echo htmlspecialchars($reg['nombre_equipo'] ?? $reg['equipo'] ?? $reg['monitor'] ?? $reg['nombre'] ?? 'N/A'); ?>
+                                                <?php if (!empty($reg['modelo'])): ?>
+                                                    <div class="small text-secondary fw-normal font-monospace mt-0.5" style="font-size: 0.76rem;">
+                                                        <i class="bi bi-tag me-1 text-info opacity-75"></i><?php echo htmlspecialchars($reg['modelo']); ?>
+                                                    </div>
+                                                <?php endif; ?>
                                                 <?php if (!empty($reg['ip'])): ?>
                                                     <div class="small font-monospace text-info mt-1" style="font-size: 0.78rem;">
                                                         <i class="bi bi-globe me-1"></i><?php echo htmlspecialchars($reg['ip']); ?>
@@ -5079,6 +5086,11 @@ function renderBadgeTipoSite($tipo) {
                                                         <i class="bi bi-display text-primary fs-5"></i>
                                                         <span class="text-truncate"><?php echo htmlspecialchars($reg['nombre_equipo'] ?? $reg['equipo'] ?? $reg['monitor'] ?? $reg['nombre'] ?? 'N/A'); ?></span>
                                                     </div>
+                                                    <?php if (!empty($reg['modelo'])): ?>
+                                                        <div class="small text-secondary fw-normal font-monospace mt-0.5" style="font-size: 0.76rem;">
+                                                            <i class="bi bi-tag me-1 text-info opacity-75"></i><?php echo htmlspecialchars($reg['modelo']); ?>
+                                                        </div>
+                                                    <?php endif; ?>
                                                 </div>
 
                                                 <!-- Micro Specs Badges -->
