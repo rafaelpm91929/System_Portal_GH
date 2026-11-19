@@ -1768,7 +1768,7 @@ function asegurarTablasEquipos($pdo = null) {
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS inv_equipos_vw (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Activo', tipo_equipo TEXT DEFAULT 'Desktop', modelo TEXT, expediente_completo TEXT, dominio TEXT,
+                    estado TEXT DEFAULT 'Activo', tipo_equipo TEXT DEFAULT 'Desktop', marca TEXT, modelo TEXT, expediente_completo TEXT, dominio TEXT,
                     logmein TEXT, serie TEXT, dd TEXT, procesador TEXT, ghz TEXT, ram TEXT, direccion_mac TEXT, mac_wifi TEXT,
                     mac_ethernet TEXT, sistema_op TEXT, fecha_compra DATE, folio_factura TEXT, inicio_garantia DATE,
                     fin_garantia DATE, garantia2 TEXT, renovacion_equipo TEXT, usuario_equipo_dominio TEXT, contrasena TEXT,
@@ -1782,7 +1782,7 @@ function asegurarTablasEquipos($pdo = null) {
 
                 CREATE TABLE IF NOT EXISTS inv_equipos_baja (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, departamento TEXT, puesto TEXT, usuario TEXT, nombre_equipo TEXT,
-                    estado TEXT DEFAULT 'Baja', tipo_equipo TEXT, modelo TEXT, expediente_completo TEXT, dominio TEXT, logmein TEXT,
+                    estado TEXT DEFAULT 'Baja', tipo_equipo TEXT, marca TEXT, modelo TEXT, expediente_completo TEXT, dominio TEXT, logmein TEXT,
                     serie TEXT, dd TEXT, procesador TEXT, ghz TEXT, ram TEXT, direccion_mac TEXT, mac_wifi TEXT,
                     mac_ethernet TEXT, sistema_op TEXT, fecha_compra DATE, folio_factura TEXT, inicio_garantia DATE,
                     fin_garantia DATE, garantia2 TEXT, renovacion_equipo TEXT, usuario_equipo_dominio TEXT, contrasena TEXT,

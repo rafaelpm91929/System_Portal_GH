@@ -130,13 +130,31 @@ $encargadoSistemasDisplay = getValBD($agenciaData ?: [], ['encargado_sistemas'],
 $logoAgenciaDisplay       = getValBD($agenciaData ?: [], ['logo_url'], '');
 
 // 3. OBTENER ESPECIFICACIONES TÉCNICAS DEL EQUIPO (100% DINÁMICO DESDE LA BASE DE DATOS)
-$marcaPrinter = getValBD($equipo, ['marca'], '');
-$modeloPrinter = getValBD($equipo, ['modelo_exacto', 'modelo'], '');
-$marcaModCombined = trim($marcaPrinter . ' ' . $modeloPrinter);
+$marcaRaw = getValBD($equipo, ['marca', 'fabricante'], '');
+$modeloRaw = getValBD($equipo, ['modelo', 'modelo_exacto', 'modelo_nobreak'], '');
+$marcaModCombined = trim($marcaRaw . ' ' . $modeloRaw);
 
 $nombreEquipo = getValBD($equipo, [
     'nombre_equipo', 'equipo', 'nombre', 'nombre_maquina', 'hostname', 'tablet', 'celular', 'pantalla', 'dvr', 'licencia', 'monitor'
 ], !empty($marcaModCombined) ? $marcaModCombined : 'N/A');
+
+$marcaDisplay = $marcaRaw;
+$modeloDisplay = $modeloRaw;
+
+// Si la marca viene vacía o N/A, intentar deducirla inteligentemente de modelo o nombre si contienen una marca conocida
+if (empty($marcaDisplay) || $marcaDisplay === 'N/A' || $marcaDisplay === '---') {
+    $marcasConocidas = ['Lenovo', 'Dell', 'HP', 'Hewlett-Packard', 'Apple', 'Asus', 'Acer', 'Toshiba', 'Samsung', 'Huawei', 'Sony', 'Gateway', 'Epson', 'Canon', 'Kyocera', 'Brother', 'Zebra', 'Cisco', 'Ubiquiti', 'MikroTik'];
+    foreach ($marcasConocidas as $mk) {
+        if (stripos($modeloDisplay, $mk) !== false || stripos($nombreEquipo, $mk) !== false) {
+            $marcaDisplay = $mk;
+            break;
+        }
+    }
+}
+
+$marcaDisplay = !empty($marcaDisplay) ? $marcaDisplay : 'N/A';
+$modeloDisplay = !empty($modeloDisplay) ? $modeloDisplay : 'N/A';
+$nombreEquipo = !empty($nombreEquipo) ? $nombreEquipo : 'N/A';
 
 $serieEquipo = getValBD($equipo, [
     'serie', 'numero_serie', 'serie_equipo', 'serie_nobreak', 'serie_licencia', 'mac', 'mac_wifi', 'mac_ethernet', 'direccion_mac'
@@ -454,10 +472,16 @@ $folioResponsiva = 'RESP-' . strtoupper(mb_substr($seccion, 0, 4)) . '-' . str_p
     <div class="section-header"><i class="bi bi-display me-1"></i> 2. ESPECIFICACIONES DEL EQUIPO Y HARDWARE ASIGNADO</div>
     <table class="table-info-custom">
         <tr>
-            <th>Nombre / Marca-Modelo:</th>
+            <th>Nombre del Equipo:</th>
             <td><strong class="font-monospace text-primary"><?php echo htmlspecialchars($nombreEquipo); ?></strong></td>
             <th>Número de Serie (SN):</th>
             <td><strong class="font-monospace text-dark"><?php echo htmlspecialchars($serieEquipo); ?></strong></td>
+        </tr>
+        <tr>
+            <th>Marca:</th>
+            <td><strong class="text-dark"><?php echo htmlspecialchars($marcaDisplay); ?></strong></td>
+            <th>Modelo:</th>
+            <td><strong class="font-monospace text-dark"><?php echo htmlspecialchars($modeloDisplay); ?></strong></td>
         </tr>
         <tr>
             <th>Tipo / Categoría:</th>
