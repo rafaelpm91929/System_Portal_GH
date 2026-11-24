@@ -131,6 +131,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 
                 if (empty($error)) {
                     $targetUserId = 0;
+
+                    // Resolver políticas corporativas permitidas
+                    $politicasTodasPost = isset($_POST['politicas_todas']);
+                    $politicasIdsPost = $_POST['politicas_permitidas'] ?? [];
+                    if (strtolower($rol) === 'superadmin') {
+                        $politicasFinal = 'TODOS';
+                    } elseif (in_array('politicas', $modulosPermitidos)) {
+                        if ($politicasTodasPost) {
+                            $politicasFinal = 'TODOS';
+                        } else {
+                            $polIdsClean = array_values(array_unique(array_filter(array_map('intval', (array)$politicasIdsPost), function($n) { return $n > 0; })));
+                            $politicasFinal = empty($polIdsClean) ? 'NINGUNA' : implode(',', $polIdsClean);
+                        }
+                    } else {
+                        $politicasFinal = 'NINGUNA';
+                    }
+
                     if ($id > 0) {
                     // Procesar configuración de áreas autorizadas de tickets
                     $areasPost = $_POST['areas_tickets'] ?? [];
@@ -156,11 +173,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                     // Actualizar Usuario existente
                     if (!empty($password)) {
                         $hash = password_hash($password, PASSWORD_DEFAULT);
-                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=?, areas_tickets=? WHERE id=?");
-                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal, $id]);
+                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, password=?, rol=?, agencia=?, activo=?, areas_tickets=?, politicas_permitidas=? WHERE id=?");
+                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal, $politicasFinal, $id]);
                     } else {
-                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, rol=?, agencia=?, activo=?, areas_tickets=? WHERE id=?");
-                        $stmt->execute([$usuario, $nombre, $email, $rol, $agencia, $activo, $areasFinal, $id]);
+                        $stmt = $pdo->prepare("UPDATE usuarios SET usuario=?, nombre=?, email=?, rol=?, agencia=?, activo=?, areas_tickets=?, politicas_permitidas=? WHERE id=?");
+                        $stmt->execute([$usuario, $nombre, $email, $rol, $agencia, $activo, $areasFinal, $politicasFinal, $id]);
                     }
                     $targetUserId = $id;
                     $mensaje = "Usuario <strong>".htmlspecialchars($usuario)."</strong> y permisos de módulos actualizados con éxito.";
@@ -190,8 +207,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         }
 
                         $hash = password_hash($password, PASSWORD_DEFAULT);
-                        $stmt = $pdo->prepare("INSERT INTO usuarios (usuario, nombre, email, password, rol, agencia, activo, areas_tickets) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal]);
+                        $stmt = $pdo->prepare("INSERT INTO usuarios (usuario, nombre, email, password, rol, agencia, activo, areas_tickets, politicas_permitidas) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                        $stmt->execute([$usuario, $nombre, $email, $hash, $rol, $agencia, $activo, $areasFinal, $politicasFinal]);
                         $targetUserId = (int)$pdo->lastInsertId();
                         $mensaje = "Nuevo usuario <strong>".htmlspecialchars($usuario)."</strong> creado correctamente con sus módulos de acceso configurados.";
                     }
@@ -306,6 +323,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
                         }
                     }
 
+                    // Guardar políticas corporativas autorizadas desde la matriz granular
+                    if (strtolower($targetRolDb) === 'superadmin') {
+                        $polFinalPerm = 'TODOS';
+                    } elseif (isset($permisos_posted['politicas']['puede_ver'])) {
+                        if (isset($_POST['perm_politicas_todas'])) {
+                            $polFinalPerm = 'TODOS';
+                        } else {
+                            $polIdsPerm = array_values(array_unique(array_filter(array_map('intval', (array)($_POST['perm_politicas_permitidas'] ?? [])), function($n) { return $n > 0; })));
+                            $polFinalPerm = empty($polIdsPerm) ? 'NINGUNA' : implode(',', $polIdsPerm);
+                        }
+                    } else {
+                        $polFinalPerm = 'NINGUNA';
+                    }
+                    $pdo->prepare("UPDATE usuarios SET politicas_permitidas = ? WHERE id = ?")->execute([$polFinalPerm, $target_user_id]);
+
+                    if (isset($_SESSION['usuario_id']) && $_SESSION['usuario_id'] == $target_user_id) {
+                        cargarPermisosSesion($pdo, $target_user_id);
+                    }
+
                     $mensaje = "Matriz de permisos granulares actualizada correctamente.";
                 }
             } catch (PDOException $e) {
@@ -381,9 +417,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $pdo) {
 $usuarios = [];
 $modulosCat = [];
 $permisosMap = []; // [user_id][modulo_clave] => array(...)
+$politicasCat = [];
 
 if ($pdo) {
     asegurarTablasPermisos($pdo);
+    asegurarTablaPoliticas($pdo);
     try {
         // Obtener usuarios
         $sqlU = (!$esSuperAdmin) ? "SELECT * FROM usuarios WHERE LOWER(rol) != 'superadmin' ORDER BY id DESC" : "SELECT * FROM usuarios ORDER BY id DESC";
@@ -399,6 +437,15 @@ if ($pdo) {
         foreach ($allPerms as $pm) {
             $permisosMap[$pm['usuario_id']][$pm['modulo_clave']] = $pm;
         }
+
+        // Obtener catálogo de políticas corporativas activas
+        $stmtPolCat = $pdo->query("
+            SELECT id, titulo, area, subarea, categoria, version
+            FROM politicas_corporativas
+            WHERE estatus = 1
+            ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
+        ");
+        $politicasCat = $stmtPolCat ? $stmtPolCat->fetchAll(PDO::FETCH_ASSOC) : [];
     } catch (PDOException $e) {
         $error = "Error consultando datos: " . $e->getMessage();
     }
@@ -1044,6 +1091,16 @@ $areasCatalogoSistemas = [
                     </div>
                 </div>
 
+                <!-- Sección 3.1: Políticas Corporativas Autorizadas -->
+                <div id="ficha_politicas_section" class="mb-4" style="display: none;">
+                    <h6 class="text-info fw-bold text-uppercase small mb-2 d-flex align-items-center gap-2">
+                        <i class="bi bi-file-earmark-lock2-fill"></i> Políticas Corporativas Autorizadas
+                    </h6>
+                    <div id="ficha_politicas_container" class="p-3 rounded-3" style="background: rgba(14, 36, 68, 0.65); border: 1px solid rgba(56, 189, 248, 0.25);">
+                        <!-- Dinámico -->
+                    </div>
+                </div>
+
                 <!-- Sección 4: Resumen de Permisos Granulares -->
                 <h6 class="text-info fw-bold text-uppercase small mb-2 d-flex align-items-center gap-2">
                     <i class="bi bi-shield-lock-fill text-warning"></i> Privilegios Granulares por Módulo
@@ -1273,6 +1330,60 @@ $areasCatalogoSistemas = [
                                 <?php endforeach; ?>
                             </div>
                         </div>
+
+                        <!-- Sub-panel: Configuración de Políticas Corporativas Autorizadas -->
+                        <div id="panelPoliticasPermitidas" class="mt-3 p-3 rounded-3" style="background: rgba(14, 36, 68, 0.75); border: 1px solid rgba(56, 189, 248, 0.4); display: none;">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 pb-2 border-bottom border-secondary border-opacity-25">
+                                <div>
+                                    <h6 class="fw-bold text-info mb-0 d-flex align-items-center gap-2">
+                                        <i class="bi bi-file-earmark-lock2-fill"></i> Políticas Corporativas Autorizadas
+                                    </h6>
+                                    <div class="text-secondary" style="font-size: 0.75rem;">
+                                        Selecciona qué políticas dadas de alta puede ver este usuario, o activa <strong>Ver todas</strong>.
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-outline-info btn-sm py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem;" onclick="marcarTodasPoliticasUsuario(true)"><i class="bi bi-check-all me-1"></i> Marcar TODAS</button>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-pill text-light" style="font-size: 0.72rem;" onclick="marcarTodasPoliticasUsuario(false)"><i class="bi bi-x me-1"></i> Desmarcar</button>
+                                </div>
+                            </div>
+
+                            <!-- Interruptor VER TODAS -->
+                            <div class="mb-2 p-2 rounded-2" style="background: rgba(56, 189, 248, 0.1); border: 1px dashed rgba(56, 189, 248, 0.35);">
+                                <div class="form-check form-switch m-0">
+                                    <input class="form-check-input" type="checkbox" id="check_politica_todos" name="politicas_todas" value="1" onchange="onToggleTodasPoliticasUsuario(this.checked)">
+                                    <label class="form-check-label fw-bold text-info small ms-1" for="check_politica_todos" style="cursor: pointer;">
+                                        <i class="bi bi-asterisk me-1"></i> VER TODAS (Acceso a todas las políticas actuales y futuras)
+                                    </label>
+                                </div>
+                            </div>
+
+                            <?php if (empty($politicasCat)): ?>
+                                <div class="text-secondary small py-2">
+                                    <i class="bi bi-info-circle me-1"></i> No hay políticas corporativas activas dadas de alta todavía.
+                                </div>
+                            <?php else: ?>
+                                <div class="row g-2" style="max-height: 240px; overflow-y: auto;">
+                                    <?php foreach ($politicasCat as $polItem):
+                                        $polId = (int)$polItem['id'];
+                                        $polArea = !empty($polItem['area']) ? $polItem['area'] : (!empty($polItem['categoria']) ? $polItem['categoria'] : 'General');
+                                        $polSub = !empty($polItem['subarea']) ? ' · ' . $polItem['subarea'] : '';
+                                        $idChkPol = 'pol_user_check_' . $polId;
+                                    ?>
+                                        <div class="col-12 col-md-6">
+                                            <label class="d-flex align-items-center gap-2 p-2 rounded-2 border border-secondary border-opacity-25 w-100 mb-0 h-100" style="background: #081a33; cursor: pointer;" for="<?php echo $idChkPol; ?>">
+                                                <input type="checkbox" class="form-check-input m-0 check-politica-usuario flex-shrink-0" name="politicas_permitidas[]" value="<?php echo $polId; ?>" id="<?php echo $idChkPol; ?>" onchange="onIndividualPoliticaUsuarioChange()">
+                                                <i class="bi bi-file-earmark-pdf-fill text-info fs-5 flex-shrink-0"></i>
+                                                <div class="overflow-hidden">
+                                                    <div class="fw-bold text-white text-truncate" style="font-size: 0.8rem;" title="<?php echo htmlspecialchars($polItem['titulo']); ?>"><?php echo htmlspecialchars($polItem['titulo']); ?></div>
+                                                    <div class="text-secondary text-truncate" style="font-size: 0.67rem;"><?php echo htmlspecialchars($polArea . $polSub); ?></div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1336,6 +1447,61 @@ $areasCatalogoSistemas = [
                                         <td class="text-center"><input type="checkbox" class="form-check-input perm-checkbox perm-eliminar" name="permisos[<?php echo $mod['clave']; ?>][puede_eliminar]" value="1" data-mod="<?php echo $mod['clave']; ?>"></td>
                                         <td class="text-center"><input type="checkbox" class="form-check-input perm-checkbox perm-exportar" name="permisos[<?php echo $mod['clave']; ?>][puede_exportar]" value="1" data-mod="<?php echo $mod['clave']; ?>"></td>
                                     </tr>
+                                    <?php if ($mod['clave'] === 'politicas'): ?>
+                                        <tr id="rowPermPoliticasDetalle" style="display: none;">
+                                            <td colspan="6" class="p-3" style="background: rgba(8, 26, 51, 0.85) !important;">
+                                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2 pb-2 border-bottom border-secondary border-opacity-25">
+                                                    <div>
+                                                        <div class="fw-bold text-info small d-flex align-items-center gap-2">
+                                                            <i class="bi bi-file-earmark-lock2-fill"></i> Políticas Corporativas que puede ver
+                                                        </div>
+                                                        <div class="text-secondary" style="font-size: 0.72rem;">
+                                                            Selecciona las políticas autorizadas para este usuario o activa <strong>Ver todas</strong>.
+                                                        </div>
+                                                    </div>
+                                                    <div class="d-flex gap-1">
+                                                        <button type="button" class="btn btn-outline-info btn-sm py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem;" onclick="marcarTodasPermPoliticas(true)"><i class="bi bi-check-all me-1"></i> Marcar TODAS</button>
+                                                        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-2 rounded-pill text-light" style="font-size: 0.72rem;" onclick="marcarTodasPermPoliticas(false)"><i class="bi bi-x me-1"></i> Desmarcar</button>
+                                                    </div>
+                                                </div>
+
+                                                <div class="mb-2 p-2 rounded-2" style="background: rgba(56, 189, 248, 0.1); border: 1px dashed rgba(56, 189, 248, 0.35);">
+                                                    <div class="form-check form-switch m-0">
+                                                        <input class="form-check-input" type="checkbox" id="perm_check_politica_todos" name="perm_politicas_todas" value="1" onchange="onToggleTodasPermPoliticas(this.checked)">
+                                                        <label class="form-check-label fw-bold text-info small ms-1" for="perm_check_politica_todos" style="cursor: pointer;">
+                                                            <i class="bi bi-asterisk me-1"></i> VER TODAS (Acceso a todas las políticas actuales y futuras)
+                                                        </label>
+                                                    </div>
+                                                </div>
+
+                                                <?php if (empty($politicasCat)): ?>
+                                                    <div class="text-secondary small py-1">
+                                                        <i class="bi bi-info-circle me-1"></i> No hay políticas corporativas activas dadas de alta todavía.
+                                                    </div>
+                                                <?php else: ?>
+                                                    <div class="row g-2" style="max-height: 220px; overflow-y: auto;">
+                                                        <?php foreach ($politicasCat as $polItem):
+                                                            $polId = (int)$polItem['id'];
+                                                            $polArea = !empty($polItem['area']) ? $polItem['area'] : (!empty($polItem['categoria']) ? $polItem['categoria'] : 'General');
+                                                            $polSub = !empty($polItem['subarea']) ? ' · ' . $polItem['subarea'] : '';
+                                                            $idChkPermPol = 'perm_pol_check_' . $polId;
+                                                        ?>
+                                                            <div class="col-12 col-md-6">
+                                                                <label class="d-flex align-items-center gap-2 p-2 rounded-2 border border-secondary border-opacity-25 w-100 mb-0 h-100" style="background: #0a192e; cursor: pointer;" for="<?php echo $idChkPermPol; ?>">
+                                                                    <input type="checkbox" class="form-check-input m-0 perm-check-politica flex-shrink-0" name="perm_politicas_permitidas[]" value="<?php echo $polId; ?>" id="<?php echo $idChkPermPol; ?>" onchange="onIndividualPermPoliticaChange()">
+                                                                    <i class="bi bi-file-earmark-pdf-fill text-info fs-5 flex-shrink-0"></i>
+                                                                    <div class="overflow-hidden">
+                                                                        <div class="fw-bold text-white text-truncate" style="font-size: 0.78rem;" title="<?php echo htmlspecialchars($polItem['titulo']); ?>"><?php echo htmlspecialchars($polItem['titulo']); ?></div>
+                                                                        <div class="text-secondary text-truncate" style="font-size: 0.65rem;"><?php echo htmlspecialchars($polArea . $polSub); ?></div>
+                                                                    </div>
+                                                                </label>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
+                                        </tr>
+                                    <?php endif; ?>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
@@ -1355,6 +1521,7 @@ $areasCatalogoSistemas = [
     const permisosMapGlobal = <?php echo json_encode($permisosMap); ?>;
     const modulosCatGlobal = <?php echo json_encode($modulosCat); ?>;
     const areasCatalogoSistemas = <?php echo json_encode($areasCatalogoSistemas ?? []); ?>;
+    const politicasCatGlobal = <?php echo json_encode($politicasCat ?? []); ?>;
     let usuarioSeleccionadoActual = null;
 
     function escapeHtml(str) {
@@ -1627,6 +1794,59 @@ $areasCatalogoSistemas = [
             sectionAreas.style.display = 'none';
         }
 
+        // Políticas Corporativas Autorizadas
+        const sectionPol = document.getElementById('ficha_politicas_section');
+        const containerPol = document.getElementById('ficha_politicas_container');
+        const tieneAccesoPoliticas = (rolLower === 'superadmin') || (uPerms['politicas'] && parseInt(uPerms['politicas'].puede_ver) === 1);
+
+        if (sectionPol && containerPol) {
+            if (tieneAccesoPoliticas) {
+                sectionPol.style.display = 'block';
+                const polRaw = (u.politicas_permitidas === null || u.politicas_permitidas === undefined || String(u.politicas_permitidas).trim() === '')
+                    ? 'TODOS'
+                    : String(u.politicas_permitidas).trim().toUpperCase();
+                let polHtml = '';
+
+                if (rolLower === 'superadmin' || polRaw === 'TODOS' || polRaw === '*') {
+                    polHtml = `
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-info bg-opacity-20 text-info border border-info border-opacity-40 rounded-pill px-3 py-2 fs-6">
+                                <i class="bi bi-check-all me-1"></i> TODAS LAS POLÍTICAS
+                            </span>
+                            <span class="text-secondary small">Puede visualizar todas las políticas corporativas actuales y futuras.</span>
+                        </div>
+                    `;
+                } else if (polRaw === 'NINGUNA') {
+                    polHtml = `
+                        <span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 rounded-pill px-3 py-2">
+                            <i class="bi bi-slash-circle me-1"></i> NINGUNA POLÍTICA ASIGNADA (Acceso restringido)
+                        </span>
+                    `;
+                } else {
+                    const userPolIds = String(u.politicas_permitidas).split(',').map(s => parseInt(s.trim(), 10)).filter(n => n > 0);
+                    if (userPolIds.length === 0) {
+                        polHtml = `<span class="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-40 rounded-pill px-3 py-2"><i class="bi bi-slash-circle me-1"></i> NINGUNA POLÍTICA ASIGNADA</span>`;
+                    } else {
+                        polHtml = '<div class="d-flex flex-wrap gap-2">';
+                        userPolIds.forEach(pid => {
+                            const polObj = politicasCatGlobal.find(p => parseInt(p.id, 10) === pid);
+                            const polTitle = polObj ? polObj.titulo : ('Política #' + pid);
+                            polHtml += `
+                                <span class="badge rounded-pill px-3 py-2 border border-info border-opacity-40 d-inline-flex align-items-center gap-2" style="background: rgba(15, 34, 61, 0.9); color: #ffffff; font-size: 0.8rem;">
+                                    <i class="bi bi-file-earmark-pdf-fill text-info"></i>
+                                    <span>${escapeHtml(polTitle)}</span>
+                                </span>
+                            `;
+                        });
+                        polHtml += '</div>';
+                    }
+                }
+                containerPol.innerHTML = polHtml;
+            } else {
+                sectionPol.style.display = 'none';
+            }
+        }
+
         // Resumen de Permisos Granulares
         const tbodyPerms = document.getElementById('ficha_tabla_permisos_body');
         let rowsPermsHtml = '';
@@ -1724,6 +1944,65 @@ $areasCatalogoSistemas = [
         if (cbTodos) cbTodos.checked = allChecked;
     }
 
+    // ---- Sub-panel Políticas Corporativas (Modal Crear/Editar Usuario) ----
+    function actualizarVisibilidadPanelPoliticas() {
+        const cbPol = document.getElementById('mod_check_politicas');
+        const panel = document.getElementById('panelPoliticasPermitidas');
+        if (!panel) return;
+        panel.style.display = (cbPol && cbPol.checked) ? 'block' : 'none';
+    }
+
+    function marcarTodasPoliticasUsuario(marcar) {
+        const checks = document.querySelectorAll('.check-politica-usuario');
+        checks.forEach(c => { c.checked = marcar; });
+        const cbTodos = document.getElementById('check_politica_todos');
+        if (cbTodos) cbTodos.checked = marcar;
+    }
+
+    function onToggleTodasPoliticasUsuario(checked) {
+        marcarTodasPoliticasUsuario(checked);
+    }
+
+    function onIndividualPoliticaUsuarioChange() {
+        const checks = document.querySelectorAll('.check-politica-usuario');
+        const allChecked = Array.from(checks).length > 0 && Array.from(checks).every(c => c.checked);
+        const cbTodos = document.getElementById('check_politica_todos');
+        if (cbTodos) cbTodos.checked = allChecked;
+    }
+
+    // ---- Sub-panel Políticas Corporativas (Modal Matriz Granular) ----
+    function actualizarVisibilidadPermPoliticas() {
+        const cbVerPol = document.querySelector('.perm-ver[data-mod="politicas"]');
+        const row = document.getElementById('rowPermPoliticasDetalle');
+        if (!row) return;
+        row.style.display = (cbVerPol && cbVerPol.checked) ? 'table-row' : 'none';
+    }
+
+    function marcarTodasPermPoliticas(marcar) {
+        const checks = document.querySelectorAll('.perm-check-politica');
+        checks.forEach(c => { c.checked = marcar; });
+        const cbTodos = document.getElementById('perm_check_politica_todos');
+        if (cbTodos) cbTodos.checked = marcar;
+    }
+
+    function onToggleTodasPermPoliticas(checked) {
+        marcarTodasPermPoliticas(checked);
+    }
+
+    function onIndividualPermPoliticaChange() {
+        const checks = document.querySelectorAll('.perm-check-politica');
+        const allChecked = Array.from(checks).length > 0 && Array.from(checks).every(c => c.checked);
+        const cbTodos = document.getElementById('perm_check_politica_todos');
+        if (cbTodos) cbTodos.checked = allChecked;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const cbVerPol = document.querySelector('.perm-ver[data-mod="politicas"]');
+        if (cbVerPol) {
+            cbVerPol.addEventListener('change', actualizarVisibilidadPermPoliticas);
+        }
+    });
+
     function onModuloCheckboxChange(modClave) {
         const rol = document.getElementById('form_rol').value;
         const cb = document.getElementById('mod_check_' + modClave);
@@ -1733,6 +2012,8 @@ $areasCatalogoSistemas = [
         actualizarCardStyle(modClave);
         if (modClave === 'tickets') {
             actualizarVisibilidadPanelAreas();
+        } else if (modClave === 'politicas') {
+            actualizarVisibilidadPanelPoliticas();
         }
     }
 
@@ -1746,6 +2027,8 @@ $areasCatalogoSistemas = [
             actualizarCardStyle(modClave);
             if (modClave === 'tickets') {
                 actualizarVisibilidadPanelAreas();
+            } else if (modClave === 'politicas') {
+                actualizarVisibilidadPanelPoliticas();
             }
         }
     }
@@ -1770,6 +2053,7 @@ $areasCatalogoSistemas = [
             actualizarCardStyle(clave);
         });
         actualizarVisibilidadPanelAreas();
+        actualizarVisibilidadPanelPoliticas();
     }
 
     function onRolChange() {
@@ -1784,10 +2068,12 @@ $areasCatalogoSistemas = [
                 actualizarCardStyle(cb.value);
             });
             marcarTodasAreasTickets(true);
+            marcarTodasPoliticasUsuario(true);
         } else {
             if (notice) notice.classList.add('d-none');
         }
         actualizarVisibilidadPanelAreas();
+        actualizarVisibilidadPanelPoliticas();
     }
 
     function abrirModalNuevoUsuario() {
@@ -1807,8 +2093,10 @@ $areasCatalogoSistemas = [
         // Preset inicial por defecto: Tickets de soporte habilitado y todas sus áreas autorizadas
         aplicarPresetModulos('tickets');
         marcarTodasAreasTickets(true);
+        marcarTodasPoliticasUsuario(true);
         onRolChange();
         actualizarVisibilidadPanelAreas();
+        actualizarVisibilidadPanelPoliticas();
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();
@@ -1867,10 +2155,30 @@ $areasCatalogoSistemas = [
                 });
                 onIndividualAreaChange();
             }
+
+            // Cargar políticas corporativas autorizadas
+            const polRaw = (u.politicas_permitidas === null || u.politicas_permitidas === undefined || String(u.politicas_permitidas).trim() === '')
+                ? 'TODOS'
+                : String(u.politicas_permitidas).trim().toUpperCase();
+            if (polRaw === 'TODOS' || polRaw === '*') {
+                marcarTodasPoliticasUsuario(true);
+            } else if (polRaw === 'NINGUNA') {
+                marcarTodasPoliticasUsuario(false);
+            } else {
+                marcarTodasPoliticasUsuario(false);
+                const arrPolIds = String(u.politicas_permitidas).split(',').map(s => s.trim());
+                document.querySelectorAll('.check-politica-usuario').forEach(c => {
+                    if (arrPolIds.includes(String(c.value))) {
+                        c.checked = true;
+                    }
+                });
+                onIndividualPoliticaUsuarioChange();
+            }
         }
 
         onRolChange();
         actualizarVisibilidadPanelAreas();
+        actualizarVisibilidadPanelPoliticas();
 
         const modal = new bootstrap.Modal(document.getElementById('modalUsuario'));
         modal.show();
@@ -1887,6 +2195,7 @@ $areasCatalogoSistemas = [
         // Si es SuperAdmin, marcar todos
         if (u.rol === 'SuperAdmin') {
             checkboxes.forEach(cb => cb.checked = true);
+            marcarTodasPermPoliticas(true);
         } else {
             const uPerms = permisosMapGlobal[u.id] || {};
             for (const moduloClave in uPerms) {
@@ -1899,7 +2208,28 @@ $areasCatalogoSistemas = [
                 if (pm.puede_eliminar == 1) marcarCheck(targetKey, 'perm-eliminar');
                 if (pm.puede_exportar == 1) marcarCheck(targetKey, 'perm-exportar');
             }
+
+            // Cargar políticas corporativas autorizadas en matriz granular
+            const polRaw = (u.politicas_permitidas === null || u.politicas_permitidas === undefined || String(u.politicas_permitidas).trim() === '')
+                ? 'TODOS'
+                : String(u.politicas_permitidas).trim().toUpperCase();
+            if (polRaw === 'TODOS' || polRaw === '*') {
+                marcarTodasPermPoliticas(true);
+            } else if (polRaw === 'NINGUNA') {
+                marcarTodasPermPoliticas(false);
+            } else {
+                marcarTodasPermPoliticas(false);
+                const arrPolIds = String(u.politicas_permitidas).split(',').map(s => s.trim());
+                document.querySelectorAll('.perm-check-politica').forEach(c => {
+                    if (arrPolIds.includes(String(c.value))) {
+                        c.checked = true;
+                    }
+                });
+                onIndividualPermPoliticaChange();
+            }
         }
+
+        actualizarVisibilidadPermPoliticas();
 
         const modal = new bootstrap.Modal(document.getElementById('modalPermisos'));
         modal.show();

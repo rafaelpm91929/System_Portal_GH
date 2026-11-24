@@ -243,6 +243,16 @@ if (empty($politicasLista)) {
     }
 }
 
+// Filtrar políticas según permisos granulares del usuario
+$politicasPermitidasUsuario = obtenerPoliticasPermitidasUsuario($pdo, $usuarioId);
+if ($politicasPermitidasUsuario === 'NINGUNA') {
+    $politicasLista = [];
+} elseif (is_array($politicasPermitidasUsuario)) {
+    $politicasLista = array_values(array_filter($politicasLista, function ($pol) use ($politicasPermitidasUsuario) {
+        return in_array((int)($pol['id'] ?? 0), $politicasPermitidasUsuario, true);
+    }));
+}
+
 // =============================================================================
 // 4. ESTRUCTURACIÓN JERÁRQUICA: ÁREAS -> SUBÁREAS -> POLÍTICAS
 // =============================================================================

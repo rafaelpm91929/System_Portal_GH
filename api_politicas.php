@@ -33,6 +33,13 @@ if ($action === 'stream_pdf') {
         die("Documento no encontrado.");
     }
 
+    if (!$esPeticionAgenciaAutorizada && isset($_SESSION['usuario_id'])) {
+        if (!tienePermiso('politicas', 'puede_ver') || !usuarioPuedeVerPolitica($id, $pdo, $_SESSION['usuario_id'])) {
+            http_response_code(403);
+            die("No tienes permiso para visualizar esta política.");
+        }
+    }
+
     $filePath = null;
     if ($pdo) {
         try {
@@ -87,6 +94,19 @@ if ($action === 'listar') {
             ORDER BY COALESCE(area, categoria) ASC, COALESCE(subarea, '') ASC, titulo ASC
         ");
         $politicas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $token = $_GET['token'] ?? ($_SERVER['HTTP_X_GH_TOKEN'] ?? ($_POST['token'] ?? ''));
+        $esPeticionAgenciaAutorizada = ($token === 'GH_POLITICAS_SEGURA_2026_CORP');
+        if (!$esPeticionAgenciaAutorizada && isset($_SESSION['usuario_id'])) {
+            $permitidas = obtenerPoliticasPermitidasUsuario($pdo, $_SESSION['usuario_id']);
+            if ($permitidas === 'NINGUNA') {
+                $politicas = [];
+            } elseif (is_array($permitidas)) {
+                $politicas = array_values(array_filter($politicas, function ($pol) use ($permitidas) {
+                    return in_array((int)($pol['id'] ?? 0), $permitidas, true);
+                }));
+            }
+        }
 
         echo json_encode([
             'exito' => true,

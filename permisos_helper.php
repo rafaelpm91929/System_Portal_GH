@@ -28,6 +28,7 @@ function asegurarTablasPermisos($pdo) {
               rol VARCHAR(20) DEFAULT 'Admin',
               activo INTEGER DEFAULT 1,
               areas_tickets VARCHAR(255) DEFAULT 'TODOS',
+              politicas_permitidas TEXT DEFAULT 'TODOS',
               creado_en DATETIME DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS modulos (
@@ -65,6 +66,7 @@ function asegurarTablasPermisos($pdo) {
               `rol` ENUM('SuperAdmin', 'Admin', 'Usuario') DEFAULT 'Admin',
               `activo` TINYINT(1) DEFAULT 1,
               `areas_tickets` VARCHAR(255) DEFAULT 'TODOS',
+              `politicas_permitidas` TEXT NULL,
               `creado_en` DATETIME DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
@@ -101,6 +103,11 @@ function asegurarTablasPermisos($pdo) {
         try {
             $pdo->exec("ALTER TABLE usuarios ADD COLUMN areas_tickets VARCHAR(255) DEFAULT 'TODOS'");
         } catch (Throwable $eAlter) {}
+
+        // Asegurar columna politicas_permitidas en usuarios existentes
+        try {
+            $pdo->exec("ALTER TABLE usuarios ADD COLUMN politicas_permitidas TEXT NULL");
+        } catch (Throwable $eAlterPol) {}
 
         // Asegurar columnas foto, cargo y telefono en usuarios
         try {
@@ -186,8 +193,8 @@ function cargarPermisosSesion($pdo, $usuario_id) {
     if (!$pdo || !$usuario_id) return;
 
     try {
-        // Cargar datos de perfil, rol y áreas autorizadas de tickets
-        $stmtU = $pdo->prepare("SELECT usuario, nombre, email, rol, agencia, areas_tickets FROM usuarios WHERE id = ?");
+        // Cargar datos de perfil, rol, áreas autorizadas de tickets y políticas permitidas
+        $stmtU = $pdo->prepare("SELECT usuario, nombre, email, rol, agencia, areas_tickets, politicas_permitidas FROM usuarios WHERE id = ?");
         $stmtU->execute([$usuario_id]);
         $uInfo = $stmtU->fetch(PDO::FETCH_ASSOC);
         if ($uInfo) {
@@ -197,6 +204,9 @@ function cargarPermisosSesion($pdo, $usuario_id) {
             if (!empty($uInfo['agencia'])) $_SESSION['agencia']        = $uInfo['agencia'];
             $_SESSION['usuario_rol'] = $uInfo['rol'] ?? ($_SESSION['usuario_rol'] ?? 'Usuario');
             $_SESSION['areas_tickets'] = $uInfo['areas_tickets'] ?? 'TODOS';
+            $_SESSION['politicas_permitidas'] = ($uInfo['politicas_permitidas'] !== null && $uInfo['politicas_permitidas'] !== '')
+                ? $uInfo['politicas_permitidas']
+                : 'TODOS';
         }
 
         $stmt = $pdo->prepare("
@@ -268,6 +278,72 @@ function tienePermiso($modulo_clave, $accion = 'puede_ver') {
 
     // Si es Usuario y no tiene el permiso explícito: DENEGADO
     return false;
+}
+
+/**
+ * Devuelve las políticas corporativas permitidas para el usuario actual (o indicado):
+ * - 'TODOS' si tiene acceso a todas las políticas
+ * - 'NINGUNA' si no tiene acceso a ninguna
+ * - array de IDs enteros si tiene políticas específicas asignadas
+ */
+function obtenerPoliticasPermitidasUsuario($pdo = null, $usuarioId = null) {
+    $uid = $usuarioId ?? ($_SESSION['usuario_id'] ?? 0);
+    $rol = strtolower($_SESSION['usuario_rol'] ?? $_SESSION['rol'] ?? 'usuario');
+
+    if ($rol === 'superadmin') {
+        return 'TODOS';
+    }
+
+    $raw = $_SESSION['politicas_permitidas'] ?? null;
+
+    if ($pdo && $uid) {
+        try {
+            $stmt = $pdo->prepare("SELECT rol, politicas_permitidas FROM usuarios WHERE id = ? LIMIT 1");
+            $stmt->execute([$uid]);
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                if (strtolower($row['rol'] ?? '') === 'superadmin') {
+                    return 'TODOS';
+                }
+                $raw = $row['politicas_permitidas'];
+                if ($usuarioId === null || (isset($_SESSION['usuario_id']) && $_SESSION['usuario_id'] == $uid)) {
+                    $_SESSION['politicas_permitidas'] = ($raw !== null && $raw !== '') ? $raw : 'TODOS';
+                }
+            }
+        } catch (Throwable $e) {}
+    }
+
+    if ($raw === null) {
+        return 'TODOS';
+    }
+
+    $val = strtoupper(trim((string)$raw));
+    if ($val === '' || $val === 'TODOS' || $val === '*') {
+        return 'TODOS';
+    }
+    if ($val === 'NINGUNA') {
+        return 'NINGUNA';
+    }
+
+    $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', (string)$raw)), function ($n) {
+        return $n > 0;
+    })));
+
+    return empty($ids) ? 'NINGUNA' : $ids;
+}
+
+/**
+ * Verifica si el usuario actual (o indicado) puede ver una política específica por su ID
+ */
+function usuarioPuedeVerPolitica($politicaId, $pdo = null, $usuarioId = null) {
+    $pid = intval($politicaId);
+    if ($pid <= 0) return false;
+
+    $permitidas = obtenerPoliticasPermitidasUsuario($pdo, $usuarioId);
+    if ($permitidas === 'TODOS') return true;
+    if ($permitidas === 'NINGUNA') return false;
+
+    return in_array($pid, $permitidas, true);
 }
 
 /**
